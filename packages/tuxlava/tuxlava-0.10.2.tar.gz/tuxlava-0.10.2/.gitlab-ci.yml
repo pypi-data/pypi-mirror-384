@@ -1,0 +1,208 @@
+include:
+  - '/support/docker/tuxlava-ci-images.yml'
+  - https://gitlab.com/Linaro/tuxpkg/-/raw/v0.16.0/gitlab-ci-pipeline.yml
+
+variables:
+  TUXPKG_PROJECT: tuxlava
+
+stages:
+  - .pre
+  - trigger_bot_pipeline
+  - build-ci-images
+  - publish-ci-images
+  - unit-tests
+  - code-checks
+  - build
+  - test
+  - deploy
+  - .post
+
+.job:
+  image: registry.gitlab.com/linaro/tuxpkg:ci-debian
+  before_script:
+    - apt update && apt install -y python3-pip virtualenv python3-virtualenv python3-venv python3-ruamel.yaml
+    - python3 -m venv $HOME/.foo-venv
+    - source $HOME/.foo-venv/bin/activate
+    - python3 -m pip install mkdocs-material tuxpkg ruamel.yaml # FIXME not in Debian
+  script:
+  - make $CI_JOB_NAME
+
+.tuxlava:
+  except:
+    - schedules
+
+.arm64:
+  only:
+    - branches@Linaro/tuxlava
+  tags:
+    - saas-linux-medium-arm64
+
+.code-checks:
+  extends: .tuxlava
+  stage: code-checks
+  needs: []
+
+stylecheck:
+  image: registry.gitlab.com/linaro/tuxlava:ci-debian
+  extends: .code-checks
+  stage: test
+  script:
+    - python3 -m pip install --break-system-packages -r requirements-dev.txt
+    - make stylecheck
+  except:
+    - schedules
+
+codespell:
+  extends: .code-checks
+  image: registry.gitlab.com/linaro/tuxlava:ci-debian
+  stage: test
+  script:
+    - make spellcheck
+  except:
+    - schedules
+
+validate_job_definitions:
+  services:
+    - name: docker:20.10-dind
+  image: docker:20.10-dind
+  variables:
+    PYTHONUNBUFFERED: "1"
+  before_script:
+    - apk update && apk add make python3 py3-pip && pip3 install docker
+  script:
+    - make lava-validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - changes:
+        - test/unit/refs/definitions/*
+
+
+wheel:
+  image: registry.gitlab.com/linaro/tuxlava:ci-debian
+  stage: build
+  script:
+    - flit build
+  artifacts:
+    paths:
+      - dist/*.whl
+
+.docker:
+  services:
+  - name: docker:20.10-dind
+  image: docker:20.10-dind
+  only:
+    - tags
+  before_script:
+    - docker info
+    - docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+    - export tag="tuxsuite/tuxlava:${CI_COMMIT_TAG##v}${TAG_APPEND}"
+    - export latest="tuxsuite/tuxlava:latest${TAG_APPEND}"
+  script:
+    - docker build --network host --pull --tag "${tag}" --tag "${latest}" .
+    - docker run "${tag}" tuxlava --version
+    - docker run "${latest}" tuxlava --version
+    - docker push "${tag}"
+    - docker push "${latest}"
+  needs:
+    - wheel
+
+docker-default:
+  extends: .docker
+  stage: deploy
+
+docker-amd64:
+  extends: .docker
+  stage: deploy
+  variables:
+    TAG_APPEND: -amd64
+
+docker-arm64:
+  extends: .docker
+  stage: deploy
+  tags:
+     - saas-linux-large-arm64
+  variables:
+    TAG_APPEND: -arm64
+
+.unit-tests:
+  extends: .tuxlava
+  stage: unit-tests
+  script:
+    - pip install -r requirements-dev.txt
+    - make test
+
+unit-tests-python3.9:
+  extends: .unit-tests
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.9
+
+unit-tests-python3.10:
+  extends: .unit-tests
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.10
+
+unit-tests-python3.11:
+  extends: .unit-tests
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.11
+
+unit-tests-python3.12:
+  extends: .unit-tests
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.12
+
+unit-tests-python3.13:
+  extends: .unit-tests
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.13
+
+unit-tests-python3.9-arm64:
+  extends: [.unit-tests, .arm64]
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.9
+
+unit-tests-python3.10-arm64:
+  extends: [.unit-tests, .arm64]
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.10
+
+unit-tests-python3.11-arm64:
+  extends: [.unit-tests, .arm64]
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.11
+
+unit-tests-python3.12-arm64:
+  extends: [.unit-tests, .arm64]
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.12
+
+unit-tests-python3.13-arm64:
+  extends: [.unit-tests, .arm64]
+  image: registry.gitlab.com/linaro/tuxlava:ci-python-3.13
+
+trigger_bot_pipeline:
+  stage: trigger_bot_pipeline
+  image: curlimages/curl:latest
+  script:
+    - echo "Triggering pipeline for pre-commit hook."
+    - |
+      curl -X POST \
+           -F token=$GITLABBOT_TRIGGER_TOKEN \
+           -F ref=main \
+           https://gitlab.com/api/v4/projects/$GITLABBOT_PROJECT_ID/trigger/pipeline
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+
+doc:
+  extends: .job
+  stage: build
+  artifacts:
+    paths:
+      - public
+
+pages:
+  extends: .job
+  stage: deploy
+  needs:
+    - doc
+    - repository
+  artifacts:
+    paths:
+      - public
+  only:
+    - tags
+  script:
+    - cp -r dist/repo public/packages/
