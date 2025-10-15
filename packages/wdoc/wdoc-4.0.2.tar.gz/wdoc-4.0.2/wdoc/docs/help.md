@@ -1,0 +1,863 @@
+# Help
+
+### Table of contents
+- [Global arguments](#global-arguments)
+- [DocDict arguments](#docdict-arguments).
+- [Other specific arguments](#other-specific-arguments)
+- [Runtime flags / environment variables](#runtime-flags)
+
+
+# Global arguments
+
+* `--task`: str
+    * Accepted values:
+        * `query`: means to load the input files then wait for user question.
+        * `search`: means only return the document corresponding to the search
+        * `summarize`: means the input will be passed through a summarization prompt.
+        * `summarize_then_query`: summarize the text then open the prompt to allow querying directly the source document.
+
+* `--filetype`: str, default `auto`
+    * the type of input. Depending on the value, different other parameters
+    are needed. If json_entries is used, the line of the input file can contain
+    any of those parameters as long as they are as json. You can find
+    an example of json_entries file in `wdoc/docs/json_entries_example.txt`
+
+    * Supported values and available arguments:
+        *For the details of each argument, [see below](#loader-specific-arguments)*
+
+        * `anki`
+            * Optional:
+                * `--anki_profile`
+                * `--anki_deck`
+                * `--anki_notetype`
+                * `--anki_template`
+                * `--anki_tag_filter`
+                * `--anki_tag_render_filter`
+
+        * `auto`: will guess the appropriate filetype based on `--path`.
+            Irrelevant for some filetypes, eg if `--filetype`=anki.
+            It can also infer recursive filetypes, for example if the `path`
+            leads to a `.toml` file.
+
+        * `epub`
+            * `--path` to a .epub file
+
+        * `json_dict`
+            * `--path` to a text file containing a single json dict
+            * `--json_dict_template`
+            * Optional:
+                * `--json_dict_exclude_keys`
+                * `--metadata`
+
+        * `local_audio`
+            * `--path`
+            * `--audio_backend`
+            * Optional:
+                * `--audio_unsilence`
+                * `--whisper_prompt`
+                * `--whisper_lang`
+                * `--deepgram_kwargs`
+
+        * `local_html`
+            * `--path` must points to a .html file
+            * Optional:
+                * `--load_functions`
+
+        * `local_video`
+            * `--path`
+            * `--audio_backend`
+            * Optional:
+                * `--audio_unsilence`
+                * `--whisper_lang`
+                * `--whisper_prompt`
+                * `--deepgram_kwargs`
+
+        * `logseq_markdown`
+            * `--path` path to the markdown file
+
+        * `online_media`: load the url using youtube_dl to download a media
+            (video or audio) then treat it as `filetype=local_audio`.
+            * If youtube_dl failed to find the media, try using playwright browser
+                where any requested element that looks like a possible media will try
+                be downloaded.
+            * Same arguments as `local_audio` with extra arguments:
+                * `--online_media_url_regex`
+                * `--online_media_resourcetype_regex`
+
+        * `online_pdf`
+            * Same arguments as for `--filetype=pdf`
+                Note that the way `online_pdf` are handled is a bit
+                different than `pdf`: we first try to download it then
+                parse it with `filetype=pdf` and as a last resort we
+                use langchain's integrated OnlinePDFLoader as it's
+                far slower.
+
+        * `pdf`
+            * `--path` is the filepath to pdf
+            * Optional:
+                * `--pdf_parsers`
+                * `--doccheck_min_lang_prob`
+                * `--doccheck_min_token`
+                * `--doccheck_max_token`
+
+        * `powerpoint`
+            * `--path` to a .doc, .docx etc
+
+        * `string`: no parameters needed, will provide a field where
+            you must type or paste the string
+
+        * `text`
+            (For text input as argument, not to be mistaken with `txt`)
+            * `--path` is directly the text content.
+            * Optional:
+                * `--metadata`
+
+        * `txt`
+            (For text present in a txt file, not to be mistaken with `text`)
+            * `--path` is path to a .txt file
+
+        * `url`
+            * `--path` must be a valid http(s) link
+            * Optional:
+                * `--title`, otherwise we try to detect it ourselves.
+
+        * `word`
+            * `--path` to a .doc, .docx etc
+
+        * `youtube`
+            * `--path` must link to a youtube video
+            * Optional:
+                * `--youtube_language`
+                * `--youtube_translations`
+                * `--youtube_audio_backend`
+                * `--whisper_prompt`
+                * `--whisper_lang`
+                * `--deepgram_kwargs`
+
+    * **Recursive types**:
+        * `ddg`
+            * `--path` is the search query for DuckDuckGo.
+            * `--ddg_max_results`
+            * `--ddg_region`, for example `us-US`
+            * `--ddg_safesearch`
+        * `json_entries`
+            * `--path` is path to a text file that contains a json
+                for each line containing at least a filetype and a path key/value
+                but can contain any parameters described here
+        * `recursive_paths`
+            * `--path` is the starting path
+            * `--pattern` is the globbing patterns to append
+            * `--exclude` and `--include` can be a list of regex
+                applying to found paths (include is run first then exclude, if the
+                pattern is only lowercase it will be case insensitive)
+            * `--recursed_filetype` is the filetype to use for each of the found path
+        * `youtube_playlist`
+            * `--path` must link to a youtube playlist
+        * `link_file`
+            * `--path` must point to a file where each line is a link
+                that will be summarized.
+            * `--out_file` path to text file where the summary will be added (appended).
+                Links that have already been summarized in out_file will be skipped
+                (the out_file is never overwritten). If a line is a markdown like
+                like [this](link) then it will be parsed as a link.
+                Empty lines and starting with # are ignored.
+
+---
+
+* `--model`: str, default to value of WDOC_DEFAULT_MODEL
+    * Keep in mind that given that the default backend used is litellm
+    the part of model name before the slash (/) is the backend name (also called provider).
+    If the backend is `testing/` then it will be parsed as `testing/testing` and
+    a fake LLM will be used for debugging purposes. It answers like a normal LLM
+    but costs 0 and makes no sense. Note that it will automatically set the
+    query_eval_model to `testing/testing` too.
+    If the value is not part of the model list of litellm, will use
+    fuzzy matching to find the best match.
+
+* `--model_kwargs`: dict, default `None`
+    * dictionary of keyword arguments to pass to the model. For example `{'temperature': 0}`.
+    Note that changing the kwargs will sometimes keep reusing the cache,
+    use `disable_llm_cache` to avoid that.
+
+---
+
+* `--embed_model`: str, default to value of WDOC_DEFAULT_EMBED_MODEL
+    * Name of the model to use for embeddings. Must contain a '/'
+    Everything before the slash is the backend and everything
+    after the / is the model name.
+    Available backends: openai, sentencetransformers,
+    huggingface
+
+    * Note:
+        * the device used by default for huggingface is 'cpu' and not 'cuda'
+        * If you change this, the embedding cache will be usually
+            need to be recomputed with new elements (the hash
+            used to check for previous values includes the name of the model
+            name)
+
+* `--embed_model_kwargs`: dict, default `None`
+    * dictionary of keyword arguments to pass to the embedding.
+
+* `--save_embeds_as`: str, default `"{user_dir}/latest_docs_and_embeddings"`
+    * only used if task is query
+    Saves the loaded documents and embeddings to a file in the specified
+    directory. This then be loaded again with `--load_embeds_from` to
+    avoid recomputing embeddings.
+    Both the document splits and their embeddings are saved there,
+    and always overwrite the location (i.e. no 'updating' of the previously
+    saved documents and embeddings).
+    In the default value, "{user_dir}" is automatically replaced by
+    the path to the default cache folder for the current user. This
+    way it always speeds up the previous session if `--load_embeds_from`.
+    Should not be specified at the same time as `--load_embeds_from`
+    as `--load_embeds_from` will take priority.
+
+* `--load_embeds_from`: str, default `None`
+    * path to the file saved using `--save_embeds_as`
+    If loading the embeddings fails, `wdoc` will crash instead of
+    creating new embeddings, out of safety.
+    Should not be specified at the same time as `--save_embeds_as`
+    as `--load_embeds_from` will take priority.
+
+* `--top_k`: Union[int, str], default `auto_200_500`
+    * number of chunks to look for when querying. It is high because the
+    eval model is used to refilter the document after the embeddings
+    first pass.e
+    If top_k is a string, the format assumed is "auto_N_m" where N is the
+    starting top_k and M is the max top_k value. If the number of filtered
+    document is more than 90% of top_k, top_k will gradually increase up to M
+    (with N and M being int, and 0<N<M).
+    This way you are sure not to miss any document.
+
+---
+
+* `--query`: str, default `None`
+    * if str, will be directly used for the first query if task in `["query", "search", "summarize_then_query"]`
+
+* `--query_retrievers`: str, default `"basic_multiquery"`
+    * must be a string that specifies which retriever will be used for
+    queries depending on which keyword is inside this string.
+
+    * Possible values (can be combined if separated by _):
+        * `basic`: cosine similarity retriever
+        * `multiquery`: retriever that uses the LLM to reformulate your
+        query to get different perspectives. This uses the strong LLM
+        and, as it requires complex output parsing for now it is
+        recommended to not use that retriever for average models.
+        * `knn`: knn
+        * `svm`: svm
+        * `parent`: parent chunk
+
+* `--query_eval_model`: str, default to value of `WDOC_DEFAULT_QUERY_EVAL_MODEL`
+    * Cheaper and quicker model than model. Used for intermediate
+    steps in the RAG, not used in other tasks.
+    If the value is not part of the model list of litellm, will use
+    fuzzy matching to find the best match.
+    None to disable.
+
+* `--query_eval_model_kwargs`: dict, default `None`
+    * dictionary of keyword arguments to pass to the query_eval_model. For example `{'temperature': 0}`.
+    Note that changing the kwargs will sometimes keep reusing the cache,
+    use `disable_llm_cache` to avoid that.
+
+* `--query_eval_check_number`: int, default `3`
+    * number of pass to do with the eval llm to check if the document
+    is indeed relevant to the question. The document will not
+    be processed further if the mean answer from the eval llm is too low.
+    For eval llm that don't support setting `n`, multiple
+    completions will be called, which costs more. It happens that some
+    models are incorrectly reported as having a modifiable `n` parameter
+    when they actually don't. In this can instead of crashing `wdoc` will
+    notify you and replicate the received value `n` times.
+
+* `--query_relevancy`: float, default `-0.5`
+    * threshold underwhich a document cannot be considered relevant by
+    embeddings alone. Keep in mind that the score is a similarity, so
+    it goes from -1 (most different) to +1 (most similar), althrough
+    if you set `WDOC_MOD_FAISS_SCORE_FN` to `True` it will then
+    go from 0 to 1.
+
+---
+
+* `--summary_n_recursion`: int, default `0`
+    * after summarizing, will go over the summary that many times to fix
+    indentation, repetitions etc.
+        * 0 means disabled.
+        * 1 means that the original summary will be checked once.
+        * 2 means that the original summary, will checked, then
+        the check version will be checked again.
+        We stop when equilibrium is reached (meaning the summary
+        did not change).
+    * If `--out_file` is used, each intermediate summary will be saved
+    with the name `{out_file}.n.md` with n being the n-1th recursive summary.
+
+* `--summary_language`: str, default `"the same language as the document"`
+    * When writing a summary, the LLM will write using the language
+    specified in this argument. If it's `[same as input]`, the LLM
+    will not translate.
+
+---
+
+* `--llm_verbosity`: bool, default `False`
+    * if True, will print the intermediate reasonning steps of LLMs
+    if debug is set, llm_verbosity is also set to True
+
+* `--debug`: bool, default `False` or `WDOC_DEBUG` if set
+    * if True will enable langchain tracing, increase verbosity,
+    disable multithreading for summaries and loading files,
+    display warning if an error is encountered when loading a file,
+    automatically trigger the debugger on exceptions.
+    Note that the parallel processing will not be disabled if you manually
+    set `--file_loader_n_jobs`, allowing you to debug parallel
+    processing issues.
+    Because in some situation LLM calls are refused because of rate
+    limiting, this can be used to slowly but always get your answer.
+    It implies `--verbose=True`
+    If you just want to open the debugger in case of issue, see
+    below at `WDOC_DEBUGGER`.
+    When in debugging mode, the default `loading_failure` is `warn`,
+    but if you specify `loading_failure=crash` it will be honored.
+
+* `--verbose`: bool, default `False` or `WDOC_VERBOSE` if set
+    Increase verbosity. Implied if `--debug` is set.
+
+* `--dollar_limit`: int, default `5`
+    * If the estimated price is above this limit, stop instead.
+    Note that the cost estimate for the embeddings is using the
+    openai tokenizer, which is not universal.
+    This only applies to the summary and to the embeddings, not
+    to queries.
+    This check is skipped if the api_base url are changed using `llms_api_bases`.
+    Note that the cost is assumed to be `0` for embeddings if we don't find
+    the price using litellm.
+
+* `--notification_callback`: Callable, default `None`
+    * a function that must take as input a string and return the same
+    string. Inside it you can do whatever you want with it. This
+    can be used for example to send notification on your phone
+    using ntfy.sh to get summaries.
+
+* `--disable_llm_cache`: bool, default `False`
+    * disables caching for LLM. All caches are stored in the usual
+    cache folder for your system. This does not disable caching
+    for documents.
+
+* `--file_loader_parallel_backend`: str, default `"loky"`
+    * joblib.Parallel backend to use when loading files. `loky` and
+    `multiprocessing` refer to multiprocessing whereas `threading`
+    refers to multithreading.
+    The number of jobs can be specified with `--file_loader_n_jobs`
+    but it's a loader specific kwargs.
+    To use neither `multiprocessing` nor `threading`, you can
+    set `--file_loader_n_jobs=1`.
+
+* `--file_loader_n_jobs`: int, default `-1`
+    * number of jobs to use when loading files in parallel (threads or process,
+    depending on `--file_loader_parallel_backend`). Set to 1 to disable
+    parallel processing (as it can result in out of memory error if
+    using threads and overly recursive calls). Automatically set to 1 if
+    `--debug` is set or if there's only one document to load.
+    If -1, means use as many as possible (this is joblib's default).
+
+* `--private`: bool, default `False`
+    * add extra check that your data will never be sent to another
+    server: for example check that the api_base was modified and used,
+    check that no api keys are used, check that embedding models are
+    local only. It will also use a separate cache from non private.
+    Note that in the current implementation, this disables any
+    callbacks to langfuse. If you only want to override some API endpoints,
+    take a look at the argument `--llms_api_bases`.
+    Note that the values of `llms_api_bases` are whitelisted when using `private`.
+
+* `--llms_api_bases`: dict, default `None`
+    * a dict with keys in `["model", "query_eval_model", "embeddings"]`
+    The corresponding value will be used to change the url of the
+    endpoint. This is needed to use local LLMs for example using
+    ollama, lmstudio, etc. If you want to be sure not to leak any
+    information to a remote server, you can use `---private`.
+    Note that the values of `llms_api_bases` are whitelisted when using `private`.
+
+* `--oneoff`: bool, default `False`
+    * If True, will not ask for a prompt but quit right away. This
+    is useful for example if you run several cli calls in parallel and
+    don't want them to take all the RAM after they're done.
+
+* `--version`: bool, default False
+    * display the version and exit
+
+* `--cli_kwargs`: dict, optional
+    * Any remaining keyword argument will be parsed as a loader
+    specific argument ((see below)[#loader-specific-arguments]).
+    Any unrecognized key or inappropriate value type will result in a crash. 
+
+
+# DocDict arguments
+    Also refered to as "loader specific arguments", these are
+    expected by a subset of loader functions. For example only loader
+    functions expecting audio files in their `path` argument can
+    receive a `audio_backend` argument.
+    Those arguments are validated by a `DocDict` object that allows
+    to check which argument is expected by loader functions instead of
+    wdoc. For example `--out_file` is not expected by any loader but by
+    `wdoc`'s `__init__` method.
+
+    Those arguments can be set at cli time but can also be used
+    when using recursive_paths filetype combination to have arguments specific
+    to a loader. They apply depending on the value of `--filetype`.
+    An unexpected argument for a given filetype will result in a crash.
+
+* `--path`: str or Path
+    * Used by most loaders. For example for `--filetype=youtube` the path
+    must point to a youtube video.
+
+* `--pdf_parsers`: str or List[str], default: `pymupdf`
+    * list of string or comma separated list of strings where each string
+    is a key of the dict `pdf_loaders` in `./utils/loaders.py`.
+    The case is insensitive.
+    The parsers are used in the order of this list.
+    Not all parsers are tried. Instead, after each parsing we check using
+    fasttext and heuristics based on doccheck_* args to rank the quality of the parsing.
+    When stop if 1 parsing is high enough or take the best if 3 parsing worked.
+    Note that the way `online_pdf` are handled is a bit different than
+    `pdf`: we first try to download it then parse it with
+    `filetype=pdf` and as a last resort we use langchain's
+    integrated OnlinePDFLoader as it's far slower.
+
+    Currently implemented:
+    - Okayish metadata:
+        - pymupdf
+        - pdfplumber
+    - Few metadata:
+        - pdfminer
+        - pypdfloader
+        - pypdfium2
+        - openparse (also has table support but quite slow)
+    - pdftotext  (fastest and most basic but can be unavailable depending on your install)
+    - Very slow but theoretically the best are from unstructured:
+        - unstructured_fast
+        - unstructured_elements_fast
+        - unstructured_hires
+        - unstructured_elements_hires
+        - unstructured_fast_clean_table
+        - unstructured_elements_fast_clean_table
+        - unstructured_hires_clean_table
+        - unstructured_elements_hires_clean_table
+        Notes: to the best of my knowledge:
+            'fast' means not AI based, as opposed to 'hires'
+            'elements' means the parser returns each element of the pdf instead of collating them in the rendering
+            'clean' means it tries to remove the extra whitespace
+            'table' means it will try to infer table structure (AI based)
+
+* `--anki_profile`: str
+    * The name of the profile
+* `--anki_deck`: str
+    * The beginning of the deckname. Note that we only look at decks, filtered
+    decks are not taken into acount (so a card of deck 'A' that is temporarily
+    in 'B::filtered_deck' will still be considered as part of 'A'.
+    e.g. `science::physics::freshman_year::lesson1`
+* `--anki_notetype`: str
+    * If it's part of the card's notetype, that notetype will be kept.
+    Case insensitive. Note that suspended cards are always ignored.
+* `--anki_template`: str
+    * The template to use for the anki card. For example if you have
+    a notetype with fields "fieldA","fieldB","fieldC" then you could
+    set --anki_template="Question:{fieldA}\nAnswer:{fieldB}". The field
+    "fieldC" would not be used and each document would look like your
+    template.
+    Notes:
+    * '{tags}' can be used to include a '\n* ' separated
+        string of the tag list. Use --anki_tag_render_filter to restrict which tag
+        can be shown (to avoid privacy leakage).
+        Example of what the tag formating looks like:
+        "
+        Anki tags:
+        '''
+        * my::tag1
+        * my_othertag
+        '''
+        "
+    * '{allfields}' can be used to format automatically all fields
+    (not including tags). It will be replaced
+    as "fieldA: 'fieldAContent'\n\nfieldB: 'fieldBContent'" etc
+    The ' are added.
+    * The default value is '{allfields}\n{image_ocr_alt}'.
+    * '{image_ocr_alt}' if present will be replaced by any text present
+    in the 'title' or 'alt' field of an html image. This is isually OCR
+    so can be useful for the LLM.
+
+* `--anki_tag_filter`: str
+    Only keep the cards that have tags matchign this regex.
+
+* `--anki_tag_render_filter`: str
+    Only the tags that match this regex will be put in the template.
+    Careful, this does not mean "only keep cards that have tags matching
+    this filter" but rather "only mention the tags matching this filter
+    in the final document".
+
+* `--json_dict_template`: str
+    String that must contain `{key} and `{value}`, that will be replaced
+    by the content of the json dict so that each document correspond to
+    a single key/value pair derived from the template.
+* `--json_dict_exclude_keys`: list of strings
+    all those keys will be ignored.
+
+* `--metadata`: str
+    either as a string that will be parsed as a json dict, or as a dict.
+
+* `--audio_backend`: str
+    * either 'whisper' or 'deepgram' to transcribe audio.
+    Not taken into account for the filetype "youtube".
+    Taken into account if filetype if "local_audio" or "local_video"
+
+* `--audio_unsilence`: bool, default to `True`.
+    * When processing audio files, remove silence before transcribing.
+
+* `--whisper_lang`: str
+    * if using whisper to transcribe an audio file, this if the language
+    specified to whisper
+* `--whisper_prompt`: str
+    * if using whisper to transcribe an audio file, this if the prompt
+    given to whisper
+
+* `--deepgram_kwargs`: dict
+    * if using deepgram for transcription, those arguments will be used.
+
+* `--youtube_language`: List[str]
+    * For youtube. e.g. `["fr","en"]` to use french transcripts if
+    possible and english otherwise
+* `--youtube_translation`: str
+    * For youtube. e.g. `en` to use the transcripts after translation to english
+* `--youtube_audio_backend`: str
+    Either 'youtube', 'whisper' or 'deepgram'.
+    Default is 'youtube'.
+    * If 'youtube': will take the youtube transcripts as text content.
+    * If 'whisper': wdoc will download
+    the audio from the youtube link, and whisper will be used to turn the audio into text. whisper_prompt and whisper_lang will be used if set.
+    * If 'deepgram' will download
+    the audio from the youtube link, and deepgram will be used to turn the audio into text. `--deepgram_kwargs` will be used if set.
+
+* `--include`: str
+    * Only active if `--filetype` is 'recursive_paths'
+    `--include` can be a list of regex that must be present in the
+    document PATH (not content!)
+    `--exclude` can be a list of regex that if present in the PATH
+    will exclude it.
+    Exclude is run AFTER include
+* `--exclude`: str
+    * See `--include`
+
+# Other specific arguments
+
+* `--out_file`: str or Path, default `None`
+    * For summaries: If wdoc must create a summary, if out_file given the summary will
+    be written to this file. Note that the file is not erased and
+    wdoc will simply append to it.
+    * For queries: If provided, the final answer and intermediate answers will be 
+    appended to this file in addition to being displayed in the terminal.
+    * If `--summary_n_recursion` is used, additional files will be
+    created with the name `{out_file}.n.md` with n being the n-1th recursive
+    summary.
+
+* `--filter_metadata`: list or str, default `None`
+    * list of regex string to use as metadata filter when querying.
+    Format: `[kvb][+-]your_regex`
+
+    For example:
+    * Keep only documents that contain `anki` in any value
+    of any of its metadata dict:
+        `--filter_metadata=v+anki`  <- at least the `filetype` key
+        will have as value `anki`
+    * Keep only documents that contain `anki_profile` as a key in
+    its metadata dict:
+        `--filter_metadata=k+anki_profile`  <- because will contain the
+        key anki_profile
+    * Keep only data that have a certain `source_tag` value:
+        `--filter_metadata=b+source_tag:my_source_tag_regex`
+
+    Notes:
+    * Each filter must be a regex string beginning with k, v or b
+    (for `key`, `value` or `both`). Followed by either `+` or `-` to:
+        `+` at least one metadata should match
+        `-` exclude from (no metadata should match)
+    * If the string starts with k, it will filter based on the keys
+    of the metadata, if it starts with a v it will filter based
+    on the values, if it starts with b it will require a `:` present
+    and everything left of : will be a regex to match a key key and
+    right of the : will be a regex matching the matched key.
+    * Filters are only relevant for task related to queries and are
+    ignored for summaries.
+    * Smartcasing is used: if the filter is its own lowercase version
+    then insensitive casing will be used, otherwise not.
+    * The function used to check the matching is `pattern.match`
+    * The filtering is not done at the search time but before it. We
+    first scan all the corresponding documents, then delete the useless
+    embeddings from the docstore. This makes the whole search faster.
+    But the embeddings are not saved afterwards so they are not lost,
+    just not present in memory for this prompt.
+
+* `--filter_content`: list or str, default `None`
+    * Like `--filter_metadata` but filters through the page_content of
+    each document instead of the metadata.
+    Syntax: `[+-]your_regex`
+    Example:
+    * Keep only the document that contain `wdoc`
+        `--filter_content=+.*wdoc.*`
+    * Discard the document that contain `wdoc`
+        `--filter_content=-.*wdoc.*`
+
+* `--embed_instruct`: bool, default `None`
+    * when loading an embedding model using the HuggingFace backend,
+    wether to wrap the input sentence using instruct framework or not.
+
+* `--load_functions`: List[str], default `None`
+    * list of strings that when evaluated in python result in a list of
+    callable. The first must take one input of type string and the
+    last function must return one string.
+
+    For example in the filetypes `local_html` this can be used to
+    specify lambda functions that modify the text before running
+    BeautifulSoup. Useful to decode html stored in .js files.
+    Do tell me if you want more of this.
+
+* `--ddg_max_results`: int, default `50`
+    * Number of result to ask from DuckDuckGo when using `--filetype=ddg`.
+
+* `--ddg_region`: str, default `""` (empty, meaning no specific region)
+    * Region to ask DuckDuckGo result from. For example `us-US`.
+
+* `--ddg_safesearch`: str, default `off`
+    * Either `on`, `moderate` or `off`.
+
+* `--doccheck_min_lang_prob`: float, default `0.5`
+    * float between 0 and 1 that sets the threshold under which to
+    consider a document invalid if the estimation of
+    fasttext's langdetect of any language is below that value.
+    For example, setting it to 0.9 means that only documents that
+    fasttext thinks have at least 90% probability of being a
+    language are valid.
+* `--doccheck_min_token`: int, default `50`
+    * if we find less that that many token in a document, crash.
+* `--doccheck_max_token`: int, default `10_000_000`
+    * if we find more that that many token in a document, crash.
+
+* `--online_media_url_regex`: str
+    * a regex that if matching a request's url, will consider the
+    request to be leading to a media. We then try to fetch those media
+    using youtube_dl. The default is already a sensible value.
+* `--online_media_resourcetype_regex`: str
+    * Same as `--online_media_url_regex` but checking request.resource_type
+
+* `--source_tag`: str, default `None`
+    * a string that will be added to the document metadata at the
+    key `source_tag`. Useful when using filetype combination.
+    It is EXTREMELY recommended to include a source_tag to any document
+    you want to save: especially if using recursive filetypes. This
+    is because after loading all documents wdoc use the source_tag
+    to see if it should continue or crash. If you want to load 10_000 pdf
+    in one go as I do, then it makes sense to continue if some failed to
+    crash but not if a whole source_tag is missing.
+
+* `--loading_failure`: str, default `warn`
+    * either `crash` or `warn`. Determines what to do with
+    exceptions happening when loading a document. This can be set
+    per document if a recursive_paths filetype is used.
+    If using `wdoc_doc_file` it is by default set to `crash`.
+    When using `wdoc parse`, the default value is `crash`.
+
+# Environment variables
+
+* `WDOC_DEBUG`
+    * Setting to `true` has the same effects as using `--debug=True`.
+
+* `WDOC_VERBOSE`
+    * Setting to `true` has the same effects as using `--verbose=True`.
+    Always set to `true` if `WDOC_DEBUG` is set to `true`.
+
+* `WDOC_TYPECHECKING`
+    * Setting for runtime type checking. Default value is `warn`. The typing is checked
+    using [beartype](https://beartype.readthedocs.io/en/latest/) so shouldn't slow down the runtime.
+    * Possible values:
+        * `disabled`: disable typechecking.
+        * `warn`: print a red warning if a typechecking fails.
+        * `crash`: crash if a typechecking fails in any function.
+
+* `WDOC_NO_MODELNAME_MATCHING`
+    * If "false": will try to infer the model name based on a more human readable string.
+    For example '4o' might be matched to 'openai/gpt-4o'. Useful for exotic
+    or models that are fresh out of the oven, or bugs with backend parsing.
+    As it can lead to issues it was decided to disable the matching by default, hence
+    the default value is `True`.
+
+* `WDOC_ALLOW_NO_PRICE`
+    * if "true", won't crash if no price was found for the given
+    model. Useful if litellm has not yet updated its price table.
+    Default is `False`.
+
+* `WDOC_OPEN_ANKI`
+    * if "true", will automatically ask wether to open the anki browser if cards are
+    found in the sources. Only used if task is `query` or `search`.
+    Default is `False`
+
+* `WDOC_STRICT_DOCDICT`
+    * if "True", will crash instead of printing if trying to set an unexpected argument in a DocDict.
+        Otherwise, you can specify things like "anki_profile" as argument to filetype "pdf" without crashing,
+        this also makes no sense but can be useful if there's a bug in wdoc that is not yet fixed
+    and you want to continue in the meantime.
+    * If set to "False": we print in red unexpected arguments but add them anyway.
+    * If set to "strip": we print in red unexpected arguments and ignore them.
+    Default is `False`.
+
+* `WDOC_MAX_LOADER_TIMEOUT`
+    * Number of seconds to wait before giving up on loading a document (this does not include recursive types, only the DocDict arguments).
+    Default is `-1` to disable.
+    Disabled if <= 0.
+
+* `WDOC_MAX_PDF_LOADER_TIMEOUT`
+    * Number of seconds to wait for each pdf loader before giving up this loader. This includes the `online_pdf` loader.
+        Note that it probably makes PDF parsing substantially.
+        Default is `-1` to disable.
+        Disabled when using `--file_loader_parallel_backend=threading` as python does not allow it.
+        Also disabled if <= 0.
+
+* `WDOC_DEBUGGER`
+    * If True, will open the debugger in case of issue. Implied by `--debug`
+    Default is `False`
+
+* `WDOC_EXPIRE_CACHE_DAYS`
+    * If an int, will remove any cached value that is older than that many days.
+    Otherwise keep forever. Default is `0` to disable.
+
+* `WDOC_EMPTY_LOADER`
+    * If True, loading any kind of document will return an empty string. Used for debugging. Default is `False`.
+
+* `WDOC_BEHAVIOR_EXCL_INCL_USELESS`
+    * If an "include" or "exclude" key is found in a loader but does not actually change anything, if `warn` then just print in red but
+    if `crash` then raise an error. Default is `warn`.
+
+* `WDOC_PRIVATE_MODE`
+    * You should never set it yourself. It is set automatically if the `--private` argument is used, and used throughout to triple check that it's indeed fully private.
+
+* `WDOC_IMPORT_TYPE`, default `native`
+    * If `native` will just import the packages needed by wdoc without any tricks. This is the default as it's bug-free but can be a bit slower to start up.
+    * If `thread`, will try to use a separate thread to import packages making the startup time potentially smaller.
+    * If `lazy`, will use lazy loading on some packages, making the startup time potentially smaller.
+    * If `both`, will try to use both.
+    All other than `native` are experimental as they rely on weird python tricks that may cause issues.
+
+* `WDOC_LOADER_LAZY_LOADING`, default `True`
+    * If `True` the function used to load documents (e.g. load_anki, load_online_pdf etc) will be imported only when needed. This
+    is faster but experimental for now. If `False`, we import all the loader function on start.
+
+* `WDOC_MOD_FAISS_SCORE_FN`, default `True`
+    * If True, modify on the fly the FAISS vectorstores to change their scoring function to go from 0 to 1 instead of -1 to 1. This was  inspired by [this langchain issue where users claim the default scoring function is wrong](https://github.com/langchain-ai/langchain/issues/17333)
+
+* `WDOC_FAISS_COMPRESSION`, default `True`
+    * If True, zlib compression is applied around the pickling stage (=save_local/load_local) of the faiss index. Disable this if you want to use your faiss indexes with other softwares without using wdoc's custom classes.
+    If False, `WDOC_FAISS_BINARY` must also be `False`.
+    Note that you can switch value between run, as the uncompressed loading is used as fallback.
+
+* `WDOC_FAISS_BINARY`, default `False`
+    * If True, use a custom langchain vectorstore mimicking [FAISS](https://python.langchain.com/api_reference/_modules/langchain_community/vectorstores/faiss.html#FAISS) but using [binary embeddings](https://simonwillison.net/2024/Mar/26/binary-vector-search/), resulting in a 32x compression ratio and faster search hurting performance too much.
+    Note that binary indexes of FAISS [only support embeddings with dimensions multiple of 8](https://github.com/facebookresearch/faiss/wiki/Binary-indexes)
+    so if that happens we add null dimensions.
+    Note that if you switch this value between the index creation and index usage, you'll probably encounter errors and should rather set it once
+    then recreate your vectorstores.
+
+
+* `WDOC_LLM_MAX_CONCURRENCY`, default `1`
+    * Set the max_concurrency limit to give langchain. If debug is used, it is overriden and set to 1.
+    Must be an int.
+
+* `WDOC_LLM_REQUEST_TIMEOUT`, default `600`
+    * Sets the timeout in seconds for requests made to the LLM. This helps prevent indefinite hangs if the LLM provider is unresponsive. For example with ollama.
+
+* `WDOC_MAX_CHUNK_SIZE`, default `32_000`
+    * When splitting large text into chunks, `wdoc` infers the maximum context size from litellm's models metadata.
+    The maximum chunk size is capped by this value, as the maximum advertised context length is usually optimistic
+    and is often at the cost of prompt adherence.
+    Note that the chunk size inferred for query is not the same as for summary as we need  a much better prompt adherence
+    for the latter.
+    This can also be used to avoid chunking when querying a text if you want the LLM to have the entier text as context instead of chunking.
+
+* `WDOC_MAX_EMBED_CONTEXT`, default: `7_000`
+    * This variable sets the maximum token_size for document chunks when the task is `query` or `search`.
+    This is necessary because some large language models (LLMs) might have a larger context window than their corresponding embedding models.
+    The actual maximum chunk size will be the minimum of `WDOC_MAX_CHUNK_SIZE` and `WDOC_MAX_EMBED_CONTEXT`.
+
+* `WDOC_SEMANTIC_BATCH_MAX_TOKEN_SIZE`, default: `2000`
+    * Token size considered maximum for a single batch when doing semantic batching. The tokenizer used is the one from `gpt-4o-mini` as we don't have access to most models' tokenizers.
+    Each batch contains at least two intermediate answers so it's not an absolute limitation but increasing it should
+    reduce the cost of the "combine intermediate answers" step when querying.
+
+* `WDOC_DEFAULT_MODEL`, default: `"openrouter/google/gemini-2.5-pro"`
+    * Default strong LLM to use. This is the strongest model, it will be used to answer the query about each document,
+    combine those answers. It can also be used by some retrievers etc.
+
+* `WDOC_DEFAULT_QUERY_EVAL_MODEL`, default: `"openrouter/google/gemini-2.5-flash"`
+    * Default small LLM to use. It will be used to evaluate wether each document is relevant to the query or not.
+
+* `WDOC_DEFAULT_EMBED_MODEL`, default: `"openai/text-embedding-3-small"`
+    * Default model to use for embeddings.
+
+* `WDOC_DEFAULT_EMBED_DIMENSION`, default: `none`
+    * Default number of dimension to ask from the embeddings provider.
+
+* `WDOC_EMBED_TESTING`, default: `True`
+    * If False, will skip the test of the embeddings model on simple sentences to find out if we loaded everything correctly.
+
+* `WDOC_DISABLE_EMBEDDINGS_CACHE`, default: `False`
+    * If True, bypasses the caching mechanism for embeddings and uses the embeddings model directly. This can be useful for debugging or when you want to ensure fresh embeddings are generated for each document.
+    * Note that disabling the cache only affects new queries, new documents, or during semantic batching. It will NOT affect embeddings that are loaded via `load_embeds_from`, as those embeddings are already pre-computed and stored.
+
+* `WDOC_LANGFUSE_PUBLIC_KEY`, default: `None`
+    * If present, will replace the env variable `LANGFUSE_PUBLIC_KEY`.
+
+* `WDOC_LANGFUSE_SECRET_KEY`, default: `None`
+    * If present, will replace the env variable `LANGFUSE_SECRET_KEY`.
+
+* `WDOC_LANGFUSE_HOST`, default: `None`
+    * If present, will replace the env variable `LANGFUSE_HOST`.
+
+* `WDOC_LITELLM_TAGS`, default: `None`
+    * If a comma separated list of string: they will be put as `tags` in the litellm LLM request via the ChatLiteLLM object.
+
+* `WDOC_LITELLM_USER`, default: `wdoc_llm`
+    * Put as `user` argument when creating ChatLiteLLM object that talks to LLMs.
+
+* `WDOC_CONTINUE_ON_INVALID_EVAL`, default: `True`
+    * If True, instead of raising an `InvalidDocEvaluationByLLMEval` exception when an eval LLM returns output that can't be parsed,
+    the system will print the error message in red and return "5" as the evaluation score. This allows the process to continue
+    despite evaluation parsing failures.
+    * If False, the system will raise the exception as normal, which typically causes the process to terminate.
+
+* `WDOC_INTERMEDIATE_ANSWER_MAX_TOKENS`, default: `4000`
+    * Sets the maximum number of tokens allowed for each intermediate answer when querying documents. 
+    This controls how much content the LLM generates for each document before these answers are combined 
+    into the final response. Lower values may reduce costs but might lose important details, 
+    while higher values allow for more comprehensive individual document analysis.
+
+* `WDOC_WHISPER_PARALLEL_SPLITS`, default: `True`
+    * If True, when audio files need to be split for whisper transcription (due to size limits), the splits will be processed in parallel using joblib. 
+    This can significantly speed up transcription of large audio files when using remote whisper services.
+    * If False, audio splits will be processed sequentially. It is recommended to set this to False when using a local whisper instance 
+    to avoid overwhelming the local system with concurrent requests.
+
+* `WDOC_WHISPER_ENDPOINT`, default: `""`
+    * If provided, sets a custom API endpoint for Whisper transcription services. This allows you to use local Whisper instances 
+    or alternative Whisper-compatible services instead of OpenAI's default endpoint.
+    * When empty, uses the default OpenAI Whisper endpoint.
+
+* `WDOC_WHISPER_API_KEY`, default: `""`
+    * If provided, sets a custom API key for Whisper transcription services. This is useful when using alternative 
+    Whisper-compatible services that require their own authentication.
+    * When empty, uses the default OPENAI_API_KEY environment variable.
+
+* `WDOC_WHISPER_MODEL`, default: `"whisper-1"`
+    * Specifies which Whisper model to use for audio transcription. This can be any model supported by your Whisper endpoint.
+    * Common values include "whisper-1" for OpenAI's service, or model names like "base", "small", "medium", "large" for local instances.
+
+* `WDOC_APPLY_ASYNCIO_PATCH`, default: `False`
+    * If True, applies the `nest_asyncio` patch to fix the `Event loop closed` error that can occur with Ollama and
+    other async-based LLM providers. Set to False if you're experiencing issues with asyncio or if you're
+    handling asyncio patching elsewhere in your application.
+    See https://github.com/BerriAI/litellm/pull/7625/files
