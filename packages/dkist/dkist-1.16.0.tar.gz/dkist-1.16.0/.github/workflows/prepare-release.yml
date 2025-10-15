@@ -1,0 +1,147 @@
+name: Prepare release
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (without leading 'v')"
+        required: true
+        type: string
+      release_branch:
+        description: "Release branch name"
+        required: true
+        type: string
+        default: "main"
+      pre_release:
+        description: "Pre-release? (Don't render changelog)"
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pre_release_tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate input
+        run: |
+          if [[ ${{ inputs.version }} = v* ]]
+          then
+            echo "::error title=Invalid Version::Invalid version number given"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          lfs: true
+          ref: "${{ inputs.release_branch }}"
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+          git config --global user.name "${{ github.actor }}"
+
+      - name: Install dkist
+        run: |
+          python -m pip install .
+
+      - name: Update attrs
+        run: |
+          python -c "from dkist.net.attrs_values import attempt_local_update; attempt_local_update(user_file='./dkist/data/api_search_values.json', silence_net_errors=False)"
+
+      - name: Commit Attrs
+        run: |
+          git update-index --refresh || true
+          git diff-index --quiet HEAD -- || git commit -m "Update attrs values before release" dkist/data/api_search_values.json
+
+      - name: Install towncrier
+        run: python -m pip install --upgrade towncrier pre-commit
+
+      - name: Run towncrier in draft to capture the output
+        run: towncrier build --draft --version ${{ inputs.version }} --yes > release-changelog.rst
+
+      - name: Convert to markdown with pandoc
+        uses: docker://pandoc/core:2.9
+        with:
+          args: >-
+            --wrap=none
+            -t markdown_strict
+            --output=release-changelog.md
+            release-changelog.rst
+
+      - name: Capture Markdown Changelog
+        id: markdown-changelog
+        run: |
+          {
+            echo 'content<<EOF'
+            cat release-changelog.md
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup Temporary Changelog Files
+        run: rm release-changelog.md release-changelog.rst
+
+      - name: Debug md changelog
+        run: |
+          echo "${{ steps.markdown-changelog.outputs.content }}"
+
+      - name: Run towncrier
+        if: ${{ ! inputs.pre_release }}
+        run: |
+          towncrier build --version ${{ inputs.version }} --yes
+
+      - name: Run pre-commit
+        run: |
+          git add .
+          pre-commit run || true
+          git add .
+
+      - name: Commit Changelog
+        run: |
+          git diff-index --quiet HEAD -- || git commit -m "Render changelog for v${{ inputs.version }}"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: "prepare-v${{ inputs.version }}"
+          title: 'Prepare for release of v${{ inputs.version }}'
+          body: |
+            *This pull request will need to be closed and then re-opened to trigger the CI*
+
+            This PR renders the changelog and updates the JSON attrs before release of v${{ inputs.version }}.
+
+            A draft release has been made with the changelog, release it after merge to trigger the release.
+          labels: |
+            No Changelog Entry Needed
+            Run downstream CI
+
+      - name: Create draft GitHub Release
+        uses: actions/github-script@v8
+        id: create-release
+        env:
+            RELEASE_BODY: "${{ steps.markdown-changelog.outputs.content }}"
+        with:
+          script: |
+            const { RELEASE_BODY } = process.env
+            return await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: "v${{ inputs.version }}",
+              name: "v${{ inputs.version }}",
+              body: `${RELEASE_BODY}`,
+              draft: true,
+              prerelease: ${{ inputs.pre_release }}
+            });

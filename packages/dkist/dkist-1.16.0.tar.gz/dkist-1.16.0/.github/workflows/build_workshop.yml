@@ -1,0 +1,69 @@
+name: Build Workshop Repo
+
+on:
+  push:
+    branches:
+      - "main"
+  # Allow manual runs through the web UI
+  workflow_dispatch:
+  # Push to the main branch of the workshop repo on release
+  release:
+    types: [published]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_workshop:
+    runs-on: ubuntu-latest
+    steps:
+      # Make sure the branch name logic handles workflow_dispatch
+      - name: Branch name for releases
+        if: ${{ startsWith(github.ref_name, 'v') }}
+        run: echo 'BRANCHNAME=stable' >> "$GITHUB_ENV"
+
+      - name: Branch name for not releases
+        if: ${{ !startsWith(github.ref_name, 'v') }}
+        run: echo 'BRANCHNAME=latest' >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+          git config --global user.name "${{ github.actor }}"
+
+      - name: Install pipx
+        run: pip install -U pipx
+
+      - name: Clone workshop repository
+        uses: actions/checkout@v5
+        with:
+          repository: 'DKISTDC/DKIST-Workshop'
+          fetch-depth: 0
+          path: 'workshop'
+          token: '${{ secrets.WORKSHOP_DEPLOY_TOKEN }}'
+          ref: '${{ env.BRANCHNAME }}'
+
+      - name: Purge all files
+        run: |
+          rm -r workshop/*
+          git -C workshop checkout README.md
+
+      - name: Run pipx
+        run: pipx run ./tools/build_workshop_materials.py
+
+      - name: Commit and Push
+        run: |
+          cd workshop
+          git add .
+          git commit -m "Update notebooks from user tools repo"
+          git push
