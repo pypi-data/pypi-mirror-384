@@ -1,0 +1,63 @@
+diff -r fb9a0c2a0d1b rust/hg-core/Cargo.toml
+--- a/rust/hg-core/Cargo.toml	Mon Aug 04 18:23:44 2025 +0200
++++ b/rust/hg-core/Cargo.toml	Mon Oct 06 17:30:39 2025 +0200
+@@ -5,9 +5,6 @@
+ description = "Mercurial pure Rust core library, with no assumption on Python bindings (FFI)"
+ edition = "2021"
+ 
+-[lints]
+-workspace = true
+-
+ [lib]
+ name = "hg"
+ 
+diff -r fb9a0c2a0d1b rust/hg-core/src/lock.rs
+--- a/rust/hg-core/src/lock.rs	Mon Aug 04 18:23:44 2025 +0200
++++ b/rust/hg-core/src/lock.rs	Mon Oct 06 17:30:39 2025 +0200
+@@ -9,7 +9,7 @@
+ use crate::vfs::Vfs;
+ use crate::vfs::VfsImpl;
+ 
+-#[derive(derive_more::From)]
++#[derive(Debug, derive_more::From)]
+ pub enum LockError {
+     AlreadyHeld,
+     #[from]
+diff -r fb9a0c2a0d1b rust/hg-core/src/requirements.rs
+--- a/rust/hg-core/src/requirements.rs	Mon Aug 04 18:23:44 2025 +0200
++++ b/rust/hg-core/src/requirements.rs	Mon Oct 06 17:30:39 2025 +0200
+@@ -108,6 +108,7 @@
+     GENERALDELTA_REQUIREMENT,
+     SHARED_REQUIREMENT,
+     SHARESAFE_REQUIREMENT,
++    LARGEFILES_REQUIREMENT,
+     SPARSEREVLOG_REQUIREMENT,
+     DELTA_INFO_REQUIREMENT,
+     RELATIVE_SHARED_REQUIREMENT,
+@@ -218,6 +219,14 @@
+ #[allow(unused)]
+ pub const RELATIVE_SHARED_REQUIREMENT: &str = "relshared";
+ 
++/// Denotes that current repository contains files managed with the
++/// `largefiles` extension. In the context of hg-core it is not a promise
++/// that largefiles are implemented in Rust, rather that they will not harm
++/// and that downstream code such as `RHGitaly are expected to do the right
++/// thing, even if that means fallbacking to a Python implementation.
++#[allow(unused)]
++pub const LARGEFILES_REQUIREMENT: &str = "largefiles";
++
+ /// A repository with share implemented safely. The repository has different
+ /// store and working copy requirements i.e. both `.hg/requires` and
+ /// `.hg/store/requires` are present.
+diff -r fb9a0c2a0d1b rust/hg-core/src/revlog/manifest.rs
+--- a/rust/hg-core/src/revlog/manifest.rs	Mon Aug 04 18:23:44 2025 +0200
++++ b/rust/hg-core/src/revlog/manifest.rs	Mon Oct 06 17:30:39 2025 +0200
+@@ -278,7 +278,7 @@
+ 
+ /// Represents the flags of a given [`ManifestEntry`].
+ #[derive(Copy, Clone, Debug, PartialEq)]
+-pub struct ManifestFlags(Option<NonZeroU8>);
++pub struct ManifestFlags(pub Option<NonZeroU8>);
+ 
+ impl ManifestFlags {
+     pub fn new_empty() -> Self {

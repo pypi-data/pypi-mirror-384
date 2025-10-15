@@ -1,0 +1,364 @@
+syntax = "proto3";
+
+package hgitaly;
+
+import "lint.proto";
+import "shared.proto";
+
+service MercurialRepositoryService {
+
+  // Will back Rails method `hg_create_repository`,
+  // currently implemented on `Gitlab::Mercurial::HgGitRepository`
+  // Together with `RepositoryService.CreateRepository` (see hgitaly!64)
+  rpc InitConfig(InitConfigRequest) returns (InitConfigResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // Will back Rails method `hg_config_item_bool?`  currently
+  // implemented on `Gitlab::Mercurial::HgGitRepository`
+  rpc GetConfigItem(GetConfigItemRequest) returns (GetConfigItemResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+  /// Recover after abandoned transaction
+  ///
+  /// Equivalent of `hg recover`
+  rpc Recover(RecoverRequest) returns (RecoverResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR  // abandoned transaction are not inherently propagated
+    };
+  }
+
+  /// Optimize repository
+  ///
+  /// Recompute stuff, switch to more efficient caches and compression, etc.
+  rpc Optimize(OptimizeRequest) returns (OptimizeResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR // playing safe, but the end result is not logically a mutation
+    };
+  }
+
+  /// Reset caches utility
+  rpc ResetCaches(ResetCachesRequest) returns (ResetCachesResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR // playing safe, but the end result is not logically a mutation
+    };
+  }
+
+  /// Generic run of `hg` on the repository
+  ///
+  /// To be used when there is no well-specified rpc for the intended action
+  /// and it would be too ad-hoc to make one (e.g., run `debugrepairsomething`).
+  ///
+  /// This is not meant to return the subprocess stdout as bytes lines and is not suited
+  /// if is expected to be purely binary content (in which EOL characters have no special
+  /// meaning). In that case, making an ad-hoc call is the preferred way to go.
+  rpc HgCall(HgCallRequest) returns (stream HgCallResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+
+  //
+  // Managed configuration methods.
+  //
+
+  // These are about the part of the repository-local configuration that is
+  // entirely managed by Heptapod
+  // (implemented as of this writing with the separate `.hg/hgrc.managed` file)
+
+  // Will back Rails methods `get_hgrc` and `get_hg_heptapod_config` currently
+  // implemented on `Gitlab::Mercurial::HgGitRepository`
+  rpc GetManagedConfig(GetManagedConfigRequest) returns (GetManagedConfigResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+  // Will back Rails methods `set_hgrc` currently implemented on
+  // `Gitlab::Mercurial::HgGitRepository` (but will be more restrictive,
+  // handling a closed list of sections and items, which is currently
+  // implemented by the upper layers of the Rails application).
+  rpc SetManagedConfig(SetManagedConfigRequest) returns (SetManagedConfigResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  /// Will back Rails method `hg_push` (has never been implemented with a
+  /// subprocess)
+  ///
+  /// Main use-case is push mirroring, as in upstream's
+  /// `Remote.UpdateRemoteMirror`. A difference with the latter, that we can
+  /// accept for now, is the streaming request of `UpdateRemoteMirror`,
+  /// which is meant to pass very long lists of branch patterns in
+  /// `only_branches_matching`.
+  rpc Push(PushRequest) returns (PushResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR  // because of phases
+    };
+  }
+
+  /// Pull from some remote repo.
+  ///
+  /// Not very different from RepositoryService.FetchRemote, but we'll avoid
+  /// a few Git-specific concepts.
+  rpc Pull(PullRequest) returns (PullResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  /// General tidying and optimization for this repository
+  rpc Housekeeping(HousekeepingRequest) returns (HousekeepingResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+}
+
+message InitConfigRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  string namespace_path = 2;
+}
+
+message InitConfigResponse {}
+
+// Represent values of the `[heptapod]` Mercurial configuration section
+//
+// All fields are optional because this message can be use in
+// write requests (absence meaning not to write anything about the
+// given field) or a project-local HGRC file (absence meaning that default
+// and inherited value apply, which is not the same as forcing the same value)
+message HeptapodConfigSection {
+  enum AutoPublish {
+    WITHOUT_TOPIC = 0;
+    NOTHING = 1;
+    ALL = 2;
+  }
+  enum CloneBundles {
+    DISABLED = 0;
+    EXPLICIT = 1;
+    ON_CHANGE = 2;
+  }
+  optional bool allow_multiple_heads = 2;
+  optional bool allow_bookmarks = 3;
+  optional AutoPublish auto_publish = 4;
+  optional CloneBundles clone_bundles = 5;
+};
+
+
+message GetManagedConfigRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  // if `local` is true, then instance-wide configuration is ignored
+  // and some fields can be absent from the response, indicating that
+  // default or inherited values would apply.
+  bool local = 2;
+}
+
+// We chose to provide a typed field for all managed config items.
+// Drawback: we will need a protocol change each time we introduce a new
+// managed setting (which has been very infrequent in Heptapod history)
+//
+// Another option would be to return a generic mapping.
+// Drawback: type conversion will have to be handled client-side, mostly
+// duplicating the rules already provided by Mercurial, with less comfortable
+// development contexts (at least for the current Heptapod team) than HGitaly.
+// This is of course what `HgGitRepository#get_hg_heptapod_config` already
+// does, but it's always been thought of as a temporary evil and it's poorly
+// tested.
+message GetManagedConfigResponse {
+  bool inherit = 1;  // whether this Project inherits Group-level config
+  HeptapodConfigSection heptapod = 2;
+}
+
+message SetManagedConfigRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  optional bool inherit = 2;
+  HeptapodConfigSection heptapod = 3;
+  // With `remove_items`, the caller supplies a list of configuration items
+  // to be removed, hence letting the default or inherited value apply.
+  // If an item in listed in `remove_items` and nevertheless set in `heptapod`,
+  // it is removed.
+  repeated string remove_items = 4;
+  // The `by_line` is the line to set to account for the changed
+  // typically something like `changed by user xyz on 2023-01-01`
+  string by_line = 5;
+}
+
+message SetManagedConfigResponse {}
+
+// Of course, to be completed, but these are the two cases
+// currently in use
+enum ConfigItemType {
+  STRING = 0;
+  BOOL = 1;
+}
+
+message GetConfigItemRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  ConfigItemType as_type = 2;
+  // `section` is as in mercurial.ui.ui.config()
+  // In theory it could be arbitrary bytes, but that would be a pain
+  // on the client side as well and in practice, all config items we
+  // know of in Mercurial core and popular extensions are ASCII.
+  string section = 3;
+  // `name` is as in mercurial.ui.ui.config(). In particular, it
+  // can include dots.
+  // same remark as for `section` about bytes.
+  string name = 4;
+}
+
+message GetConfigItemResponse {
+  oneof value {
+    string as_string = 1;
+    bool as_bool = 2;
+  }
+}
+
+message RecoverRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+}
+
+message RecoverResponse {
+  bool not_needed = 1;
+}
+
+message OptimizeRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+}
+
+message OptimizeResponse {
+}
+
+message ResetCachesRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+
+ enum Cache {
+   TAGS = 0;
+ }
+ repeated Cache caches = 2;
+}
+
+message ResetCachesResponse {
+}
+
+message MercurialPeer {
+   string url = 1;
+
+  // ssh_key is private SSH key used to perform the push.
+  // It is encoded like a private key file.
+  // Optional.
+  string ssh_key = 5;
+
+  // ssh_known_hosts is used for strick host key checking, with same format as
+  // the content of the OpenSSH known_hosts file.
+  // Required when using SSH.
+  string ssh_known_hosts = 6;
+
+  // ssh_remote_command is the path on the remote filesystem of the
+  // `hg` executable. Like any path, it could be arbitraty bytes, even though
+  // it will be ASCII most of the times.
+  bytes ssh_remote_command = 7;
+}
+
+message PushRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+
+  MercurialPeer remote_peer = 2;
+  // a list of patterns, same as in RemoteService.UpdateRemoteMirrorRequest
+  repeated bytes only_gitlab_branches_matching = 3;
+  bool include_drafts = 4;
+}
+
+message PushResponse {
+  bool new_changesets = 1;  // TODO perhaps internal call can give better details
+}
+
+/// The current use case for the `Pull` rpc is updating remote mirrors
+/// (only caller in `app/` part of Rails).
+///
+/// As `RemoteMirror.update_repository` uses the `hg_call` based pull
+/// with `nil` user and `force_system_user=true` (translates as `USER` environment
+/// variable not set, hence no call of internal Rails API for authorization), we don't
+/// need to have a user attribute.
+message PullRequest {
+ .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+
+  MercurialPeer remote_peer = 2;
+
+  reserved 3;
+  reserved "gitlab_branches";
+
+  .gitaly.User user = 4;
+  repeated bytes mercurial_revisions = 5;
+
+}
+
+message PullResponse {
+  bool new_changesets = 1;
+}
+
+message HgCallRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  .gitaly.User user = 2;
+  repeated bytes args = 3;
+}
+
+message HgCallResponse {
+   int32 exit_code = 1;  // only on the *last* message
+   repeated bytes stdout = 2;
+}
+
+/// Specify the tasks of housekeeping
+///
+/// The task are run in no particular order.
+///
+/// Task failures do not return an error status, so that they do not
+/// prevent running the other tasks. Instead, task errors are logged.
+message HousekeepingRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+
+  /// Always fail (for testing coverage purposes)
+  bool fail = 2;
+
+  /// Run recover (useful in case there are interrupted transactions)
+  bool recover = 3;
+
+  /// Remove old working directories older than the given seconds
+  /// and perform general tidying
+  ///
+  /// If a working directory has not been used for long, it is assumed
+  /// that it was created for an exceptional concurrency situation and
+  /// therefore can be disposed of. This prevents eternal growth of the
+  /// working directories.
+  ///
+  /// Also takes care to cleanup various inconsistencies (usually due to
+  /// bugs such as hgitaly#226)
+  ///
+  /// a value of 0 means not to run the cleanup
+  uint32 working_directories_age_threshold_seconds = 4;
+
+  bool working_directories_remove_unlisted = 5;
+
+}
+
+/// Unless otherwise state, fields expresses whether the subtask was successful
+///
+/// Meaningful only if corresponding task is requested, otherwise the default
+/// value is applied (`false` in case of booleans)
+message HousekeepingResponse {
+  /// true if recover was run
+  bool recover_run = 1;
+
+  /// true if there was an interrupted transaction to recover
+  bool recovered_interrupted_transaction = 2;
+
+  bool working_directories_gc = 3;
+  bool working_directories_remove_unlisted = 4;
+}

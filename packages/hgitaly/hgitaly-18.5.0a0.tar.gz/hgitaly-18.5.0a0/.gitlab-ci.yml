@@ -1,0 +1,154 @@
+stages:
+  - main
+  - compat
+  - packaging
+
+variables:
+  # has to be "stable" in the stable branch, and actually we should rename
+  # "latest" as "default": this would let us just use $CI_COMMIT_HG_BRANCH
+  BASE_IMAGES_TAG: $CI_COMMIT_HG_BRANCH
+  BASE_IMAGES_COLLECTION: registry.heptapod.net:443/heptapod/ci-images
+  BASE_IMAGES_MERCURIAL: $BASE_IMAGES_COLLECTION/mercurial
+  MERCURIAL_SHARE_FROM: /opt/mercurial/hg
+  CARGO_HOME: ${CI_PROJECT_DIR}/cargo_home
+  RHGITALY_EXECUTABLE: rust/target/debug/rhgitaly
+  PYTHON: /opt/heptapod/bin/python
+  PYTEST: /opt/heptapod/bin/pytest
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: always
+    # in practice, we're interested in MR events and occasional runs
+    # from the web.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: never
+
+check-sdist:
+  stage: compat
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^branch\/(default,stable)$/'
+    - when: never
+  image: $BASE_IMAGES_MERCURIAL/hg-current:${CI_COMMIT_HG_BRANCH}
+  needs: []
+  script:
+    - rm -rf dist
+    - python3 setup.py sdist
+    # most requirements will be preinstalled in the base image (taken from the
+    # default branch of HGitaly at time of image build), but they will be
+    # reexamined and any change will be tested.
+    - $PYTHON -m pip install dist/*.tar.gz
+
+# used to mark job that should run for the 'default' branch of HGitaly only
+.only_hgitaly_default:
+  rules:
+    - if: '$CI_COMMIT_HG_BRANCH == "default"'
+    - when: never
+
+.pytests:
+  before_script:
+    # usually the base image should have all that's needed
+    # but in case of changes in test dependencies, we may still
+    # need to install/update something.
+    - $PYTHON -m pip install -r test-requirements.txt
+    - $PYTHON -m pip freeze
+    - ./lint
+    - mkdir -p /run/sshd
+  script:
+    - ./run-all-tests
+
+.cargo-cache:
+  cache:
+    key: cargo-${CI_COMMIT_HG_BRANCH}
+    paths:
+      # not caching bin/ nor .crates files as these are for installed binaries
+      # and should be treated as artifacts instead
+      - ${CARGO_HOME}/registry/index/
+      - ${CARGO_HOME}/registry/cache/
+      - ${CARGO_HOME}/git/db/
+
+tests-rust:
+  stage: main
+  image: ${BASE_IMAGES_COLLECTION}/hgitaly-rust:${CI_COMMIT_HG_BRANCH}
+  extends: .cargo-cache
+  variables:
+    CI_CLEVER_CLOUD_FLAVOR: XL
+  cache:
+    policy: pull-push
+  script:
+    - make -C rust dev-dependencies
+    - rustc --version
+    - cargo build --locked --manifest-path rust/Cargo.toml --features rust-embed/debug-embed
+    - cargo test --manifest-path rust/Cargo.toml
+    - rust/lint
+  artifacts:
+    expire_in: 1d
+    paths:
+      - ${RHGITALY_EXECUTABLE}
+
+tests-hg-current:
+  extends:
+    - .pytests
+  stage: main
+  image: ${BASE_IMAGES_MERCURIAL}/hg-current:${BASE_IMAGES_TAG}
+
+tests-py3.9:
+  extends:
+    - .pytests
+  stage: compat
+  image: ${BASE_IMAGES_MERCURIAL}/hg-current:${BASE_IMAGES_TAG}-py3.9
+
+tests-hg-stable:
+  extends:
+    - .pytests
+    - .only_hgitaly_default
+  allow_failure: true
+  stage: compat
+  image: ${BASE_IMAGES_MERCURIAL}/hg-stable:${BASE_IMAGES_TAG}
+
+tests-hg-default:
+  extends:
+    - .pytests
+    - .only_hgitaly_default
+  allow_failure: true
+  stage: compat
+  image: ${BASE_IMAGES_MERCURIAL}/hg-default:${BASE_IMAGES_TAG}
+
+
+gitaly-comparison:
+  extends:
+    - .pytests
+    - .cargo-cache
+  cache:
+    policy: pull
+  stage: compat
+  image: ${BASE_IMAGES_COLLECTION}/heptapod-gitaly:${CI_COMMIT_HG_BRANCH}
+  variables:
+    GITALY_INSTALL_DIR: /opt/gitlab/gitaly
+    PYTHON: python3.9
+    PYTEST: pytest
+  script:
+    - echo "Full test run with Gitaly and RHGitaly Comparison tests"
+    - ./run-all-tests
+
+
+upload:
+  image: ${BASE_IMAGES_COLLECTION}/hgitaly-rust:${CI_COMMIT_HG_BRANCH}
+  stage: packaging
+  extends:
+    - .cargo-cache
+  cache:
+    policy: pull
+  needs: []
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "web" && $RHGITALY_UPLOAD'
+      when: always
+    - when: never
+  script:
+    - make -C rust ci-cd-upload

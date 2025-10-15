@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package hgitaly;
+
+import "errors.proto";
+import "lint.proto";
+import "shared.proto";
+import "google/protobuf/timestamp.proto";
+
+import "operations.proto";
+
+service MercurialOperationsService {
+
+  // Provide all information for a possible merge
+  //
+  // Will be used in mergeability checks and last-minute checks if needed.
+  rpc MergeAnalysis(MergeAnalysisRequest) returns (MergeAnalysisResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+  // Invalidate cache for MergeAnalysis
+  //
+  // Will be used in mergeability checks and last-minute checks if needed.
+  rpc InvalidateMergeAnalysis(InvalidateMergeAnalysisRequest) returns (InvalidateMergeAnalysisResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+  // Publish a changeset
+  //
+  // As any publication in Mercurial, it also publishes all ancestors that
+  // were not already public.
+  rpc PublishChangeset(PublishChangesetRequest) returns (PublishChangesetResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // Censor a changeset
+  //
+  // Equivalent of `hg censor`
+  rpc Censor(CensorRequest) returns (CensorResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // MergeBranch plays the same role as OperationService.UserMergeBranch with the following differences:
+  //
+  // - It is not a 2-phase operation, hence not streaming
+  // - The Request message has a slighly different set of options
+  rpc MergeBranch(MergeBranchRequest) returns (MergeBranchResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // Rebase plays the same role as OperationsService.UserRebaseConfirmable
+  rpc Rebase(RebaseRequest) returns (RebaseResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  // GetWorkingDirectory hands over a working directory, checked out to
+  // the wished changeset.
+  //
+  // The server manages a pool of working directories for efficient update.
+  // The client has exclusivity over the working directory it has been handed,
+  // and is expected to release it.
+  rpc GetWorkingDirectory(GetWorkingDirectoryRequest) returns (GetWorkingDirectoryResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR // because of roster file
+    };
+  }
+
+  // ReleaseWorkingDirectory allows the server to put a working directoy back
+  // in the pool for later reuse.
+  rpc ReleaseWorkingDirectory(ReleaseWorkingDirectoryRequest) returns (ReleaseWorkingDirectoryResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR // because of roster file
+    };
+  }
+}
+
+// Permissions enforced directly within Mercurial
+//
+// These ae coarser than GitLab internal API, yet necessary because, e.g,
+// publishing and moving branches are not always equivalent.
+enum MercurialPermissions {
+     READ = 0;
+     WRITE = 1;
+     PUBLISH = 2;
+}
+
+message MergeAnalysisRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  bytes source_revision = 2;
+  bytes target_revision = 3;
+  // Conflicts checks are expensive (involve using a temporary working
+  // directory) and are always skipped in fast-forward situations.
+  // However it is worthwile to avoid them if the merge is not
+  // a fast-forward and that is all the caller wants to know.
+  bool skip_conflicts_check = 4;
+}
+
+message MergeAnalysisResponse {
+  bool is_fast_forward = 1;
+  bool has_obsolete_changesets = 2;
+  bool has_unstable_changesets = 3;
+  // `has_conflicts` is evaluated unless
+  // (is_fast_forward OR has_obsolete_changesets OR has_instable changesets)
+  bool has_conflicts = 4;
+  bool target_is_public = 5;
+  // topic information is retrieved only for non-public changesets
+  // (standard vanishing property as in the Mercurial CLI by default)
+  string target_node_id = 6;
+  bytes target_branch = 7;
+  bytes target_topic = 8;
+  string source_node_id = 9;
+  bytes source_branch = 10;
+  bytes source_topic = 11;
+}
+
+message InvalidateMergeAnalysisRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+}
+
+message InvalidateMergeAnalysisResponse {
+  uint32 invalidated_count = 1;
+}
+
+message PublishChangesetRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+   // user to execute the action as. Also used to perform authentication and
+   // authorization via an external endpoint.
+   .gitaly.User user = 2;
+   MercurialPermissions hg_perms = 3;
+   bytes gitlab_revision = 4;
+}
+
+message PublishChangesetResponse {
+}
+
+message PublishChangesetError {
+  oneof error {
+    // gitlab_hook is set in case of error with hooks launched from py-heptapod
+    // notably PreReceive for permission denials.
+    .gitaly.CustomHookError gitlab_hook = 1;
+  }
+}
+
+// MergeBranchRequest should be the same as Gitaly's UserMergeBranchRequest, with the following differences
+//
+// - The `semi_linear` flag is Mercurial specific
+// - Not being a 2-phase, call, it does not have the `apply` flag
+// - It has `hg_perms`, like all potentially publishing calls
+message MergeBranchRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  .gitaly.User user = 2;
+  MercurialPermissions hg_perms = 3;
+  string commit_id = 4;
+  bytes branch = 5;
+  bytes message = 6;
+  google.protobuf.Timestamp timestamp = 7;
+  string expected_old_oid = 8;
+  bool semi_linear = 9;
+}
+
+message MergeBranchResponse {
+  .gitaly.OperationBranchUpdate branch_update = 1;
+}
+
+enum PreCheckUpdateError {
+  // should not be used, just there to avoid having a default error
+  NO_PROBLEM = 0;
+  NOT_FAST_FORWARD = 1;
+  OBSOLETE_CHANGESET = 2;
+  UNSTABLE_CHANGESET = 3;
+  NOT_A_TOPIC = 4;
+}
+
+message MergeBranchError {
+  oneof error {
+    // gitlab_hook is set in case of error with hooks launched from py-heptapod
+    // notably PreReceive for permission denials.
+    .gitaly.CustomHookError gitlab_hook = 1;
+    .gitaly.MergeConflictError conflict = 2;
+    .gitaly.ReferenceUpdateError reference_check = 3;
+    PreCheckUpdateError pre_check = 4;
+  }
+}
+
+message RebaseRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  .gitaly.User user = 2;
+  bytes source = 3; // the source GitLab branch
+  string source_head_sha = 4; // the Node ID of the source branch head, for consistency check
+  bytes destination = 5; // the GitLab revision on which to rebase
+}
+
+message RebaseResponse {
+  .gitaly.OperationBranchUpdate branch_update = 1;
+}
+
+message RebaseError {
+  oneof error {
+    // gitlab_hook is set in case of error with hooks launched from py-heptapod
+    // notably PreReceive for permission denials.
+    .gitaly.CustomHookError gitlab_hook = 1;
+    .gitaly.MergeConflictError conflict = 2;
+    .gitaly.ReferenceUpdateError reference_check = 3;
+    // TODO represent instability if possible
+    PreCheckUpdateError pre_check = 4;
+    .gitaly.ReferenceStateMismatchError ref_mismatch = 5;
+    .gitaly.ResolveRevisionError resolve_rev = 6;
+  }
+}
+
+message CensorRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  // user to execute the action as. Also used to perform authentication and
+  // authorization via an external endpoint.
+  .gitaly.User user = 2;
+  string changeset_node_id = 3;  // prefix not accepted
+  bytes file_path = 4;
+  bytes tombstone = 5;
+}
+
+message CensorResponse {
+}
+
+message GetWorkingDirectoryRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  string client_id = 2;  // persistent identifier
+  // incarnation_id is a volatile identifier whose change means that the
+  // client has restarted, hence that any lingering working directory
+  // reservation should be ignored (typically the client was killed abruptly).
+  string incarnation_id = 3;
+  bytes revision = 4;
+}
+
+message GetWorkingDirectoryResponse {
+  uint32 working_directory_id = 1;
+  // path relative to the repository root. In some cases, it can
+  // be used by clients instead of the (main) repository relative path
+  string relative_path = 2;
+}
+
+message ReleaseWorkingDirectoryRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  string client_id = 2;  // persistent identifier
+  // incarnation_id is a volatile identifier whose change means that the
+  // client has restarted, hence that any lingering working directory
+  // reservation should be ignored (typically the client was killed abruptly).
+  string incarnation_id = 3;
+  uint32 working_directory_id = 4;
+}
+
+message ReleaseWorkingDirectoryResponse {
+}

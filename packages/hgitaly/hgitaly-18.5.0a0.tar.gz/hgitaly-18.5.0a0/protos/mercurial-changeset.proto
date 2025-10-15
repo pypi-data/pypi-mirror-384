@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package hgitaly;
+
+import "google/protobuf/timestamp.proto";
+import "lint.proto";
+import "shared.proto";
+
+service MercurialChangesetService {
+
+  // ListMercurialChangesets returns fields from changesets specifyied by a revset.
+  //
+  // Only selected fields get returned.
+  rpc ListMercurialChangesets(ListMercurialChangesetsRequest) returns (stream ListMercurialChangesetsResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+}
+
+enum MercurialChangesetPhase {
+  PUBLIC = 0;
+  DRAFT = 1;
+  SECRET = 2;
+  ARCHIVED = 32;
+  INTERNAL = 96;
+}
+
+enum MercurialChangesetField {
+  // ALL is to be interpreted as "all currently implemented"
+  ALL = 0;
+
+  PARENT_IDS = 1;
+  TITLE = 2;
+  DESCRIPTION = 3;
+  AUTHOR = 4;
+  DATE = 5;
+  BRANCH = 6;
+  TOPIC = 7;
+  OBSOLETE = 8;
+  FQBN = 9;  // Fully Qualified Branch Name (hg-evolve≥11.1)
+  TOPIC_NAMESPACE = 10;
+  PHASE = 11;
+}
+
+enum MercurialRepositoryView {
+  VISIBLE = 0;  // Mercurial general default, what `hg.repository()` returns
+  UNFILTERED = 1;
+
+  // TODO add more: SERVED, future views based on topic namespaces etc.
+}
+
+message MercurialChangeset {
+  // ids is the hexadecimal representation of the Node ID (currently SHA-1)
+  string id = 1;
+  repeated string parent_ids = 2;
+
+  bytes title = 3;
+  bytes description = 4;
+  bytes author = 5;
+  google.protobuf.Timestamp date = 6;
+  bytes branch = 7;
+  bytes topic = 8;
+  bool obsolete = 9;
+  bytes fqbn = 10;
+  bytes topic_namespace = 11;
+  MercurialChangesetPhase phase = 12;
+}
+
+message ListMercurialChangesetsRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+
+  // Repository view, a.k.a filtering. Default value is `visible`.
+  MercurialRepositoryView view = 2;
+
+  // The revset specifying the changesets
+  bytes revset = 3;
+
+  // Fields to return. In many case, the Rails app will only need
+  // complementary information, because the full changeset information
+  // is retrieved elsewhere or simply not needed.
+  // Can be empty in which case only the changesets ids will be included
+  // in the response.
+  //
+  // Beware that booleans (such as `obsolete`) default to `false` and
+  // cannot be unset. Caller has to make sure they are requested if it
+  // they are accessed.
+  repeated MercurialChangesetField fields = 4;
+
+  // TODO pagination
+}
+
+message ListMercurialChangesetsResponse {
+  repeated MercurialChangeset changesets = 1;
+}

@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package hgitaly;
+
+import "lint.proto";
+import "repository.proto";
+import "shared.proto";
+
+// Methods working on auxiliary Git repositories
+//
+// The auxiliary Git repositories are mostly meant to support mirroring
+// to external Git services.
+// These are set aside so that Gitaly does not handle them.
+service MercurialAuxGitService {
+  rpc AuxGitCreateBundle(.gitaly.CreateBundleRequest) returns (stream .gitaly.CreateBundleResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+
+  rpc AuxGitCreateFromBundle(stream .gitaly.CreateRepositoryFromBundleRequest) returns (.gitaly.CreateRepositoryFromBundleResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  rpc AuxGitRepositorySize(.gitaly.RepositorySizeRequest) returns (.gitaly.RepositorySizeResponse) {
+    option (.gitaly.op_type) = {
+      op: MUTATOR
+    };
+  }
+
+  /// Resolve Mercurial commit ID from Git commit ID and conversely
+  rpc AuxGitCommitMapping(AuxGitCommitMappingRequest) returns (AuxGitCommitMappingResponse) {
+    option (.gitaly.op_type) = {
+      op: ACCESSOR
+    };
+  }
+}
+
+message AuxGitCommitMappingRequest {
+  .gitaly.Repository repository = 1 [(.gitaly.target_repository)=true];
+  repeated string ids = 2;
+  // if `true`, resolve Git commit IDs from Mercurial commit IDs
+  bool reverse = 3;
+}
+
+message AuxGitCommitMappingResponse {
+  // the mapped ids, in the same order as in the request, with empty
+  // values to indicate resolution misses.
+  repeated string ids = 2;
+}
+

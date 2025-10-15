@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+if [ -z "$1" ]; then
+    echo "usage: $0 HGITALY_VERSION";
+    exit 1
+fi
+
+HGITALY_VERSION=$1
+PREFIX=rhgitaly-${HGITALY_VERSION}
+
+if [ -z "$CI_COMMIT_TAG" ]; then
+    SUBDIR=public/intermediate
+else
+    SUBDIR=public
+fi
+cd `dirname $0`/../dist
+
+CI_SCRIPTS=$(realpath $(dirname $0))
+
+cd `dirname $0`/../dist
+for SUFFIX in .tgz _linux_amd64; do
+    FILENAME=${PREFIX}${SUFFIX}
+    FULL_PATH=`realpath $FILENAME`
+
+    echo "Generating SHA-256 checksum"
+    # using just FILENAME to avoid contextual path meaninless for downloaders
+    sha256sum ${FILENAME} > ${FILENAME}.sha256sum
+
+    if [ -n "$HEPTAPOD_PACKAGING_GPG_PRIVKEY" ]; then
+        ${CI_SCRIPTS}/heptapod-sign-package $HEPTAPOD_PACKAGING_GPG_PRIVKEY \
+                     ${FULL_PATH}
+    else
+        echo "Key not present, skipping GPG signature. "
+        echo "    This is normal on non-protected tags and branches"
+    fi
+
+    ${CI_SCRIPTS}/heptapod-sftp-push \
+        upload.heptapod.net \
+        ${HEPTAPOD_TARBALL_UPLOAD_KEY} \
+        ${FULL_PATH} \
+        ${SUBDIR}/rhgitaly
+done

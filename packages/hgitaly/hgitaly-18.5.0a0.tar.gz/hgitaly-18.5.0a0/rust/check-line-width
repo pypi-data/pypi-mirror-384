@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Check line length for all Rust source files in rhgitaly/
+
+Excludes any directory named `generated`
+"""
+import argparse
+import os
+import sys
+
+LINE_MAX_LENGTH = 100
+BASE_DIR = os.path.dirname(__file__)
+
+
+def check_file(path):
+    res = True
+    with open(path, 'r') as fobj:
+        for i, line in enumerate(fobj):
+            if line[-1] == '\n':
+                line = line[:-1]
+            if len(line) > LINE_MAX_LENGTH:
+                print("File %s: line %d is over %d long." % (
+                    path, i+1, LINE_MAX_LENGTH))
+                res = False
+    return res
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('path', help="The directory to check, relative to this "
+                    "script parent directory")
+
+cl_args = parser.parse_args()
+
+target = os.path.join(BASE_DIR, cl_args.path)
+
+ok = True
+for dirpath, dirnames, filenames in os.walk(target):
+    try:
+        # allowed with topdown=True (the default)
+        dirnames.remove('generated')
+    except ValueError:  # was not present
+        pass
+    for fname in filenames:
+        if fname.endswith('.rs') and not fname.startswith('.#'):
+            fpath = os.path.join(dirpath, fname)
+            ok = ok and check_file(fpath)
+
+if not ok:
+    sys.exit(1)

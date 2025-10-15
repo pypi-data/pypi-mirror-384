@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+PRIVKEY_FILE=$1
+ARTIFACT=$2
+# keyring and passphrase files
+# outside of build and in explicit volatile space for
+# - several protections to guarantee there won't be any persistence
+# - make snooping a bit harder
+KEYRING=/dev/shm/heptapod.gpg
+PASSPHRASE=/dev/shm/heptapod.pass
+
+touch $PASSPHRASE && chmod 600 $PASSPHRASE
+echo -n "$HEPTAPOD_PACKAGING_GPG_PASSPHRASE" >> $PASSPHRASE
+
+# .gnupg/ still needed for web-of-trust files and the like
+# note: install -d is idempotent
+install -m 700 -d $HOME/.gnupg
+
+echo "Importing GPG signing key"
+gpg --no-options --batch \
+    --no-default-keyring --keyring $KEYRING \
+    --no-secmem-warning \
+    --no-permission-warning \
+    --pinentry-mode loopback --passphrase-file $PASSPHRASE \
+    --import $PRIVKEY_FILE
+
+echo "Signing $ARTIFACT with GPG"
+gpg --no-options --batch \
+    --no-default-keyring --keyring $KEYRING \
+    --pinentry-mode loopback --passphrase-file $PASSPHRASE \
+    --armor --detach-sign $ARTIFACT
+
+rm -rf $PASSPHRASE $KEYRING $HOME/.gnupg

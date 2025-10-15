@@ -1,0 +1,31 @@
+#!/bin/sh
+
+# Simple script to push any artifact to some Heptapod SFTP server,
+# using the heptapod_known_hosts.ssh file
+
+set -eu
+
+SFTP_HOST=$1
+# This "key" is just a file name, content is set by file mode of CI variables
+HEPTAPOD_UPLOAD_KEY=$2
+ARTIFACT=$3
+TARGET_DIR=$4
+
+echo "Pushing ${ARTIFACT} to ${SFTP_HOST} via SFTP"
+
+KNOWN_HOSTS=$(realpath $(dirname $0)/heptapod_known_hosts.ssh)
+SSH_FLAGS="-o IdentitiesOnly=yes -o UserKnownHostsFile=${KNOWN_HOSTS}"
+
+if [ -n "$HEPTAPOD_UPLOAD_SSH_PORT" ]; then
+      SSH_FLAGS="$SSH_FLAGS -P $HEPTAPOD_UPLOAD_SSH_PORT"
+fi
+
+# TODO it would be nice of the runner to set restrictive permissions
+# this right at file creation time (perhaps based on a declarative option),
+# especially since there's no job filtering except based on environments
+chmod 600 ${HEPTAPOD_UPLOAD_KEY}
+# wildcard to include any checksum or signatures
+echo "put ${ARTIFACT}*" | sftp -b- \
+         ${SSH_FLAGS} \
+         -i ${HEPTAPOD_UPLOAD_KEY} \
+         ${HEPTAPOD_UPLOAD_SSH_USER}@${SFTP_HOST}:${HEPTAPOD_UPLOAD_SSH_USER}/${TARGET_DIR}

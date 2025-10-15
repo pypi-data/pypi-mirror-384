@@ -1,0 +1,34 @@
+#!/bin/sh
+
+set -eu
+
+cd `dirname $0`
+
+PROTOS_DIR=./protos
+STUBS_DIR=hgitaly/stub
+
+echo "Generating Python stubs"
+
+for PROTO in lint shared errors blob commit diff operations \
+        analysis ref repository server remote \
+        mercurial-aux-git \
+        mercurial-repository mercurial-changeset mercurial-operations; do
+    python -m grpc_tools.protoc \
+      -I${PROTOS_DIR} \
+      --python_out=${STUBS_DIR} \
+      --grpc_python_out=${STUBS_DIR} \
+      ${PROTOS_DIR}/${PROTO}.proto
+
+    MODULE=$(echo $PROTO | sed 's/-/_/g')
+
+    sed -E -i 's/^import ([[:alnum:]_]+_pb2)/from . import \1/g' \
+      ${STUBS_DIR}/${MODULE}_pb2.py \
+      ${STUBS_DIR}/${MODULE}_pb2_grpc.py
+
+done
+
+echo
+echo "Generating Ruby lib"
+
+cd ruby
+./generate-grpc-lib
