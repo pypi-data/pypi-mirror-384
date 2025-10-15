@@ -1,0 +1,152 @@
+- step:
+    name: Batch feature extraction
+    image: busybox
+    command:
+      - date
+    inputs:
+      - name: training-images
+      - name: training-labels
+- step:
+    name: Train model
+    image: busybox
+    # this sometimes gets stuck so we set a timeout
+    no-output-timeout: 6h
+    command:
+      - date
+    inputs:
+      - name: training-images
+      - name: training-labels
+- step:
+    name: Test model
+    image: busybox
+    command:
+      - date
+    inputs:
+      - name: model
+      - name: test-data
+- pipeline:
+    name: My little pipeline
+    nodes:
+      - name: batch1
+        type: execution
+        step: Batch feature extraction
+      - name: batch2
+        type: execution
+        step: Batch feature extraction
+      - name: train
+        type: execution
+        step: Train model
+    edges:
+      #  node.entity_type.entity_name    node.entity_type.entity_name
+      - [batch1.input.training-labels*, batch2.input.training-labels]
+      - [batch1.output.processed-images*, batch2.input.training-images]
+      - [batch1.parameter.aspect-ratio, batch2.parameter.aspect-ratio]
+      - [batch2.input.training-labels*, train.input.training-labels]
+      - [batch2.metadata.optimal_learning_rate, train.parameter.learning_rate]
+      - [batch2.output.processed-images*, train.input.training-images]
+    reuse-executions: true
+- pipeline:
+    name: My deployment pipeline
+    nodes:
+      - name: batch1
+        type: execution
+        step: Batch feature extraction
+      - name: train
+        type: execution
+        step: Train model
+      - name: deploy-predictor
+        type: deployment
+        deployment: MyDeployment
+        aliases:
+          - predictor-staging
+        endpoints:
+          - predict-digit
+      - name: deploy-no-presets
+        type: deployment
+        deployment: MyDeployment
+    edges:
+      #  node.entity_type.entity_name    node.entity_type.entity_name
+      - [batch1.input.training-labels*, train.input.training-labels]
+      - [batch1.metadata.optimal_learning_rate, train.parameter.learning_rate]
+      - [batch1.output.processed-images*, train.input.training-images]
+      - [train.output.model, deploy-predictor.file.predict-digit.model]
+- pipeline:
+    name: My medium pipeline
+    nodes:
+      - name: batch1
+        type: execution
+        step: Batch feature extraction
+      - name: batch2
+        type: execution
+        step: Batch feature extraction
+        override:
+          command: python batch_feature_extraction.py --minify
+      - name: train
+        type: execution
+        step: Train model
+        override:
+          inputs:
+            - name: training-images
+      - name: test
+        type: execution
+        step: Test model
+    edges:
+      #         node.entity_type.entity_name
+      - source: batch1.parameter.aspect-ratio
+        target: batch2.parameter.aspect-ratio
+      - source: batch1.output.processed-images*
+        target: batch2.input.training-images
+      - source: batch2.output.processed-images*
+        target: train.input.training-images
+      - source: batch2.metadata.optimal_learning_rate
+        target: train.parameter.learning_rate
+      - source: batch1.input.training-labels*
+        target: batch2.input.training-labels
+        configuration:
+          hello: world
+      - source: batch2.input.training-labels*
+        target: train.input.training-labels
+      - [train.output.model.pb, test.input.model]
+- pipeline:
+    name: Last action pipeline
+    nodes:
+      - name: train
+        type: execution
+        step: Train model
+        actions:
+          - when: node-complete
+            if: "metadata.accuracy < .8"
+            then: stop-pipeline
+      - name: validate
+        type: execution
+        step: Test model
+        actions:
+          - when: node-complete
+            then:
+              - noop
+              - noop
+              - noop
+          - when:
+              - node-starting
+              - node-complete
+            if: [a, b, c]
+            then: noop
+      - name: accuracy-error
+        type: execution
+        step: Test model
+        actions:
+          - when: node-complete
+            if: "metadata.accuracy <= .8"
+            then: error-pipeline
+    edges:
+      - [train.output.model, validate.input.model]
+
+- endpoint:
+    name: predict-digit
+    description: predict digits from image inputs ("file" parameter)
+    image: tensorflow/tensorflow:1.13.1-py3
+    wsgi: predict_wsgi:predict_wsgi
+    files:
+      - name: model
+        description: Model output file from TensorFlow
+        path: model.pb
