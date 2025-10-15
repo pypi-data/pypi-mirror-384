@@ -1,0 +1,58 @@
+# Ventrun
+
+Bootstrap your application and emit a Main event to ModuVent.
+
+## Overview
+
+Ventrun is a Python library and command-line tool that provides an event-driven framework for registering and executing main program entry points. Built on top of the [moduvent](https://github.com/Joxos/moduvent) event system, it automatically discovers and runs registered events from your project modules, making application initialization and execution more organized and maintainable.
+
+## Features
+
+- Automatic Module Discovery: Scans your project directory and automatically loads Python modules
+
+- Event-Driven Architecture: Register main entry points as events using a simple decorator
+
+- Dual Interface: Use as both a command-line tool and a Python library
+
+- Flexible Path Handling: Works with both absolute and relative paths, with current directory as default
+
+- Verbose Logging: Optional verbose output for debugging and monitoring
+
+## Installation
+
+```
+pip install ventrun
+```
+
+## Quick Start
+
+### As a Command-Line Tool
+
+```bash
+# Scan current directory
+ventrun
+
+# Scan specific project directory
+ventrun /path/to/your/project
+
+# Enable verbose output
+ventrun -v /path/to/your/project
+```
+
+### As a Python Library
+
+```python
+from moduvent import subscribe
+from ventrun import Main
+
+
+@subscribe(Main)
+def main(e):
+    print("Hello, world!")
+```
+
+For more information about `moduvent`, see the [moduvent documentation](https://github.com/Joxos/moduvent).
+
+## License
+
+MIT License
