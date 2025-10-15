@@ -1,0 +1,42 @@
+name: tests
+
+on: [push, workflow_call]
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      # https://github.com/actions/checkout
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: extractions/setup-just@v3
+
+      # https://github.com/actions/setup-python
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Dependencies
+        run: just setup
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Code Quality
+        run: just check
+
+      - name: Test with pytest
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_GITHUB_TOKEN }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+        run: just test
