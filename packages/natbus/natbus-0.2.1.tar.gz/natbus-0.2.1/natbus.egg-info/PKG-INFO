@@ -1,0 +1,174 @@
+Metadata-Version: 2.4
+Name: natbus
+Version: 0.2.1
+Summary: Minimal NATS JetStream client for internal services
+Author-email: Servicepod <admin@servicepod.net>
+License: MIT License
+        
+        Copyright (c) 2025 Servicepod
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the “Software”), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in
+        all copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+        THE SOFTWARE.
+Project-URL: Homepage, https://servicepod.net
+Project-URL: Source, https://servicepod.net
+Project-URL: Issues, https://servicepod.net
+Keywords: nats,jetstream,messaging,asyncio
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.11
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Framework :: AsyncIO
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: nats-py>=2.11.0
+Dynamic: license-file
+
+# NATBus #
+
+• Auth: library uses explicit user=/password= with a host:port server so credentials are always sent.
+
+• Streams: set stream_create=True to auto-create one stream (optional).
+
+• Payloads: BusMessage.from_json sets content-type=application/json; binary pass-through uses from_bytes.
+
+• Handlers: receive ReceivedMessage with ack()/nak()/term() for JetStream flow control.
+
+• Durable consumers: pass durable="name"; bind=True lets pods restart without “already bound” errors.
+
+
+# Add to Project
+Add to the service’s requirements.txt
+```text
+pip install --find-links=/mnt/nas_share/python_package_repository/natbus natbus==<version>
+```
+# Usage
+```python
+import asyncio
+from natbus import NatsConfig, NatsBus, BusMessage, ReceivedMessage
+
+CFG = NatsConfig(
+    server="nats-nats-jetstream:4222",
+    username="nats-user",
+    password="changeme",
+    name="orders-svc",
+    stream_create=True,
+    stream_name="TEST_STREAM",
+    stream_subjects=("test.stream",),
+
+    # Optional defaults for PUSH; can be overridden per call
+    queue_group=None,   # e.g. "orders-workers" to load-balance PUSH subscribers
+    manual_ack=True,
+)
+
+# ---------- handlers ----------
+async def handle_push(msg: ReceivedMessage):
+    print("PUSH RX:", msg.subject, {
+        "trace_id": msg.trace_id,
+        "correlation_id": msg.correlation_id,
+        "sender": msg.sender,
+        "content_type": msg.content_type,
+    })
+    try:
+        print("PUSH as_text:", msg.as_text())
+    except Exception:
+        pass
+    await msg.ack()
+
+async def handle_pull(msg: ReceivedMessage):
+    print("PULL RX:", msg.subject, {
+        "trace_id": msg.trace_id,
+        "correlation_id": msg.correlation_id,
+        "sender": msg.sender,
+        "content_type": msg.content_type,
+    })
+    try:
+        print("PULL as_text:", msg.as_text())
+    except Exception:
+        pass
+    await msg.ack()
+
+# ---------- app ----------
+async def main():
+    bus = NatsBus(CFG)
+    await bus.connect()
+
+    # --- PUSH consumer (server pushes to our callback) ---
+    # Use a queue group to load-balance across many pods:
+    # queue="orders-workers"  # uncomment to enable worker-pool behavior
+    await bus.push_subscribe(
+        subject="test.stream",
+        handler=handle_push,
+        durable="orders_push",   # retains cursor/acks
+        # queue="orders-workers",  # optional: load-balanced PUSH
+        manual_ack=True,
+    )
+    print("PUSH consumer ready (durable=orders_push)")
+
+    # --- PULL consumer (we fetch batches, good for explicit backpressure) ---
+    # Creates/ensures a pull-based durable (no queue group concept for pull)
+    await bus.pull_subscribe(
+        stream="TEST_STREAM",
+        subject="test.stream",
+        durable="orders_pull",
+        handler=handle_pull,
+        batch=10,        # fetch up to 10 msgs per request
+        expires=1.5,     # server waits up to 1.5s for batch to fill
+        manual_ack=True,
+    )
+    print("PULL consumer ready (durable=orders_pull)")
+
+    # --- publish some messages (both consumers will see them, since durables differ) ---
+    msg_json = BusMessage.from_json(
+        "test.stream",
+        {"hello": "world"},
+        sender="orders-svc",
+    )
+    await bus.publish(msg_json)
+
+    msg_bin = BusMessage.from_bytes(
+        "test.stream",
+        b"\xff\xd8\xff...binary...",
+        sender="orders-svc",
+        headers={"content-type": "image/jpeg"},
+    )
+    await bus.publish(msg_bin)
+
+    # Keep the service alive
+    while True:
+        await asyncio.sleep(60)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+```
+
+
+## Build
+
+Version is controlled in pyproject.toml (project.version). Bump it before each release.
+
+```shell
+python3.11 -m venv .venv && . .venv/bin/activate
+python -m pip install --upgrade pip build
+python -m build
+# artifacts: dist/natsbus-0.1.0.tar.gz and dist/natsbus-0.1.0-py3-none-any.whl
+
+```
