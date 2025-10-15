@@ -1,0 +1,208 @@
+#
+# pyvider-rpcplugin/pyproject.toml
+#
+
+[project]
+name = "pyvider-rpcplugin"
+description = "Pyvider RPC Plugin"
+dynamic = ["version"]
+requires-python = ">=3.11"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Tim Perkins", email = "code@tim.life" }
+]
+
+dependencies = [
+    "attrs>=25.1.0",
+    "cryptography>=44.0.1",
+    "google>=3.0.0",
+    "grpcio>=1.75.1",
+    "grpcio-health-checking>=1.73.0",
+    "protobuf>=5.29.3",
+    "provide-foundation",
+    "structlog>=25.1.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "grpc-stubs>=1.53.0.6",
+    "grpcio-tools>=1.73.0",
+    "types-grpcio>=1.0.0.20250603",
+    "types-protobuf>=6.30.2.20250516",
+]
+
+[dependency-groups]
+dev = [
+    "provide-testkit[standard,typecheck,advanced-testing,build,profiling,utils]",
+    "pyvider-rpcplugin[test]",
+]
+docs = [
+    "provide-testkit[docs]",
+]
+################################################################################
+# hatch
+################################################################################
+
+[tool.hatch.envs.default]
+dependencies = []
+
+[tool.hatch.envs.test.scripts]
+test = "pytest {args:tests}"
+coverage = "pytest --cov=pyvider.rpcplugin --cov-report=term-missing"
+lint = "ruff check src tests"
+format = "ruff format src tests"
+typecheck = "pyre check"
+security = "bandit -r src"
+
+[tool.hatch.envs.default.scripts]
+test = "pytest -n auto"
+run = "python3"
+
+[tool.hatch.metadata.targets.wheel]
+packages = [
+    { include = "pyvider.rpcplugin", from = "src" }
+]
+
+################################################################################
+# pytest
+################################################################################
+
+[tool.pytest.ini_options]
+log_cli = true
+# log_cli_level = "DEBUG"
+
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+
+markers = [
+    "long_running: marks tests as long_running (deselect with -m \"not long_running\")",
+    "slow: marks tests as slow (deselect with -m \"not slow\")"
+]
+
+filterwarnings = [
+    "ignore:cannot collect test class .* because it has a __init__ constructor:pytest.PytestCollectionWarning",
+    "ignore:.* KqueueSelector constructor:pytest.PytestCollectionWarning",
+]
+
+norecursedirs = [
+    "build",
+    "dist",
+    "*.egg-info",
+    ".venv",
+    "**/*pb2*.py",
+]
+
+################################################################################
+# Ruff (Linter & Formatter)
+################################################################################
+
+[tool.ruff]
+line-length = 111
+indent-width = 4
+target-version = "py311"
+exclude = ["tests/*", "**/*pb2*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "ANN", "B", "C90", "SIM", "PTH", "RUF"]
+ignore = ["ANN401", "B008", "E501", "RUF009"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pyvider", "tests"]
+force-sort-within-sections = true
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"src/pyvider/rpcplugin/handshake/core.py" = ["C901"]
+"src/pyvider/rpcplugin/handshake/negotiation.py" = ["C901"]
+"src/pyvider/rpcplugin/protocol/service.py" = ["C901"]
+"src/pyvider/rpcplugin/server/network.py" = ["C901"]
+"src/pyvider/rpcplugin/transport/unix/transport.py" = ["C901"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+################################################################################
+# coverage
+################################################################################
+
+[tool.coverage]
+include = [
+    "src/pyvider/rpcplugin/*"
+]
+omit = [
+    "src/pyvider/rpcplugin/protocol/grpc_*",
+    "src/pyvider/rpcplugin/protocol/*_pb2.py",
+    "src/pyvider/rpcplugin/protocol/*_pb2_grpc.py",
+]
+
+source = ["pyvider.rpcplugin"]
+branch = true
+
+[tool.coverage.report]
+# Improve report readability with missing lines
+show_missing = true
+skip_covered = false  # Show all lines, even if 100% covered
+precision = 2  # Decimal places in report output
+
+[tool.coverage.html]
+directory = "htmlcov"  # Output directory for HTML coverage reports
+
+[tool.coverage.xml]
+output = "coverage.xml"  # Output XML for CI/CD tools
+
+[tool.coverage.annotate]
+directory = "cover"  # Annotate files with coverage info
+
+################################################################################
+# pyre
+################################################################################
+
+[tool.pyre]
+source_directories = ["src"]
+exclude = ["tests/*", "**/*pb2*.py"]
+strict = true
+
+################################################################################
+# mypy
+################################################################################
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+strict = true
+pretty = true
+show_error_codes = true
+show_column_numbers = true
+warn_unused_ignores = true
+warn_unused_configs = true
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = [
+    "google.protobuf.*",
+    "grpc.*",
+    "pytest.*",
+]
+ignore_missing_imports = true
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+# 🐍🏗️📋
