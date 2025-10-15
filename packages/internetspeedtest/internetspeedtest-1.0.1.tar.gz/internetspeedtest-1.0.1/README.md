@@ -1,0 +1,308 @@
+# InternetSpeedTest Python CLI
+
+[![InternetSpeedTest.net](https://img.shields.io/badge/Powered%20by-InternetSpeedTest.net-blue?style=for-the-badge&logo=speedtest)](https://internetspeedtest.net)
+[![Python](https://img.shields.io/badge/Python-3.7+-green?style=for-the-badge&logo=python)](https://python.org)
+[![LibreSpeed](https://img.shields.io/badge/Protocol-LibreSpeed-orange?style=for-the-badge)](https://librespeed.org)
+
+A powerful Python library and command-line interface for testing Internet speed, powered by **[InternetSpeedTest.net](https://internetspeedtest.net)** - the fast, accurate, and privacy-focused speed test service.
+
+> 🌐 **[Try InternetSpeedTest.net](https://internetspeedtest.net)** - Test your connection speed instantly in your browser!
+
+## 🌟 About InternetSpeedTest.net
+
+**[InternetSpeedTest.net](https://internetspeedtest.net)** is a modern, open-source speed testing platform that provides:
+
+- ⚡ **Lightning-fast tests** - Get results in seconds, not minutes
+- 🔒 **Privacy-first** - No tracking, no ads, no data collection
+- 🌍 **Global network** - Servers worldwide for accurate measurements
+- 📱 **Cross-platform** - Works on any device, any browser
+- 🆓 **Completely free** - No registration, no limits, no premium tiers
+
+This Python CLI tool brings the power of InternetSpeedTest.net to your terminal and applications!
+
+## Features
+
+- 🚀 Fast and accurate speed testing using LibreSpeed protocol
+- 📊 Download and upload speed measurements with real-time progress
+- 🏓 Ping and jitter measurements for connection quality
+- 🌐 Compatible with internetspeedtest.net and other LibreSpeed servers
+- 📝 Multiple output formats (simple, JSON, CSV)
+- 🔧 Customizable test parameters and server selection
+- 🐍 Pure Python implementation with threading optimization
+- 🎨 Beautiful progress indicators and clean output
+
+## Installation
+
+> 💡 **Quick Start:** Want to test your speed right now? Visit **[internetspeedtest.net](https://internetspeedtest.net)** for an instant browser-based test!
+
+### From source
+
+```bash
+cd python
+pip install -e .
+```
+
+### Using pip (when published)
+
+```bash
+pip install internetspeedtest
+```
+
+## Quick Start
+
+### Command Line Usage
+
+Basic speed test:
+```bash
+internetspeedtest-py
+```
+
+Test with specific server:
+```bash
+internetspeedtest-py --server 1
+```
+
+List available servers:
+```bash
+internetspeedtest-py --list
+```
+
+### Python Library Usage
+
+```python
+from internetspeedtest import SpeedTest
+
+# Initialize SpeedTest
+st = SpeedTest()
+
+# Get available servers
+servers = st.get_servers()
+
+# Find best server
+best_server = st.find_best_server(servers)
+
+# Test ping
+ping, jitter = st.ping(best_server)
+print(f"Ping: {ping:.2f} ms, Jitter: {jitter:.2f} ms")
+
+# Test download speed
+download_speed, bytes_downloaded = st.download(best_server)
+print(f"Download: {download_speed:.2f} Mbps")
+
+# Test upload speed
+upload_speed, bytes_uploaded = st.upload(best_server)
+print(f"Upload: {upload_speed:.2f} Mbps")
+```
+
+## Command Line Options
+
+### Basic Options
+
+- `--version` - Show version and exit
+- `--list` - Display a list of LibreSpeed servers
+- `--server ID` - Specify server ID to test against (can be used multiple times)
+- `--exclude ID` - Exclude server from selection (can be used multiple times)
+- `--server-json URL` - Use alternative server list from remote JSON URL
+- `--local-json FILE` - Use alternative server list from local JSON file
+
+### Test Options
+
+- `--no-download` - Do not perform download test
+- `--no-upload` - Do not perform upload test
+- `--concurrent N` - Number of concurrent HTTP connections (default: 3)
+- `--chunks N` - Number of chunks for download test (default: 100)
+- `--upload-size N` - Size of upload payload in KiB (default: 1024)
+- `--duration N` - Test duration in seconds (default: 15)
+
+### Network Options
+
+- `--source IP` - Source IP address to bind to
+- `--timeout N` - HTTP timeout in seconds (default: 15)
+- `--secure` - Use HTTPS instead of HTTP
+
+### Output Options
+
+- `--simple` - Suppress verbose output, show basic information only
+- `--json` - Output results in JSON format
+- `--csv` - Output results in CSV format
+- `--bytes` - Display values in bytes instead of bits
+
+## Examples
+
+### Basic speed test
+```bash
+internetspeedtest-py
+```
+
+### Test with JSON output
+```bash
+internetspeedtest-py --json
+```
+
+Output:
+```json
+{
+  "server": {
+    "id": 1,
+    "name": "Example Server",
+    "url": "https://example.com/",
+    "sponsor": "Example ISP"
+  },
+  "ping": 25.43,
+  "jitter": 2.15,
+  "download": 95230000,
+  "upload": 48560000,
+  "bytes_received": 178650000,
+  "bytes_sent": 91200000,
+  "ip": "203.0.113.1"
+}
+```
+
+### Test with CSV output
+```bash
+internetspeedtest-py --csv
+```
+
+Output:
+```
+Server,Sponsor,Ping (ms),Jitter (ms),Download (bps),Upload (bps),IP
+"Example Server","Example ISP",25.43,2.15,95230000,48560000,"203.0.113.1"
+```
+
+### Test with custom server list
+```bash
+internetspeedtest-py --server-json https://example.com/servers.json
+```
+
+### Simple output
+```bash
+internetspeedtest-py --simple
+```
+
+Output:
+```
+Ping: 25.43 ms	Jitter: 2.15 ms
+Download: 95.23 Mbps
+Upload: 48.56 Mbps
+```
+
+## Server List Format
+
+The library supports custom server lists in JSON format:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Example Server",
+    "server": "https://example.com/",
+    "dlURL": "garbage.php",
+    "ulURL": "empty.php",
+    "pingURL": "empty.php",
+    "getIpURL": "getIP.php",
+    "sponsorName": "Example ISP",
+    "sponsorURL": "https://example.com"
+  }
+]
+```
+
+## Comparison with speedtest-cli
+
+This library provides a similar interface to the popular `speedtest-cli` by @sivel, but uses the LibreSpeed protocol instead of Ookla's Speedtest.net:
+
+| Feature | speedtest-cli (Ookla) | internetspeedtest-py (LibreSpeed) |
+|---------|----------------------|----------------------------|
+| Protocol | Ookla Speedtest | LibreSpeed |
+| License | Apache 2.0 | LGPL-3.0 |
+| Backend | Speedtest.net | LibreSpeed servers |
+| Open Source Backend | ❌ | ✅ |
+| Self-hosted servers | ❌ | ✅ |
+| Python API | ✅ | ✅ |
+| CLI Interface | ✅ | ✅ |
+
+## Python API Reference
+
+### SpeedTest Class
+
+```python
+class SpeedTest(source=None, timeout=15, secure=False)
+```
+
+#### Methods
+
+- `get_servers(server_list_url=None, exclude=None, specific=None)` - Fetch server list
+- `ping(server, count=10)` - Measure ping and jitter
+- `download(server, duration=15, concurrent=3, chunks=100)` - Test download speed
+- `upload(server, duration=15, concurrent=3, upload_size=1024)` - Test upload speed
+- `get_ip_info(server)` - Get IP information
+- `find_best_server(servers)` - Find server with lowest ping
+
+### Server Class
+
+```python
+class Server(server_dict)
+```
+
+#### Attributes
+
+- `id` - Server ID
+- `name` - Server name
+- `server` - Server URL
+- `dl_url` - Download URL path
+- `ul_url` - Upload URL path
+- `ping_url` - Ping URL path
+- `get_ip_url` - Get IP URL path
+- `sponsor_name` - Sponsor name
+- `sponsor_url` - Sponsor URL
+
+## Requirements
+
+- Python 3.7 or higher
+- requests >= 2.25.0
+
+## License
+
+This project is licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0).
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Acknowledgments
+
+- LibreSpeed team for the LibreSpeed protocol and backend
+- @sivel for the original speedtest-cli inspiration
+- This library is compatible with internetspeedtest.net and other LibreSpeed servers
+
+## 🚀 Why Choose InternetSpeedTest.net?
+
+This Python CLI is proudly powered by **[InternetSpeedTest.net](https://internetspeedtest.net)** - the next-generation speed testing platform that puts users first:
+
+### 🆚 **vs. Other Speed Test Services:**
+
+| Feature | InternetSpeedTest.net | Speedtest.net | Fast.com | Google Speed Test |
+|---------|----------------------|---------------|----------|-------------------|
+| **Privacy** | 🟢 No tracking/ads | 🔴 Ads & tracking | 🟡 Netflix-focused | 🟡 Google services |
+| **Speed** | 🟢 Ultra-fast | 🟡 Moderate | 🟢 Fast | 🟡 Moderate |
+| **Accuracy** | 🟢 Multi-server | 🟢 Good | 🟡 Single server | 🟡 Limited servers |
+| **Open Source** | 🟢 Yes (LibreSpeed) | 🔴 Proprietary | 🔴 Proprietary | 🔴 Proprietary |
+| **Global Coverage** | 🟢 Worldwide | 🟢 Worldwide | 🟡 Limited | 🟡 Limited |
+| **Free Forever** | 🟢 Always free | 🟡 Freemium | 🟢 Free | 🟢 Free |
+
+### 🎯 **Perfect for:**
+- **Developers** - Test connection programmatically
+- **Network Admins** - Monitor network performance  
+- **Power Users** - Get detailed network metrics
+- **Privacy-conscious Users** - No data collection
+- **Self-hosters** - Deploy your own servers
+
+### 🌐 **Try it now:**
+👉 **[internetspeedtest.net](https://internetspeedtest.net)** - Test your speed in seconds!
+
+---
+
+## Support
+
+For issues and questions about this Python CLI, please open an issue on GitHub.
+
+For InternetSpeedTest.net service questions, visit [internetspeedtest.net](https://internetspeedtest.net).
