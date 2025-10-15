@@ -1,0 +1,359 @@
+import json
+import os
+import sys
+from typing import Callable, Dict, List, Optional, Union
+
+import numpy as np
+import pandas as pd
+from packaging.version import Version
+
+from .helpers.commands import get_commands_from_file
+from .helpers.environment_helper import EnvironmentHelper
+from .helpers.time import get_shop_timestring
+from .helpers.typing_annotations import (CommandOptions, CommandValues,
+                                         DataFrameOrSeries, Message, ShopApi)
+from .lp_model.lp_model import LpModelBuilder
+from .shopcore.command_builder import CommandBuilder, get_derived_command_key
+from .shopcore.model_builder import ModelBuilderType
+from .shopcore.script_generator import write_pyshop_model_file
+from .shopcore.shop_api import get_time_resolution
+from .shopcore.shop_rest import ShopRestNative
+
+
+class ShopSession(object):
+    # Class for handling a SHOP session through the python API.
+    _log_file:str 
+    _name:str
+    _id:int
+    _sim_has_started:bool
+    _host:str
+    _port:int
+    _auth_headers:Dict[str,str]
+    shop_api:ShopApi
+    model:ModelBuilderType
+    lp_model:LpModelBuilder
+    _commands:Dict[str,str]
+    _all_messages:List[Dict[str,str]]
+    _command:str
+
+    def __init__(self, license_path:str = '', silent:bool = True, log_file:str = '', solver_path:str = '', suppress_log:bool = False,
+                 log_gets:bool = False, name:str = 'unnamed', id:int = 1, host:str = '', port:int = 8000) -> None:
+        #Used by the SHOP rest APi 
+        self._log_file = log_file
+        self._name = name
+        self._id = id
+        self._sim_has_started = False
+
+        # Create rest client if host ip is given
+        if host:
+            import requests
+            self._host = host
+            self._port = port
+            self._auth_headers = {
+                'Content-Type': 'application/json'
+            }
+            response = requests.post(
+                f'http://{host}:{port}/session',
+                json=dict(session_name=name, log_file=log_file),
+                headers=self._auth_headers
+            )
+            if response.ok:
+                response_json = response.json()
+                self._id = response_json['session_id']
+                self._name = response_json['session_name']
+            else:
+                raise Exception(f"Could not connect to server: Status code {response.status_code}")
+            self.shop_api = ShopRestNative(self)
+        else:
+            # Initialize a new SHOP session
+            #
+            # @param license_path The path where the license file, solver and solver interface are located                
+            license_path = EnvironmentHelper.get_license_path(license_path)
+            
+            # Insert either the solver_path or the ICC_COMMAND_PATH to sys.path to find shop_pybind.pyd and solver dlls
+            if solver_path:
+                solver_path = os.path.abspath(solver_path)
+                sys.path.insert(1, solver_path)
+            else:
+                binary_path = EnvironmentHelper.get_binary_path()
+                sys.path.insert(1, binary_path)
+
+            import shop_pybind as pb
+
+            silent_console = silent
+            silent_log = suppress_log
+
+            try:
+                settings = {"silent_console":silent_console,"silent_log":silent_log,"log_file":log_file,"log_gets":log_gets, "license_path":license_path}
+                self.shop_api = pb.ShopCore(settings)
+            #Backwards compatibility before license path could be set through ShopCore constructor
+            except TypeError:
+                self.shop_api = pb.ShopCore(silent_console, silent_log, log_file, log_gets)
+        
+            # Override where SHOP will look for solver dlls
+            if solver_path:
+                self.shop_api.OverrideDllPath(solver_path)
+
+        self.model = ModelBuilderType(self.shop_api)
+        self.lp_model = LpModelBuilder(self)
+        self._commands = {x.replace(' ', '_'): x for x in self.shop_api.GetCommandTypesInSystem()}
+        self._all_messages = []
+        self._command = ""
+        self._version = Version(self.get_shop_version())
+
+    def __dir__(self) -> List[str]:
+        return list(self._commands.keys()) + [x for x in super().__dir__() if x[0] != '_' 
+                                              and x not in self._commands.keys()]
+
+    def __getattr__(self, command:str) -> Callable[[CommandOptions,CommandValues],bool]:
+        self._command = command.lower()
+        return self._execute_command
+
+    def _execute_command(self, options:CommandOptions, values:CommandValues) -> bool:
+        self._command = get_derived_command_key(self._command, self._commands)
+        if self._command not in self._commands:
+            raise ValueError(f'Unknown command: "{self._command.replace("_", " ")}"')
+        if not isinstance(options, list):
+            options = [options]
+        if not isinstance(values, list):
+            values = [values]
+        options = map(str, options)
+        options = filter(lambda x: x, options)
+        values = map(str, values)
+        values = filter(lambda x: x, values)        
+        return self.shop_api.ExecuteCommand(self._commands[self._command], list(options), list(values))
+
+    def set_time_resolution(self, starttime:pd.Timestamp, endtime:pd.Timestamp, timeunit:str, timeresolution:Optional[DataFrameOrSeries]=None) -> None:
+        # Reformat timestamps to format expected by Shop
+        start_string = get_shop_timestring(starttime)
+        end_string = get_shop_timestring(endtime)
+        # Handle time resolution
+        # Constant
+        if not isinstance(timeresolution, pd.DataFrame) and not isinstance(timeresolution, pd.Series):
+            self.shop_api.SetTimeResolution(start_string, end_string, timeunit)
+        # Timestamp indexed
+        elif isinstance(timeresolution.index, pd.DatetimeIndex):
+            # Handle time horizon outside time resolution definition
+            if timeresolution.loc[starttime:starttime].empty:
+                timeresolution.loc[starttime] = np.nan
+                timeresolution.sort_index(inplace=True)
+                timeresolution.ffill(inplace=True)
+            timeresolution = timeresolution[starttime:endtime]
+            # Transform timestamp index to integer index expected by Shop
+            timeunit_delta = pd.Timedelta(hours=1) if timeunit == 'hour' else pd.Timedelta(minutes=1)
+            timeres_t = [int((t - starttime) / timeunit_delta) for t in timeresolution.index]
+            self.shop_api.SetTimeResolution(start_string, end_string, timeunit, timeres_t, timeresolution.values)
+        # Integer indexed
+        else:
+            timeres_t = timeresolution.index.values
+            self.shop_api.SetTimeResolution(start_string, end_string, timeunit, timeres_t, timeresolution.values)
+
+        # Save the time zone in the API so that it can be added to the output TXYs
+        tz_name = starttime.tzname()
+        if tz_name is not None:
+            self.shop_api.SetTimeZone(tz_name)
+
+    def get_time_resolution(self) -> Dict:
+        # Get time resolution
+        return get_time_resolution(self.shop_api)
+
+    def get_messages(self, all_messages:bool=False) -> Message:
+        # Get all new messages from the buffer as a dict.
+        messages = self.shop_api.GetMessages()
+        messages = json.loads(messages)
+
+        self._all_messages.extend(messages)
+
+        if all_messages:
+            return self._all_messages
+        else:
+            return messages
+
+    def execute_full_command(self, full_command:str) -> None:
+        parts = full_command.lower().strip().split()
+        # First try to get a match using the two first words
+        first_non_command = 2
+        try:
+            command = get_derived_command_key(parts[0] + '_' + parts[1], self._commands)
+        except ValueError as err:
+            try:
+                command = get_derived_command_key(parts[0], self._commands)
+                first_non_command = 1
+            except ValueError as err2:
+                error_message = "Could not find any a single command match. Got the following errors:\n" + str(err) + \
+                                '\n' + str(err2)
+                raise ValueError(error_message)
+
+        parts = parts[first_non_command:]
+        options = []
+        values = []
+        for word in parts:
+            if word[0] == '/':
+                options.append(word[1:])
+            else:
+                values.append(word)
+        self._command = command
+        self._execute_command(options, values)
+
+    def get_executed_commands(self) -> List[str]:
+        commands = self.shop_api.GetExecutedCommands()
+        return commands
+
+    def read_ascii_file(self, file_path:str) -> None:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError("Provided file does not exist", file_path)
+        self.shop_api.ReadShopAsciiFile(str(file_path))
+
+    def load_yaml(self, file_path:str='', yaml_string:str='') -> None:
+        if file_path != '' and yaml_string != '':
+            raise ValueError('Provide either a file path or a yaml string, not both')
+        if file_path != '':
+            with open(file_path, 'r', encoding='utf8') as f:
+                yaml_file_string = f.read()
+            self.shop_api.ReadYamlString(yaml_file_string)
+        elif yaml_string != '':
+            self.shop_api.ReadYamlString(yaml_string)
+
+    def dump_yaml(self, file_path:str='', input_only:bool=True, compress_txy:bool=True, compress_connection:bool=True, output_only:bool=False) -> str:
+        if file_path != '':
+            if self._version > Version('16.0.4'):
+                self.shop_api.DumpYamlCase(str(file_path), input_only, compress_txy, compress_connection, output_only)
+            else:
+                self.shop_api.DumpYamlCase(str(file_path), input_only, compress_txy, compress_connection)
+            return f'YAML case is dumped to the provided file path: "{str(file_path)}"'
+        else:
+            if self._version > Version('16.0.4'):
+                return self.shop_api.DumpYamlString(input_only, compress_txy, compress_connection, output_only)
+            else:
+                return self.shop_api.DumpYamlString(input_only, compress_txy, compress_connection)
+            
+    def load_json(self, json_file_path:str='', json_string:str='') -> None:
+        if json_file_path != '' and json_string != '':
+            raise ValueError('Provide either a file path or a json string, not both')
+        if json_file_path != '':
+            with open(json_file_path, 'r', encoding='utf8') as f:
+                json_file_string = f.read()
+                self.shop_api.ReadJsonString(json_file_string)
+        elif json_string != '':
+            self.shop_api.ReadJsonString(json_string)
+
+    def dump_json(self, file_path:str, input_only:bool=True, compress_txy:bool=True, output_only:bool=False) -> str:
+        
+        if self._version < Version('17.4.0'):
+            raise AttributeError("Dumping SHOP model to JSON format is not supported for SHOP versions before 17.4.0")            
+        
+        self.shop_api.DumpJsonCase(file_path, input_only, compress_txy, output_only)
+
+    def dump_pyshop(self, file_path:str, static_data_only:bool=False) -> None:
+        
+        write_pyshop_model_file(file_path,self.shop_api,static_data_only)
+
+    def run_command_file(self, folder:str, command_file:str, break_before_opt:bool = False, skip_reading_input:bool = False) -> None:
+        
+        with open(os.path.join(folder, command_file), 'r', encoding='iso-8859-1') as run_file:
+            file_string = run_file.read()
+            run_commands = get_commands_from_file(file_string)
+        
+        for command in run_commands:
+            command_text = command['command']
+            options = command['options']
+            values = command['values']
+
+            #Simply break on the quit command instead of destroying the session
+            if command_text == "q":
+                break
+            
+            #Stop before optimization begins if requested
+            if break_before_opt and command_text == "start sim":
+                break
+            
+            #Reading input files should be done with proper API calls instead
+            if command_text in ["read model", "add model"]:
+                if not skip_reading_input:
+                    self.read_ascii_file(os.path.join(folder, values[0].replace('"','')))
+            elif command_text == "read yaml":
+                if not skip_reading_input:
+                    self.load_yaml(folder,values[0].replace('"',''))
+            else:            
+                #Directly execute all other commands
+                self.shop_api.ExecuteCommand(command_text, options, values)
+
+    def run_command_file_progress(self, folder:str, command_file:str) -> None:
+        with open(os.path.join(folder, command_file), 'r', encoding='iso-8859-1') as run_file:
+            file_string = run_file.read()
+            run_commands = get_commands_from_file(file_string)
+        command_list = []
+        options_list = []
+        values_list = []
+        for command in run_commands:
+            command_list.append(command['command'])
+            options_list.append(command['options'])
+            values_list.append(command['values'])
+        self.shop_api.ExecuteCommandList(command_list, options_list, values_list)
+
+    def execute_command(self) -> CommandBuilder:
+        # Terminal function for executing SHOP commands that gives code completion for SHOP commands.
+        return CommandBuilder(self.shop_api)
+
+    def get_shop_version(self) -> str:
+        version_string = self.shop_api.GetVersionString()
+        return version_string.split()[0]
+    
+    def get_environment_variables(self) -> Dict[str, str]:
+        return self.shop_api.GetEnvironmentVariables()
+
+    def get_license_info(self) -> Dict[str,List[str]]:
+        #Returns a dictionary where the keys are the license status and the values are lists of functionality
+        if self._version >= Version('14.5.0.0'):
+            license_list = self.shop_api.GetLicenseInfo()
+        else:
+            print("License info can only be retrieved for SHOP 14.5.0.0 and newer")
+            return {}
+
+        license_dict = {}
+        for l in license_list:
+            l = l.split(":")
+            name = l[0]
+            info = l[1]
+
+            if info not in license_dict.keys():
+                license_dict[info] = [name]
+            else:
+                license_dict[info].append(name)
+
+        return license_dict
+    
+    def get_message_definitions(self) -> Dict[str, List[Union[str, int]]]:
+        if self._version >= Version('15.1.1.0'):
+            messageVector = self.shop_api.GetAllMessages()
+        else:
+            print("Function get_message_definitions can only be used for SHOP 15.1.1.0 and newer")
+            return {}
+        
+        allCodes = []
+        allTexts = []
+        allTypes = []
+        allCallCounts = []
+        allPrinted = []
+
+        for i in messageVector:
+            allCodes.append(int(i[0]))
+            allTypes.append(i[1])
+            allTexts.append(i[2])
+            allCallCounts.append(int(i[3]))
+            if len(i) > 4:
+                tempVect = []
+                tempVect.append(i[4:])
+                allPrinted.append(tempVect)
+            else:
+                allPrinted.append("")
+        
+        messageDefinitions = {
+            "code": allCodes,
+            "type": allTypes,
+            "text": allTexts,
+            "callCount": allCallCounts,
+            "printed": allPrinted
+        }
+
+        return messageDefinitions
