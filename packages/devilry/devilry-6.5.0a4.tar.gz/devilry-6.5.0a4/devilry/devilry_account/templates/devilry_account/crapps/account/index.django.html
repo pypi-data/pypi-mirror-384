@@ -1,0 +1,145 @@
+{% extends "cradmin_legacy/base.django.html" %}
+{% load i18n %}
+{% load devilry_core_tags %}
+{% load cradmin_legacy_tags %}
+
+{% block custom_styles %}
+    {{ block.super }}
+    <style type="text/css" rel="stylesheet">
+        .h3 {
+            font-size: 16px;
+            font-weight: bold;
+        }
+    </style>
+{% endblock custom_styles %}
+
+{% block title %}
+    {{ request.user.get_displayname }} - {% trans "Account" %}
+{% endblock title %}
+
+{% block pageheader-inner %}
+    <h1 class="test-primary-h1">{% trans "Account overview" %}</h1>
+{% endblock pageheader-inner %}
+
+{% block content %}
+    <div class="container">
+        <div class="devilry-dashboard-container">
+
+            <h2 class="h3">{% trans "Name" %}</h2>
+            <p class="test-fullname">
+                {% if request.user.fullname %}
+                    {{ request.user.fullname }}
+                {% else %}
+                    <em class="text-warning">{% trans "Name not registered for account" %}</em>
+                {% endif %}
+            </p>
+
+            <h2 class="h3">{% trans "Short name" %}</h2>
+            <p>
+                <small class="text-muted">({% trans "Shown instead of your name some places in the UI" %})</small>
+                <br>
+                <span class="test-shortname">{{ request.user.shortname }}</span>
+            </p>
+
+            <h2 class="h3">{% trans "Last login" %}</h2>
+            <p class="test-last-login">
+                {{ request.user.last_login|date:"DATETIME_FORMAT" }}
+            </p>
+
+            {% if not email_auth_backend %}
+                <h2 class="h3 test-usernames-title">
+                    {% if username_count > 1 %}
+                        {% trans "Usernames" %}
+                    {% else %}
+                        {% trans "Username" %}
+                    {% endif %}
+                </h2>
+                <ul class="list-unstyled">
+                    {% for username in usernames %}
+                        <li class="test-username">
+                            {{ username.username }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            <h2 class="h3 test-emails-title">
+                {% if useremail_count > 1 %}
+                    {% trans "Email addresses" %}
+                {% else %}
+                    {% trans "Email address" %}
+                {% endif %}
+            </h2>
+            <ul class="list-unstyled">
+                {% for useremail in useremails %}
+                    <li class="test-email">
+                        {{ useremail.email }}
+                        {% if useremail_count > 1 %}
+                            {% if useremail.use_for_notifications %}
+                                <small class="text-muted">({% trans "use for notifications" %})</small>
+                            {% endif %}
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+
+            <h2 class="h3">{% trans 'Language' %}</h2>
+                <p>
+                    {{ language_name }} ({{ language_code }})
+                </p>
+                <a class="btn btn-default" href="{% cradmin_appurl 'select_language' %}">
+                    {% trans 'Change language' %}
+                </a>
+        </div>
+
+        <div class="devilry-dashboard-container">
+            <h2 class="{% devilry_test_css_class 'role-list-heading' %}">
+                {% trans 'My roles' %}
+            </h2>
+            {% if not related_examiners_for_active_periods.exists and not related_students_for_active_periods.exists %}
+                <p class="{% devilry_test_css_class 'no-roles-message' %}">
+                    {% trans 'You are not currently assigned student and/or examiner roles on active semesters' %}
+                </p>
+            {% else %}
+                <p class="text-muted">
+                    {% blocktrans trimmed %}
+                        Active semesters where you have been assigned a role as a student, an examiner or both.
+                    {% endblocktrans %}
+                </p>
+                
+                {% if related_examiners_for_active_periods.exists %}
+                    <h3 class="{% devilry_test_css_class 'examiner-role-heading' %}">
+                        {% trans 'As examiner' %}
+                    </h3>
+                    <ul>
+                        {% for related_examiner in related_examiners_for_active_periods %}
+                            <li class="{% devilry_test_css_class 'examiner-role-list-item' %}">
+                                {{ related_examiner.period.parentnode.long_name }}: {{ related_examiner.period.long_name }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+
+                {% if related_students_for_active_periods.exists %}
+                    <h3 class="{% devilry_test_css_class 'student-role-heading' %}">
+                        {% trans 'As student' %}
+                    </h3>
+                    <ul>
+                        {% for related_student in related_students_for_active_periods %}
+                            <li class="{% devilry_test_css_class 'student-role-list-item' %}">
+                                {{ related_student.period.parentnode.long_name }}: {{ related_student.period.long_name }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            {% endif %}
+        </div>
+
+        <form method="POST" action="{% url 'account_logout' %}">
+            {% csrf_token %}
+            <button class="btn btn-primary">
+                {% trans "Sign out" %}
+            </button>
+        </form>
+    </div>
+{% endblock content %}

@@ -1,0 +1,82 @@
+{% extends 'cradmin_legacy/viewhelpers/listbuilder/base/itemvalue.django.html' %}
+
+{% load devilry_group_tags %}
+{% load devilry_core_tags %}
+{% load devilry_account_tags %}
+{% load cradmin_legacy_tags %}
+{% load crispy_forms_tags %}
+{% load i18n %}
+
+{% block content %}
+    <h2>
+        <span>
+            <span class="header-title">
+                {% trans "Deadline" %}: {{ me.feedbackset.deadline_datetime|date:'DATETIME_FORMAT' }}
+            </span>
+        </span>
+    </h2>
+    <div class="header-attempt-number">
+        {% if not me.feedbackset.is_merge_type %}
+            {% trans "Attempt" %} {{ me.attempt_num }}
+        {% endif %}
+    </div>
+
+    <div class="header-grading-info">
+        {% if me.feedbackset.is_merge_type %}
+            {% trans "Merged" %}
+            <div>
+                <button id="id_expand_hide_merged_feedbackset_{{ me.feedbackset.id }}" class="btn btn-default devilry-feedbackfeed-show_hide_feedbackset_mergetype_button">
+                    {% trans "Show/hide" context "devilry-merged-feedbackset show-hide-button" %}
+                </button>
+            </div>
+        {% elif me.is_graded %}
+            {% devilry_grade_full assignment=me.assignment points=me.feedbackset.grading_points devilryrole=me.devilryrole %}
+        {% else %}
+            {% devilry_groupstatus me.feedbackset.group %}
+        {% endif %}
+    </div>
+
+    {% if me.devilry_viewrole == 'examiner' or 'admin' in me.devilry_viewrole %}
+        {% if me.feedbackset.group.cached_data.last_feedbackset == me.feedbackset %}
+            {% comment %}
+                Render button choices only if viewrole is examiner or admin and the last feedbackset is
+                the current feedbackset.
+            {% endcomment %}
+            <div class="header-buttons">
+                {% if me.feedbackset.group.cached_data.last_published_feedbackset_is_last_feedbackset %}
+                    {% comment %}
+                        The last published feedbackset is the last feedbackset.
+
+                        Examiners can:
+                            - Edit the grading
+                            - Give a new attempt
+
+                         Admins can:
+                            - Give a new attempt
+                            - Move the deadline
+                    {% endcomment %}
+                    <a href="{% cradmin_instance_url appname="manage-deadline" viewname="manage-deadline-single-group" handle_deadline="new-attempt" deadline=me.deadline_as_string group_id=me.feedbackset.group.id %}"
+                        class="btn btn-primary devilry-group-event__grade-last-new-attempt-button">
+                        {% trans "Give new attempt" %}
+                    </a>
+                    {% if me.devilry_viewrole == 'examiner' %}
+                        <a href="{% cradmin_appurl 'edit' pk=me.feedbackset.id %}"
+                           class="btn btn-default devilry-group-event__grade-last-edit-button">
+                            {% trans "Edit grade" %}
+                        </a>
+                    {% endif %}
+                {% elif not me.feedbackset.group.cached_data.last_published_feedbackset_is_last_feedbackset %}
+                    {% comment %}
+                        The last published feedbackset is not the last feedbackset
+
+                        Admins and examiners can:
+                            - Move the deadline
+                    {% endcomment %}
+                    <a href="{% cradmin_instance_url appname="manage-deadline" viewname="manage-deadline-single-group" handle_deadline="move-deadline" deadline=me.deadline_as_string group_id=me.feedbackset.group.id %}"
+                        class="btn btn-default devilry-group-event__grade-move-deadline-button">{% trans "Move deadline" %}
+                    </a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endif %}
+{% endblock content %}

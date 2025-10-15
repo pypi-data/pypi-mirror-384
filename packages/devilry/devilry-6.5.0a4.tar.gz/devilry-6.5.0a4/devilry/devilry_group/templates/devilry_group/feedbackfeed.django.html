@@ -1,0 +1,132 @@
+{% extends "devilry_group/base.django.html" %}
+{% load devilry_group_tags %}
+{% load devilry_account_tags %}
+{% load crispy_forms_tags %}
+{% load i18n %}
+{% load cradmin_legacy_tags %}
+{% load devilry_theme3_tags %}
+
+{% block title %}
+    {{ assignment.get_path }}
+{% endblock title %}
+
+{% block jsimports %}
+    {% include "markup/load_latex_support.django.html" %}
+    {{ block.super }}
+{% endblock jsimports %}
+
+
+{% block pageheader %}
+    <div class="container">
+        <div class="row">
+            <div class="devilry-group-feedbackfeed-header">
+                <div class="col-sm-10 text-left">
+                    {% block feedbackfeed-header-content %}
+                        <h1 class="devilry-group-feedbackfeed-header-assignment">
+                            {{ assignment.long_name }}
+                        </h1>
+                        <div class="devilry-group-feedbackfeed-header-subject-period">
+                            <p class="devilry-group-feedbackfeed-header-subject">
+                                {{ subject.long_name }}
+                            </p>
+                            <p class="devilry-group-feedbackfeed-header-period">
+                                {{ period.long_name }}
+                            </p>
+                        </div>
+                        {% if devilry_ui_role == 'student' %}
+                            {% if num_students_in_group > 1 or students_can_create_groups %}
+                                <p>
+                                    <a href="{% cradmin_instance_appindex_url 'projectgroup' %}"
+                                       class="plain-link devilry-feedbackfeed-student-projectgroup-detauils-link">
+                                        {% trans "Project group details" %}
+                                    </a>
+                                </p>
+                            {% endif %}
+                        {% endif %}
+                    {% endblock feedbackfeed-header-content %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock pageheader %}
+
+{% block content %}
+    {% block hard_deadline_info_box %}
+        {% if assignment_uses_hard_deadlines %}
+            <div class="container">
+                <div class="alert alert-info devilry-feedbackfeed-hard-deadline-info-box">
+                    <p>{{ assignment_uses_hard_deadlines_info_text }}</p>
+                </div>
+            </div>
+        {% endif %}
+    {% endblock hard_deadline_info_box %}
+
+    {% block downloadbar %}
+        <div class="container">
+            {% include "devilry_group/include/buttonbar.django.html" %}
+        </div>
+    {% endblock downloadbar %}
+
+    <div class="container">
+        {% block feed %}
+            {% cradmin_render_renderable listbuilder_list %}
+            {% block pre_form %}{% endblock pre_form %}
+            {% block navigation %}{% endblock %}
+            {% if comment_form_disabled %}
+                {% include "devilry_group/include/comments_disabled.django.html" %}
+            {% else %}
+                {% block form %}
+                    {% crispy form formhelper %}
+                    {{ form.media }}
+                {% endblock form %}
+            {% endif %}
+            {% block post_form %}{% endblock post_form %}
+        {% endblock feed %}
+    </div>
+{% endblock content %}
+
+{% block end-of-body %}
+    {{ block.super }}
+    <script>
+        function getClosestByClass (dom_element) {
+            while (!dom_element.classList.contains('devilry-group-feedbackfeed-feed__feedbackset-wrapper')) {
+                dom_element = dom_element.parentNode;
+                if (!dom_element) {
+                    return null;
+                }
+            }
+            return dom_element;
+        }
+
+        function toggleVisibility(feedback_set_content_element) {
+            let content_class = 'devilry-group-feedbackfeed-feed__feedbackset-wrapper__content-merge-type';
+            let merge_type_content = feedback_set_content_element.getElementsByClassName(content_class)[0];
+            if (window.getComputedStyle(merge_type_content).display === 'none') {
+                merge_type_content.style.display = 'block';
+            } else {
+                merge_type_content.style.display = 'none';
+            }
+        }
+
+        function getClosestFeedbackSetWrapper (button_id) {
+            return getClosestByClass(document.getElementById(button_id));
+        }
+
+        function addListener(feedbackset_button_event) {
+            let closest_content_element = getClosestFeedbackSetWrapper(feedbackset_button_event.target.id)
+            toggleVisibility(closest_content_element)
+        }
+
+        let buttons = document.getElementsByClassName('devilry-feedbackfeed-show_hide_feedbackset_mergetype_button')
+        for (let i = 0; i < buttons.length; i++) {
+            let feedbackset_button = buttons[i];
+            feedbackset_button.addEventListener('click', addListener);
+        }
+    </script>
+
+    <script type="module">
+        import {DevilryFeedbackfeedbNavigationHandler} from '{% devilry_theme3_dist_path %}/scripts/plain_es6/feedbackfeedNavigationHandler.js';
+        new DevilryFeedbackfeedbNavigationHandler('{% trans "You have a unsubmitted comment and/or files. Do you want to navigate away?" %}');
+    </script>
+    {% include "devilry_theme3/include/devilry_all_js.django.html" %}
+{% endblock end-of-body %}
