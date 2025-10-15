@@ -1,0 +1,91 @@
+# Copyright Amazon.com Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"). You
+# may not use this file except in compliance with the License. A copy of
+# the License is located at
+#
+#     http://aws.amazon.com/apache2.0/
+#
+# or in the "license" file accompanying this file. This file is
+# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
+# ANY KIND, either express or implied. See the License for the specific
+# language governing permissions and limitations under the License.
+
+from setuptools import find_namespace_packages, setup
+
+with open("README.rst", "r") as fh:
+    long_description = fh.read()
+
+with open("src/braket/pennylane_plugin/_version.py") as f:
+    version = f.readlines()[-1].split()[-1].strip("\"'")
+
+setup(
+    name="amazon-braket-pennylane-plugin",
+    version=version,
+    license="Apache License 2.0",
+    python_requires=">= 3.10",
+    packages=find_namespace_packages(where="src", exclude=("test",)),
+    package_dir={"": "src"},
+    install_requires=[
+        "amazon-braket-sdk>=1.97.0",
+        "autoray>=0.6.11",
+        "pennylane>=0.34.0",
+    ],
+    entry_points={
+        "pennylane.plugins": [
+            # List the short name of each device provided by
+            # the plugin, as well as the path to the Device class
+            # it corresponds to in the plugin. This allows
+            # the device to be imported automatically via the
+            # `pennylane.device` device loader.
+            "braket.aws.qubit = braket.pennylane_plugin:BraketAwsQubitDevice",
+            "braket.local.qubit = braket.pennylane_plugin:BraketLocalQubitDevice",
+            "braket.aws.ahs = braket.pennylane_plugin:BraketAwsAhsDevice",
+            "braket.local.ahs = braket.pennylane_plugin:BraketLocalAhsDevice",
+        ]
+    },
+    extras_require={
+        "test": [
+            "autoray<0.7.0",  # autoray.tensorflow_diag no longer works
+            "docutils>=0.19",
+            "flaky",
+            "pre-commit",
+            "pylint>=3.1.0",
+            "pytest",
+            "pytest-benchmark",
+            "pytest-cov",
+            "pytest-mock",
+            # https://github.com/pytest-dev/pytest-rerunfailures/issues/302
+            "pytest-rerunfailures<16.0",
+            "pytest-xdist",
+            "ruff",
+            "sphinx",
+            "sphinx-automodapi",
+            "sphinx-rtd-theme",
+            "sphinxcontrib-apidoc",
+            "tox",
+            "torch>2",
+            "tensorflow>=2.16.1",
+        ]
+    },
+    url="https://github.com/amazon-braket/amazon-braket-pennylane-plugin-python",
+    author="Amazon Web Services",
+    description=(
+        "An open source framework for using Amazon Braket devices with the PennyLane"
+        " quantum machine learning library"
+    ),
+    long_description=long_description,
+    long_description_content_type="text/x-rst",
+    keywords="Amazon AWS Quantum",
+    classifiers=[
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
+        "Natural Language :: English",
+        "License :: OSI Approved :: Apache Software License",
+        "Programming Language :: Python",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+    ],
+)
