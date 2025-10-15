@@ -1,0 +1,153 @@
+<div class="card scheduled-query-result-widget">
+    {% if widget.show_query_info and widget.scheduled_query %}
+    <div class="card-header">
+        <div class="d-flex align-items-center justify-content-between">
+            <h3 class="card-title d-flex align-items-center">
+                <i class="ti ti-database icon me-2"></i>
+                {{ widget.scheduled_query.name }}
+            </h3>
+            <div class="card-options d-flex align-items-center">
+                {% if widget.scheduled_query.enabled %}
+                    <span class="badge bg-success d-inline-flex align-items-center">
+                        <i class="ti ti-power me-1"></i> Enabled
+                    </span>
+                {% else %}
+                    <span class="badge bg-secondary d-inline-flex align-items-center">
+                        <i class="ti ti-power-off me-1"></i> Disabled
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if widget.show_execution_details %}
+        <div class="sq-meta text-muted mt-2">
+            <div class="d-flex flex-wrap align-items-center gap-3 small">
+                <div class="d-flex align-items-center sq-meta-item">
+                    <i class="ti ti-calendar-time me-1 text-muted"></i>
+                    <span class="me-1">Frequency:</span>
+                    <code>{{ widget.scheduled_query.cron_schedule }}</code>
+                </div>
+
+                <div class="d-flex align-items-center sq-meta-item">
+                    <i class="ti ti-clock me-1 text-muted"></i>
+                    <span class="me-1">Last run:</span>
+                    <span>
+                        {% if widget.execution_result and widget.execution_result.executed_at %}
+                            {{ widget.execution_result.executed_at }}
+                        {% else %}
+                            Never
+                        {% endif %}
+                    </span>
+                </div>
+
+                {% if widget.execution_result and widget.execution_result.duration_ms %}
+                <div class="d-flex align-items-center sq-meta-item">
+                    <i class="ti ti-hourglass me-1 text-muted"></i>
+                    <span class="me-1">Duration:</span>
+                    <span>{{ widget.execution_result.duration_ms }} ms</span>
+                </div>
+                {% endif %}
+
+                {% if widget.execution_result and widget.execution_result.status %}
+                <div class="d-flex align-items-center sq-meta-item">
+                    <i class="ti ti-activity me-1 text-muted"></i>
+                    <span class="me-1">Status:</span>
+                    {% set st = widget.execution_result.status %}
+                    <span class="badge {% if st == 'success' %}bg-success{% elif st == 'error' %}bg-danger{% else %}bg-secondary{% endif %}">{{ st|title }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card-body">
+        {% if widget.result_type == "table" %}
+            <div class="table-responsive">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h4 class="m-0">Query Results</h4>
+                    <span class="badge bg-primary">{{ widget.processed_result.total_rows }} rows</span>
+                </div>
+
+                <table class="table table-vcenter card-table">
+                    <thead>
+                        <tr>
+                            {% for column in (widget.processed_result.columns or []) %}
+                                <th>{{ column | replace('_', ' ') | title }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in (widget.processed_result.data or []) %}
+                        <tr>
+                            {% for cell in row %}
+                                <td>
+                                    {{ cell }}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                {% if widget.processed_result.total_rows > widget.max_table_rows %}
+                <div class="text-center text-muted mt-2">
+                    <small>Showing first {{ widget.max_table_rows }} of {{ widget.processed_result.total_rows }} rows</small>
+                </div>
+                {% endif %}
+            </div>
+
+        {% elif widget.result_type == "error" %}
+            <div class="alert alert-danger">
+                <div class="d-flex align-items-center mb-2">
+                    <i class="ti ti-alert-circle me-2"></i>
+                    <strong>Execution Error</strong>
+                </div>
+                {% if widget.error_message %}
+                <details class="cursor-pointer">
+                    <summary class="mb-2">View Error Details</summary>
+                    <pre class="bg-light p-2 rounded border text-wrap" style="white-space: pre-wrap; word-break: break-word;">{{ widget.error_message }}</pre>
+                </details>
+                {% endif %}
+            </div>
+
+        {% elif widget.result_type == "no_result" %}
+            <div class="text-center py-4">
+                <i class="ti ti-database-off icon icon-lg text-muted mb-3"></i>
+                <h4 class="text-muted">No Result Available</h4>
+                <p class="text-muted">This query hasn't been executed yet or produced no output.</p>
+            </div>
+
+        {% else %}
+            <div class="alert alert-warning">
+                <div class="d-flex align-items-center">
+                    <i class="ti ti-alert-triangle me-2"></i>
+                    <span>Unknown result format: {{ widget.result_type }}</span>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    {% if widget.show_query_info and widget.scheduled_query and widget.scheduled_query.grafana_metric_config %}
+    <div class="card-footer">
+        <div class="d-flex align-items-center">
+            <i class="ti ti-chart-line me-2 text-muted"></i>
+            <small class="text-muted">
+                <strong>Grafana Export:</strong>
+                {{ widget.scheduled_query.grafana_metric_config.metric_name }}
+                {% if widget.scheduled_query.grafana_metric_config.labels and widget.scheduled_query.grafana_metric_config.labels.service %}
+                    ({{ widget.scheduled_query.grafana_metric_config.labels.service }})
+                {% endif %}
+            </small>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.scheduled-query-result-widget .cursor-pointer { cursor: pointer; }
+.scheduled-query-result-widget .cursor-pointer:hover { opacity: 0.9; }
+.scheduled-query-result-widget .sq-meta .sq-meta-item { white-space: nowrap; }
+.scheduled-query-result-widget .sq-meta .sq-meta-item code { padding: 0 .25rem; border-radius: .25rem; }
+</style>
