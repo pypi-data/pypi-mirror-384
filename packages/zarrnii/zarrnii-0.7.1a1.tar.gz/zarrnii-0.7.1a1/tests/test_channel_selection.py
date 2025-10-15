@@ -1,0 +1,477 @@
+"""Tests for enhanced channel selection functionality in ZarrNii.from_ome_zarr."""
+
+import os
+import tempfile
+
+import dask.array as da
+import ngff_zarr as nz
+import numpy as np
+import pytest
+import zarr
+
+from zarrnii import ZarrNii
+
+
+class MockOmeroWindow:
+    """Mock class to simulate OmeroWindow from modern ome-zarr-py."""
+
+    def __init__(self, min=0.0, max=65535.0, start=0.0, end=65535.0):
+        self.min = min
+        self.max = max
+        self.start = start
+        self.end = end
+
+
+class MockOmeroChannel:
+    """Mock class to simulate OmeroChannel from modern ome-zarr-py."""
+
+    def __init__(self, label, color, window=None):
+        self.label = label
+        self.color = color
+        self.window = window or MockOmeroWindow()
+
+
+class MockOmero:
+    """Mock class to simulate Omero from modern ome-zarr-py."""
+
+    def __init__(self, channels):
+        self.channels = channels
+
+
+def create_test_dataset_with_omero_metadata(store_path, num_channels=3):
+    """Create a test OME-Zarr dataset with proper omero metadata and channel labels."""
+
+    # Create a 4D array in ZYXC order to match the axis labels
+    arr_sz = (16, 32, 32, num_channels)  # (z, y, x, channels)
+    arr = da.zeros(arr_sz, dtype=np.uint16)
+
+    # Fill with different values for each channel for easy identification
+    def fill_channel_data(block, block_info=None):
+        if block_info is not None:
+            # Get the channel slice info (last dimension)
+            block_slice = block_info[0]["array-location"]
+            c_start = block_slice[3][0]  # Channel is at index 3
+            c_end = block_slice[3][1]
+
+            # Create different values for each channel (100, 200, 300, etc.)
+            result = np.zeros(block.shape, dtype=np.uint16)
+            for c_idx in range(c_end - c_start):
+                global_c_idx = c_start + c_idx
+                value = (global_c_idx + 1) * 100
+                result[:, :, :, c_idx] = value
+            return result
+        return np.zeros(block.shape, dtype=np.uint16)
+
+    arr = arr.map_blocks(fill_channel_data, dtype=np.uint16)
+
+    # Create NGFF image and multiscales
+    ngff_image = nz.to_ngff_image(arr)
+    multiscales = nz.to_multiscales(ngff_image)
+
+    # Create omero metadata as dictionaries - this will be the format expected by ngff_zarr
+    channel_labels_and_colors = [
+        ("DAPI", "0000FF"),
+        ("Abeta", "00FF00"),
+        ("GFP", "FF0000"),
+    ][
+        :num_channels
+    ]  # Only include as many as we have channels
+
+    # Create channel dictionaries with proper structure for ngff_zarr
+    omero_channels = []
+    for label, color in channel_labels_and_colors:
+        channel = {
+            "label": label,
+            "color": color,
+            "window": {"min": 0.0, "max": 65535.0, "start": 0.0, "end": 65535.0},
+        }
+        omero_channels.append(channel)
+
+    omero_metadata = {"channels": omero_channels}
+
+    # Store to zarr first
+    nz.to_ngff_zarr(store_path, multiscales)
+
+    # Now add omero metadata to the zarr group attributes
+    # This follows the same pattern that ngff_zarr uses when reading
+    group = zarr.open_group(store_path, mode="r+")
+    group.attrs["omero"] = omero_metadata
+
+    return store_path
+
+
+class TestChannelSelection:
+    """Test class for channel selection functionality."""
+
+    @pytest.fixture
+    def test_dataset(self):
+        """Create a temporary test dataset with legacy omero metadata."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store_path = os.path.join(tmpdir, "test_channels.ome.zarr")
+            create_test_dataset_with_omero_metadata(store_path)
+            yield store_path
+
+    def test_load_all_channels_by_default(self, test_dataset):
+        """Test that all channels are loaded by default when no channels specified."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        # Should load all 3 channels, shape should be (1, z, y, x) after slicing for single channel or (3, z, y, x) for all
+        # Since we load all channels, expect shape to be (z, y, x, num_channels) -> (16, 32, 32, 3)
+        expected_shape = (16, 32, 32, 3)
+        assert znimg.darr.shape == expected_shape
+
+        # Check that omero metadata is preserved
+        assert znimg.omero is not None
+        assert hasattr(znimg.omero, "channels")
+        assert len(znimg.omero.channels) == 3
+
+    def test_load_by_channel_labels_single(self, test_dataset):
+        """Test loading a single channel by label."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset, channel_labels=["Abeta"])
+
+        # Should load only 1 channel: shape (z, y, x, 1) = (16, 32, 32, 1)
+        expected_shape = (16, 32, 32, 1)
+        assert znimg.darr.shape == expected_shape
+
+        # Check data value - Abeta is channel index 1, so should have value 200
+        data_sum = znimg.darr.compute().sum()
+        expected_sum = 200 * 16 * 32 * 32  # value * z * y * x
+        assert data_sum == expected_sum
+
+    def test_load_by_channel_labels_multiple(self, test_dataset):
+        """Test loading multiple channels by labels."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset, channel_labels=["DAPI", "GFP"])
+
+        # Should load 2 channels: shape (z, y, x, 2) = (16, 32, 32, 2)
+        expected_shape = (16, 32, 32, 2)
+        assert znimg.darr.shape == expected_shape
+
+        # Check data values for each channel
+        # DAPI=channel 0=100, GFP=channel 2=300
+        channel_0_sum = znimg.darr[:, :, :, 0].compute().sum()
+        channel_1_sum = znimg.darr[:, :, :, 1].compute().sum()
+        expected_sums = [100 * 16 * 32 * 32, 300 * 16 * 32 * 32]  # DAPI=100, GFP=300
+        assert [channel_0_sum, channel_1_sum] == expected_sums
+
+    def test_load_by_channel_indices_backward_compatibility(self, test_dataset):
+        """Test that loading by channel indices still works (backward compatibility)."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset, channels=[1, 2])
+
+        # Should load 2 channels: shape (z, y, x, 2) = (16, 32, 32, 2)
+        expected_shape = (16, 32, 32, 2)
+        assert znimg.darr.shape == expected_shape
+
+        # Check data values - indices 1 and 2 should have values 200 and 300
+        channel_0_sum = znimg.darr[:, :, :, 0].compute().sum()
+        channel_1_sum = znimg.darr[:, :, :, 1].compute().sum()
+        expected_sums = [200 * 16 * 32 * 32, 300 * 16 * 32 * 32]
+        assert [channel_0_sum, channel_1_sum] == expected_sums
+
+    def test_error_both_channels_and_labels_specified(self, test_dataset):
+        """Test that specifying both channels and channel_labels raises an error."""
+        with pytest.raises(
+            ValueError, match="Cannot specify both 'channels' and 'channel_labels'"
+        ):
+            ZarrNii.from_ome_zarr(test_dataset, channels=[0], channel_labels=["DAPI"])
+
+    def test_error_invalid_channel_label(self, test_dataset):
+        """Test that specifying a non-existent channel label raises an error."""
+        with pytest.raises(ValueError, match="Channel label 'NonExistent' not found"):
+            ZarrNii.from_ome_zarr(test_dataset, channel_labels=["NonExistent"])
+
+    def test_error_channel_labels_without_omero_metadata(self):
+        """Test that specifying channel_labels without omero metadata raises an error."""
+        # Create dataset without omero metadata
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store_path = os.path.join(tmpdir, "test_no_omero.ome.zarr")
+
+            # Create simple dataset without omero metadata
+            arr = da.zeros((2, 16, 32, 32), dtype=np.uint16)
+            ngff_image = nz.to_ngff_image(arr)
+            multiscales = nz.to_multiscales(ngff_image)
+            nz.to_ngff_zarr(store_path, multiscales)
+
+            with pytest.raises(
+                ValueError,
+                match="Channel labels were specified but no omero metadata found",
+            ):
+                ZarrNii.from_ome_zarr(store_path, channel_labels=["DAPI"])
+
+    def test_omero_metadata_preservation(self, test_dataset):
+        """Test that omero metadata is properly filtered to only include selected channels."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset, channel_labels=["Abeta"])
+
+        # Check that omero metadata is preserved and filtered correctly
+        assert znimg.omero is not None
+        assert hasattr(znimg.omero, "channels")
+        # Should only have 1 channel now (the selected "Abeta" channel)
+        assert len(znimg.omero.channels) == 1
+        assert znimg.omero.channels[0].label == "Abeta"  # Filtered metadata
+
+    def test_mixed_label_order(self, test_dataset):
+        """Test that channel labels can be specified in any order."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset, channel_labels=["GFP", "DAPI"])
+
+        # Should load 2 channels in the order specified by labels: (z, y, x, 2) = (16, 32, 32, 2)
+        expected_shape = (16, 32, 32, 2)
+        assert znimg.darr.shape == expected_shape
+
+        # Check data values - GFP first (300), then DAPI (100)
+        channel_0_sum = znimg.darr[:, :, :, 0].compute().sum()
+        channel_1_sum = znimg.darr[:, :, :, 1].compute().sum()
+        expected_sums = [300 * 16 * 32 * 32, 100 * 16 * 32 * 32]  # GFP=300, DAPI=100
+        assert [channel_0_sum, channel_1_sum] == expected_sums
+
+    # Tests for backward compatibility with modern OME-Zarr format
+    def test_extract_channel_labels_helper_legacy_format(self):
+        """Test the helper function with legacy dictionary format."""
+        from zarrnii.core import _extract_channel_labels_from_omero
+
+        # Legacy format: list of dictionaries
+        legacy_channels = [
+            {"label": "DAPI", "color": "0000FF"},
+            {"label": "Abeta", "color": "00FF00"},
+            {"label": "GFP", "color": "FF0000"},
+        ]
+
+        labels = _extract_channel_labels_from_omero(legacy_channels)
+        assert labels == ["DAPI", "Abeta", "GFP"]
+
+    def test_extract_channel_labels_helper_modern_format(self):
+        """Test the helper function with modern object format."""
+        from zarrnii.core import _extract_channel_labels_from_omero
+
+        # Modern format: list of objects with .label attributes
+        modern_channels = [
+            MockOmeroChannel("DAPI", "0000FF"),
+            MockOmeroChannel("Abeta", "00FF00"),
+            MockOmeroChannel("GFP", "FF0000"),
+        ]
+
+        labels = _extract_channel_labels_from_omero(modern_channels)
+        assert labels == ["DAPI", "Abeta", "GFP"]
+
+    def test_extract_channel_labels_helper_mixed_format(self):
+        """Test the helper function with mixed formats."""
+        from zarrnii.core import _extract_channel_labels_from_omero
+
+        # Mixed format: some dictionaries, some objects
+        mixed_channels = [
+            {"label": "DAPI", "color": "0000FF"},  # Legacy format
+            MockOmeroChannel("Abeta", "00FF00"),  # Modern format
+            {"label": "GFP", "color": "FF0000"},  # Legacy format
+        ]
+
+        labels = _extract_channel_labels_from_omero(mixed_channels)
+        assert labels == ["DAPI", "Abeta", "GFP"]
+
+    def test_list_channels_with_metadata(self, test_dataset):
+        """Test listing channels from omero metadata."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        # Should return all channel labels
+        channels = znimg.list_channels()
+        assert channels == ["DAPI", "Abeta", "GFP"]
+
+    def test_list_channels_without_metadata(self):
+        """Test listing channels when no omero metadata exists."""
+        # Create a ZarrNii without omero metadata
+        import dask.array as da
+
+        arr = da.zeros((16, 32, 32, 3), dtype=np.uint16)
+        znimg = ZarrNii(arr)
+
+        # Should return empty list
+        channels = znimg.list_channels()
+        assert channels == []
+
+    def test_select_channels_by_index(self, test_dataset):
+        """Test selecting channels by index after loading."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        # Select channels 0 and 2 (DAPI and GFP)
+        selected_znimg = znimg.select_channels(channels=[0, 2])
+
+        # Should have shape (z, y, x, 2)
+        expected_shape = (16, 32, 32, 2)
+        assert selected_znimg.darr.shape == expected_shape
+
+        # Check that omero metadata is filtered correctly
+        assert selected_znimg.omero is not None
+        assert len(selected_znimg.omero.channels) == 2
+        assert selected_znimg.omero.channels[0].label == "DAPI"
+        assert selected_znimg.omero.channels[1].label == "GFP"
+
+    def test_select_channels_by_labels(self, test_dataset):
+        """Test selecting channels by labels after loading."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        # Select channels by labels
+        selected_znimg = znimg.select_channels(channel_labels=["GFP", "DAPI"])
+
+        # Should have shape (z, y, x, 2)
+        expected_shape = (16, 32, 32, 2)
+        assert selected_znimg.darr.shape == expected_shape
+
+        # Check data values - GFP first (300), then DAPI (100)
+        channel_0_sum = selected_znimg.darr[:, :, :, 0].compute().sum()
+        channel_1_sum = selected_znimg.darr[:, :, :, 1].compute().sum()
+        expected_sums = [300 * 16 * 32 * 32, 100 * 16 * 32 * 32]  # GFP=300, DAPI=100
+        assert [channel_0_sum, channel_1_sum] == expected_sums
+
+        # Check that omero metadata is filtered correctly
+        assert selected_znimg.omero is not None
+        assert len(selected_znimg.omero.channels) == 2
+        assert selected_znimg.omero.channels[0].label == "GFP"
+        assert selected_znimg.omero.channels[1].label == "DAPI"
+
+    def test_select_channels_error_both_specified(self, test_dataset):
+        """Test error when both channels and channel_labels are specified."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        with pytest.raises(
+            ValueError, match="Cannot specify both 'channels' and 'channel_labels'"
+        ):
+            znimg.select_channels(channels=[0, 1], channel_labels=["DAPI"])
+
+    def test_select_channels_error_invalid_label(self, test_dataset):
+        """Test error when invalid channel label is specified."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        with pytest.raises(
+            ValueError, match="Channel label 'InvalidChannel' not found"
+        ):
+            znimg.select_channels(channel_labels=["InvalidChannel"])
+
+    def test_select_channels_error_no_metadata(self):
+        """Test error when selecting by labels but no omero metadata exists."""
+        # Create a ZarrNii without omero metadata
+        import dask.array as da
+
+        arr = da.zeros((16, 32, 32, 3), dtype=np.uint16)
+        znimg = ZarrNii(arr)
+
+        with pytest.raises(
+            ValueError,
+            match="Channel labels were specified but no omero metadata found",
+        ):
+            znimg.select_channels(channel_labels=["DAPI"])
+
+    def test_select_channels_no_arguments(self, test_dataset):
+        """Test selecting channels with no arguments returns copy of all channels."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset)
+
+        # Select with no arguments should return copy with all channels
+        selected_znimg = znimg.select_channels()
+
+        # Should have same shape
+        assert selected_znimg.darr.shape == znimg.darr.shape
+
+        # Should have same omero metadata
+        assert len(selected_znimg.omero.channels) == len(znimg.omero.channels)
+        assert [ch.label for ch in selected_znimg.omero.channels] == [
+            ch.label for ch in znimg.omero.channels
+        ]
+
+    def test_omero_metadata_filtering_multiple_channels(self, test_dataset):
+        """Test that omero metadata filtering works correctly when selecting multiple channels."""
+        znimg = ZarrNii.from_ome_zarr(test_dataset, channel_labels=["Abeta", "GFP"])
+
+        # Should have 2 channels in filtered metadata
+        assert len(znimg.omero.channels) == 2
+        assert znimg.omero.channels[0].label == "Abeta"
+        assert znimg.omero.channels[1].label == "GFP"
+
+        # Data shape should match
+        expected_shape = (16, 32, 32, 2)
+        assert znimg.darr.shape == expected_shape
+
+    def test_select_channels_with_czyx_dimension_order(self):
+        """Test that select_channels works when channels are not in the last dimension."""
+        import dask.array as da
+        import ngff_zarr as nz
+        import numpy as np
+
+        # Create test data in CZYX order (channels first)
+        arr_sz = (3, 8, 16, 16)  # (channels, z, y, x)
+        arr = da.zeros(arr_sz, dtype=np.uint16)
+
+        # Fill with different values for each channel for easy identification
+        def fill_channel_data(block, block_info=None):
+            if block_info is not None:
+                # Get the channel slice info (first dimension)
+                block_slice = block_info[0]["array-location"]
+                c_start = block_slice[0][0]  # Channel is at index 0
+                c_end = block_slice[0][1]
+
+                # Create different values for each channel (100, 200, 300)
+                result = np.zeros(block.shape, dtype=np.uint16)
+                for c_idx in range(c_end - c_start):
+                    global_c_idx = c_start + c_idx
+                    value = (global_c_idx + 1) * 100
+                    result[c_idx, :, :, :] = value
+                return result
+            return np.zeros(block.shape, dtype=np.uint16)
+
+        arr = arr.map_blocks(fill_channel_data, dtype=np.uint16)
+
+        # Create NgffImage with explicit CZYX dims
+        scale = {"c": 1.0, "z": 1.0, "y": 1.0, "x": 1.0}
+        translation = {"c": 0.0, "z": 0.0, "y": 0.0, "x": 0.0}
+        dims = ["c", "z", "y", "x"]
+
+        ngff_image = nz.NgffImage(
+            data=arr, dims=dims, scale=scale, translation=translation, name="test_czyx"
+        )
+
+        # Create ZarrNii object
+        znii = ZarrNii(ngff_image=ngff_image, axes_order="ZYX", orientation="RAS")
+
+        # Test selecting channels 0 and 2
+        selected = znii.select_channels(channels=[0, 2])
+
+        # Verify correct shape (should keep 2 channels)
+        assert selected.data.shape == (2, 8, 16, 16)
+        assert selected.dims == ["c", "z", "y", "x"]
+
+        # Verify the data values are correct
+        selected_data = selected.data.compute()
+        channel_0_sum = selected_data[0, :, :, :].sum()  # Should be 100 * volume
+        channel_1_sum = selected_data[
+            1, :, :, :
+        ].sum()  # Should be 300 * volume (original channel 2)
+
+        expected_volume = 8 * 16 * 16
+        expected_sums = [100 * expected_volume, 300 * expected_volume]
+        actual_sums = [int(channel_0_sum), int(channel_1_sum)]
+
+        assert (
+            actual_sums == expected_sums
+        ), f"Channel data mismatch: expected {expected_sums}, got {actual_sums}"
+
+    def test_select_channels_error_no_channel_dimension(self):
+        """Test that proper error is raised when there's no channel dimension."""
+        import dask.array as da
+        import ngff_zarr as nz
+        import numpy as np
+
+        # Create 3D data with no channel dimension
+        arr_sz = (8, 16, 16)  # (z, y, x) - no channels
+        arr = da.ones(arr_sz, dtype=np.uint16)
+
+        scale = {"z": 1.0, "y": 1.0, "x": 1.0}
+        translation = {"z": 0.0, "y": 0.0, "x": 0.0}
+        dims = ["z", "y", "x"]
+
+        ngff_image = nz.NgffImage(
+            data=arr,
+            dims=dims,
+            scale=scale,
+            translation=translation,
+            name="test_no_channels",
+        )
+
+        znii = ZarrNii(ngff_image=ngff_image, axes_order="ZYX", orientation="RAS")
+
+        with pytest.raises(ValueError, match="No channel dimension found"):
+            znii.select_channels(channels=[0])
