@@ -1,0 +1,1 @@
+var e=["registration","paper","tan","spass","email","yubico","yubikey","sms","applspec","indexedsecret"],s=["registration","spass","email","yubico","yubikey","sms","applspec","indexedsecret","webauthn","passkey"],p=["paper","tan"];export{e as a,s as b,p as c};
