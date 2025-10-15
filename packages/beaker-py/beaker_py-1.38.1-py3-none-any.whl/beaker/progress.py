@@ -1,0 +1,369 @@
+import io
+import time
+from typing import List, Optional, Tuple, Union
+
+import rich
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    FileSizeColumn,
+    MofNCompleteColumn,
+    Progress,
+    ProgressColumn,
+    SpinnerColumn,
+    Task,
+    TaskID,
+    TimeElapsedColumn,
+    TransferSpeedColumn,
+)
+from rich.status import Status
+from rich.table import Table
+from rich.text import Text
+
+
+class QuietProgress:
+    """
+    A mock `Progress` class that does absolutely nothing.
+    We use this when users pass `quiet=True` since rich's `Progress` still
+    prints empty lines with `quiet=True`.
+    """
+
+    def update(self, *args, **kwargs):
+        del args, kwargs
+
+    def add_task(self, *args, **kwargs):
+        del args, kwargs
+
+    def advance(self, *args, **kwargs):
+        del args, kwargs
+
+    def stop_task(self, *args, **kwargs):
+        del args, kwargs
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):  # type: ignore
+        del args, kwargs
+
+
+class QuietLive:
+    """
+    Quiet version of rich's `Live`.
+    """
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):  # type: ignore
+        del args, kwargs
+
+
+class QuietStatus:
+    """
+    Quiet version of rich's `Status`.
+    """
+
+    def update(self, *args, **kwargs):
+        del args, kwargs
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):  # type: ignore
+        del args, kwargs
+
+
+class ImageDownloadUploadColumn(DownloadColumn):
+    def render(self, task: Task) -> Text:
+        if task.total is None or int(task.total) == 1:
+            return Text("")
+        else:
+            return super().render(task)
+
+
+class TaskStatusColumn(ProgressColumn):
+    def __init__(self):
+        super().__init__()
+        self.dots = 0
+        self.max_dots = 4
+        self.update_interval = 1.0
+        self.last_updated = time.time()
+
+    def render(self, task: Task) -> Text:
+        total = max(0, task.total or 0)
+        completed = max(0, task.completed)
+        if completed < total:
+            now = time.time()
+            if now - self.last_updated > self.update_interval:
+                self.last_updated = now
+                self.dots += 1
+                if self.dots > self.max_dots:
+                    self.dots = 0
+            return Text("waiting" + ("." * self.dots) + (" " * (self.max_dots - self.dots)))
+        else:
+            return Text("\N{check mark} finalized")
+
+
+class BufferedReaderWithProgress(io.BufferedReader):
+    def __init__(
+        self,
+        handle: Union[io.BufferedReader, io.BytesIO],
+        progress: Progress,
+        task_id: TaskID,
+        close_handle: bool = True,
+    ):
+        self.handle = handle
+        self.progress = progress
+        self.task_id = task_id
+        self.total_read = 0
+        self.close_handle = close_handle
+
+    @property
+    def mode(self) -> str:
+        return "rb"
+
+    def __enter__(self) -> "BufferedReaderWithProgress":
+        self.handle.__enter__()
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    @property
+    def closed(self) -> bool:
+        return self.handle.closed
+
+    def close(self):
+        if self.close_handle:
+            self.handle.close()
+
+    def fileno(self):
+        return self.handle.fileno()
+
+    def flush(self):
+        self.handle.flush()
+
+    def isatty(self) -> bool:
+        return self.handle.isatty()
+
+    def readable(self) -> bool:
+        return self.handle.readable()
+
+    def seekable(self) -> bool:
+        return self.handle.seekable()
+
+    def writable(self) -> bool:
+        return False
+
+    def peek(self, size: int = 0) -> bytes:
+        if isinstance(self.handle, io.BytesIO):
+            return self.handle.getvalue()[:size]
+        else:
+            return self.handle.peek(size)
+
+    def read(self, size: Optional[int] = None) -> bytes:
+        out = self.handle.read(size)
+        self.progress.advance(self.task_id, len(out))
+        self.total_read += len(out)
+        return out
+
+    def read1(self, size: int = -1) -> bytes:
+        out = self.handle.read1(size)
+        self.progress.advance(self.task_id, len(out))
+        self.total_read += len(out)
+        return out
+
+    def readinto(self, b):
+        n = self.handle.readinto(b)
+        self.progress.advance(self.task_id, n)
+        self.total_read += n
+        return n
+
+    def readinto1(self, b):
+        n = self.handle.readinto1(b)
+        self.progress.advance(self.task_id, n)
+        self.total_read += n
+        return n
+
+    def readline(self, size: Optional[int] = -1) -> bytes:
+        out = self.handle.readline(size)
+        self.progress.advance(self.task_id, len(out))
+        self.total_read += len(out)
+        return out
+
+    def readlines(self, hint: int = -1) -> List[bytes]:
+        lines = self.handle.readlines(hint)
+        for line in lines:
+            self.progress.advance(self.task_id, len(line))
+            self.total_read += len(line)
+        return lines
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        pos = self.handle.seek(offset, whence)
+        self.progress.update(self.task_id, completed=pos)
+        return pos
+
+    def tell(self) -> int:
+        return self.handle.tell()
+
+    @property
+    def raw(self):
+        return self.handle.raw
+
+    def detach(self):
+        return self.handle.detach()
+
+    def write(self, _) -> int:
+        raise io.UnsupportedOperation("write")
+
+    def writelines(self, _):
+        raise io.UnsupportedOperation("write")
+
+
+def get_experiments_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            BarColumn(),
+            MofNCompleteColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            #  disable=quiet,
+        )
+
+
+def get_jobs_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            TaskStatusColumn(),
+            TimeElapsedColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_logs_progress(quiet: bool = False, by_line: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    elif by_line:
+        return Progress(
+            "[progress.description]{task.description} {task.completed} lines",
+            TimeElapsedColumn(),
+            SpinnerColumn(),
+        )
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            SpinnerColumn(),
+            FileSizeColumn(),
+            TimeElapsedColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_group_experiments_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            SpinnerColumn(),
+            FileSizeColumn(),
+            TimeElapsedColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_exps_and_jobs_progress(quiet: bool = False) -> Tuple[Live, Progress, Progress]:
+    if quiet:
+        return QuietLive(), QuietProgress(), QuietProgress()  # type: ignore
+    else:
+        experiments_progress = get_experiments_progress(quiet)
+        jobs_progress = get_jobs_progress(quiet)
+        progress_table = Table.grid()
+        progress_table.add_row(
+            Panel.fit(experiments_progress, title="Overall progress", padding=(1, 2)),
+            Panel.fit(jobs_progress, title="Task progress", padding=(1, 2)),
+        )
+        return (
+            Live(progress_table, console=None if not quiet else Console(quiet=True)),
+            experiments_progress,
+            jobs_progress,
+        )
+
+
+def get_dataset_sync_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TimeElapsedColumn(),
+            TransferSpeedColumn(),
+            DownloadColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_sized_dataset_fetch_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TimeElapsedColumn(),
+            TransferSpeedColumn(),
+            DownloadColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_unsized_dataset_fetch_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            SpinnerColumn(),
+            TimeElapsedColumn(),
+            TransferSpeedColumn(),
+            FileSizeColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_image_upload_progress(quiet: bool = False) -> Progress:
+    if quiet:
+        return QuietProgress()  # type: ignore
+    else:
+        return Progress(
+            "[progress.description]{task.description}",
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            ImageDownloadUploadColumn(),
+            #  disable=quiet,
+        )
+
+
+def get_image_download_progress(quiet: bool = False) -> Progress:
+    return get_image_upload_progress(quiet)
+
+
+def get_status(
+    description: str, spinner: str = "point", speed: float = 0.8, quiet: bool = False
+) -> Status:
+    if quiet:
+        return QuietStatus()  # type: ignore
+    else:
+        return rich.get_console().status(description, spinner=spinner, speed=speed)
