@@ -1,0 +1,221 @@
+# https://peps.python.org/pep-0517/
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+# read more about configuring hatch at:
+# https://hatch.pypa.io/latest/config/build/
+
+# https://hatch.pypa.io/latest/config/metadata/
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src"]
+sources = ["src"]
+
+# https://peps.python.org/pep-0621/
+[project]
+name = "careamics"
+dynamic = ["version"]
+description = "Toolbox for running N2V and friends."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+authors = [
+    { name = 'CAREamics team', email = 'rse@fht.org' },
+    { name = 'Ashesh', email = 'ashesh.ashesh@fht.org' },
+    { name = 'Federico Carrara', email = 'federico.carrara@fht.org' },
+    { name = 'Melisande Croft', email = 'melisande.croft@fht.org' },
+    { name = 'Joran Deschamps', email = 'joran.deschamps@fht.org' },
+    { name = 'Vera Galinova', email = 'vera.galinova@fht.org' },
+    { name = 'Igor Zubarev', email = 'igor.zubarev@fht.org' },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: BSD License",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.21",
+    "numpy>=2.1.0; python_version>='3.13'", # prevents ml_dtypes conflict in py313
+    'torch>=2.0,<=2.8.0',
+    'torchvision<=0.23.0',
+    'bioimageio.core>=0.9.0',
+    'tifffile<=2025.10.4',
+    'psutil<=7.1.0',
+    'pydantic>=2.11,<=2.12.2',
+    'pytorch_lightning>=2.2,<=2.5.5',
+    'pyyaml!=6.0.0,<=6.0.3',
+    'typer>=0.12.3,<=0.19.2',
+    'scikit-image<=0.25.2',
+    'zarr>=3.0.0,<4.0.0',
+    'pillow<=11.3.0',
+    'matplotlib<=3.10.7',
+    'validators<=0.35.0',
+    'torchmetrics>=0.11.0,<1.5.0' # 1.5.0 causes `data_range` mandatory parameter issues
+]
+
+[project.optional-dependencies]
+
+# czi format
+czi = ['pylibCZIrw>=4.1.2,<6.0.0']
+
+# notebooks
+examples = ["jupyter", "careamics-portfolio"]
+
+# loggers
+wandb = ["wandb"]
+tensorboard = ["tensorboard", "protobuf==5.29.1"]
+
+[dependency-groups]
+# development dependencies and tooling
+dev = [
+    "pre-commit",
+    "pytest",
+    "pytest-cov",
+    "sybil",      # doctesting
+
+    # libraries used in some tests
+    "onnx",
+    "ml_dtypes>=0.5.0" # required by onnx, causes issues in gh runners with py313
+]
+
+[project.urls]
+homepage = "https://careamics.github.io/"
+repository = "https://github.com/CAREamics/careamics"
+
+# cli
+[project.scripts]
+careamics = "careamics.cli.main:run"
+
+# https://beta.ruff.rs/docs
+[tool.ruff]
+fix = true
+line-length = 88
+target-version = "py311" # is this needed? see .pre-commit-config.yaml
+src = ["src"]
+lint.select = [
+    "E",  # style errors
+    "W",  # style warnings
+    "F",  # flakes
+    "D",  # pydocstyle
+    "I",  # isort
+    "UP", # pyupgrade
+    # "S",    # bandit
+    "C4",   # flake8-comprehensions
+    "B",    # flake8-bugbear
+    "A001", # flake8-builtins
+    "RUF",  # ruff-specific rules
+]
+lint.ignore = [
+    "D100", # Missing docstring in public module
+    "D107", # Missing docstring in __init__
+    "D203", # 1 blank line required before class docstring
+    "D212", # Multi-line docstring summary should start at the first line
+    "D213", # Multi-line docstring summary should start at the second line
+    "D401", # First line should be in imperative mood
+    "D413", # Missing blank line after last section
+    "D416", # Section name should end with a colon
+
+    # incompatibility with mypy
+    "RUF005", # collection-literal-concatenation, in prediction_utils.py:30
+
+    # version specific
+    "UP007", # Replace Union by |, mandatory for py3.9
+]
+show-fixes = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["D", "S"]
+"setup.py" = ["D"]
+# temporarily ignore docstrings in next generation dataset development
+"src/careamics/dataset_ng/*" = ["D"]
+
+[tool.black]
+line-length = 88
+
+# https://mypy.readthedocs.io/en/stable/config_file.html
+[tool.mypy]
+# plugins = ["pydantic.mypy"]
+files = "src/**/"
+strict = false
+# allow_untyped_defs = false
+# allow_untyped_calls = false
+# disallow_any_generics = false
+# ignore_missing_imports = false
+
+# https://docs.pydantic.dev/latest/integrations/mypy/
+# [tool.pydantic-mypy]
+# init_forbid_extra = true
+# init_typed = true
+# warn_required_dynamic_aliases = true
+
+
+# https://docs.pytest.org/en/6.2.x/customize.html
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["src/careamics", "tests"] # add src/careamics for doctest discovery
+filterwarnings = [
+    # "error",
+    # "ignore::UserWarning",
+]
+addopts = "-p no:doctest"
+
+markers = [
+    # "gpu: marks tests as requiring gpu",
+    "lvae: marks tests as testing lvae",
+    "mps_gh_fail: marks tests as failing on Github macos-latest runner",
+    "czi: marks tests using czi files",
+]
+
+# https://coverage.readthedocs.io/en/6.4/config.html
+[tool.coverage.report]
+exclude_lines = [
+    "if TYPE_CHECKING:",
+    "@overload",
+    "except ImportError",
+    "raise NotImplementedError()",
+    "except PackageNotFoundError:",
+]
+
+[tool.coverage.run]
+source = ["src/careamics"]
+omit = ["src/careamics/lvae_training/*"]
+
+# https://github.com/mgedmin/check-manifest#configuration
+# add files that you want check-manifest to explicitly ignore here
+# (files that are in the repo but shouldn't go in the package)
+[tool.check-manifest]
+ignore = [
+    ".github_changelog_generator",
+    ".pre-commit-config.yaml",
+    ".ruff_cache/**/*",
+    "setup.py",
+    "tests/**/*",
+]
+
+[tool.numpydoc_validation]
+checks = [
+    "all",  # report on all checks, except the below
+    "EX01", # Example section not found
+    "SA01", # See Also section not found
+    "ES01", # Extended Summar not found
+    "GL01", # Docstring text (summary) should start in the line immediately
+    # after the opening quotes
+    "GL02", # Closing quotes should be placed in the line after the last text 
+    # in the docstring
+    "GL03", # Double line break found
+    "RT04", # Return value description should start with a capital letter
+]
+exclude = [ # don't report on objects that match any of these regex
+    "test_*",
+    "src/careamics/lvae_training/*",
+]
