@@ -1,0 +1,182 @@
+# mem8 Docker Compose - Development and Production
+#
+# Development (default): docker-compose up
+# Production:            docker-compose --profile prod up
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-mem8}-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mem8_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-mem8_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mem8_dev_password}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      # Development: 5433 (avoid conflicts with local postgres)
+      # Production: 5432 (standard port)
+      - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mem8_user} -d ${POSTGRES_DB:-mem8_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mem8-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-mem8}-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mem8-network
+    restart: unless-stopped
+
+  # Backend API - Development (with hot reload)
+  backend-dev:
+    profiles: ["dev", ""]  # Default profile
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-mem8}-backend
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DEBUG=${DEBUG:-true}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-not-for-production}
+      - PYTHONPATH=/app/backend/src
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - NODE_ENV=${NODE_ENV:-development}
+    ports:
+      - "${BACKEND_PORT:-8000}:${BACKEND_PORT:-8000}"
+    volumes:
+      # Hot reload - mount source code
+      - ./backend/src:/app/backend/src:cached
+      - ./mem8:/app/mem8:cached
+      - ./thoughts:/app/thoughts:cached
+    command: ["mem8", "serve", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mem8-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT:-8000}/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API - Production
+  backend-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-mem8}-backend
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DEBUG=${DEBUG:-false}
+      - SECRET_KEY=${SECRET_KEY}
+      - PYTHONPATH=/app/backend/src
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - NODE_ENV=production
+    ports:
+      - "${BACKEND_PORT:-8000}:${BACKEND_PORT:-8000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mem8-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT:-8000}/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Web App - Development (with hot reload)
+  frontend-dev:
+    profiles: ["dev", ""]  # Default profile
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: ${COMPOSE_PROJECT_NAME:-mem8}-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${FRONTEND_PORT:-22211}
+      - CHOKIDAR_USEPOLLING=true  # File watching for Windows/Docker
+      - WATCHPACK_POLLING=true
+    ports:
+      - "${FRONTEND_PORT:-22211}:${FRONTEND_PORT:-22211}"
+    volumes:
+      # Hot reload - mount source code
+      - ./frontend:/app:cached
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      backend-dev:
+        condition: service_healthy
+    networks:
+      - mem8-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${FRONTEND_PORT:-22211}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Web App - Production
+  frontend-prod:
+    profiles: ["prod"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-mem8}-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NODE_ENV=production
+      - PORT=${FRONTEND_PORT:-22211}
+    ports:
+      - "${FRONTEND_PORT:-22211}:${FRONTEND_PORT:-22211}"
+    depends_on:
+      backend-prod:
+        condition: service_healthy
+    networks:
+      - mem8-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${FRONTEND_PORT:-22211}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  mem8-network:
+    driver: bridge
