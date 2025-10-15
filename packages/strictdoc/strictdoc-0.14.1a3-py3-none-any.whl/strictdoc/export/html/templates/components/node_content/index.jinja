@@ -1,0 +1,91 @@
+{#
+  In this template:
+  sdoc_entity = requirement
+#}
+
+{#  sdoc-node-content:
+    attribute node-view can be either of: [simple, table, zebra].
+    Without this attribute sdoc-node-content will look like a 'simple' view.
+    If the container becomes smaller than the set parameter (300px default),
+    the 'columns' view degrades to 'zebra'.
+#}
+
+{#  user_requirement_style:
+    refers to the parameter set in the grammar;
+    can be overridden when calling a template,
+    e.g. cards only use a 'simple' node-view.
+#}
+{% set user_requirement_style = sdoc_entity.get_requirement_style_mode() %}
+
+{#
+  dev tag: #narrative_meta_hanging
+
+  Html2pdf4doc rules for `Narrative` requirement style:
+  * If no title:
+    “meta” does not hang
+    -> add .html2pdf4doc-no-hanging to .node_fields_group-secondary.
+  * If no multi-line content:
+    the node is not split at all (with or without a title)
+    -> add .html2pdf4doc-no-break to node.
+  * PROBLEM:
+    We assume that the number of single-line strings is no greater than the height of the page
+
+  FIXME: Review this rules after upgrading html2pdf4doc to 0.2.4+
+#}
+{% set _no_title = not sdoc_entity.reserved_title %}
+{% set _has_multiline_fields = sdoc_entity.has_multiline_fields() %}
+{% set _narrative_has_multiline_fields = _has_multiline_fields and user_requirement_style == 'narrative' %}
+{% set _narrative_has_no_multiline_fields = not _has_multiline_fields and user_requirement_style == 'narrative' %}
+
+<sdoc-node-content
+  node-view="{{ requirement_style|d(sdoc_entity.get_requirement_style_mode()) }}"
+  data-level="{{ sdoc_entity.context.title_number_string }}"
+  {%- if sdoc_entity.reserved_status %}
+    data-status='{{ sdoc_entity.reserved_status.lower() }}'
+  {%- endif %}
+  {%- if _narrative_has_no_multiline_fields %}
+    class="html2pdf4doc-no-break"
+  {%- endif %}
+  show-node-type-name="{{ sdoc_entity.get_node_type_string() }}"
+  data-testid="requirement-style-{{ requirement_style|d(sdoc_entity.get_requirement_style_mode()) }}"
+>
+  {% set title_number = true %}
+  {% set truncated_statement = false %}
+  {% include "components/node_field/title/index.jinja" %}
+  {# FIXME: Task #1229 / Uncomment example when validation logic is implemented: #}
+  {#
+    {% with issue_field_name = 'title' %}
+      {% include "components/issue/index.jinja" %}
+    {% endwith %}
+  #}
+
+  {% if user_requirement_style == 'narrative' %}
+    <sdoc-scope class="node_fields_group-secondary{% if _no_title %} html2pdf4doc-no-hanging{% endif %}">
+      {% include "components/node_field/meta/index.jinja" %}
+      {% include "components/node_field/links/index.jinja" %}
+      {% include "components/node_field/files/index.jinja" %}
+    </sdoc-scope>
+    {% if _narrative_has_multiline_fields %}
+    <sdoc-scope class="node_fields_group-primary">
+      {% include "components/node_field/statement/index.jinja" %}
+      {% include "components/node_field/rationale/index.jinja" %}
+      {% include "components/node_field/comments/index.jinja" %}
+      {% include "components/node_field/multiline/index.jinja" %}
+    </sdoc-scope>
+    {% endif %}
+  {% elif user_requirement_style == 'plain' %}
+    {% include "components/node_field/statement/index.jinja" %}
+    {% include "components/node_field/rationale/index.jinja" %}
+    {% include "components/node_field/comments/index.jinja" %}
+    {% include "components/node_field/multiline/index.jinja" %}
+  {% else %}
+    {% include "components/node_field/meta/index.jinja" %}
+    {% include "components/node_field/statement/index.jinja" %}
+    {% include "components/node_field/rationale/index.jinja" %}
+    {% include "components/node_field/comments/index.jinja" %}
+    {% include "components/node_field/multiline/index.jinja" %}
+    {% include "components/node_field/links/index.jinja" %}
+    {% include "components/node_field/files/index.jinja" %}
+  {% endif %}
+
+</sdoc-node-content>
