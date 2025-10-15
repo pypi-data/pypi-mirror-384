@@ -1,0 +1,115 @@
+import os
+import ssl
+
+from typing import Literal, Optional, Dict, Union
+from httpx._types import ProxyTypes
+
+REQUEST_TIMEOUT: float = 30.0  # 30 seconds
+
+KEEPALIVE_PING_INTERVAL_SEC = 50  # 50 seconds
+KEEPALIVE_PING_HEADER = "Keepalive-Ping-Interval"
+
+
+class ConnectionConfig:
+    """
+    Configuration for the connection to the API.
+    """
+
+    @staticmethod
+    def _domain():
+        return os.getenv("AGENTSPHERE_DOMAIN", "agentsphere.run")
+
+    @staticmethod
+    def _debug():
+        return os.getenv("AGENTSPHERE_DEBUG", "false").lower() == "true"
+
+    @staticmethod
+    def _api_key():
+        return os.getenv("AGENTSPHERE_API_KEY")
+
+    @staticmethod
+    def _access_token():
+        return os.getenv("AGENTSPHERE_ACCESS_TOKEN")
+
+    @staticmethod
+    def _verify_ssl() -> Union[str, bool, ssl.SSLContext]:
+        """
+        Get SSL verification setting from environment variable.
+
+        Returns:
+            - True: Verify SSL certificates (default)
+            - False: Don't verify SSL certificates
+            - str: Path to CA bundle file
+        """
+        env_value = os.getenv("AGENTSPHERE_VERIFY_SSL")
+        if env_value is None:
+            return True
+
+        # Handle boolean values
+        if env_value.lower() in ("true", "1", "yes"):
+            return True
+        elif env_value.lower() in ("false", "0", "no"):
+            return False
+
+        # Treat as path to CA bundle
+        return env_value
+
+    def __init__(
+        self,
+        domain: Optional[str] = None,
+        debug: Optional[bool] = None,
+        api_key: Optional[str] = None,
+        access_token: Optional[str] = None,
+        request_timeout: Optional[float] = None,
+        headers: Optional[Dict[str, str]] = None,
+        proxy: Optional[ProxyTypes] = None,
+        verify_ssl: Optional[Union[str, bool, ssl.SSLContext]] = None,
+    ):
+        self.domain = domain or ConnectionConfig._domain()
+        self.debug = debug or ConnectionConfig._debug()
+        self.api_key = api_key or ConnectionConfig._api_key()
+        self.access_token = access_token or ConnectionConfig._access_token()
+        self.headers = headers or {}
+        self.proxy = proxy
+        self.verify_ssl = verify_ssl if verify_ssl is not None else ConnectionConfig._verify_ssl()
+
+        self.request_timeout = ConnectionConfig._get_request_timeout(
+            REQUEST_TIMEOUT,
+            request_timeout,
+        )
+
+        if request_timeout == 0:
+            self.request_timeout = None
+        elif request_timeout is not None:
+            self.request_timeout = request_timeout
+        else:
+            self.request_timeout = REQUEST_TIMEOUT
+
+        self.api_url = (
+            "http://localhost:3000" if self.debug else f"https://api.{self.domain}"
+        )
+
+    @staticmethod
+    def _get_request_timeout(
+        default_timeout: Optional[float],
+        request_timeout: Optional[float],
+    ):
+        if request_timeout == 0:
+            return None
+        elif request_timeout is not None:
+            return request_timeout
+        else:
+            return default_timeout
+
+    def get_request_timeout(self, request_timeout: Optional[float] = None):
+        return self._get_request_timeout(self.request_timeout, request_timeout)
+
+Username = Literal["root", "user"]
+"""
+User used for the operation in the sandbox.
+"""
+
+default_username: Username = "user"
+"""
+Default user used for the operation in the sandbox.
+"""
