@@ -1,0 +1,261 @@
+"""
+Driver implementations for different execution environments.
+
+This is the third layer in Dave Farley's 4-layer testing architecture.
+Drivers know how to translate DSL requests into actual system calls.
+"""
+
+import io
+import json
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Dict, Any
+
+from restmachine import RestApplication, HTTPMethod, Request as RestMachineRequest, BytesStreamBuffer
+from .dsl import HttpRequest, HttpResponse
+
+
+class DriverInterface(ABC):
+    """Abstract interface for all drivers."""
+
+    @abstractmethod
+    def execute(self, request: HttpRequest) -> HttpResponse:
+        """Execute an HTTP request and return the response."""
+        pass
+
+
+class RestMachineDriver(DriverInterface):
+    """
+    Driver that executes requests directly against the RestMachine library.
+
+    This is the most direct way to test the library without any intermediate layers.
+    """
+
+    def __init__(self, app: RestApplication):
+        """Initialize with a RestApplication instance."""
+        self.app = app
+
+    def execute(self, request: HttpRequest) -> HttpResponse:
+        """Execute request directly through RestApplication."""
+        # Convert DSL request to RestMachine request
+        rm_request = self._convert_to_restmachine_request(request)
+
+        # Execute through the library
+        rm_response = self.app.execute(rm_request)
+
+        # Convert RestMachine response back to DSL response
+        return self._convert_from_restmachine_response(rm_response)
+
+    def _convert_to_restmachine_request(self, request: HttpRequest) -> RestMachineRequest:
+        """Convert DSL HttpRequest to RestMachine Request."""
+        # Convert method string to HTTPMethod enum
+        method = HTTPMethod(request.method.upper())
+
+        # Prepare body as a stream
+        body_stream = None
+        if request.body is not None:
+            # Convert body to bytes
+            if isinstance(request.body, dict):
+                # Check content type to determine encoding
+                content_type = request.headers.get("Content-Type", "")
+                if "application/x-www-form-urlencoded" in content_type:
+                    # URL-encode form data
+                    from urllib.parse import urlencode
+                    body_bytes = urlencode(request.body).encode('utf-8')
+                else:
+                    # Default to JSON for dict bodies
+                    body_bytes = json.dumps(request.body).encode('utf-8')
+            elif isinstance(request.body, bytes):
+                body_bytes = request.body
+            else:
+                body_bytes = str(request.body).encode('utf-8')
+
+            # Create stream from bytes
+            body_stream = BytesStreamBuffer()
+            body_stream.write(body_bytes)
+            body_stream.close_writing()
+
+        # Create RestMachine request
+        return RestMachineRequest(
+            method=method,
+            path=request.path,
+            headers=request.headers.copy(),
+            query_params=request.query_params.copy() if request.query_params else None,
+            body=body_stream
+        )
+
+    def _convert_from_restmachine_response(self, response) -> HttpResponse:
+        """Convert RestMachine Response to DSL HttpResponse."""
+        body = self._extract_body(response)
+
+        return HttpResponse(
+            status_code=response.status_code,
+            headers=response.headers.copy() if response.headers else {},
+            body=body,
+            content_type=response.content_type
+        )
+
+    def _extract_body(self, response):
+        """Extract body based on type and range status."""
+        is_range = response.is_range_response() if hasattr(response, 'is_range_response') else False
+
+        if is_range:
+            return self._extract_range_body(response)
+        return self._extract_full_body(response)
+
+    def _extract_range_body(self, response):
+        """Extract only the requested range from body."""
+        body = response.body
+        range_start = response.range_start
+        range_end = response.range_end
+
+        if isinstance(body, Path):
+            return self._read_range_from_path(body, range_start, range_end)
+        elif isinstance(body, io.IOBase):
+            return self._read_range_from_stream(body, range_start, range_end)
+        elif isinstance(body, bytes):
+            return body[range_start:range_end + 1]
+        return body
+
+    def _read_range_from_path(self, path: Path, start: int, end: int) -> bytes:
+        """Read a range from a Path object."""
+        if path.exists() and path.is_file():
+            with path.open('rb') as f:
+                f.seek(start)
+                return f.read(end - start + 1)
+        return b""
+
+    def _read_range_from_stream(self, stream: io.IOBase, start: int, end: int) -> bytes:
+        """Read a range from a stream."""
+        if hasattr(stream, 'seek'):
+            stream.seek(start)
+        return stream.read(end - start + 1)
+
+    def _extract_full_body(self, response):
+        """Extract full body from Path, stream, or other types."""
+        body = self._read_body_source(response.body)
+        return self._parse_json_if_needed(body, response.content_type)
+
+    def _read_body_source(self, body):
+        """Read body from Path or stream."""
+        if isinstance(body, Path):
+            return self._read_path_body(body)
+        elif isinstance(body, io.IOBase):
+            return self._read_stream_body(body)
+        return body
+
+    def _read_path_body(self, path: Path):
+        """Read body from a Path object."""
+        if not path.exists() or not path.is_file():
+            return None
+
+        with path.open('rb') as f:
+            body_bytes = f.read()
+
+        # Try to decode as UTF-8
+        try:
+            return body_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            # Keep as bytes if not valid UTF-8
+            return body_bytes
+
+    def _read_stream_body(self, stream: io.IOBase):
+        """Read body from a stream."""
+        body_bytes = stream.read()
+
+        # Try to decode as UTF-8
+        try:
+            return body_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            # Keep as bytes if not valid UTF-8
+            return body_bytes
+
+    def _parse_json_if_needed(self, body, content_type):
+        """Parse JSON bodies if content type indicates JSON."""
+        if not body or not content_type or 'application/json' not in content_type:
+            return body
+
+        try:
+            return json.loads(body) if isinstance(body, (str, bytes)) else body
+        except (json.JSONDecodeError, TypeError):
+            # Keep as string if not valid JSON
+            return body
+
+    def get_openapi_spec(self) -> Dict[str, Any]:
+        """Get OpenAPI specification from the application."""
+        if hasattr(self.app, 'generate_openapi_json'):
+            openapi_json = self.app.generate_openapi_json()
+            import json
+            return json.loads(openapi_json)
+        elif hasattr(self.app, 'generate_openapi'):
+            return self.app.generate_openapi()
+        else:
+            raise NotImplementedError("Application does not support OpenAPI generation")
+
+
+class HttpDriver(DriverInterface):
+    """
+    Driver that executes requests through actual HTTP calls.
+
+    This would be used to test against a running HTTP server.
+    For now, this is a placeholder for future implementation.
+    """
+
+    def __init__(self, base_url: str):
+        """Initialize with base URL of the running server."""
+        self.base_url = base_url.rstrip('/')
+
+    def execute(self, request: HttpRequest) -> HttpResponse:
+        """Execute request through actual HTTP call."""
+        # This would use requests library or similar to make actual HTTP calls
+        # For now, just raise NotImplementedError
+        raise NotImplementedError(
+            "HttpDriver is not yet implemented. "
+            "This would make actual HTTP requests to a running server."
+        )
+
+
+class MockDriver(DriverInterface):
+    """
+    Mock driver for testing the test framework itself.
+
+    Useful for unit testing the DSL and driver abstractions.
+    """
+
+    def __init__(self):
+        """Initialize with empty response queue."""
+        self.requests = []
+        self.responses = []
+        self.response_index = 0
+
+    def expect_response(self, response: HttpResponse):
+        """Queue a response to be returned by the next execute call."""
+        self.responses.append(response)
+
+    def execute(self, request: HttpRequest) -> HttpResponse:
+        """Record request and return next queued response."""
+        self.requests.append(request)
+
+        if self.response_index < len(self.responses):
+            response = self.responses[self.response_index]
+            self.response_index += 1
+            return response
+
+        # Default response if none queued
+        return HttpResponse(
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            body={"message": "Mock response"}
+        )
+
+    def get_requests(self):
+        """Get all recorded requests."""
+        return self.requests.copy()
+
+    def reset(self):
+        """Reset recorded requests and responses."""
+        self.requests.clear()
+        self.responses.clear()
+        self.response_index = 0
+
+
