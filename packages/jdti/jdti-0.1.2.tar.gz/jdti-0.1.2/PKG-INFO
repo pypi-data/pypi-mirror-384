@@ -1,0 +1,696 @@
+Metadata-Version: 2.4
+Name: jdti
+Version: 0.1.2
+Summary: 
+Author: jkubis96
+Author-email: jbiosystem@gmail.com
+Requires-Python: >=3.12,<3.13
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Requires-Dist: adjusttext (>=1.3.0,<2.0.0)
+Requires-Dist: harmonypy (==0.0.10)
+Requires-Dist: joblib (>=1.5.2,<2.0.0)
+Requires-Dist: matplotlib (>=3.10.6,<4.0.0)
+Requires-Dist: numpy (>=2.3.3,<3.0.0)
+Requires-Dist: pandas (>=2.3.2,<3.0.0)
+Requires-Dist: plotly (>=6.3.0,<7.0.0)
+Requires-Dist: scikit-learn (>=1.7.2,<2.0.0)
+Requires-Dist: scipy (>=1.16.2,<2.0.0)
+Requires-Dist: seaborn (>=0.13.2,<0.14.0)
+Requires-Dist: tqdm (>=4.67.1,<5.0.0)
+Requires-Dist: umap-learn (>=0.5.9.post2,<0.6.0)
+Description-Content-Type: text/markdown
+
+## JDtI – Python library for scRNAseq/RNAseq data analysis
+
+
+
+![Python version](https://img.shields.io/badge/python-%E2%89%A53.12%20%7C%20%3C3.13-blue?logo=python&logoColor=white.png)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Docs](https://img.shields.io/badge/docs-available-blueviolet)
+
+
+<p align="right">
+<img  src="https://github.com/jkubis96/Logos/blob/main/logos/jbs_current.png?raw=true" alt="drawing" width="200" />
+</p>
+
+
+### Author: Jakub Kubiś 
+
+<div align="left">
+ Institute of Bioorganic Chemistry<br />
+ Polish Academy of Sciences<br />
+ Laboratory of Single Cell Analyses
+</div>
+
+
+## Description
+
+
+<div align="justify">  <strong>JDtI</strong> (JDataIntegration) is a Python library for data integration and advanced post-processing of single-cell datasets.
+
+JDtI enables basic quality control steps such as control of cells per cluster, number of genes per cell, and more advanced tasks like subclustering, integration, and wide visualization. In this approach, we do not drop the cell information during separate set analyses; instead, we use previous cluster cell lineage information for integrating data based on cluster markers and data harmonization. After integration, it is possible to visualize cell interactions and correlations in many ways, including cell distance, correlations, and more.
+
+Despite this, it is also able to conduct DEG analysis between sets, selected cells, or grouped cells, and visualize the results on UMAP, volcano plots, and regression plots comparing pairs of cells. It is very powerful for more advanced analyses focusing on specific issues within the data that may not be discovered in basic analyses.
+
+Additionally, JDtI offers many functions for data visualization and processing within clean visual outputs, such as volcano plots, gene expression analysis of different data types, clustering, heatmaps, and more.
+
+<p align="center">
+<img  src="https://github.com/jkubis96/JDtI/blob/v.1/fig/logo.png?raw=true" alt="drawing" width="500" />
+</p>
+
+It is compatible with various sequencing approaches, including scRNA-seq and bulk RNA-seq, and supports interoperability with tools such as <em>Seurat</em>, <em>Scanpy</em>, and other bioinformatics frameworks using the 10x sparse matrix format as input. More details about the available functions can be found in the Documentation and Example Usage section on GitHub.
+</div>
+
+
+
+
+
+</br>
+
+
+
+
+### Table of contents
+
+[Installation](#installation) 
+[Documenation](#doc)
+
+[Example usage:](#example)
+[1. Basic functions](#bf)
+[2. Data clustering](#dc) 
+[3. Data integration](#di) 
+[4. Data subclustering](#ds) 
+
+
+
+
+<br />
+
+## Installation <a id="installation"></a>
+
+
+```
+pip install jdti
+```
+
+<br />
+
+
+## Documentation <a id="doc"></a>
+
+
+Documentation for classes and functions is available here 👉 [Documentation 📄](https://jkubis96.github.io/JDtI/jdti.html)
+
+
+<br />
+
+
+## Example usage <a id="example"></a>
+
+### 1. Basic functions <a id="bf"></a>
+
+##### 1.1. Loading functions <a id="bf"></a>
+
+```
+from jdti import *
+```
+##### 1.2. Loading data <a id="bf"></a>
+
+```
+# load sparse matrix as pd.DataFrame data with creating metadata
+data, metadata = load_sparse(path = 'data/set1', name = 'set1')
+
+#load data frame from different data type (.tsv, .txt, .tsv)
+data = pd.read_csv('example_data.csv')
+
+# load data from .h5 or other data types and transform to pandas data frame
+```
+* *Data [features (eg. genes) x sample (eg. cells)]*
+* ***Metadata [columns['cell_names', 'sets']]:***
+    * *cell_names – sample names corresponding to the columns of Data*
+    * *sets – the assignment of each sample to a given dataset, aligned with Data*
+
+##### 1.3. Features finding <a id="bf"></a>
+
+```
+features = find_features(data, features =['KIT', 'MC1', 'EDNRB', 'PAX3'])
+```
+
+* *Not found the MC1 feature name, so the potential names are provided*
+
+<p align="center">
+<img  src="fig/1_potential_names.bmp" alt="drawing" width="500" />
+</p>
+
+```
+features = find_features(data, features =['KIT', 'MC1R', 'EDNRB', 'PAX3'])
+```
+
+* *All feature names have been found*
+
+<p align="center">
+<img  src="fig/1_found_names.bmp" alt="drawing" width="300" />
+</p>
+
+
+##### 1.4. Names finding <a id="bf"></a>
+
+```
+names = find_names(data, names = ['0', '1', '2','10', '1&'])
+```
+
+* *As same as in case of 'Features finding'*
+
+<p align="center">
+<img  src="fig/1_names.bmp" alt="drawing" width="300" />
+</p>
+
+
+##### 1.5. Data reducing <a id="bf"></a>
+
+```
+# data reducing on found features and names
+
+data_reduced = reduce_data(data,
+                features = features['included'],
+                names = names['included'])
+```
+* *return data with selected features & names*
+
+##### 1.6. Data averaging and occurrence counting <a id="bf"></a>
+
+```
+avg_reduced = average(data_reduced)
+occ_reduced = occurrence(data_reduced)
+```
+* *returns the average or occurrence values computed across all columns that share the same name*
+
+##### 1.7. Difference counting (DEG) and visualization <a id="bf"></a>
+
+```
+# creating group dict for compare samples
+compare_dict = {'g1':['0', '1'],
+                'g2':['2','10']}
+
+
+deg_df = calc_DEG(data, 
+             metadata_list  = None, 
+             entities = compare_dict, 
+             sets = None, 
+             min_exp = 0, 
+             min_pct = 0.1, 
+             n_proc =10)
+
+# DEG visualization with volcano plot
+fig = volcano_plot(deg_df, 
+                 p_adj = True, 
+                 top = 25, 
+                 p_val = 0.05, 
+                 lfc = 0.25, 
+                 standard_scale = False, 
+                 rescale_adj = True, 
+                 image_width = 12, 
+                 image_high = 12)
+
+fig.savefig('volcano.jpeg', dpi=300, bbox_inches='tight')
+```
+
+* **DEG data:**
+   * **`feature`** – *Name of the studied feature*  
+    * **`p_val`** – *P-value (Mann–Whitney) for the studied feature comparing the* `valid_group` *to all other groups in the analysis*  
+    * **`pct_valid`** – *Percentage of positive (>0) values for the studied feature in the* `valid_group`* 
+    * **`pct_ctrl`** – *Percentage of positive (>0) values for the studied feature in all other groups*  
+    * **`avg_valid`** – *Average value of the studied feature in the* `valid_group`
+    * **`avg_ctrl`** – *Average value of the studied feature in the remaining groups*  
+    * **`sd_valid`** – *Standard deviation of the studied feature in the* `valid_group`*  
+    * **`sd_ctrl`** – *Standard deviation of the studied feature in the remaining groups*  
+    * **`esm`** – *Cohen’s* *d* *effect size metric*  
+    * **`valid_group`** – *Name of the sample or group belonging to the* `valid_group` 
+    * **`adj_pval`** – *Benjamini–Hochberg adjusted p-value*  
+    * **`FC`** – *Fold change between the averaged* `valid_group` *samples and the averaged remaining samples*  
+    * **`log(FC)`** – *Log₂-transformed fold change*  
+    * **`norm_diff`** – *Direct difference between the averaged* `valid_group` *value and the averaged value of the remaining groups*
+
+</br>
+
+* **Volcano plot** – *Visualization of differentially expressed genes (DEGs) between two groups*
+
+<p align="center">
+<img  src="fig/1_volcano.jpeg" alt="drawing" width="450" />
+</p>
+
+##### 1.8. Features visualization <a id="bf"></a>
+
+
+```
+top_10 = deg_df.sort_values(
+    ['p_val', 'esm', 'log(FC)'], 
+    ascending=[True, False, False]).head(10)
+
+data_scatter = reduce_data(data,
+                features = list(set(top_10['feature'])),
+                names = names['included'])
+
+
+
+avg = average(data_scatter)
+occ = occurrence(data_scatter)
+
+
+fig = features_scatter(expression_data = avg, 
+                     occurence_data = occ,
+                     features = None, 
+                     metadata_list = None, 
+                     colors = 'viridis', 
+                     hclust = 'complete', 
+                     img_width = 8, 
+                     img_high = 5, 
+                     label_size = 10, 
+                     size_scale = 100,
+                     y_lab = 'Genes', 
+                     legend_lab = 'log(CPM + 1)',
+                     bbox_to_anchor_scale = 25,
+                     bbox_to_anchor_perc=(0.91, 0.55),
+                     bbox_to_anchor_group=(1.01, 0.4))
+
+fig.savefig('scatter.jpeg', dpi=300, bbox_inches='tight')
+```
+
+* **Scatter plot** – *Displays expression relationships of DEGs across groups or individual samples*
+
+
+<p align="center">
+<img  src="fig/1_scatter.jpeg" alt="drawing" width="500" />
+</p>
+
+
+
+##### 1.9. Relation visualization <a id="bf"></a>
+
+
+```
+fig = development_clust(data = avg, 
+                      method = 'ward',
+                      img_width = 5,
+                      img_high = 5)
+
+fig.savefig('development.jpeg', dpi=300, bbox_inches='tight')
+```
+
+* **Development plot** – *A dendrogram showing sample similarity based on the expression features generated using hierarchical clustering*
+
+
+
+<p align="center">
+<img  src="fig/1_development.jpeg" alt="drawing" width="400" />
+</p>
+
+
+### 2. Data clustering <a id="dc"></a>
+
+
+```
+from jdti import Clustering, load_sparse
+```
+
+```
+data, metadata = load_sparse(path = 'data/set2', name = 'set2')
+clusters = Clustering.add_data_frame(data, metadata)
+```
+```
+clusters.clustering_data
+clusters.clustering_metadata
+```
+```
+clusters.perform_PCA(pc_num=100, width=8, height=6)
+
+clusters.knee_plot_PCA(width=8, height=6)
+```
+```
+clusters.harmonize_sets(harmonize_type='harmony')
+```
+
+```
+clusters.find_clusters_PCA(pc_num=0, eps=0.5, min_samples=10, width=8, height=6, harmonized=False)
+```
+```
+clusters.perform_UMAP(factorize=False, umap_num=0, pc_num=5, harmonized=False)
+
+
+clusters.knee_plot_umap(eps=0.5, min_samples=10)
+```
+
+```
+clusters.find_clusters_UMAP(umap_n=5, eps=0.5, min_samples=10, width=8, height=6)
+
+
+clusters.UMAP_vis(names_slot='cell_names', set_sep=True, point_size=0.6)
+```
+
+```
+clusters.UMAP_feature(feature_name = 'KIT', features_data=None, point_size=0.6)
+```
+
+```
+clusters.get_umap_data()
+
+clusters.get_pca_data()
+
+clusters.return_clusters(clusters='umap')
+
+```
+
+
+
+### 3. Data integration <a id="di"></a>
+
+
+```
+
+from jdti import COMPsc, volcano_plot
+```
+
+```
+jseq_object = COMPsc.project_dir('data', ['set1', 'set2'])
+
+jseq_object.load_sparse_from_projects(normalized_data=True)
+```
+```
+dt = jseq_object.get_partial_data(names=['10'], features=['KIT', 'PAX3', 'MITF'], name_slot='cell_names')
+```
+
+```
+jseq_object.gene_histograme(bins=100)
+
+jseq_object.gene_threshold(min_n = 50, max_n = 3000)
+
+jseq_object.gene_histograme(bins=100)
+
+jseq_object.reduce(reg = '5', inc_set = False)
+
+jseq_object.gene_histograme(bins=100)
+```
+
+```
+jseq_object.cell_histograme(name_slot = 'cell_names')
+
+jseq_object.cluster_threshold(min_n = 20, name_slot = 'cell_names')
+
+jseq_object.cell_histograme(name_slot = 'cell_names')
+```
+
+```
+# returny
+
+met = jseq_object.input_metadata
+
+data = jseq_object.get_data(set_info=True) 
+
+metadata = jseq_object.get_metadata()
+```
+
+```
+jseq_object.calculate_difference_markers(min_exp = 0, 
+                                         min_pct = 0.25, 
+                                         n_proc=10, 
+                                         force = False)
+
+
+
+jseq_object.estimating_similarity(method = 'pearson', 
+                                  p_val = 0.05,
+                                  top_n = 10)
+    
+
+pl = jseq_object.similarity_plot(split_sets = True, 
+                                 set_info = True,
+                                 cmap='seismic', 
+                                 width = 16, height = 14)
+
+   
+# pl.savefig(f'sim_plot_top_{top}.svg', dpi=300, bbox_inches='tight')
+```
+
+pl2 = jseq_object.spatial_similarity(set_info= True, 
+                                     bandwidth = 1,
+                                        n_neighbors = 5,  
+                                        min_dist = 0.1, 
+                                        legend_split = 2, 
+                                        point_size = 20, 
+                                        spread=1.0,              
+                                        set_op_mix_ratio=1.0,    
+                                        local_connectivity=1,    
+                                        repulsion_strength=1.0,  
+                                        negative_sample_rate=5,  
+                                        width = 12, 
+                                        height = 10)
+
+
+ pl2.savefig(f'sim_plot_map_top_{top}.svg', dpi=300, bbox_inches='tight')
+```
+
+```
+sim_data = jseq_object.similarity
+sim_data = sim_data[sim_data['set1'] != sim_data['set2']]
+
+jseq_object.cell_regression( 
+                    cell_x = '2', 
+                    cell_y = '6',
+                    set_x = 'set1', 
+                    set_y = 'set2',
+                    threshold = 6, 
+                    image_width = 12, 
+                    image_high = 7, 
+                    color = 'black')
+
+
+
+```
+
+```
+jseq_object.clustering_features(name_slot = 'cell_names', 
+                                features_list = None, 
+                                p_val = 0.05,
+                                top_n = 10,
+                                adj_mean = False,
+                                beta = 0.2)
+
+jseq_object.perform_PCA(pc_num = 50)
+
+jseq_object.knee_plot_PCA()
+```
+jseq_object.harmonize_sets(harmonize_type = 'harmony')
+
+# jseq_object.find_clusters_PCA(pc_num = 100, eps = 0.5, min_samples = 10)
+
+jseq_object.perform_UMAP(factorize=False, umap_num = 2, pc_num = 10, harmonized = True)
+
+
+# jseq_object.knee_plot_umap(eps = 0.5, min_samples = 10)
+
+
+# jseq_object.find_clusters_UMAP(umap_n = 6, eps = 1, min_samples = 20)
+
+
+plu = jseq_object.UMAP_vis( 
+             names_slot = 'cell_names', 
+             set_sep = True,
+             point_size = 1,
+             font_size = 6,
+             legend_split_col = 2,
+             width = 8,
+             height = 6,
+             inc_num = True)
+
+# plu.savefig(f'sim_umap_top.svg', dpi=300, bbox_inches='tight')
+
+
+plu = jseq_object.UMAP_vis( 
+             names_slot = 'sets', 
+             set_sep = True,
+             point_size = 1,
+             font_size = 6,
+             legend_split_col = 1,
+             width = 8,
+             height = 6,
+             inc_num = False)
+
+# plu.savefig(f'sim_umap_sets_top_.svg', dpi=300, bbox_inches='tight')
+
+```
+
+```
+vis = jseq_object.UMAP_feature( 
+             features_data = jseq_object.get_data(set_info = False) ,
+             feature_name = 'MAP1B',
+             point_size = 0.6,
+             font_size = 6,
+             width = 8,
+             height = 6,
+             palette = 'light')
+
+# vis.savefig(f'sim_umap_sets_top_vis.svg', dpi=300, bbox_inches='tight')
+
+jseq_object.var_data
+
+
+# jseq_object.save_project(name = 'topola')
+
+``` 
+
+```
+stats = jseq_object.statistic(cells=None, sets='All', min_exp=0, min_pct=0.025, n_proc=10)
+stats_5 = stats.sort_values(['valid_group', 'esm', 'log(FC)'], ascending=[True, False, False]).groupby('valid_group').head(5)
+
+
+
+fig = volcano_plot(stats)
+```
+```
+jseq_object.scatter_plot(
+                 names = None,
+                 features = list(set(stats_5['feature'])),
+                 name_slot = 'cell_names',
+                 scale = False,
+                 colors = 'viridis', 
+                 hclust = 'complete', 
+                 img_width  = 15, 
+                 img_high  = 3, 
+                 label_size = 10, 
+                 size_scale = 200,
+                 x_lab = 'Genes', 
+                 legend_lab = 'log(CPM + 1)',
+                 set_box_size = 5,
+                 set_box_high = 0.1,
+                 bbox_to_anchor_scale = 25,
+                 bbox_to_anchor_perc=(0.90, 0.5),
+                 bbox_to_anchor_group=(0.9, 0.3))
+
+```
+
+```
+import re
+
+jseq_object.data_composition( 
+                     features_count = list(set([re.sub(r' .*$', '',x) for x in list(set(jseq_object.input_metadata['cell_names']))])),
+                     name_slot = 'cell_names',
+                     set_sep = True
+                     )
+
+
+jseq_object.composition_pie( 
+                    width = 6, 
+                    height = 6, 
+                    font_size = 15,
+                    cmap  = "tab20",
+                    legend_split_col = 1,
+                    offset_labels = 0.5,
+                    legend_bbox = (1.15, 0.95))
+
+
+jseq_object.bar_composition( 
+                    cmap = 'tab20b', 
+                    width = 2, 
+                    height = 6, 
+                    font_size = 15,
+                    legend_split_col = 1,
+                    legend_bbox = (1.3, 1))
+
+
+```
+
+
+
+### 4. Data subclustering <a id="ds"></a>
+
+
+```
+from jdti import COMPsc
+```
+```
+jseq_object = COMPsc.project_dir('data', ['set2'])
+```
+
+```
+jseq_object.load_sparse_from_projects(normalized_data=True)
+```
+
+
+
+```
+jseq_object.subcluster_prepare(features = ['HMGCS1', 'MAP1B', 'SOX4'], 
+                               cluster='10')
+```
+    
+
+```
+jseq_object.define_subclusters( 
+                          umap_num = 5,
+                          eps = 1, 
+                          min_samples = 5,
+                          n_neighbors = 5,  
+                          min_dist = 0.1, 
+                          spread = 1.0,              
+                          set_op_mix_ratio = 1.0,    
+                          local_connectivity = 1,    
+                          repulsion_strength = 1.0,  
+                          negative_sample_rate = 5,  
+                          width = 8, 
+                          height = 6)
+  
+```
+
+```
+jseq_object.subcluster_features_scatter(
+                                        colors = 'viridis', 
+                                        hclust = 'complete', 
+                                        img_width = 3, 
+                                        img_high = 5, 
+                                        label_size = 6, 
+                                        size_scale = 70,
+                                        x_lab = 'Genes', 
+                                        legend_lab = 'normalized')
+    
+```
+
+```
+mapping = {
+    "old_name": ["-1", "1", "4"],
+    "new_name": ["1", "1", "1"]
+}
+
+jseq_object.rename_subclusters(mapping)
+
+```
+
+```
+jseq_object.subcluster_DEG_scatter(
+                                    top_n = 3,
+                                    min_exp = 0, 
+                                    min_pct = 0.1, 
+                                    p_val = 0.05,
+                                    colors = 'viridis', 
+                                    hclust = 'complete', 
+                                    img_width = 3, 
+                                    img_high = 5, 
+                                    label_size = 6, 
+                                    size_scale = 70,
+                                    x_lab = 'Genes', 
+                                    legend_lab = 'normalized',
+                                    n_proc=10)
+    
+ 
+```
+
+```
+jseq_object.accept_subclusters()
+```  
+
+```
+l = set(jseq_object.input_metadata['cell_names'])
+        
+```
+
+
+### Have fun JBS
