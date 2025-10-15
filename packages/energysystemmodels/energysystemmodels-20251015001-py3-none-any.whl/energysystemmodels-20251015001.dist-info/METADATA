@@ -1,0 +1,669 @@
+Metadata-Version: 2.4
+Name: energysystemmodels
+Version: 20251015001
+Summary: Energy systems models are the mathematical models that are developed in order to represent as reliably as possible various energy-related problems.
+Author: Zoheir HADID
+Author-email: zoheir.hadid@gmail.com
+Project-URL: Documentation, https://energysystemmodels-tutorial.readthedocs.io/en/latest/
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pandas
+Requires-Dist: pyfluids
+Requires-Dist: pylab-sdk~=1.3.2
+Requires-Dist: matplotlib
+Requires-Dist: tkintertable~=1.3.3
+Requires-Dist: numpy
+Requires-Dist: pyqtgraph
+Requires-Dist: thermochem
+Requires-Dist: sip
+Requires-Dist: PyQt-builder
+Requires-Dist: PyQt5
+Requires-Dist: scikit-learn
+Requires-Dist: beautifulsoup4
+Requires-Dist: tqdm
+Requires-Dist: statsmodels
+Requires-Dist: python-docx
+Requires-Dist: pvlib
+Requires-Dist: gekko
+Requires-Dist: networkx
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: license-file
+Dynamic: project-url
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# EnergySystemModels Documentation
+
+- [Documentation (French)](https://energysystemmodels-fr.readthedocs.io/)
+Les mod&#232;les de syst&#232;mes &#233;nerg&#233;tiques sont des mod&#232;les math&#233;matiques d&#233;velopp&#233;s pour repr&#233;senter de mani&#232;re aussi fiable que possible divers probl&#232;mes li&#233;s &#224; l'&#233;nergie. Ces mod&#232;les peuvent &#234;tre utilis&#233;s pour la simulation, l'optimisation et l'analyse des syst&#232;mes &#233;nerg&#233;tiques afin d'am&#233;liorer l'efficacit&#233;, de r&#233;duire les co&#251;ts et de minimiser l'impact environnemental, ainsi que pour r&#233;aliser des &#233;conomies d'&#233;nergie.
+
+- [Documentation (English)](https://energysystemmodels-en.readthedocs.io/)
+Energy systems models are mathematical models developed to reliably represent various energy-related problems. These models can be used for simulation, optimization, and analysis of energy systems to improve efficiency, reduce costs, minimize environmental impact, and achieve energy savings.
+
+- [1. Thermodynamic Cycles Package](#1-thermodynamic-cycles-package)
+  * [1.1. Fluid Source](#11-fluid-source)
+    + [1.1.1. Input parameters](#111-Input-parameters)
+  * [1.2. Sink](#12-sink)
+  * [1.3. Compressor](#13-compressor)
+    + [1.3.1. Compressor model](#131-compressor-model)
+  * [1.4. Water Heat Storage](#14-water-heat-storage)
+    + [1.4.1. Mixed Tank](#141-mixed-tank)
+
+- [2. AHU modules](#2-ahu-modules)
+  * [2.1 Fresh AHU Example](#21-fresh-ahu-exemple)
+- [3. Chiller Example](#3-Chiller-Example)
+  * [3.1. Launch Chiller Application (Tkinter GUI)](#31-Launch-Chiller-Application-(Tkinter-GUI))
+  * [3.2. Create Oriented-Object Chiller](#32-Create-Oriented-Object-Chiller)
+
+- [4. Donn&#233;es m&#233;t&#233;o](#4-Donn&#233;es-m&#233;t&#233;o)
+  * [4.1. OpenWeaterMap](#41-OpenWeaterMap)
+  * [4.2. MeteoCiel](#42-MeteoCiel)
+- [5. IPMVP](#5-IPMVP)
+- [6. Production solaire](#6-production-solaire)
+
+# 1. Thermodynamic Cycles Package
+## 1.1. Fluid Source
+### 1.1.1. Input parameters
+
+| Symbol   |      Description      |  SI Units | Used Units |
+|----------|:-------------:|------:|------:|
+| Ti_degC |  Inlet temerature | K | &#176;C |
+| fluid |  Fluid/Refrigerant name    |  String |"air","ammonia","R134a",...|
+| F, F_Sm3s, F_m3s, F_Sm3h, F_m3h, F_kgh | Input Flow rate |   kg/s | kg/s, Sm3/s, m3/s, Sm3/h, m3/h, kg/h |
+| Pi_bar | Inlet Pressure |   Pa | bara |
+
+``` python
+from ThermodynamicCycles.Source import Source
+
+#Create Compressor Object
+SOURCE=Source.Object()
+
+#Data Input
+SOURCE.Pi_bar=1.01325
+SOURCE.fluid="air"
+SOURCE.F=1
+#SOURCE.F_Sm3s=2937.482966/3600 #SOURCE.F_m3s=2480.143675/3600
+#SOURCE.F_Sm3h=1 #SOURCE.F_m3h=2480.143675 #SOURCE.F_kgh=3600
+
+#Calculate Object
+SOURCE.calculate()
+
+#Data output
+print(SOURCE.df)
+```
+## 1.2. Sink
+
+### 1.2.1. Test Sink
+``` python
+from ThermodynamicCycles.Sink import Sink
+#from ThermodynamicCycles.Connect import Fluid_connect
+
+#Create Sink object
+SINK=Sink.Object()
+
+#Fluid_connect(SINK.Inlet,SOURCE.Outlet) 
+SINK.Inlet.fluid="air"
+SINK.Inlet.F=0.334
+SINK.Inlet.P=101325
+SINK.Inlet.h=420000
+
+#calculate SINK
+SINK.calculate()
+
+#Print result
+
+print(SINK.df)
+print(SINK.To_degC)
+```
+### Output data
+
+## 1.3. Compressor
+### 1.3.1. Compressor model
+
+```python
+
+from ThermodynamicCycles.Source import Source
+from ThermodynamicCycles.Compressor import Compressor
+from ThermodynamicCycles.Sink import Sink
+from ThermodynamicCycles.Connect import Fluid_connect
+
+#Create Compressor Object with Source and fluid Sink
+SOURCE=Source.Object()
+COMP=Compressor.Object()
+SINK=Sink.Object()
+
+#Data Input
+SOURCE.Ti_degC=20
+SOURCE.fluid="air"
+SOURCE.Pi_bar=1
+SOURCE.F_Sm3h=500 # is not considered if  COMP.Q_comp is not None
+
+COMP.eta_is=0.80
+COMP.Tdischarge_target=80 # (discharge temperature in degC, after cooler)
+COMP.HP=7.5*100000 # discharge pressure in Pa
+COMP.Q_comp=48745.761 # if Energy Power is given (W) the Mass flow rate is recalculated
+
+
+#Calculate and Connect Objects
+SOURCE.calculate()
+Fluid_connect(COMP.Inlet,SOURCE.Outlet)
+COMP.calculate()
+Fluid_connect(SINK.Inlet,COMP.Outlet)
+SINK.calculate()
+
+#Data output (print DataFrame)
+print(SOURCE.df)
+print(COMP.df)
+print(SINK.df)
+
+```
+
+<img src="https://render.githubusercontent.com/render/math?math=\eta_{is} = 0.8">
+# EnergySystemModels
+Energy System Models for Energy Efficiency Calculation
+
+## 1.4. Water Heat Storage
+### 1.4.1. Mixed Tank
+```python
+from ThermodynamicCycles import MixedStorage
+from ThermodynamicCycles.Source import Source
+from ThermodynamicCycles.Sink import Sink
+from ThermodynamicCycles.Connect import Fluid_connect
+
+
+#lecture d'un fichier excel
+#pip install pandas
+import pandas as pd
+import os
+data=pd.read_excel( os.path.join(os.path.dirname(__file__), 'HotWaterStorage.xlsx'))
+data['Timestamp'] = pd.to_datetime(data['Timestamp'], unit="%d/%m/%y %H:%M:%S")
+rows = data.shape[0]
+print(rows)
+print(data.columns)
+
+#initialiser les table de Outlet
+df_result=pd.DataFrame(data=None, index=None, columns=None, dtype=None, copy=False)
+df_source=pd.DataFrame(data=None, index=None, columns=None, dtype=None, copy=False)
+df_str=pd.DataFrame(data=None, index=None, columns=None, dtype=None, copy=False)
+df_sink=pd.DataFrame(data=None, index=None, columns=None, dtype=None, copy=False)
+
+#CreateTank Object with Source and fluid Sink
+SOURCE=Source.Object()
+SINK=Sink.Object()
+STR=MixedStorage.Object()
+
+#param&#232;tres
+STR.V=4
+STR.Tinit_degC=40
+STR.t=1*3600 #in seconde
+
+for r in range(1, rows):
+#Data Input
+    SOURCE.Ti_degC=data["TdegC"][r] 
+    SOURCE.fluid="water"
+    SOURCE.Pi_bar=1
+    SOURCE.F_m3h=data["F_m3h"][r] 
+
+    SOURCE.Timestamp=data["Timestamp"][r]
+    STR.Timestamp=data["Timestamp"][r]
+    SINK.Timestamp=data["Timestamp"][r]
+
+    #calcul du pas de temps
+    Timestamp=data["Timestamp"][r] 
+    dt=(data["Timestamp"][r]-data["Timestamp"][r-1]).total_seconds()
+    #print(dt)
+    STR.t=dt
+
+    SOURCE.calculate()
+    Fluid_connect(STR.Inlet,SOURCE.Outlet)
+    STR.calculate()
+    Fluid_connect(SINK.Inlet,STR.Outlet)
+    SINK.calculate()
+
+    df_str=df_str.append(STR.df.T)
+    df_source=df_source.append(SOURCE.df.T)
+    df_sink=df_sink.append(SINK.df.T)
+  
+# Add new column to the DataFrame
+df_result=df_str.merge(df_sink, on=['Timestamp']).merge(df_source, on=['Timestamp'])
+print(df_result)
+
+with pd.ExcelWriter('output_WaterStorage.xlsx') as writer:                #Cr&#233;ation d'un fichier de Outlet + Ecriture
+    df_result.to_excel(writer, sheet_name='Feuille output',index=False)
+    data.to_excel(writer, sheet_name='Feuille input',index=False)
+
+####PLOT#####
+
+# Import Library
+
+import matplotlib.pyplot as plt
+df_result.index=df_result['Timestamp']
+
+# to set the plot size
+plt.figure(figsize=(16, 8), dpi=100)
+
+# Plot
+df_result["str_Ti_degC"].plot(marker="o",label='Tentr&#232;e (&#176;C)', color='orange')
+df_result["str_T_degC"].plot(marker="o",label='Tsortie (&#176;C)')
+df_result["cumul_Qstr_kWh"].plot(marker="o",label='Energie stock&#233;e cumul&#233;e (kWh)')
+df_result["Qstr_kW"].plot(marker="o",label='Puissance de stockage (kW)')
+
+# Labelling 
+
+plt.xlabel("Date")
+plt.ylabel("kWh, kW et &#176;C")
+plt.legend()
+plt.grid()
+plt.title("Stockage d'&#233;nergie thermique")
+
+# Display
+
+plt.show()
+```
+
+# 2. AHU modules
+# 2.1 Fresh AHU Example
+
+``` python
+
+# =============================================================================
+# AHU Model (Fresh air + Heating Coil + humidifier)
+# =============================================================================
+
+#module de calcul des prop d'air humide
+from AHU import FreshAir
+#Heating Coil Component
+from AHU import HeatingCoil
+#composant Humidifier (vapeur ou adiabatique)
+from AHU.Humidification import Humidifier
+# connexion entre les composants
+from AHU.Connect import Air_connect
+
+##########Cr&#233;ation des Objects
+AN=FreshAir.Object()
+BC=HeatingCoil.Object()
+HMD=Humidifier.Object()
+
+    
+#R&#233;cup&#233;ration des donn&#233;es entr&#233;es par l'utilisateur
+        #AN
+AN.F_m3h=3000 #m3/h
+#print("AN.F_m3h = ",AN.F_m3h)
+AN.T=14 #&#176;C
+AN.RH_FreshAir=71 # %
+    #BC
+BC.To_target=15 #&#176;C
+    #Humidifier
+HMD.wo_target=8 #g/Kg dry air
+
+    #calculate les propri&#233;t&#233;s d'air neuf; !important
+AN.calculate()
+
+Air_connect(BC.Inlet,AN.Outlet)
+BC.calculate()
+    
+
+Air_connect(HMD.Inlet,BC.Outlet)
+    
+HMD.HumidType="vapeur" #par default : Humdificateur adiabatique
+HMD.calculate()
+
+
+#enregistrer les r&#233;sultats du module d'air neuf
+
+#Absolute Humidity  g/kg_as
+
+print("Fresh Air Absolute Humidity  g/kg_as",round(AN.w,1))
+# print("HA_FreshAir[r-1] = ",HA_FreshAir[r-1])
+#Sat Vapor Pressure  " Pa"
+
+print("Fresh Air Sat Vapor Pressure   Pa",round(AN.Pvsat,0))
+#Wet-Bulb Temperature  &#176;C
+
+print("Fresh Air Wet-Bulb Temperature  &#176;C",round(AN.T_hum,1))
+#Specific Enthalpy  KJ/Kg_as
+
+print("Fresh Air Specific Enthalpy  KJ/Kg_as",round(AN.h,3))
+
+#enregistrer les r&#233;sultats de la Coil de pr&#233;chauffage
+
+# Specific Enthalpy KJ/Kg_as
+print("Heating Coil Specific Enthalpy KJ/Kg_as",round(BC.ho,1))
+# Thermal Power  kW"
+print("Heating Coil Thermal Power  kW",round(BC.Qth,1))
+# Relative Humidity %"
+print("Heating Coil Relative Humidity %",round(BC.RH_out,1))
+    
+print("Humidifier Steam mass flow rate Kg/s",round(HMD.F_water,3))  
+print("Humidifier Dry air mass flow rate Kg/s",round(HMD.F_dry,3)) 
+
+# =============================================================================
+# End AHU Model
+# =============================================================================
+
+```
+
+# 3. Chiller Example
+
+## 3.1. Launch Chiller Application (Tkinter GUI)
+``` python
+from TkinterGUI import Chiller
+``` 
+## 3.2. Create Oriented-Object Chiller
+
+``` python
+# =============================================================================
+# Chiller Model (Evaporator + Compressor + Desuperheater + Condenser + Expansion_Valve)
+# =============================================================================
+
+# #ThermodynamicCycles
+import CoolProp.CoolProp as CP
+from ThermodynamicCycles.Evaporator import Evaporator
+from ThermodynamicCycles.Compressor import Compressor
+from ThermodynamicCycles.Desuperheater import Desuperheater
+from ThermodynamicCycles.Expansion_Valve import Expansion_Valve
+from ThermodynamicCycles.Condenser import Condenser
+from ThermodynamicCycles.Connect import Fluid_connect
+
+###############Create chiller component object ##################
+EVAP=Evaporator.Object()
+COMP=Compressor.Object()
+DESURCH=Desuperheater.Object()
+COND=Condenser.Object()
+DET=Expansion_Valve.Object()
+###############################################################
+
+########################Cycle Inlet Parameters########################
+#***************Evaporator parameters*******
+fluid="R134a"
+EVAP.fluid=fluid
+EVAP.Inlet.F=1 #Kg/s
+# T or P evap :
+EVAP.LP_bar=2.930154 #bar
+#EVAP.Ti_degC=0 #Tevap 
+EVAP.surchauff=2 #superheating
+EVAP.Inlet.h= CP.PropsSI('H','P',1*1e5,'T',40+273.15,fluid)   #initialisation pour le calcul en boucle
+#******************compresseur parameters***********
+
+# give HP or Tcond
+#COMP.HP=1e5*10 #Pa
+COMP.Tcond_degC=40
+COMP.eta_is=0.8 # isentropic efficiency
+COMP.Tdischarge_target=80 #&#176;C compressor outlet temperature, neglected if compressor is not cooled
+COMP.Q_comp==100000 #in (W) If this value is given, the mass flow rate is calculated /Write None if not used  #in (W) If this value is given, the mass flow rate is calculated
+#*************** Condenser parameters**************
+COND.subcooling=2 #&#176;C subcooling
+
+
+#calculation algorithme
+EVAP.calculate() # evaporator initialisation
+Fluid_connect(COMP.Inlet,EVAP.Outlet)
+COMP.calculate()
+Fluid_connect(DESURCH.Inlet,COMP.Outlet)
+DESURCH.calculate()
+Fluid_connect(COND.Inlet, DESURCH.Outlet)
+COND.calculate()
+Fluid_connect(DET.Inlet,COND.Outlet)
+Fluid_connect(DET.Outlet,EVAP.Inlet)
+DET.calculate()
+Fluid_connect(EVAP.Inlet,DET.Outlet)
+EVAP.calculate() # recalculate evaporator
+
+# Cycle performance
+EER=EVAP.Q_evap/COMP.Q_comp
+print("EER="+str(round(EER,1))+" ")
+Q_condTot=COND.Q_cond+DESURCH.Qdesurch
+print("Q_condTot="+str(round(Q_condTot/1000,1))+" kW")
+COP=Q_condTot/COMP.Q_comp
+print("COP="+str(round(COP,1))+" ")
+
+# ####### Print Results#######################"
+print(COMP.df)
+print(EVAP.df)
+print(DESURCH.df)
+print(COND.df)
+print(DET.df)
+
+# =============================================================================
+# End Chiller Model
+# =============================================================================
+```
+
+## 3.3. Hydraulique
+
+``` python
+from ThermodynamicCycles.Hydraulic import StraightPipe
+from ThermodynamicCycles.Source import Source
+from ThermodynamicCycles.Sink import Sink
+from ThermodynamicCycles.Connect import Fluid_connect
+
+SOURCE=Source.Object()
+STRAINGHT_PIPE=StraightPipe.Object()
+STRAINGHT_PIPE2=StraightPipe.Object()
+SINK=Sink.Object()
+
+SOURCE.fluid="water"
+SOURCE.Ti_degC=25
+SOURCE.Pi_bar=1
+SOURCE.F_m3h=100
+SOURCE.calculate()
+STRAINGHT_PIPE.d_hyd=0.050
+STRAINGHT_PIPE.L=100
+STRAINGHT_PIPE.K=0.00002
+
+STRAINGHT_PIPE2.d_hyd=0.2
+STRAINGHT_PIPE2.L=100
+STRAINGHT_PIPE2.K=0.00002
+
+Fluid_connect(STRAINGHT_PIPE.Inlet,SOURCE.Outlet)
+STRAINGHT_PIPE.calculate()
+Fluid_connect(STRAINGHT_PIPE2.Inlet,STRAINGHT_PIPE.Outlet)
+STRAINGHT_PIPE2.calculate()
+Fluid_connect(SINK.Inlet,STRAINGHT_PIPE2.Outlet)
+SINK.calculate()
+
+print(SOURCE.df)
+print(STRAINGHT_PIPE.df)
+print(STRAINGHT_PIPE2.df)
+print(SINK.df)
+
+
+```
+
+# 3. Pinch Analysis 
+
+``` python
+
+from PinchAnalysis.PinchCalculation import PinchCalculation
+import pandas as pd
+import matplotlib.pyplot as plt
+
+#DataFrame Input Data
+df=pd.DataFrame({'id': [1, 2, 3, 4],
+                   'name': ['stream1', 'stream2', 'stream3', 'stream4'],
+                   'Ti': [200, 50, 125, 45],
+                 'To': [50, 250, 124, 195],
+                 'mCp': [3, 2,300,4],
+                 'dTmin2': [5, 5, 10, 10],
+                 'integration': [True, True, True, True]
+                 })
+
+
+#Pinch Calculation
+T, plot_GCC, plot_ccf,plot_ccc,utilite_froide,utilite_chaude=PinchCalculation(df)
+
+#Print the results
+print("T",T)
+print("GCC",plot_GCC[:,0])
+print("ccf",plot_ccf[:,0])
+print("ccc",plot_ccc[:,0])
+print("utilite_froide",utilite_froide)
+print("uilite_chaude",utilite_chaude)
+
+
+# Plot the results
+
+fig, (ax1, ax2) = plt.subplots(1, 2)
+ax1.plot(plot_ccf[:,0],T, color='tab:blue')
+ax1.plot(plot_ccc[:,0],T, color='tab:red')
+ax2.plot(plot_GCC[:,0],T, color='tab:orange')
+ax1.set(xlabel='kW', ylabel='Temperature (&#176;C)')
+ax2.set(xlabel='kW')
+ax1.grid(True)
+ax2.grid(True)
+plt.show()
+
+```
+
+# 4 Donn&#233;es-m&#233;t&#233;o
+## 4.1 OpenWeaterMap
+Pour lire la temp&#233;rature et l'humidit&#233; en fonction d'une position GPS &#224; partir des donn&#233;es de OpenWeaterMap 
+``` python
+from OpenWeatherMap import OpenWeatherMap_call_location
+
+df=OpenWeatherMap_call_location.API_call_location("48.862725","2.287592")
+
+print(df)
+```
+
+<Response [200]>
+                   Timestamp  T(&#176;C)  RH(%)
+0 2023-03-09 14:09:01.941527  14.39     72
+
+## 4.2 MeteoCiel
+
+Scraper les donn&#233;es historique d'une station Meteociel
+``` python
+from datetime import datetime
+#pip install energysystemmodels
+from MeteoCiel.MeteoCiel_Scraping import MeteoCiel_histoScraping
+
+# 0. Donn&#233;es d'entr&#233;e#
+code2=10637 #station m&#233;t&#233;o
+date_debut=datetime(2023,1,1)
+date_fin=datetime.now()
+
+print("date_debut:",date_debut)
+print("date_fin:",date_fin)
+
+# 1. Utiliser la fonction de scraping
+df_histo,df_day, df_month, df_year=MeteoCiel_histoScraping(code2,date_debut,date_fin,base_chauffage=18, base_refroidissement=23)
+# la base de calcul DJU par default = base_chauffage=18, base_refroidissement=23
+
+# 2. Entregistrer sous forme d'un fichier Excel
+df_histo.to_excel("Meteociel.fr_station_"+str(date_debut.date())+"_to_"+str(date_fin.date())+".xlsx")
+df_day.to_excel("day_Meteociel.fr_station_"+str(date_debut.date())+"_to_"+str(date_fin.date())+".xlsx")
+df_month.to_excel("month_Meteociel.fr_station_"+str(date_debut.date())+"_to_"+str(date_fin.date())+".xlsx")
+df_year.to_excel("year_Meteociel.fr_station_"+str(date_debut.date())+"_to_"+str(date_fin.date())+".xlsx")
+
+```
+
+
+# 5-IPMVP
+``` python
+#pip install energysystemmodels
+from IPMVP.IPMVP import Mathematical_Models
+import os 
+from datetime import datetime
+import pandas as pd
+
+# Nom du fichier de donn&#233;es
+filename="Input-Data.xlsx"
+# Nom de la colonne de Date
+date="Timestamp"
+
+#lecture des donn&#233;es
+directory = os.getcwd()
+file_directory=directory+"\\"+filename
+df=pd.read_excel(file_directory)
+
+#Transformer la date en index de date horaire. 
+df[date] = pd.to_datetime(df[date])
+df = df.set_index(df[date])
+
+# d&#233;finition des p&#233;riodes de r&#233;f&#233;rence et de suivi
+start_baseline_period=datetime(2018,1,1,hour=0)
+end_baseline_period=datetime(2021,12,31,hour=0)
+start_reporting_period=datetime(2022,1,1,hour=0)
+end_reporting_period=datetime(2023,3,1,hour=0)
+
+# Mod&#232;le IPMVP (Maille journali&#232;re)
+df = df.resample('D').sum()
+X=df[["x1","x2","x3","x4","x5","x6"]] #variables explicatives candidates
+y=df["y"] # consommation d'&#233;nergie
+day_model=Mathematical_Models(y,X,start_baseline_period,end_baseline_period,start_reporting_period,end_reporting_period,degree=3,print_report=True,seuil_z_scores=3)
+
+# Mod&#232;le IPMVP Maille h&#233;bdo
+weekly_X = X.resample('W').sum()
+weekly_y =y.resample('W').sum()
+day_model=Mathematical_Models(weekly_y,weekly_X,start_baseline_period,end_baseline_period,start_reporting_period,end_reporting_period)
+
+# Mod&#232;le IPMVP Maille Mensuelle
+monthly_X = X.resample('M').sum()
+monthly_y =y.resample('M').sum()
+month_model=Mathematical_Models(monthly_y,monthly_X,start_baseline_period,end_baseline_period,start_reporting_period,end_reporting_period)
+
+# Mod&#232;le IPMVP Maille annuelle
+# yearly_X = X.resample('Y').sum()
+# yearly_y =y.resample('Y').sum()
+# year_model=Mathematical_Models(yearly_y,yearly_X,start_baseline_period,end_baseline_period,start_reporting_period,end_reporting_period)
+```
+# 6-Production solaire
+``` python
+from PV.ProductionElectriquePV import SolarSystem
+
+# Exemple d'utilisation de la classe SolarSystem
+system = SolarSystem(48.8566, 2.3522, 'Paris', 34, 'Etc/GMT-1', 180.0, 48.9)
+system.retrieve_module_inverter_data()
+system.retrieve_weather_data()
+system.calculate_solar_parameters()
+system.plot_annual_energy()
+
+``` 
+
+# 7-Calcul du TURPE
+
+``` python
+
+from Facture.TURPE import input_Contrat, TurpeCalculator, input_Facture,input_Tarif
+
+facture = input_Facture(start="2022-09-01", end="2022-09-30", heures_depassement=0, depassement_PS_HPB=64, kWh_pointe=0, kWh_HPH=0, kWh_HCH=0, kWh_HPB=26635, kWh_HCB=12846)
+#contrat = input_Contrat(domaine_tension="HTA", PS_pointe=129, PS_HPH=129, PS_HCH=129, PS_HPB=129, PS_HCB=250, version_utilisation="LU_pf")
+contrat = input_Contrat(domaine_tension="BT > 36 kVA", PS_pointe=129, PS_HPH=129, PS_HCH=129, PS_HPB=129, PS_HCB=250, version_utilisation="LU",pourcentage_ENR =100)
+tarif = input_Tarif(
+    c_euro_kWh_pointe=0.2,
+    c_euro_kWh_HPB=0.15,
+    c_euro_kWh_HCB=0.12,
+    c_euro_kWh_HPH=0.18,
+    c_euro_kWh_HCH=0.16,
+    c_euro_kwh_CSPE_TICFE=0.05,
+    c_euro_kWh_certif_capacite=0.03,
+    c_euro_kWh_ENR=0.1,
+    c_euro_kWh_ARENH=0.09
+)
+# Utilisez les valeurs du contrat et de la facture pour cr&#233;er une instance de TurpeCalculator
+turpe_calculator = TurpeCalculator(contrat,tarif, facture)
+
+# Calculez le TURPE et les Taxes en utilisant les valeurs de la facture et du contrat
+turpe_calculator.calculate_turpe()
+#turpe_calculator.calculate_taxes_contrib()
+
+# Imprimez les r&#233;sultats de la TURPE
+print(f"Acheminement (€) : {turpe_calculator.euro_TURPE}")
+print(f"Taxes et Contributions (€) : {turpe_calculator.euro_taxes_contrib}")
+
+```
