@@ -1,0 +1,128 @@
+[build-system]
+requires = ["setuptools>=65.0.0", "wheel", "setuptools-git-versioning"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages]
+find = {namespaces = true}
+
+[tool.setuptools-git-versioning]
+enabled = true
+
+[tool.setuptools.package-data]
+choreographer = ['resources/last_known_good_chrome.json']
+
+[project]
+name = "choreographer"
+description = "Devtools Protocol implementation for chrome."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { "file" = "LICENSE.md" }
+dynamic = ["version"]
+authors = [
+  {name = "Andrew Pikul", email="ajpikul@gmail.com"},
+  {name = "Neyberson Atencio", email="neyberatencio@gmail.com"}
+  ]
+maintainers = [
+  {name = "Andrew Pikul", email = "ajpikul@gmail.com"},
+]
+dependencies = [
+  "logistro>=2.0.0",
+  "simplejson>=3.19.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/plotly/choreographer"
+Repository = "https://github.com/plotly/choreographer"
+
+[project.scripts]
+choreo_diagnose = "choreographer.cli._cli_utils_no_qa:diagnose"
+choreo_get_chrome = "choreographer.cli._cli_utils:get_chrome_cli"
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio; python_version < '3.14'",
+  "pytest-asyncio>=1.2.0; python_version >= '3.14'",
+  "pytest-xdist",
+  "async-timeout",
+  "numpy",
+  "mypy>=1.14.1",
+  "types-simplejson>=3.19.0.20241221",
+  "poethepoet>=0.30.0",
+  "pyright>=1.1.406",
+]
+
+# uv doens't allow dependency groups to have separate python requirements
+# it resolves everything all at once
+# this group we need to require higher python
+# and only resolve if explicitly asked for
+
+#docs = [
+#    "mkquixote @ git+ssh://git@github.com/geopozo/mkquixote; python_version >= '3.11'",
+#    "mkdocs>=1.6.1",
+#    "mkdocs-material>=9.5.49",
+#]
+
+[tool.uv.sources]
+#mkquixote = { path = "../mkquixote", editable = true }
+#logistro = { path = "../logistro", editable = true }
+
+[tool.ruff]
+src = ["choreographer"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+          "ANN", # no types
+          "EM", # allow strings in raise(), despite python being ugly about it
+          "TRY003", # allow long error messages inside raise()
+          "D203", # No blank before class docstring (D211 = require blank line)
+          "D212", # Commit message style docstring is D213, ignore D212
+          "COM812", # manual says linter rule conflicts with formatter
+          "ISC001", # manual says litner rule conflicts with formatter
+          "RET504", # Allow else if unnecessary because more readable
+          "RET505", # Allow else if unnecessary because more readable
+          "RET506", # Allow else if unnecessary because more readable
+          "RET507", # Allow else if unnecessary because more readable
+          "RET508", # Allow else if unnecessary because more readable
+          "RUF012", # We don't do typing, so no typing
+          "SIM105", # Too opionated (try-except-pass)
+          "PT003", # scope="function" implied but I like readability
+          "G004", # fstrings in my logs
+          ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+              "D", # ignore docstring errors
+              "S101", # allow assert
+              "INP001", # no need for __init__ in test directories
+              "T201", # if we're printing in tests, there is a reason
+              "ERA001"
+            ]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+log_cli = false
+
+[tool.poe.tasks]
+test_proc = "pytest --log-level=1 -W error -n auto -v -rfE --capture=fd tests/test_process.py"
+test_fn = "pytest --log-level=1 -W error -n auto -v -rfE --capture=fd --ignore=tests/test_process.py"
+debug-test_proc = "pytest --log-level=1 -W error -vvvx -rA --show-capture=no --capture=no tests/test_process.py"
+debug-test_fn = "pytest --log-level=1 -W error -vvvx -rA --show-capture=no --capture=no --ignore=tests/test_process.py"
+
+[tool.poe.tasks.test]
+sequence = ["test_proc", "test_fn"]
+help = "Run all tests quickly"
+
+[tool.poe.tasks.debug-test]
+sequence = ["debug-test_proc", "debug-test_fn"]
+help = "Run test by test, slowly, quitting after first error"
+
+[tool.poe.tasks.filter-test]
+cmd = "pytest --log-level=1 -W error -vvvx -rA --capture=no --show-capture=no"
+help = "Run any/all tests one by one with basic settings: can include filename and -k filters"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["choreographer", "tests"]
