@@ -1,0 +1,405 @@
+Metadata-Version: 2.4
+Name: sfdatamigrate
+Version: 0.1.3
+Summary: Schema-aware Salesforce Data Export, Import & Backup Tool
+Author-email: Mayank Shete <mayank.shete@gmail.com>
+License: Proprietary
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: Other/Proprietary License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: simple-salesforce>=1.12.0
+Requires-Dist: typer>=0.9.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: requests>=2.28.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: pluggy>=1.0.0
+Requires-Dist: PyYAML>=6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Dynamic: license-file
+
+# SFData
+
+**Schema-aware Salesforce Data Export & Import Tool**
+
+⚠️ **ALPHA RELEASE** - This is experimental software. Please test in sandbox environments first!
+
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)]()
+
+---
+
+## What is SFData?
+
+SFData is a modern CLI tool that makes Salesforce data migration simple by automatically preserving relationships between records across different orgs.
+
+**The Problem:** Migrating Salesforce data between orgs (Dev → QA → Production) is painful. Record IDs change, relationships break, and you end up with duplicate or orphaned data.
+
+**The Solution:** SFData
+
+---
+
+## Current Status: Alpha v0.1.0
+
+### What Works Now
+
+
+**Commands Available:**
+- `sfdata export` - Export objects with virtual IDs
+- `sfdata import` - Import with relationship preservation
+- `sfdata cache` - Manage schema cache
+- `sfdata orgs` - List authenticated SFDX orgs
+
+### Coming Soon
+
+- **Depth-based Relationship Traversal** - Auto-export related objects (`--depth 2`)
+- **Interactive Mode** - Choose which objects to include
+- **Add your own custom Python Plugin** - Build plugins in Python
+- **Comprehensive Documentation** - Full user guides and API docs
+- **Automated Backups** - Scheduled backup capabilities
+
+---
+
+## 📦 Installation
+
+```bash
+# Install from PyPI (alpha release)
+pip install sfdatamigrate
+
+# Verify installation
+sfdata --version
+```
+
+**If you get "command not found" error:**
+
+The `sfdata` command may not be in your PATH. Choose one option:
+
+**Option A: Add to PATH (One-time setup)**
+
+*Windows:*
+1. Press `Win + X` → System → Advanced system settings → Environment Variables
+2. Under "User variables", select `Path` → Edit
+3. Add: `C:\Users\YourUsername\AppData\Roaming\Python\Python312\Scripts`
+4. Click OK and restart your terminal
+
+*Or via PowerShell (Admin):*
+```powershell
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:APPDATA\Python\Python312\Scripts", "User")
+```
+
+*Mac/Linux:*
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Option B: Use `python -m` (No setup needed)**
+```bash
+python -m sfdata version
+python -m sfdata export Account --org myorg
+```
+
+---
+
+## Quick Start (2 Minutes)
+
+### Step 1: Authenticate with SFDX
+
+```bash
+# Authenticate with Salesforce CLI
+sf org login web --alias myorg
+
+# List authenticated orgs
+sfdata orgs
+
+# Use directly - no token copying needed!
+sfdata export Account --org myorg
+```
+
+### Step 2: Create Required Field (One-Time Setup)
+
+⚠️ **Important:** Virtual ID imports require a special field on each object.
+
+**In Your Target Salesforce Org:**
+1. Go to **Setup** → **Object Manager** → **Account** → **Fields & Relationships**
+2. Click **New**
+3. Select **Text** → **Next**
+4. Configure:
+   - **Field Label:** `SFDATA External ID`
+   - **Field Name:** `SFDATA_External_ID`
+   - **Length:** `255`
+   - ✓ **External ID**
+   - ✓ **Unique**
+5. Click **Save**
+
+**Repeat for other objects** you plan to import (Contact, Opportunity, etc.)
+
+> 💡 Future versions will auto-create this field for you
+
+### Step 3: Export Data from Source Org
+
+```bash
+# Export from your authenticated org
+sfdata export Account --org production --limit 100 --output accounts.json
+```
+
+### Step 4: Import to Target Org
+
+```bash
+# Import to your target org
+sfdata import accounts.json --org uat-sandbox --verbose
+```
+
+**Result:** Records created in target org with all data !
+
+### Step 5: Verify in Salesforce
+
+Check your target org:
+- Records imported successfully
+- `SFDATA_External_ID__c` field populated with virtual IDs
+
+**Re-run import:** It will update existing records (no duplicates!)
+
+---
+
+## 📖 Usage Examples
+
+### Export Data
+
+```bash
+# Export using SFDX org alias
+sfdata export Account --org myorg --output accounts.json
+
+# Export multiple objects
+sfdata export Account Contact Opportunity --org myorg --output data.json
+
+# Export with WHERE clause
+sfdata export Account --org myorg --where "CreatedDate = LAST_N_DAYS:30" --output recent.json
+
+# Export with limit
+sfdata export Account --org myorg --limit 5000 --output test.json
+
+# Verbose mode (see detailed logs)
+sfdata export Account --org myorg --verbose --output accounts.json
+```
+
+### Import Data
+
+```bash
+# Import using SFDX org
+sfdata import data.json --org target-sandbox
+
+# Dry run (validate without importing)
+sfdata import data.json --org myorg --dry-run
+
+# Import with verbose logging
+sfdata import data.json --org myorg --verbose
+
+# Different import strategies
+sfdata import data.json --org myorg --strategy insert  # Insert only (fail if exists)
+sfdata import data.json --org myorg --strategy update  # Update only (fail if not exists)
+sfdata import data.json --org myorg --strategy upsert  # Upsert (default for virtual IDs)
+```
+
+### SFDX Integration
+
+```bash
+# List available authenticated orgs
+sfdata orgs
+
+# Export from one org
+sfdata export Account --org production --output prod.json
+
+# Import to another org  
+sfdata import prod.json --org uat-sandbox
+
+# No need to copy tokens or URLs!
+```
+
+### Cache Management
+
+```bash
+# View cache statistics
+sfdata cache stats
+
+# Clear cache for current org
+sfdata cache clear
+```
+
+
+---
+
+## ⚠️ Known Limitations (Alpha Release)
+
+### Current Limitations:
+
+1. **Manual Field Setup Required**
+   - Must create `SFDATA_External_ID__c` field manually on each object
+   - No auto-field-creation yet
+
+2. **No Depth Traversal**
+   - Must specify all objects explicitly
+   - No automatic child relationship discovery yet
+   - Coming in beta release
+
+3. **Limited Error Handling**
+   - Some edge cases may not have helpful error messages
+   - Improving based on user feedback
+
+4. **Owner Assignment**
+   - Assigns records to running user or first admin found
+   - No smart owner mapping yet
+
+5. **Documentation**
+   - User guides are minimal
+   - Comprehensive docs coming soon
+
+### Recommended Usage:
+
+- ✅ **Test in sandbox first** - Always!
+- ✅ **Backup your data** - Before any import
+- ✅ **Start small** - Test with 10-100 records first
+- ✅ **Use --dry-run** - Validate before importing
+
+---
+
+## 🆚 Why SFData?
+
+### vs Salesforce Data Loader
+
+| Feature | Data Loader | SFData |
+|---------|-------------|--------|
+| **Relationship Preservation** | ❌ Manual CSV mapping | ✅ Automatic |
+| **Cross-Org Migration** | ⚠️ Requires manual External ID setup | ✅ Guided virtual ID system |
+| **RecordType Mapping** | ❌ Manual | ✅ Automatic by DeveloperName |
+| **Idempotent Imports** | ❌ Creates duplicates | ✅ Safe re-imports |
+| **CLI/Automation** | ⚠️ GUI only | ✅ CLI-first |
+
+### vs SFDMU
+
+| Feature | SFDMU | SFData |
+|---------|-------|--------|
+| **Configuration** | Complex JSON required | Auto-detect from schema |
+| **Learning Curve** | High | Lower (auto-discovery) |
+| **Relationship Handling** | Manual mapping | Automatic virtual IDs |
+| **Development Stage** | Mature | Alpha (experimental) |
+
+**SFData's Niche:** Easier cross-org migration with less configuration.
+
+---
+
+
+## 🔧 Configuration
+
+### Authentication
+
+SFData uses Salesforce CLI (SFDX) for authentication. Authenticate your orgs using:
+
+```bash
+# Authenticate to an org
+sf org login web --alias myorg
+
+# List authenticated orgs
+sfdata orgs
+
+# Use with any command
+sfdata export Account --org myorg
+```
+
+### Configuration File (Optional)
+
+Create `~/.sfdata/config.yaml`:
+
+```yaml
+cache:
+  enabled: true
+  ttl_hours: 24
+  
+logging:
+  level: INFO
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### "SFDATA_External_ID__c field not found"
+**Solution:** Create the field manually in your target org (see Quick Start Step 2)
+
+### "Could not determine running user"
+**Solution:** This is a warning. Records will be assigned to default owner. No action needed.
+
+### "duplicate value found: Federal_id__c"
+**Solution:** A record with this external ID already exists. The pre-sync feature will handle this automatically.
+
+### Import shows "0 created, 5 updated"
+**Solution:** This is correct! Virtual IDs allow idempotent imports. Re-running updates existing records.
+
+---
+
+## 📝 License
+
+Proprietary License - All Rights Reserved
+
+This software is proprietary and confidential. Unauthorized copying, modification, distribution, or use of this software, via any medium, is strictly prohibited.
+
+For licensing inquiries: mayank.shete@gmail.com
+
+---
+
+## 🔗 Support
+
+- **Documentation:** See examples above
+- **Support:** mayank.shete@gmail.com
+- **License Inquiries:** mayank.shete@gmail.com
+---
+
+## 🙏 Acknowledgments
+
+Built with:
+- [simple-salesforce](https://github.com/simple-salesforce/simple-salesforce) - Salesforce REST/Bulk API client
+- [Typer](https://github.com/tiangolo/typer) - Modern CLI framework
+- [Rich](https://github.com/Textualize/rich) - Beautiful terminal output
+- [pluggy](https://github.com/pytest-dev/pluggy) - Plugin system
+
+---
+
+## ⚡ Quick Reference
+
+```bash
+# List SFDX orgs
+sfdata orgs
+
+# Export with SFDX
+sfdata export Account --org myorg --output accounts.json
+
+# Import with SFDX
+sfdata import accounts.json --org target-sandbox
+
+# Check what would be imported (dry-run)
+sfdata import accounts.json --org myorg --dry-run
+
+# View cache stats
+sfdata cache stats
+
+# Get help
+sfdata --help
+sfdata export --help
+```
+
+---
+
+**Questions or Support?** Contact me at mayank.shete@gmail.com
