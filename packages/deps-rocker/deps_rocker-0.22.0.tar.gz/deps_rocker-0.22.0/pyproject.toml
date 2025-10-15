@@ -1,0 +1,182 @@
+[project]
+name = "deps_rocker"
+version = "0.22.0"
+authors = [{ name = "Austin Gregg-Smith", email = "blooop@gmail.com" }]
+description = "A rocker plugin to help installing apt and pip dependencies"
+readme = "README.md"
+license = "MIT"
+
+requires-python = ">= 3.9"
+dependencies = [
+  "rocker>=0.2.19",
+  "off-your-rocker>=0.1.0",
+  "pyyaml>=5.0",
+  "toml>=0.10",
+]
+
+[tool.pixi.dependencies]
+shellcheck = ">=0.10.0,<0.11"
+pre-commit = ">=4,<4.4"
+
+[project.urls]
+Source = "https://github.com/blooop/deps_rocker"
+Home = "https://github.com/blooop/deps_rocker"
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.feature.py310.dependencies]
+python = "3.10.*"
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.pypi-dependencies]
+deps_rocker = { path = ".", editable = true }
+# Test & lint tooling so pixi tasks succeed (mirrors project.optional-dependencies[test])
+[tool.pixi.feature.test.pypi-dependencies]
+ruff = ">=0.5.0,<0.14"
+pylint = ">=3.2.5,<3.4.0"
+pytest = ">=7.4,<8.5"
+pytest-cov = ">=4.1,<7.1"
+hypothesis = ">=6.104.2,<6.141"
+coverage = ">=7.5.4,<7.11"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = ["deps_rocker"]
+
+[project.scripts]
+deps-rocker = "deps_rocker.dep_rocker_cli:gen_dockerfile"
+
+[project.entry-points."rocker.extensions"]
+#dependency managers
+odeps_dependencies = "deps_rocker.dependencies:Dependencies"
+vcstool = "deps_rocker.extensions.vcstool.vcstool:VcsTool"
+
+#package managers
+uv = "deps_rocker.extensions.uv.uv:UV"
+npm = "deps_rocker.extensions.npm.npm:Npm"
+pixi = "deps_rocker.extensions.pixi.pixi:Pixi"
+cargo = "deps_rocker.extensions.cargo.cargo:Cargo"
+
+#host file system access
+cwd = "deps_rocker.extensions.cwd.cwd:CWD"
+cwd_name = "deps_rocker.extensions.cwd.cwd:CWDName"
+
+#utils
+auto = "deps_rocker.extensions.auto.auto:Auto"
+curl = "deps_rocker.extensions.curl.curl:Curl"
+locales = "deps_rocker.extensions.locales.locales:Locales"
+tzdata = "deps_rocker.extensions.tzdata.tzdata:TzData"
+ssh_client = "deps_rocker.extensions.ssh_client.ssh_client:SshClient"
+git_clone = "deps_rocker.extensions.git_clone.git_clone:GitClone"
+detach = "deps_rocker.extensions.detach.detach:Detach"
+
+#dev tools
+ccache = "deps_rocker.extensions.ccache.ccache:Ccache"
+fzf = "deps_rocker.extensions.fzf.fzf:Fzf"
+lazygit = "deps_rocker.extensions.lazygit.lazygit:Lazygit"
+nvim = "deps_rocker.extensions.nvim.nvim:Nvim"
+palanteer = "deps_rocker.extensions.palanteer.palanteer:Palanteer"
+
+# developer search tools
+deps-devtools = "deps_rocker.extensions.deps_devtools.deps_devtools:DepsDevtools"
+
+#robotics
+ros_jazzy = "deps_rocker.extensions.ros_jazzy.ros_jazzy:RosJazzy"
+ros_underlay = "deps_rocker.extensions.ros_underlay.ros_underlay:RosUnderlay"
+isaac_sim = "deps_rocker.extensions.isaac_sim.isaac_sim:IsaacSim"
+urdf_viz = "deps_rocker.extensions.urdf_viz.urdf_viz:UrdfViz"
+
+#AI tools
+claude = "deps_rocker.extensions.claude.claude:Claude"
+codex = "deps_rocker.extensions.codex.codex:Codex"
+gemini = "deps_rocker.extensions.gemini.gemini:Gemini"
+spec_kit = "deps_rocker.extensions.spec_kit.spec_kit:SpecKit"
+conda = "deps_rocker.extensions.conda.conda:Conda"
+jquery = "deps_rocker.extensions.jquery.jquery:Jquery"
+
+# Environments
+[tool.pixi.environments]
+default = { features = ["test"], solve-group = "default" }
+py310 = ["py310", "test"]
+py311 = ["py311", "test"]
+py312 = ["py312", "test"]
+py313 = ["py313", "test"]
+
+
+
+[tool.pixi.tasks]
+pre-commit = "pre-commit run -a"
+pre-commit-update = "pre-commit autoupdate"
+format = "ruff format ."
+check-clean-workspace = "git diff --exit-code"
+ruff-lint = "ruff check . --fix"
+pylint = "python -m pylint --version && echo 'running pylint...' && python -m pylint $(git ls-files '*.py')"
+lint = { depends-on = ["ruff-lint", "pylint"] }
+style = { depends-on = ["format", "lint"] }
+commit-format = "git commit -a -m'autoformat code' || true"
+test = "python -m pytest -v -s"
+test-claude = "python -m pytest -v -s -m claude"
+coverage = "coverage run -m pytest --durations=0 -v -s && coverage xml -o coverage.xml"
+coverage-report = "coverage report -m"
+update-lock = "pixi update && git commit -a -m'update pixi.lock' || true"
+push = "git push"
+update-lock-push = { depends-on = ["update-lock", "push"] }
+fix = { depends-on = ["update-lock", "format", "ruff-lint"] }
+fix-commit-push = { depends-on = ["fix","pre-commit", "commit-format", "update-lock-push"] }
+ci-no-cover = { depends-on = ["style", "test"] }
+ci = { depends-on = [
+  "format",
+  "ruff-lint",
+  "pylint",
+  "coverage",
+  "coverage-report",
+] }
+ci-push = { depends-on = ["format", "ruff-lint", "update-lock", "ci", "push"] }
+clear-pixi = "rm -rf .pixi pixi.lock"
+setup-git-merge-driver = "git config merge.ourslock.driver true"
+update-from-template-repo = "./scripts/update_from_template.sh"
+
+# Run tests for a specific extension: pixi run test-extension <extension_name>
+[tool.pixi.tasks.test-extension]
+args = ["extension_name"]
+cmd = ["pytest", "-v", "-s", "test/test_extensions_generic.py", "-k", "test_{{extension_name}}_extension"]
+
+[tool.pylint]
+extension-pkg-whitelist = ["numpy"]
+jobs = 16                           #detect number of cores
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = "C,logging-fstring-interpolation,line-too-long,fixme,broad-exception-caught,missing-module-docstring,too-many-instance-attributes,too-few-public-methods,too-many-arguments,too-many-locals,too-many-branches,too-many-statements,use-dict-literal,cyclic-import,duplicate-code,too-many-public-methods,too-many-nested-blocks"
+enable = "no-else-return,consider-using-in"
+
+[tool.coverage.run]
+omit = ["*/test/*", "__init__.py"]
+
+[tool.coverage.report]
+exclude_also = [
+  "def __repr__",
+  "if False:",
+  "if 0:",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "pass",
+  "(_):",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "docker: marks tests as requiring docker (deselect with '-m \"not docker\"')",
+    "claude: claude-specific tests (run with '-m claude')",
+]
