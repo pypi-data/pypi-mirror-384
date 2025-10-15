@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Harvest - Replay Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: rgb(20, 20, 40);
+            color: rgb(255, 255, 255);
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .control-panel {
+            width: 200px;
+            background: rgb(30, 30, 60);
+            border-right: 2px solid rgb(255, 255, 255);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .game-area {
+            flex: 1;
+            position: relative;
+            background: rgb(20, 20, 40);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .right-panel {
+            width: 250px;
+            background: rgb(25, 25, 45);
+            border-left: 2px solid rgb(40, 40, 60);
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        #gameCanvas {
+            background: rgb(20, 20, 40);
+        }
+
+        .panel-title {
+            text-align: center;
+            padding: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            color: rgb(255, 255, 255);
+            background: rgb(30, 30, 60);
+        }
+
+        .upload-area {
+            border: 2px dashed rgb(100, 100, 100);
+            margin: 10px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            background: rgb(40, 40, 80);
+        }
+
+        .upload-area:hover {
+            background: rgb(50, 50, 90);
+        }
+
+        .upload-area.dragover {
+            border-color: rgb(100, 200, 100);
+            background: rgb(50, 80, 50);
+        }
+
+        .controls {
+            padding: 10px 15px;
+            flex: 1;
+        }
+        
+        .controls.active {
+            padding: 10px 15px;
+        }
+
+        .control-button {
+            width: 170px;
+            height: 30px;
+            margin: 5px 5px;
+            background: rgb(60, 60, 120);
+            border: 2px solid rgb(255, 255, 255);
+            color: rgb(255, 255, 255);
+            cursor: pointer;
+            font-size: 14px;
+            display: block;
+        }
+
+        .control-button:hover {
+            background: rgb(80, 80, 140);
+        }
+
+        .control-button:active, .control-button.active {
+            background: rgb(100, 100, 160);
+        }
+
+        .control-button:disabled {
+            background: rgb(40, 40, 80);
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .progress-container {
+            padding: 10px 15px;
+            margin-top: auto;
+        }
+
+        .frame-info {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .progress-bar {
+            width: 170px;
+            height: 20px;
+            background: rgb(40, 40, 80);
+            border: 2px solid rgb(255, 255, 255);
+            margin: 0 5px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: rgb(100, 200, 100);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .shortcuts {
+            padding: 10px 15px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .shortcuts h4 {
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .shortcuts div {
+            color: rgb(200, 200, 200);
+            margin-bottom: 2px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 3px solid rgb(60, 60, 120);
+            border-top: 3px solid rgb(100, 200, 100);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .right-panel h3 {
+            color: rgb(255, 255, 255);
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .stat-item {
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .player-1 { color: rgb(255, 100, 100); }
+        .player-2 { color: rgb(100, 150, 255); }
+
+        .legend {
+            margin-top: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border: 1px solid rgb(100, 100, 100);
+        }
+
+        .unit-legend {
+            margin-top: 15px;
+        }
+
+        .unit-legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 3px;
+            font-size: 12px;
+        }
+
+        .legend-text-item {
+            margin-bottom: 3px;
+            font-size: 12px;
+            color: rgb(200, 200, 200);
+        }
+
+        .unit-symbol {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 10px;
+            border: 1px solid rgb(255, 255, 255);
+        }
+
+        .winner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .winner-display {
+            background: rgb(40, 40, 80);
+            border: 3px solid rgb(255, 255, 255);
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            color: rgb(255, 255, 255);
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+
+        .winner-title {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+
+        .winner-player {
+            font-size: 48px;
+            margin: 20px 0;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .winner-player.player-1 {
+            color: rgb(255, 100, 100);
+        }
+
+        .winner-player.player-2 {
+            color: rgb(100, 150, 255);
+        }
+
+        .winner-stats {
+            margin-top: 20px;
+            font-size: 18px;
+            line-height: 1.5;
+        }
+
+        .winner-close {
+            margin-top: 30px;
+            padding: 10px 20px;
+            background: rgb(60, 60, 120);
+            border: 2px solid rgb(255, 255, 255);
+            color: rgb(255, 255, 255);
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 5px;
+        }
+
+        .winner-close:hover {
+            background: rgb(80, 80, 140);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="control-panel">
+            <div class="panel-title">Replay Controls</div>
+            
+            <div class="upload-area" id="uploadArea">
+                <div>Upload Replay File</div>
+                <div style="font-size: 12px; margin-top: 5px;">Click or drag JSON/JSON.GZ file</div>
+                <input type="file" id="fileInput" style="display: none;">
+            </div>
+            
+            <div class="loading" id="loadingIndicator">
+                <div class="spinner"></div>
+                <div>Loading replay...</div>
+            </div>
+            
+            <div class="controls" id="gameControls" style="display: none;">
+                <button class="control-button" id="playPauseBtn">Play/Pause</button>
+                <button class="control-button" id="stepBackBtn">Step Back</button>
+                <button class="control-button" id="stepForwardBtn">Step Forward</button>
+                <button class="control-button" id="speedBtn">Speed: 1.0x</button>
+                <button class="control-button" id="resetBtn">Reset</button>
+            </div>
+            
+            <div class="progress-container" id="progressContainer" style="display: none;">
+                <div class="frame-info" id="frameInfo">Frame: 0/0</div>
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            
+            <div class="shortcuts">
+                <h4>Keyboard Shortcuts:</h4>
+                <div>SPACE - Play/Pause</div>
+                <div>← → - Step Back/Forward</div>
+                <div>+/- - Speed Control</div>
+                <div>HOME - Go to Start</div>
+                <div>END - Go to End</div>
+                <div>ESC - Exit</div>
+            </div>
+        </div>
+        
+        <div class="game-area">
+            <canvas id="gameCanvas" width="600" height="600"></canvas>
+        </div>
+        
+        <div class="right-panel" id="rightPanel" style="display: none;">
+            <h3>Quantum Harvest</h3>
+            
+            <div class="stat-item">Turn: <span id="turnDisplay">0</span></div>
+            
+            <h4 style="margin-top: 15px; margin-bottom: 8px;">PLAYER STATS</h4>
+            <div class="stat-item player-1">P1 Energy: <span id="p1Energy">0</span></div>
+            <div class="stat-item player-2">P2 Energy: <span id="p2Energy">0</span></div>
+            <div class="stat-item player-1">P1 Territory: <span id="p1Territory">0%</span></div>
+            <div class="stat-item player-2">P2 Territory: <span id="p2Territory">0%</span></div>
+            <div class="stat-item player-1">P1 Units: <span id="p1Units">0</span></div>
+            <div class="stat-item player-2">P2 Units: <span id="p2Units">0</span></div>
+            
+            <div class="legend">
+                <h4>Tile Legend</h4>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(30, 30, 50);"></div>
+                    <span>Empty</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(255, 255, 0);"></div>
+                    <span>Energy Node</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(100, 100, 100);"></div>
+                    <span>Barrier</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(0, 255, 255);"></div>
+                    <span>Entanglement</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(255, 0, 255);"></div>
+                    <span>Decoherence</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(255, 165, 0);"></div>
+                    <span>Quantum Gate</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(30, 30, 50);"></div>
+                    <span>Both Teams Explored</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(80, 40, 40);"></div>
+                    <span>P1 Explored Only</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(40, 40, 80);"></div>
+                    <span>P2 Explored Only</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: rgb(10, 10, 20);"></div>
+                    <span>Unexplored</span>
+                </div>
+            </div>
+            
+            <div class="unit-legend">
+                <h4>Unit Legend</h4>
+                <div class="legend-text-item">H = Harvester</div>
+                <div class="legend-text-item">W = Warrior</div>
+                <div class="legend-text-item">S = Scout</div>
+                <div class="legend-text-item">Numbers = Stacked units</div>
+                <div class="legend-text-item">SH = Scout+Harvester</div>
+                <div class="legend-text-item">SHW = All unit types</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Winner Display Overlay -->
+    <div class="winner-overlay" id="winnerOverlay">
+        <div class="winner-display">
+            <div class="winner-title">GAME OVER</div>
+            <div class="winner-player" id="winnerPlayer">Player 1 Wins!</div>
+            <div class="winner-stats" id="winnerStats">
+                <div>Final Energy: P1: 1250 | P2: 890</div>
+                <div>Territory Control: P1: 65% | P2: 35%</div>
+                <div>Unit Count: P1: 8 | P2: 5</div>
+                <div>Total Turns: 150</div>
+            </div>
+            <button class="winner-close" id="winnerClose">Continue Viewing</button>
+        </div>
+    </div>
+
+    <!-- Include pako library for gzip decompression -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    
+    <script>
+        class QuantumHarvestReplayVisualizer {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.gameData = null;
+                this.currentFrame = 0;
+                this.isPlaying = false;
+                this.playbackSpeed = 1.0;
+                this.speedOptions = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
+                this.speedIndex = 2;
+                this.animationFrame = 0;
+                this.lastFrameTime = 0;
+                this.combatEvents = [];
+                this.winnerShown = false;
+                
+                // Exact pygame colors (RGB values)
+                this.colors = {
+                    background: 'rgb(20, 20, 40)',
+                    grid: 'rgb(40, 40, 60)',
+                    empty: 'rgb(30, 30, 50)',
+                    fog_of_war: 'rgb(10, 10, 20)',
+                    energy_node: 'rgb(255, 255, 0)',
+                    quantum_barrier: 'rgb(100, 100, 100)',
+                    entanglement_zone: 'rgb(0, 255, 255)',
+                    decoherence_field: 'rgb(255, 0, 255)',
+                    quantum_gate: 'rgb(255, 165, 0)',
+                    player1: 'rgb(255, 0, 0)',
+                    player2: 'rgb(0, 0, 255)',
+                    text: 'rgb(255, 255, 255)',
+                    ui_background: 'rgb(40, 40, 80)',
+                    projectile: 'rgb(255, 255, 0)',
+                    damage_text: 'rgb(255, 100, 100)',
+                    mixed_teams: 'rgb(128, 128, 255)'
+                };
+                
+                // Unit symbols - FIXED: Correct mapping
+                this.unitSymbols = {
+                    0: 'H', // Harvester
+                    1: 'W', // Warrior  
+                    2: 'S'  // Scout
+                };
+                
+                this.initializeEventListeners();
+                this.resizeCanvas();
+            }
+            
+            initializeEventListeners() {
+                // File upload
+                const uploadArea = document.getElementById('uploadArea');
+                const fileInput = document.getElementById('fileInput');
+                
+                uploadArea.addEventListener('click', () => fileInput.click());
+                uploadArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.add('dragover');
+                });
+                uploadArea.addEventListener('dragleave', () => {
+                    uploadArea.classList.remove('dragover');
+                });
+                uploadArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.remove('dragover');
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        this.loadReplayFile(files[0]);
+                    }
+                });
+                
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        this.loadReplayFile(e.target.files[0]);
+                    }
+                });
+                
+                // Control buttons
+                document.getElementById('playPauseBtn').addEventListener('click', () => this.togglePlayPause());
+                document.getElementById('stepBackBtn').addEventListener('click', () => this.stepBack());
+                document.getElementById('stepForwardBtn').addEventListener('click', () => this.stepForward());
+                document.getElementById('speedBtn').addEventListener('click', () => this.changeSpeed());
+                document.getElementById('resetBtn').addEventListener('click', () => this.reset());
+                
+                // Progress bar click
+                document.getElementById('progressBar').addEventListener('click', (e) => {
+                    const rect = e.target.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const progress = x / rect.width;
+                    this.currentFrame = Math.floor(progress * (this.turns.length - 1));
+                    this.currentFrame = Math.max(0, Math.min(this.turns.length - 1, this.currentFrame));
+                    this.updateDisplay();
+                });
+                
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (!this.gameData) return;
+                    
+                    switch(e.code) {
+                        case 'Space':
+                            e.preventDefault();
+                            this.togglePlayPause();
+                            break;
+                        case 'ArrowLeft':
+                            this.stepBack();
+                            break;
+                        case 'ArrowRight':
+                            this.stepForward();
+                            break;
+                        case 'Equal':
+                        case 'NumpadAdd':
+                            this.increaseSpeed();
+                            break;
+                        case 'Minus':
+                        case 'NumpadSubtract':
+                            this.decreaseSpeed();
+                            break;
+                        case 'Home':
+                            this.reset();
+                            break;
+                        case 'End':
+                            this.currentFrame = this.turns.length - 1;
+                            this.isPlaying = false;
+                            this.updateDisplay();
+                            break;
+                    }
+                });
+                
+                // Window resize
+                window.addEventListener('resize', () => this.resizeCanvas());
+                
+                // Winner overlay close button
+                document.getElementById('winnerClose').addEventListener('click', () => {
+                    document.getElementById('winnerOverlay').style.display = 'none';
+                });
+            }
+            
+            resizeCanvas() {
+                const gameArea = document.querySelector('.game-area');
+                const rect = gameArea.getBoundingClientRect();
+                
+                // Make canvas square and fit in available space
+                const maxSize = Math.min(rect.width - 40, rect.height - 40);
+                const canvasSize = Math.max(400, maxSize);
+                
+                this.canvas.width = canvasSize;
+                this.canvas.height = canvasSize;
+                
+                if (this.gameData) {
+                    this.render();
+                }
+            }
+            
+            async loadReplayFile(file) {
+                document.getElementById('loadingIndicator').style.display = 'block';
+                document.getElementById('uploadArea').style.display = 'none';
+                
+                try {
+                    console.log('Loading file:', file.name, 'Size:', file.size, 'Type:', file.type);
+                    
+                    let text;
+                    
+                    // Check if file is compressed (.json.gz)
+                    if (file.name.endsWith('.json.gz')) {
+                        console.log('Detected .json.gz file, attempting decompression...');
+                        
+                        // Load as binary data for decompression
+                        const arrayBuffer = await file.arrayBuffer();
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        
+                        console.log('ArrayBuffer size:', arrayBuffer.byteLength);
+                        console.log('Uint8Array length:', uint8Array.length);
+                        
+                        // Check for gzip magic number
+                        const magicNumber = uint8Array.slice(0, 2);
+                        console.log('Magic number:', Array.from(magicNumber).map(b => '0x' + b.toString(16)).join(' '));
+                        
+                        // Decompress using pako
+                        console.log('Attempting pako.inflate...');
+                        const decompressed = pako.inflate(uint8Array, { to: 'string' });
+                        console.log('Decompressed size:', decompressed.length, 'characters');
+                        
+                        text = decompressed;
+                    } else {
+                        console.log('Detected .json file, loading as text...');
+                        text = await file.text();
+                    }
+                    
+                    console.log('Attempting JSON.parse...');
+                    this.gameData = JSON.parse(text);
+                    console.log('Successfully parsed JSON with', this.gameData.length, 'entries');
+                    
+                    this.processGameData();
+                    this.setupControls();
+                    this.reset();
+                    
+                    document.getElementById('gameControls').style.display = 'block';
+                    document.getElementById('gameControls').classList.add('active');
+                    document.getElementById('progressContainer').style.display = 'block';
+                    document.getElementById('rightPanel').style.display = 'block';
+                } catch (error) {
+                    console.error('Error loading replay file:', error);
+                    alert('Error loading replay file: ' + error.message + '\n\nCheck the browser console for more details.');
+                    document.getElementById('uploadArea').style.display = 'block';
+                } finally {
+                    document.getElementById('loadingIndicator').style.display = 'none';
+                }
+            }
+            
+            processGameData() {
+                // Extract game turns from the JSON data
+                this.turns = [];
+                this.gameConfig = null;
+                
+                for (const entry of this.gameData) {
+                    if (entry.type === 'game_config') {
+                        this.gameConfig = entry;
+                    } else if (entry.type === 'step' || entry.type === 'reset') {
+                        this.turns.push(entry);
+                    }
+                }
+                
+                console.log(`Loaded ${this.turns.length} turns`);
+                console.log('Sample turn data:', this.turns[0]);
+                
+                // Debug: Check for scouts in the data
+                if (this.turns[0] && this.turns[0].observation && this.turns[0].observation.units) {
+                    const scouts = this.turns[0].observation.units.filter(unit => unit[2] === 2);
+                    console.log('Scouts found in first turn:', scouts.length, scouts);
+                }
+            }
+            
+            setupControls() {
+                // No additional setup needed
+            }
+            
+            reset() {
+                this.currentFrame = 0;
+                this.isPlaying = false;
+                this.winnerShown = false;
+                document.getElementById('winnerOverlay').style.display = 'none';
+                this.updatePlayPauseButton();
+                this.updateDisplay();
+            }
+            
+            stepBack() {
+                if (this.currentFrame > 0) {
+                    this.currentFrame--;
+                    this.updateDisplay();
+                }
+            }
+            
+            stepForward() {
+                if (this.currentFrame < this.turns.length - 1) {
+                    this.currentFrame++;
+                    this.updateDisplay();
+                }
+            }
+            
+            togglePlayPause() {
+                this.isPlaying = !this.isPlaying;
+                this.updatePlayPauseButton();
+                
+                if (this.isPlaying) {
+                    this.startPlayback();
+                }
+            }
+            
+            changeSpeed() {
+                this.speedIndex = (this.speedIndex + 1) % this.speedOptions.length;
+                this.playbackSpeed = this.speedOptions[this.speedIndex];
+                document.getElementById('speedBtn').textContent = `Speed: ${this.playbackSpeed}x`;
+            }
+            
+            increaseSpeed() {
+                this.speedIndex = Math.min(this.speedOptions.length - 1, this.speedIndex + 1);
+                this.playbackSpeed = this.speedOptions[this.speedIndex];
+                document.getElementById('speedBtn').textContent = `Speed: ${this.playbackSpeed}x`;
+            }
+            
+            decreaseSpeed() {
+                this.speedIndex = Math.max(0, this.speedIndex - 1);
+                this.playbackSpeed = this.speedOptions[this.speedIndex];
+                document.getElementById('speedBtn').textContent = `Speed: ${this.playbackSpeed}x`;
+            }
+            
+            updatePlayPauseButton() {
+                const btn = document.getElementById('playPauseBtn');
+                btn.textContent = this.isPlaying ? 'Pause' : 'Play/Pause';
+                btn.classList.toggle('active', this.isPlaying);
+            }
+            
+            startPlayback() {
+                const playLoop = () => {
+                    if (!this.isPlaying) return;
+                    
+                    const now = performance.now();
+                    const deltaTime = now - this.lastFrameTime;
+                    const frameInterval = 1000 / this.playbackSpeed;
+                    
+                    if (deltaTime >= frameInterval) {
+                        this.stepForward();
+                        this.lastFrameTime = now;
+                        
+                        if (this.currentFrame >= this.turns.length - 1) {
+                            this.isPlaying = false;
+                            this.updatePlayPauseButton();
+                            return;
+                        }
+                    }
+                    
+                    requestAnimationFrame(playLoop);
+                };
+                
+                this.lastFrameTime = performance.now();
+                requestAnimationFrame(playLoop);
+            }
+            
+            updateDisplay() {
+                this.render();
+                this.updateUI();
+                this.checkForGameEnd();
+            }
+            
+            updateUI() {
+                // Update frame info
+                document.getElementById('frameInfo').textContent = 
+                    `Frame: ${this.currentFrame + 1}/${this.turns.length}`;
+                
+                // Update progress bar
+                const progress = (this.currentFrame / (this.turns.length - 1)) * 100;
+                document.getElementById('progressFill').style.width = progress + '%';
+                
+                // Update stats
+                if (this.turns[this.currentFrame] && this.turns[this.currentFrame].observation) {
+                    const obs = this.turns[this.currentFrame].observation;
+                    const info = this.turns[this.currentFrame].info || {};
+                    
+                    // Update turn display
+                    document.getElementById('turnDisplay').textContent = obs.turn || this.currentFrame;
+                    
+                    if (obs.player_energy) {
+                        document.getElementById('p1Energy').textContent = Math.round(obs.player_energy[0]);
+                        document.getElementById('p2Energy').textContent = Math.round(obs.player_energy[1]);
+                    }
+                    
+                    if (obs.territory_control) {
+                        document.getElementById('p1Territory').textContent = (obs.territory_control[0] * 100).toFixed(1) + '%';
+                        document.getElementById('p2Territory').textContent = (obs.territory_control[1] * 100).toFixed(1) + '%';
+                    }
+                    
+                    if (obs.units) {
+                        const p1Units = obs.units.filter(unit => unit[1] === 0 && unit[0] !== 0).length;
+                        const p2Units = obs.units.filter(unit => unit[1] === 1 && unit[0] !== 0).length;
+                        document.getElementById('p1Units').textContent = p1Units;
+                        document.getElementById('p2Units').textContent = p2Units;
+                    }
+                    
+                    // Process combat events for animations
+                    if (info.combat_events) {
+                        this.combatEvents = info.combat_events.map(event => ({
+                            ...event,
+                            frame: 0
+                        }));
+                    }
+                }
+            }
+            
+            checkForGameEnd() {
+                // Check if we're at the last frame and haven't shown winner yet
+                if (this.currentFrame >= this.turns.length - 1 && !this.winnerShown) {
+                    this.showWinner();
+                    this.winnerShown = true;
+                }
+            }
+            
+            showWinner() {
+                const finalTurn = this.turns[this.turns.length - 1];
+                if (!finalTurn || !finalTurn.observation) return;
+                
+                const obs = finalTurn.observation;
+                const info = finalTurn.info || {};
+                
+                // Get player names from game config
+                const player0Name = this.gameConfig && this.gameConfig.player1_username ? this.gameConfig.player1_username : 'Player 1';
+                const player1Name = this.gameConfig && this.gameConfig.player2_username ? this.gameConfig.player2_username : 'Player 2';
+                
+                // Get final stats
+                const p0Energy = obs.player_energy ? Math.round(obs.player_energy[0]) : 0;
+                const p1Energy = obs.player_energy ? Math.round(obs.player_energy[1]) : 0;
+                const p0Territory = obs.territory_control ? (obs.territory_control[0] * 100).toFixed(1) : '0.0';
+                const p1Territory = obs.territory_control ? (obs.territory_control[1] * 100).toFixed(1) : '0.0';
+                const totalTurns = obs.turn || this.turns.length;
+                
+                // Count units for each player
+                let p0Units = 0;
+                let p1Units = 0;
+                if (obs.units) {
+                    for (const unit of obs.units) {
+                        const [unitId, playerId, unitType, x, y, health] = unit;
+                        // Skip empty units and count valid units
+                        if (unitId !== 0 && health > 0) {
+                            if (playerId === 0) {
+                                p0Units++;
+                            } else if (playerId === 1) {
+                                p1Units++;
+                            }
+                        }
+                    }
+                }
+                
+                // Determine winner using the same logic as Flask app
+                let winner = null;
+                let winnerText = '';
+                let winnerClass = '';
+                let winCriteria = '';
+                
+                // Check if there's explicit winner info
+                if (info.winner !== undefined && info.winner !== null) {
+                    winner = info.winner;
+                    winCriteria = ' (by game termination)';
+                } else {
+                    // Determine winner by elimination first, then energy, then territory
+                    if (p0Units === 0 && p1Units > 0) {
+                        winner = 1; // Player 1 wins by elimination
+                        winCriteria = ' (by unit elimination)';
+                    } else if (p1Units === 0 && p0Units > 0) {
+                        winner = 0; // Player 0 wins by elimination
+                        winCriteria = ' (by unit elimination)';
+                    } else if (p0Energy > p1Energy) {
+                        winner = 0; // Player 0 wins by energy
+                        winCriteria = ' (by higher energy)';
+                    } else if (p1Energy > p0Energy) {
+                        winner = 1; // Player 1 wins by energy
+                        winCriteria = ' (by higher energy)';
+                    } else if (p0Territory > p1Territory) {
+                        winner = 0; // Player 0 wins by territory
+                        winCriteria = ' (by territory coverage)';
+                    } else if (p1Territory > p0Territory) {
+                        winner = 1; // Player 1 wins by territory
+                        winCriteria = ' (by territory coverage)';
+                    }
+                }
+                
+                // Map winner to correct player name
+                if (winner === 0) {
+                    winnerText = `${player0Name} Wins!${winCriteria}`;
+                    winnerClass = 'player-1';
+                } else if (winner === 1) {
+                    winnerText = `${player1Name} Wins!${winCriteria}`;
+                    winnerClass = 'player-2';
+                } else {
+                    winnerText = "It's a Tie!";
+                    winnerClass = '';
+                }
+                
+                // Update winner display
+                const winnerPlayer = document.getElementById('winnerPlayer');
+                winnerPlayer.textContent = winnerText;
+                winnerPlayer.className = `winner-player ${winnerClass}`;
+                
+                const winnerStats = document.getElementById('winnerStats');
+                winnerStats.innerHTML = `
+                    <div>Final Energy: ${player0Name}: ${p0Energy} | ${player1Name}: ${p1Energy}</div>
+                    <div>Territory Control: ${player0Name}: ${p0Territory}% | ${player1Name}: ${p1Territory}%</div>
+                    <div>Unit Count: ${player0Name}: ${p0Units} | ${player1Name}: ${p1Units}</div>
+                    <div>Total Turns: ${totalTurns}</div>
+                `;
+                
+                // Show the overlay
+                document.getElementById('winnerOverlay').style.display = 'flex';
+            }
+            
+            render() {
+                if (!this.gameData || !this.turns[this.currentFrame]) return;
+                
+                const turn = this.turns[this.currentFrame];
+                const obs = turn.observation;
+                
+                // Clear canvas with exact pygame background color
+                this.ctx.fillStyle = this.colors.background;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                if (!obs || !obs.map) return;
+                
+                const mapSize = obs.map.length;
+                const cellSize = this.canvas.width / mapSize;
+                
+                // Draw map tiles
+                this.drawMap(obs.map, cellSize);
+                
+                // Draw grid (before units so indicators appear on top)
+                this.drawGrid(mapSize, cellSize);
+                
+                // Draw units with stacking support
+                if (obs.units) {
+                    this.drawUnitsWithStacking(obs.units, cellSize);
+                }
+                
+                // Draw combat animations
+                this.drawCombatAnimations(cellSize);
+                
+                // Update animation frame
+                this.animationFrame++;
+            }
+            
+            drawMap(map, cellSize) {
+                const obs = this.turns[this.currentFrame].observation;
+                const fogMaps = obs.fog_maps;
+                
+                // If no fog maps available, draw full map (fallback)
+                if (!fogMaps) {
+                    this.drawFullMap(map, cellSize);
+                    return;
+                }
+                
+                // Create team-specific exploration maps
+                const mapSize = map.length;
+                const teamExploration = [
+                    Array(mapSize).fill(null).map(() => Array(mapSize).fill(false)), // Player 0
+                    Array(mapSize).fill(null).map(() => Array(mapSize).fill(false))  // Player 1
+                ];
+                
+                // Track exploration for each team separately
+                for (let playerId = 0; playerId < 2; playerId++) {
+                    const fogMap = fogMaps[playerId];
+                    for (let x = 0; x < mapSize; x++) {
+                        for (let y = 0; y < mapSize; y++) {
+                            // Mark explored tiles (not -1)
+                            if (fogMap[x][y] !== -1) {
+                                teamExploration[playerId][x][y] = true;
+                            }
+                        }
+                    }
+                }
+                
+                // Draw map with team-based fog of war
+                for (let x = 0; x < mapSize; x++) {
+                    for (let y = 0; y < mapSize; y++) {
+                        // Note: pygame uses (x,y) but array is [y][x], so we need to swap for screen coordinates
+                        const screenX = y * cellSize;
+                        const screenY = x * cellSize;
+                        
+                        const player0Explored = teamExploration[0][x][y];
+                        const player1Explored = teamExploration[1][x][y];
+                        
+                        if (player0Explored && player1Explored) {
+                            // Both teams explored - show actual tile
+                            const tileType = map[x][y];
+                            this.drawTile(tileType, screenX, screenY, cellSize, y, x, 'both');
+                        } else if (player0Explored) {
+                            // Only Player 0 explored - show with light red tint
+                            this.drawTeamFogTile(map[x][y], screenX, screenY, cellSize, y, x, 0);
+                        } else if (player1Explored) {
+                            // Only Player 1 explored - show with light blue tint
+                            this.drawTeamFogTile(map[x][y], screenX, screenY, cellSize, y, x, 1);
+                        } else {
+                            // Neither team explored - show fog of war
+                            this.ctx.fillStyle = this.colors.fog_of_war;
+                            this.ctx.fillRect(screenX, screenY, cellSize, cellSize);
+                        }
+                    }
+                }
+            }
+            
+            drawFullMap(map, cellSize) {
+                for (let y = 0; y < map.length; y++) {
+                    for (let x = 0; x < map[y].length; x++) {
+                        const tileType = map[y][x];
+                        // Note: pygame uses (x,y) but array is [y][x], so we need to swap for screen coordinates
+                        const screenX = x * cellSize;
+                        const screenY = y * cellSize;
+                        
+                        this.drawTile(tileType, screenX, screenY, cellSize, x, y);
+                    }
+                }
+            }
+            
+            drawTile(tileType, screenX, screenY, cellSize, mapX, mapY, explorationStatus = 'both') {
+                // Draw base tile with exact pygame colors
+                this.ctx.fillStyle = this.colors.empty;
+                this.ctx.fillRect(screenX, screenY, cellSize, cellSize);
+                
+                // Draw tile content based on type
+                switch (tileType) {
+                    case 1: // Energy node
+                        this.drawEnergyNode(screenX, screenY, cellSize, mapX, mapY, explorationStatus);
+                        break;
+                    case 2: // Quantum barrier
+                        this.ctx.fillStyle = this.colors.quantum_barrier;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                    case 3: // Entanglement zone
+                        this.ctx.fillStyle = this.colors.entanglement_zone;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                    case 4: // Decoherence field
+                        this.ctx.fillStyle = this.colors.decoherence_field;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                    case 5: // Quantum gate
+                        this.ctx.fillStyle = this.colors.quantum_gate;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                }
+            }
+            
+            drawTeamFogTile(tileType, screenX, screenY, cellSize, mapX, mapY, teamId) {
+                // Team fog colors - lighter versions of team colors
+                const teamFogColors = {
+                    0: 'rgb(80, 40, 40)',   // Light red tint for Player 0
+                    1: 'rgb(40, 40, 80)'    // Light blue tint for Player 1
+                };
+                
+                // Draw base tile with team fog color
+                this.ctx.fillStyle = teamFogColors[teamId];
+                this.ctx.fillRect(screenX, screenY, cellSize, cellSize);
+                
+                // Draw tile content with reduced opacity to show it's partially fogged
+                this.ctx.globalAlpha = 0.6;
+                
+                // Draw tile content based on type
+                switch (tileType) {
+                    case 1: // Energy node
+                        this.drawEnergyNode(screenX, screenY, cellSize, mapX, mapY, teamId);
+                        break;
+                    case 2: // Quantum barrier
+                        this.ctx.fillStyle = this.colors.quantum_barrier;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                    case 3: // Entanglement zone
+                        this.ctx.fillStyle = this.colors.entanglement_zone;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                    case 4: // Decoherence field
+                        this.ctx.fillStyle = this.colors.decoherence_field;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                    case 5: // Quantum gate
+                        this.ctx.fillStyle = this.colors.quantum_gate;
+                        this.ctx.fillRect(screenX + 2, screenY + 2, cellSize - 4, cellSize - 4);
+                        break;
+                }
+                
+                // Reset alpha
+                this.ctx.globalAlpha = 1;
+            }
+            
+            drawEnergyNode(screenX, screenY, cellSize, mapX, mapY, explorationStatus = 'both') {
+                // Get energy value for this node from game data
+                let energyValue = 2000; // Default full energy (ENERGY_NODE_MAX_VALUE)
+                
+                // Make sure we're getting the current frame's data
+                const currentTurn = this.turns[this.currentFrame];
+                if (currentTurn && currentTurn.info) {
+                    const info = currentTurn.info;
+                    if (info.energy_nodes && info.energy_values && Array.isArray(info.energy_nodes) && Array.isArray(info.energy_values)) {
+                        // Find this node's energy value
+                        for (let i = 0; i < info.energy_nodes.length; i++) {
+                            const nodePos = info.energy_nodes[i];
+                            // Check both coordinate orders in case there's a mismatch
+                            if ((nodePos[0] === mapX && nodePos[1] === mapY) || (nodePos[0] === mapY && nodePos[1] === mapX)) {
+                                energyValue = info.energy_values[i];
+                                if (energyValue === undefined || energyValue === null) {
+                                    energyValue = 0;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Energy nodes can deplete from their starting value (1000-2000) all the way down to 0
+                // The visual should be proportional to the full 0-2000 range
+                const maxEnergy = 2000; // ENERGY_NODE_MAX_VALUE (maximum possible energy)
+                const minEnergy = 0;    // Energy nodes can deplete to 0
+                
+                // Calculate energy percentage based on 0-2000 range
+                const energyPercentage = Math.max(0.0, Math.min(1.0, energyValue / maxEnergy));
+                
+                // Determine background color based on exploration status
+                let backgroundColor;
+                if (explorationStatus === 'both') {
+                    backgroundColor = this.colors.empty; // Both teams explored - normal empty color
+                } else if (explorationStatus === 0) {
+                    backgroundColor = 'rgb(80, 40, 40)'; // Only Player 0 explored - light red
+                } else if (explorationStatus === 1) {
+                    backgroundColor = 'rgb(40, 40, 80)'; // Only Player 1 explored - light blue
+                } else {
+                    backgroundColor = this.colors.fog_of_war; // Unexplored - dark fog
+                }
+                
+                // Calculate the height of the energy fill (from bottom up)
+                const fillHeight = Math.floor(cellSize * energyPercentage);
+                const emptyHeight = cellSize - fillHeight;
+                
+                // Draw the empty (depleted) portion at the top with exploration color
+                if (emptyHeight > 0) {
+                    this.ctx.fillStyle = backgroundColor;
+                    this.ctx.fillRect(screenX, screenY, cellSize, emptyHeight);
+                }
+                
+                // Draw energy fill based on percentage (matching pygame)
+                if (energyPercentage > 0.0 && fillHeight > 0) {
+                    // Create energy fill rectangle (from bottom up like a liquid)
+                    const energyFillY = screenY + emptyHeight;
+                    
+                    // Draw the energy fill
+                    this.ctx.fillStyle = this.colors.energy_node;
+                    this.ctx.fillRect(screenX, energyFillY, cellSize, fillHeight);
+                    
+                    // Add a subtle gradient effect for more visual appeal (matching pygame)
+                    if (fillHeight > 2) {
+                        const gradientHeight = Math.min(Math.floor(fillHeight / 3), 8);
+                        for (let i = 0; i < gradientHeight; i++) {
+                            const alpha = 1.0 - (i / gradientHeight);
+                            const lighterYellow = `rgba(255, 255, 150, ${alpha * 0.5})`;
+                            
+                            this.ctx.fillStyle = lighterYellow;
+                            this.ctx.fillRect(screenX, energyFillY + i, cellSize, 1);
+                        }
+                    }
+                } else if (energyPercentage <= 0.0) {
+                    // Completely depleted - show only background color
+                    this.ctx.fillStyle = backgroundColor;
+                    this.ctx.fillRect(screenX, screenY, cellSize, cellSize);
+                }
+            }
+            
+            drawUnitsWithStacking(units, cellSize) {
+                // First, group units by position
+                const positionGroups = {};
+                
+                for (const unit of units) {
+                    // Skip empty/invalid units - check if all important fields are 0
+                    const [unitId, playerId, unitType, x, y, health, isBoosted, boostAttacks] = unit;
+                    
+                    // Skip only if it's a completely empty unit (all zeros) or invalid position
+                    if (unitId === 0 && playerId === 0 && unitType === 0 && x === 0 && y === 0 && health === 0) continue;
+                    
+                    // Also skip if unit has no valid type or position
+                    if (unitType < 0 || unitType > 2) continue;
+                    
+                    console.log('Processing unit:', { unitId, playerId, unitType, x, y, health });
+                    
+                    const posKey = `${x},${y}`;
+                    if (!positionGroups[posKey]) {
+                        positionGroups[posKey] = [];
+                    }
+                    positionGroups[posKey].push({
+                        unitId, playerId, unitType, x, y, health, 
+                        isBoosted: isBoosted || 0, 
+                        boostAttacks: boostAttacks || 0
+                    });
+                }
+                
+                // Draw each position group
+                for (const [posKey, unitsAtPos] of Object.entries(positionGroups)) {
+                    if (unitsAtPos.length === 0) continue;
+                    
+                    const firstUnit = unitsAtPos[0];
+                    const { x, y } = firstUnit;
+                    
+                    // Note: pygame coordinate system - x,y in unit data corresponds to screen positions
+                    const centerX = y * cellSize + cellSize / 2; // y becomes screen x
+                    const centerY = x * cellSize + cellSize / 2; // x becomes screen y
+                    const radius = Math.max(3, cellSize / 3);
+                    
+                    // Check for mixed teams
+                    const playerIds = [...new Set(unitsAtPos.map(u => u.playerId))];
+                    const hasMixedTeams = playerIds.length > 1;
+                    
+                    // Determine unit color
+                    let unitColor;
+                    if (hasMixedTeams) {
+                        unitColor = this.colors.mixed_teams;
+                    } else {
+                        unitColor = firstUnit.playerId === 0 ? this.colors.player1 : this.colors.player2;
+                    }
+                    
+                    // Draw boosted warrior glow effect
+                    const boostedWarriors = unitsAtPos.filter(u => u.unitType === 1 && u.isBoosted);
+                    if (boostedWarriors.length > 0) {
+                        const glowColor = firstUnit.playerId === 0 ? 'rgba(255, 255, 100, 0.6)' : 'rgba(255, 100, 255, 0.6)';
+                        for (let glowRadius = radius + 6; glowRadius > radius + 2; glowRadius--) {
+                            const alpha = (60 - (glowRadius - radius) * 10) / 255;
+                            this.ctx.globalAlpha = alpha;
+                            this.ctx.fillStyle = glowColor;
+                            this.ctx.beginPath();
+                            this.ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
+                            this.ctx.fill();
+                        }
+                        this.ctx.globalAlpha = 1;
+                    }
+                    
+                    // Draw unit circle
+                    this.ctx.fillStyle = unitColor;
+                    this.ctx.beginPath();
+                    this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Draw unit border
+                    this.ctx.strokeStyle = this.colors.text;
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                    
+                    // Draw unit symbols (combined for multiple unit types)
+                    const unitTypes = [...new Set(unitsAtPos.map(u => u.unitType))].sort();
+                    const symbols = unitTypes.map(type => this.unitSymbols[type] || '?').join('');
+                    
+                    this.ctx.fillStyle = this.colors.text;
+                    this.ctx.font = `${Math.max(10, cellSize * 0.3)}px Arial`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText(symbols, centerX, centerY);
+                    
+                    // Draw boost indicator for boosted warriors
+                    if (boostedWarriors.length > 0) {
+                        const boostText = boostedWarriors[0].boostAttacks.toString();
+                        const boostX = centerX + radius + 8;
+                        const boostY = centerY - radius - 8;
+                        
+                        // Draw boost background circle
+                        this.ctx.fillStyle = 'rgb(255, 0, 0)';
+                        this.ctx.beginPath();
+                        this.ctx.arc(boostX, boostY, 8, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        // Draw boost text
+                        this.ctx.fillStyle = this.colors.text;
+                        this.ctx.font = `${Math.max(8, cellSize * 0.2)}px Arial`;
+                        this.ctx.textAlign = 'center';
+                        this.ctx.textBaseline = 'middle';
+                        this.ctx.fillText(boostText, boostX, boostY);
+                    }
+                    
+                    // Draw stack count indicator if multiple units (similar to boost indicator)
+                    if (unitsAtPos.length > 1) {
+                        let stackText;
+                        let stackBgColor;
+                        
+                        if (hasMixedTeams) {
+                            // Show team composition (e.g., "2+1")
+                            const teamCounts = {};
+                            unitsAtPos.forEach(unit => {
+                                teamCounts[unit.playerId] = (teamCounts[unit.playerId] || 0) + 1;
+                            });
+                            stackText = Object.keys(teamCounts).sort().map(pid => teamCounts[pid]).join('+');
+                            stackBgColor = 'rgb(200, 200, 255)'; // Original mixed teams color
+                        } else {
+                            stackText = unitsAtPos.length.toString();
+                            stackBgColor = firstUnit.playerId === 0 ? 'rgb(255, 255, 255)' : 'rgb(200, 200, 255)'; // Original team colors
+                        }
+                        
+                        // Position on top left (similar to boost indicator but opposite side)
+                        const stackX = centerX - radius - 8;
+                        const stackY = centerY - radius - 8;
+                        
+                        // Draw stack background circle (small fixed size like boost indicator)
+                        this.ctx.fillStyle = stackBgColor;
+                        this.ctx.beginPath();
+                        this.ctx.arc(stackX, stackY, 8, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        // Draw stack text
+                        this.ctx.fillStyle = 'rgb(0, 0, 0)'; // Black text for visibility on light backgrounds
+                        this.ctx.font = `${Math.max(8, cellSize * 0.2)}px Arial`;
+                        this.ctx.textAlign = 'center';
+                        this.ctx.textBaseline = 'middle';
+                        this.ctx.fillText(stackText, stackX, stackY);
+                    }
+                    
+                    // Draw health bar for all units (matching pygame behavior)
+                    const minHealth = Math.min(...unitsAtPos.map(u => u.health));
+                    const healthPercentage = minHealth / 100;
+                    const barWidth = cellSize * 0.8;
+                    const barHeight = Math.max(2, cellSize * 0.1);
+                    const barX = centerX - barWidth / 2;
+                    const barY = centerY + radius + 2;
+                    
+                    // Health bar background (always draw background)
+                    this.ctx.fillStyle = 'rgb(50, 50, 50)';
+                    this.ctx.fillRect(barX, barY, barWidth, barHeight);
+                    
+                    // Health bar fill (always draw, even at 100% health)
+                    const healthColor = healthPercentage > 0.5 ? 'rgb(0, 255, 0)' : 
+                                      healthPercentage > 0.25 ? 'rgb(255, 255, 0)' : 'rgb(255, 0, 0)';
+                    this.ctx.fillStyle = healthColor;
+                    this.ctx.fillRect(barX, barY, barWidth * healthPercentage, barHeight);
+                }
+            }
+            
+            drawCombatAnimations(cellSize) {
+                // Draw attack animations
+                for (const event of this.combatEvents) {
+                    if (event.type === 'attack' && event.frame <= 30) {
+                        this.drawEnhancedAttackAnimation(event, cellSize);
+                        event.frame++;
+                    }
+                }
+                
+                // Remove finished animations
+                this.combatEvents = this.combatEvents.filter(event => event.frame <= 30);
+            }
+            
+            drawEnhancedAttackAnimation(event, cellSize) {
+                const { attacker_pos, target_pos, attacker_player, frame } = event;
+                
+                // Convert positions (swap x,y for screen coordinates)
+                const attackerX = attacker_pos[1] * cellSize + cellSize / 2;
+                const attackerY = attacker_pos[0] * cellSize + cellSize / 2;
+                const targetX = target_pos[1] * cellSize + cellSize / 2;
+                const targetY = target_pos[0] * cellSize + cellSize / 2;
+                
+                // Team colors
+                const teamColors = {
+                    primary: attacker_player === 0 ? 'rgb(255, 100, 100)' : 'rgb(0, 100, 255)',
+                    secondary: attacker_player === 0 ? 'rgb(255, 150, 150)' : 'rgb(100, 200, 255)',
+                    bright: attacker_player === 0 ? 'rgb(255, 200, 200)' : 'rgb(200, 255, 255)'
+                };
+                
+                // Choose animation type based on frame timing
+                if (frame <= 10) {
+                    this.drawLightningBolt(attackerX, attackerY, targetX, targetY, teamColors, frame);
+                    // Draw flame at attacker position when firing
+                    this.drawAttackerFlame(attackerX, attackerY, teamColors, frame);
+                } else if (frame <= 20) {
+                    this.drawEnergyBeam(attackerX, attackerY, targetX, targetY, teamColors, frame - 10);
+                } else {
+                    this.drawImpactExplosion(targetX, targetY, teamColors, frame - 20);
+                }
+            }
+            
+            drawLightningBolt(startX, startY, endX, endY, colors, frame) {
+                const progress = frame / 10;
+                const alpha = Math.max(0, 1 - progress * 0.5);
+                
+                // Draw main attack line (straight line instead of zigzag)
+                this.ctx.globalAlpha = alpha;
+                this.ctx.strokeStyle = colors.bright;
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+                
+                // Draw outer glow
+                this.ctx.globalAlpha = alpha * 0.3;
+                this.ctx.strokeStyle = colors.primary;
+                this.ctx.lineWidth = 8;
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+                
+                this.ctx.globalAlpha = 1;
+            }
+            
+            drawEnergyBeam(startX, startY, endX, endY, colors, frame) {
+                const progress = frame / 10;
+                const alpha = Math.max(0, 1 - progress);
+                
+                // Draw pulsing energy beam
+                const pulseIntensity = Math.sin(frame * 0.8) * 0.3 + 0.7;
+                
+                // Outer beam
+                this.ctx.globalAlpha = alpha * 0.2;
+                this.ctx.strokeStyle = colors.primary;
+                this.ctx.lineWidth = 12 * pulseIntensity;
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+                
+                // Middle beam
+                this.ctx.globalAlpha = alpha * 0.5;
+                this.ctx.strokeStyle = colors.secondary;
+                this.ctx.lineWidth = 6 * pulseIntensity;
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+                
+                // Core beam
+                this.ctx.globalAlpha = alpha;
+                this.ctx.strokeStyle = colors.bright;
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+                
+                // Add energy particles along the beam
+                for (let i = 0; i < 5; i++) {
+                    const t = (i / 4 + frame * 0.1) % 1;
+                    const particleX = startX + (endX - startX) * t;
+                    const particleY = startY + (endY - startY) * t;
+                    
+                    this.ctx.globalAlpha = alpha * 0.8;
+                    this.ctx.fillStyle = colors.bright;
+                    this.ctx.beginPath();
+                    this.ctx.arc(particleX, particleY, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                this.ctx.globalAlpha = 1;
+            }
+            
+            drawImpactExplosion(centerX, centerY, colors, frame) {
+                const progress = frame / 10;
+                const alpha = Math.max(0, 1 - progress);
+                const radius = progress * 30;
+                
+                // Draw expanding shockwave rings
+                for (let ring = 0; ring < 3; ring++) {
+                    const ringRadius = radius - ring * 8;
+                    if (ringRadius > 0) {
+                        this.ctx.globalAlpha = alpha * (0.8 - ring * 0.2);
+                        this.ctx.strokeStyle = colors.primary;
+                        this.ctx.lineWidth = 3 - ring;
+                        this.ctx.beginPath();
+                        this.ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+                        this.ctx.stroke();
+                    }
+                }
+                
+                // Draw fire burst particles
+                const particleCount = 12;
+                for (let i = 0; i < particleCount; i++) {
+                    const angle = (i / particleCount) * Math.PI * 2;
+                    const particleRadius = radius * 0.7;
+                    const particleX = centerX + Math.cos(angle) * particleRadius;
+                    const particleY = centerY + Math.sin(angle) * particleRadius;
+                    
+                    // Particle size decreases over time
+                    const particleSize = (1 - progress) * 4;
+                    
+                    this.ctx.globalAlpha = alpha;
+                    
+                    // Outer particle (darker)
+                    this.ctx.fillStyle = colors.primary;
+                    this.ctx.beginPath();
+                    this.ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Inner particle (brighter)
+                    this.ctx.fillStyle = colors.bright;
+                    this.ctx.beginPath();
+                    this.ctx.arc(particleX, particleY, particleSize * 0.5, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                // Central flash
+                if (frame < 5) {
+                    this.ctx.globalAlpha = alpha * 2;
+                    this.ctx.fillStyle = colors.bright;
+                    this.ctx.beginPath();
+                    this.ctx.arc(centerX, centerY, 8 - frame, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                this.ctx.globalAlpha = 1;
+            }
+            
+            drawAttackerFlame(centerX, centerY, colors, frame) {
+                const progress = frame / 10;
+                const alpha = Math.max(0, 1 - progress * 0.8);
+                
+                // Flame colors - orange/red gradient
+                const flameColors = [
+                    'rgb(255, 100, 0)',   // Bright orange core
+                    'rgb(255, 150, 50)',  // Orange
+                    'rgb(255, 200, 100)', // Light orange
+                    'rgb(255, 80, 80)'    // Red-orange
+                ];
+                
+                // Draw multiple flame layers for realistic effect
+                const flameHeight = 15 + Math.sin(frame * 0.8) * 3; // Flickering height
+                const flameWidth = 8 + Math.sin(frame * 1.2) * 2;   // Flickering width
+                
+                // Draw flame particles rising upward
+                for (let i = 0; i < 8; i++) {
+                    const angle = (Math.PI / 4) * i + frame * 0.3; // Rotating flame particles
+                    const radius = (flameWidth * 0.7) * (1 - i * 0.1);
+                    const height = -flameHeight * (1 - i * 0.15); // Rising upward
+                    
+                    const particleX = centerX + Math.cos(angle) * radius;
+                    const particleY = centerY + height + Math.sin(frame * 0.5 + i) * 2; // Flickering
+                    
+                    // Particle size decreases as it rises
+                    const particleSize = (4 - i * 0.4) * alpha;
+                    
+                    if (particleSize > 0) {
+                        this.ctx.globalAlpha = alpha * (1 - i * 0.1);
+                        this.ctx.fillStyle = flameColors[i % flameColors.length];
+                        this.ctx.beginPath();
+                        this.ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                }
+                
+                // Draw central flame core
+                this.ctx.globalAlpha = alpha * 0.9;
+                this.ctx.fillStyle = flameColors[0]; // Bright orange core
+                this.ctx.beginPath();
+                this.ctx.arc(centerX, centerY - flameHeight * 0.3, flameWidth * 0.4, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Add flame glow effect
+                this.ctx.globalAlpha = alpha * 0.3;
+                this.ctx.fillStyle = 'rgb(255, 150, 0)';
+                this.ctx.beginPath();
+                this.ctx.arc(centerX, centerY - flameHeight * 0.2, flameWidth, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.globalAlpha = 1;
+            }
+            
+            drawGrid(mapSize, cellSize) {
+                this.ctx.strokeStyle = this.colors.grid;
+                this.ctx.lineWidth = 1;
+                
+                // Vertical lines
+                for (let x = 0; x <= mapSize; x++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x * cellSize, 0);
+                    this.ctx.lineTo(x * cellSize, mapSize * cellSize);
+                    this.ctx.stroke();
+                }
+                
+                // Horizontal lines
+                for (let y = 0; y <= mapSize; y++) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y * cellSize);
+                    this.ctx.lineTo(mapSize * cellSize, y * cellSize);
+                    this.ctx.stroke();
+                }
+            }
+        }
+        
+        // Initialize the visualizer when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new QuantumHarvestReplayVisualizer();
+        });
+    </script>
+</body>
+</html>
