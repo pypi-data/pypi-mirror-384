@@ -1,0 +1,598 @@
+Metadata-Version: 2.4
+Name: knowledge-graph-rag-mcp
+Version: 0.1.1
+Summary: Local-first Knowledge GraphRAG MCP server
+Home-page: https://github.com/anthropic-ai/knowledge-graph-rag-mcp
+Author: Knowledge GraphRAG Team
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: typer>=0.9
+Requires-Dist: sqlite-vec>=0.1.6
+Requires-Dist: huggingface-hub>=0.19
+Dynamic: license-file
+
+# Knowledge GraphRAG MCP Server
+
+This module hosts the local-first Knowledge GraphRAG MCP server defined in `../docs/knowledge-graph-rag-mcp.md`. The spec outlines the document watcher/normalizer pipeline, entity & relation extraction, EmbeddingGemma vectorization, SQLite (`sqlite-vec`, `bfsvtab`) storage, and the MCP tool surface for retrieval and maintenance.
+
+## Next Steps
+- Break down the spec into implementation milestones (schema, normalizers, extraction/linking, retrieval).
+- Scaffold the codebase (`src/`, `tests/`, configuration) aligned with the deliverables checklist.
+
+Review the spec for architecture diagrams, pseudo-code, and validation guidance.
+
+## Packaging
+
+The project is published as a Python package with a bundled copy of the `bfsvtab`
+SQLite extension. Local builds automatically compile the shared library when
+`pip` installs the project. To produce distribution artifacts:
+
+```bash
+python -m build
+```
+
+The build step generates `dist/*.whl` and `dist/*.tar.gz` artifacts that embed
+`bfsvtab` alongside the Python modules, so downstream users do not need to
+compile extensions manually.
+
+# MCP Server — Knowledge GraphRAG (Local-First)
+
+**Goal:** A single binary MCP server that watches a knowledge directory, auto‑ingests documents, builds a hybrid **GraphRAG** index (entities + relations + vectors), and exposes minimal, stable MCP tools for retrieval and maintenance. Fully local: **SQLite** (+ `sqlite-vec` for vectors, `bfsvtab` for k‑hop traversal), **EmbeddingGemma** for embeddings, and small NER + pattern extractors. Designed to run multiple instances (one per project) with near‑zero ops.
+
+---
+
+## 1) Scope
+
+### In-scope
+
+* Directory watcher → normalize docs (md/html/pdf/docx/txt) → chunk → entity/mention extraction → entity linking → relation extraction → vectorization → SQLite write
+* Hybrid retrieval: vector prefilter + graph expansion + re‑ranking
+* MCP tools for ingest, refresh, search, explain, status
+* Incremental updates, WAL, single-writer queue
+
+### Out-of-scope (for v1)
+
+* Heavy LLM extraction/validation loops
+* Graph algorithms beyond BFS (migrate to Memgraph later if needed)
+
+---
+
+## 2) Architecture
+
+```mermaid
+flowchart LR
+  W[File Watcher] -->|paths| Q[Job Queue]
+  Q -->|batch| P[Parser + Normalizer]
+  P --> C[Chunker]
+  C --> E1[Entity & Mention Extractor]
+  E1 --> L[Entity Linker]
+  L --> R[Relation Extractor]
+  R --> V[Embedder (EmbeddingGemma)]
+  V --> DB[(SQLite + sqlite-vec + bfsvtab)]
+  subgraph MCP Server
+  T1[ingest_docs]
+  T2[extract_and_link]
+  T3[hybrid_query]
+  T4[entity_lookup]
+  T5[explain_entity]
+  T6[status]
+  end
+  DB <-->|read/write| MCP Server
+```
+
+**Concurrency model:** Single **writer** connection (queued), many **readers**. SQLite **WAL** mode.
+
+---
+
+## 3) Directory Watching & Update Strategy
+
+* **Watchers:** `watchdog` (Python) / `chokidar` (Node). Cross‑platform.
+* **Debounce:** 200–500 ms per path; coalesce bursts.
+* **Events:** `create`/`modify` → enqueue `reindex(path)`; `rename` → unlink+add; `delete` → mark file deleted and purge rows.
+* **Transactions:** Per file (or small batch): `BEGIN IMMEDIATE` → write → `COMMIT`.
+* **WAL/Timeouts:** `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=3000;`.
+
+---
+
+## 4) Document Normalization
+
+* **Types:** `.md`, `.txt`, `.html`, `.pdf`, `.docx` (pluggable).
+* **HTML→MD**, **PDF→text** (keep headings, lists, code blocks where possible).
+* **Boilerplate removal:** drop nav/TOC/footers by CSS selectors / heuristics.
+* **De‑dup:** MinHash/SimHash on paragraph hashes; skip near-duplicates.
+* **Metadata:** `source`, `path`, `mtime_ms`, `title`, `lang`, `breadcrumbs`, `tags`, `security`, `hash`.
+
+---
+
+## 5) Chunking
+
+* **General docs:** 500–1,000 tokens; sliding window 10–20% overlap.
+* **FAQs/definitions:** 150–400 tokens.
+* **Procedures:** 1,000–2,000 tokens (keep step lists intact).
+* **Prelude:** prefix each chunk with `path • section • last 2 headings` for disambiguation.
+
+---
+
+## 6) Entity & Mention Extraction (label‑free tolerant)
+
+**Hybrid approach:**
+
+1. **Small NER** (spaCy `en_core_web_sm` / distilBERT‑NER) for `PERSON/ORG/GPE/PRODUCT/DATE`.
+2. **Auto‑gazetteers** (no labels):
+
+   * Mine n‑grams (1–4) from titles/headings/bold/code spans across the corpus; keep top‑K per project.
+   * Mine CamelCase/SNAKE_CASE/API tokens; semantic version strings.
+3. **Regex/patterns:** IDs, standards, versions (e.g., `v?\d+\.\d+(\.\d+)?(-[a-z0-9]+)?`), “Step n:”, “Prerequisites”.
+4. **Coref‑lite:** pronouns/demonstratives resolved to nearest compatible entity in the same section.
+
+**Mention record:** `surface, type, span, model_score, features{isGazetteerHit, inTitle, codeFont, editDistance, ...}, contextSnippet`.
+
+---
+
+## 7) Entity Linking (canonicalization)
+
+* **Blocking:** normalize `surface` → `norm = lowercase(alnum_only(surface))`.
+
+  * Candidates: entities sharing `norm` (edit distance ≤1), token Jaccard ≥0.6, or **vector sim ≥ τ₁** via `entity_vec`.
+* **Scoring:**
+
+```
+score(E) = 0.45*cosine( embed(surface + context), E.embedding )
+         + 0.25*string_sim(surface, E.name/aliases)
+         + 0.15*type_prior
+         + 0.10*context_overlap(headings/tags)
+         + 0.05*popularity(E)
+```
+
+* If `score ≥ τ₂` (e.g., 0.72) → link; else create new **entity** with `aliases=[surface]`.
+* Store entity embedding from `name + first definition sentence`.
+* `same_as` edges for later merges; soft‑merge aliases.
+
+---
+
+## 8) Relation Extraction (pattern‑first)
+
+* **SVO patterns:** “X uses Y / depends on Y / part of Y / integrates with Y / configured via Y / owned by Y”.
+
+  * Implement via dependency parse or regex templates over sentences.
+* **Structural:**
+
+  * Section **Dependencies/Requirements** → `depends_on`
+  * Numbered lists → `precedes` between sequential steps
+  * “See also/References” → `cites`/`related_to`
+* **Heuristic:** chunk title “Getting Started with Foo SDK” + mention “Bar Cloud” → `FooSDK -uses-> BarCloud`.
+* **Confidence:** pattern weight × proximity × link score.
+
+**Relation vocabulary (keep small & consistent):**
+`defines, refers_to, part_of, uses, depends_on, precedes, owned_by, located_in, cites, same_as`.
+
+---
+
+## 9) Embeddings (EmbeddingGemma)
+
+* **Dimensionality:** default **512‑d** (balance quality/size). Allow 768/384/256/128 via MRL.
+* **Quantization:** 8‑bit in `sqlite-vec` to reduce DB size (~4× smaller).
+* **What to embed:** chunks (content+prelude), entities (name+definition), queries.
+
+---
+
+## 10) SQLite Data Model (DDL)
+
+```sql
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+PRAGMA foreign_keys=ON;
+PRAGMA busy_timeout=3000;
+
+-- Documents
+CREATE TABLE IF NOT EXISTS docs (
+  id INTEGER PRIMARY KEY,
+  path TEXT UNIQUE,
+  source TEXT,
+  mtime_ms INTEGER,
+  meta JSON
+);
+CREATE INDEX IF NOT EXISTS idx_docs_path ON docs(path);
+
+-- Chunks
+CREATE TABLE IF NOT EXISTS chunks (
+  id INTEGER PRIMARY KEY,
+  doc_id INTEGER REFERENCES docs(id) ON DELETE CASCADE,
+  content TEXT,
+  meta JSON -- {lang, title, section, breadcrumbs[], tags[], hash, prelude}
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id);
+
+-- Entities (canonical)
+CREATE TABLE IF NOT EXISTS entities (
+  id INTEGER PRIMARY KEY,
+  type TEXT,
+  name TEXT,
+  norm TEXT,
+  meta JSON,  -- {aliases[], description, popularity, created_at}
+  status TEXT DEFAULT 'active'
+);
+CREATE INDEX IF NOT EXISTS idx_entities_norm ON entities(norm);
+CREATE INDEX IF NOT EXISTS idx_entities_type_name ON entities(type, name);
+
+-- Mentions (surface spans in chunks)
+CREATE TABLE IF NOT EXISTS mentions (
+  id INTEGER PRIMARY KEY,
+  entity_id INTEGER NULL REFERENCES entities(id) ON DELETE SET NULL,
+  doc_id INTEGER REFERENCES docs(id) ON DELETE CASCADE,
+  chunk_id INTEGER REFERENCES chunks(id) ON DELETE CASCADE,
+  span_start INTEGER, span_end INTEGER,
+  surface TEXT,
+  type TEXT,
+  meta JSON
+);
+CREATE INDEX IF NOT EXISTS idx_mentions_doc ON mentions(doc_id);
+CREATE INDEX IF NOT EXISTS idx_mentions_entity ON mentions(entity_id);
+
+-- Relations (graph over canonical entities)
+CREATE TABLE IF NOT EXISTS relations (
+  src_id INTEGER REFERENCES entities(id) ON DELETE CASCADE,
+  dst_id INTEGER REFERENCES entities(id) ON DELETE CASCADE,
+  rel TEXT,
+  meta JSON,
+  PRIMARY KEY (src_id, dst_id, rel)
+);
+CREATE INDEX IF NOT EXISTS idx_rel_src_rel ON relations(src_id, rel);
+CREATE INDEX IF NOT EXISTS idx_rel_dst_rel ON relations(dst_id, rel);
+
+-- Vector indices (sqlite-vec)
+CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vec USING vec0(dim=512);
+CREATE TABLE IF NOT EXISTS chunk_vec_map (
+  chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+  rowid INTEGER UNIQUE
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS entity_vec USING vec0(dim=512);
+CREATE TABLE IF NOT EXISTS entity_vec_map (
+  entity_id INTEGER PRIMARY KEY REFERENCES entities(id) ON DELETE CASCADE,
+  rowid INTEGER UNIQUE
+);
+
+-- BFS view for bfsvtab
+CREATE VIEW IF NOT EXISTS graph_edges AS
+  SELECT src_id AS src, dst_id AS dst FROM relations;
+```
+
+**bfsvtab usage:** build virtual table at runtime, e.g. `CREATE VIRTUAL TABLE bfs USING bfsvtab(graph_edges);` then query `SELECT * FROM bfs WHERE start = ? AND max_depth = 2;`
+
+---
+
+## 11) MCP Tooling (API)
+
+Design for small, predictable JSON I/O. Tool names & example schemas:
+
+### 11.1 `ingest_docs`
+
+**Args:**
+
+```json
+{
+  "paths": ["/knowledge/**/*.md"],
+  "tags": ["docs", "kb"],
+  "skip_if_seen": true
+}
+```
+
+**Returns:** `{ "ingested": 123, "skipped": 45, "errors": [] }`
+
+### 11.2 `extract_and_link`
+
+Runs extraction/linking for specified docs (or pending queue).
+
+```json
+{ "doc_ids": [1,2,3] }
+```
+
+**Returns:** `{ "mentions": 420, "entities_new": 18, "relations": 95 }`
+
+### 11.3 `entity_lookup`
+
+```json
+{ "q": "ISO 27001", "type": "Regulation" }
+```
+
+**Returns:** `{ "entities": [{"id": 7, "name": "ISO 27001", "type":"Regulation", "aliases": ["ISO27001"], "score": 0.93}] }`
+
+### 11.4 `hybrid_query`
+
+```json
+{
+  "q": "data retention policy for S3 lifecycle",
+  "k": 40,
+  "hops": 2,
+  "rels": ["defines", "depends_on", "uses", "cites"]
+}
+```
+
+**Returns:**
+
+```json
+{
+  "chunks": [{"id": 101, "doc_id": 9, "snippet": "...", "path": "/knowledge/policies/..."}],
+  "entities": [{"id": 33, "name": "S3 Lifecycle", "type": "API"}],
+  "edges": [{"src": 33, "dst": 12, "rel": "depends_on"}],
+  "explanations": ["Selected by semantic match + 1-hop depends_on"]
+}
+```
+
+### 11.5 `explain_entity`
+
+```json
+{ "entity_id": 33, "hops": 2 }
+```
+
+**Returns:** definition, aliases, top relations, key sources with confidence.
+
+### 11.6 `status`
+
+```json
+{}
+```
+
+**Returns:** queue depth, last file, counts per table, last error.
+
+---
+
+## 12) Implementation Snippets
+
+### 12.1 Watcher & Writer Queue (Python)
+
+```python
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from queue import Queue
+import time, threading
+
+jobs = Queue(maxsize=1000)
+
+def enqueue(path, kind):
+    jobs.put({"path": path, "kind": kind, "ts": time.time()})
+
+class Handler(FileSystemEventHandler):
+    def on_modified(self, e):
+        if not e.is_directory: enqueue(e.src_path, "modify")
+    def on_created(self, e):
+        if not e.is_directory: enqueue(e.src_path, "create")
+    def on_deleted(self, e):
+        if not e.is_directory: enqueue(e.src_path, "delete")
+
+observer = Observer()
+observer.schedule(Handler(), path="/knowledge", recursive=True)
+observer.start()
+
+# Single writer thread
+from db import Writer
+writer = Writer(db_path="/data/graphrag.sqlite")
+
+def worker():
+    while True:
+        job = jobs.get()
+        try:
+            writer.process(job)  # handles debounce, hashing, parse->extract->link->embed->commit
+        except Exception as ex:
+            print("error", ex)
+        finally:
+            jobs.task_done()
+
+threading.Thread(target=worker, daemon=True).start()
+```
+
+### 12.2 SQLite Helper (WAL, single writer)
+
+```python
+import sqlite3
+
+def open_db(path):
+    con = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    con.execute("PRAGMA journal_mode=WAL;")
+    con.execute("PRAGMA synchronous=NORMAL;")
+    con.execute("PRAGMA foreign_keys=ON;")
+    con.execute("PRAGMA busy_timeout=3000;")
+    return con
+
+class Writer:
+    def __init__(self, db_path):
+        self.con = open_db(db_path)
+    def begin(self): self.con.execute("BEGIN IMMEDIATE;")
+    def commit(self): self.con.execute("COMMIT;")
+    def process(self, job):
+        path = job['path']
+        # 1) stat + hash; 2) if unchanged -> return
+        # 3) parse/normalize -> chunks
+        # 4) extract mentions -> link entities -> relations
+        # 5) embed chunks/entities (outside tx), then write inside tx
+        self.begin()
+        try:
+            # upsert docs/chunks/entities/mentions/relations and vec maps
+            # delete stale, insert new
+            self.commit()
+        except:
+            self.con.execute("ROLLBACK;")
+            raise
+```
+
+### 12.3 Embeddings (EmbeddingGemma wrapper)
+
+```python
+# Pseudocode; implement with HF transformers or a local runtime
+from embeddings import embed_many  # returns List[ndarray]
+
+chunk_vecs = embed_many([chunk_text1, chunk_text2], model="embedding-gemma-512")
+# insert into sqlite-vec: INSERT INTO chunk_vec(rowid, vector) VALUES (?, ?)
+```
+
+### 12.4 sqlite-vec inserts
+
+```sql
+-- After creating chunk_vec(vec0), map chunk_id -> rowid
+INSERT INTO chunk_vec(rowid, vector) VALUES (?, ?);
+INSERT OR REPLACE INTO chunk_vec_map(chunk_id, rowid) VALUES (?, last_insert_rowid());
+```
+
+### 12.5 Vector Search + BFS expansion (hybrid)
+
+```sql
+-- 1) vector prefilter (pseudo-sql; see sqlite-vec docs for exact fn names)
+SELECT m.chunk_id, distance
+FROM chunk_vec v
+JOIN chunk_vec_map m ON m.rowid = v.rowid
+ORDER BY distance(?, v.vector)
+LIMIT 50;
+
+-- 2) graph expansion (bfsvtab)
+CREATE VIRTUAL TABLE IF NOT EXISTS bfs USING bfsvtab(graph_edges);
+SELECT * FROM bfs WHERE start = :entity_id AND max_depth = 2;
+```
+
+### 12.6 Simple Relation Patterns (regex example)
+
+```python
+import re
+USES = re.compile(r"\b(uses|integrates with|built on|powered by)\b", re.I)
+DEPENDS = re.compile(r"\b(depends on|requires|needs)\b", re.I)
+PARTOF = re.compile(r"\b(part of|component of|belongs to)\b", re.I)
+
+# For each sentence, if it contains two linked entities A,B:
+# if USES.search(sent): add edge A -uses-> B with confidence
+```
+
+---
+
+## 13) Configuration (YAML)
+
+```yaml
+project: "knowledge-graphrag"
+watch:
+  dir: "/knowledge"
+  debounce_ms: 300
+extract:
+  ner: "spacy:en_core_web_sm"
+  gazetteer:
+    mine_topk: 2000
+    min_freq: 3
+  regex:
+    version: "v?\d+\.\d+(\.\d+)?(-[a-z0-9]+)?"
+embed:
+  model: "embedding-gemma-512"
+  dim: 512
+  quantize: 8
+sqlite:
+  path: "/data/graphrag.sqlite"
+  wal: true
+retrieval:
+  k: 40
+  hops: 2
+  rels: ["defines","depends_on","uses","cites"]
+  weights:
+    semantic: 0.7
+    graph: 0.3
+```
+
+---
+
+## 14) Retrieval Scoring
+
+```
+final_score = 0.7 * semantic_sim(query, chunk)
+            + 0.2 * hop_score(0:1.0, 1:0.7, 2:0.4)
+            + 0.1 * rel_weight(uses:0.9, depends_on:0.8, defines:1.0, cites:0.5)
+```
+
+Return ranked context with provenance (doc path, section, snippet) and confidence.
+
+---
+
+## 15) Status & Monitoring
+
+* `status()` tool returns: queue depth, last processed file, table counts, last error
+* Periodic metrics: ingest rate, avg tx duration, vector count, orphaned entities
+* Optional `review_links()` tool to surface low‑confidence links/edges
+
+---
+
+## 16) Security & Privacy
+
+* Default deny network fetches (ingest only local files); if the agent pulls web docs, store provenance URL in `docs.meta`.
+* Redact secrets via regex before storage; maintain an allowlist of paths.
+* Namespaces: add `project_id` column to all tables if running multi‑tenant in one DB.
+
+---
+
+## 17) Testing & Quality
+
+* **Unit tests**: parser adapters, regex patterns, linker scoring
+* **Golden set**: 20–50 pages hand‑annotated for quick F1 checks on entities/relations
+* **Smoke**: end‑to‑end ingest of a small sample; deterministic hashes ensure idempotency
+
+---
+
+## 18) Performance Notes
+
+* Compute embeddings **outside** the transaction; write vectors + maps in one short tx
+* Indexes: `entities(norm)`, `entities(type,name)`, `relations(src,rel)`, `relations(dst,rel)`
+* Run `PRAGMA incremental_vacuum` occasionally if churn is high
+* Quantize embeddings to 8‑bit for 4× space reduction
+
+---
+
+## 19) Migration Path (to Memgraph)
+
+* Keep the same MCP tool contract and data model (entities/relations)
+* Export entities/relations to CSV; import into Memgraph; redirect graph ops to Cypher
+* Keep `sqlite-vec` for vectors or switch to an external vector DB
+
+---
+
+## 20) Minimal MCP Server Skeleton (TypeScript, pseudo)
+
+```ts
+import { createServer, Tool } from "@anthropic-ai/mcp"; // conceptually
+import { hybridQuery, ingestDocs, extractAndLink, entityLookup, explainEntity, getStatus } from "./handlers";
+
+const tools: Tool[] = [
+  { name: "ingest_docs", schema: {/*...*/}, handler: ingestDocs },
+  { name: "extract_and_link", schema: {/*...*/}, handler: extractAndLink },
+  { name: "entity_lookup", schema: {/*...*/}, handler: entityLookup },
+  { name: "hybrid_query", schema: {/*...*/}, handler: hybridQuery },
+  { name: "explain_entity", schema: {/*...*/}, handler: explainEntity },
+  { name: "status", schema: {/*...*/}, handler: getStatus },
+];
+
+createServer({ tools, port: process.env.PORT || 8765 });
+```
+
+---
+
+## 21) Deliverables Checklist
+
+* [ ] SQLite schema & migrations
+* [ ] Watcher + single-writer queue
+* [ ] Normalizers (md/html/pdf/docx)
+* [ ] Chunker with preludes
+* [ ] NER + gazetteer miner + regex patterns
+* [ ] Linker + entity vectors
+* [ ] Relation extractor + confidence
+* [ ] Embedder (EmbeddingGemma) + sqlite-vec glue
+* [ ] BFS (bfsvtab) setup + hybrid retrieval
+* [ ] MCP tools + JSON schemas
+* [ ] Config YAML + CLI flags
+* [ ] Tests + sample corpus + smoke script
+
+---
+
+### Notes
+
+* Keep the tool surfaces **tiny and stable**; resist feature creep.
+* Prefer correctness & debuggability (provenance everywhere) over recall in v1.
+* Add optional, low‑frequency LLM validation passes only when specific relations routinely misfire.
