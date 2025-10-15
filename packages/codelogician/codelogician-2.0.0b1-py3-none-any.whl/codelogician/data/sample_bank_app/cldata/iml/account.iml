@@ -1,0 +1,124 @@
+type account_type = LIABILITY | ASSET
+
+type transaction_type = DEBIT | CREDIT
+
+type transaction = {
+  from_account : string;
+  to_account : string;
+  amount : real;
+  trans_type : transaction_type;
+}
+
+type account = {
+  account_type : account_type;
+  customer : string;
+  currency : int;
+  name : string;
+  number : string;
+  balance : real;
+  transactions : transaction list;
+}
+
+let create_account customer name currency acc_type account_number starting_balance =
+  {
+    account_type = acc_type;
+    customer = customer;
+    currency = currency;
+    name = name;
+    number = account_number;
+    balance = starting_balance;
+    transactions = [];
+  }
+
+let get_account_type account = account.account_type
+
+let get_customer account = account.customer
+
+let get_name account = account.name
+
+let get_number account = account.number
+
+let get_currency account = account.currency
+
+let get_balance account = account.balance
+
+let get_transactions account = account.transactions
+
+let determine_transaction_type transaction account_number =
+  match transaction.trans_type with
+  | DEBIT ->
+    if transaction.to_account <> account_number then
+      CREDIT
+    else
+      DEBIT
+  | CREDIT ->
+    if transaction.to_account <> account_number then
+      DEBIT
+    else
+      CREDIT
+
+let calculate_new_balance current_balance transaction trans_type account_type =
+  match trans_type with
+  | DEBIT ->
+    (match account_type with
+     | ASSET -> Ok (current_balance +. transaction.amount)
+     | LIABILITY ->
+       if current_balance >=. transaction.amount then
+         Ok (current_balance -. transaction.amount)
+       else
+         Error "Insufficient balance for debit transaction")
+  | CREDIT ->
+    (match account_type with
+     | LIABILITY -> Ok (current_balance +. transaction.amount)
+     | ASSET ->
+       if current_balance >=. transaction.amount then
+         Ok (current_balance -. transaction.amount)
+       else
+         Error "Insufficient balance for credit transaction")
+
+let apply_transaction account transaction =
+  let trans_type = determine_transaction_type transaction account.number in
+  match calculate_new_balance account.balance transaction trans_type account.account_type with
+  | Ok new_balance ->
+    Ok {
+      account with
+      balance = new_balance;
+      transactions = transaction :: account.transactions;
+    }
+  | Error msg -> Error msg
+
+let create_debit_transaction from_account to_account amount =
+  {
+    from_account = from_account;
+    to_account = to_account;
+    amount = amount;
+    trans_type = DEBIT;
+  }
+
+let create_credit_transaction from_account to_account amount =
+  {
+    from_account = from_account;
+    to_account = to_account;
+    amount = amount;
+    trans_type = CREDIT;
+  }
+
+let main () =
+  let acc = create_account "Denis" "Checking Account" 0 ASSET "1234567890" 0.0 in
+  let trans1 = create_debit_transaction "1234567891" "1234567890" 100.0 in
+  let trans2 = create_credit_transaction "1234567891" "1234567890" 50.0 in
+  let trans3 = create_debit_transaction "1234567890" "1234567891" 30.0 in
+  let trans4 = create_credit_transaction "1234567891" "1234567890" 20.0 in
+  
+  match apply_transaction acc trans1 with
+  | Ok acc1 ->
+    (match apply_transaction acc1 trans2 with
+     | Ok acc2 ->
+       (match apply_transaction acc2 trans3 with
+        | Ok acc3 ->
+          (match apply_transaction acc3 trans4 with
+           | Ok acc4 -> acc4
+           | Error _ -> acc3)
+        | Error _ -> acc2)
+     | Error _ -> acc1)
+  | Error _ -> acc
