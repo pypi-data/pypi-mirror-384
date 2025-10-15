@@ -1,0 +1,1 @@
+from jupyterlab_json_magic.magic import load_ipython_extension, view_json
