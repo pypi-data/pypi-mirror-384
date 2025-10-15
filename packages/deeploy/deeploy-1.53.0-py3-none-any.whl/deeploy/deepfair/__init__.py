@@ -1,0 +1,1 @@
+from .fair import DeeployFairLab
