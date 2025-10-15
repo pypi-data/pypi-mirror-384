@@ -1,0 +1,176 @@
+# TsPay Python Client
+
+[![PyPI version](https://badge.fury.io/py/tspay-client.svg)](https://pypi.org/project/tspay-client/)
+[![Python Version](https://img.shields.io/badge/python-3.7%2B-blue.svg)](https://www.python.org/downloads/release/python-370/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#mit-license)
+## Examples
+
+### 🔹 1. Minimal Example
+
+```python
+from tspay import TsPayClient
+from tspay.exceptions import TsPayError
+
+# Do'kon access_token (shaxsiy kabinetingizdan olasiz)
+SHOP_ACCESS_TOKEN = "your_shop_access_token"
+
+client = TsPayClient()
+
+try:
+    # 1) Tranzaksiya yaratish
+    transaction = client.create_transaction(
+        amount=50000,  # so'm
+        redirect_url="https://yourwebsite.com/payment/callback",
+        comment="Order #1001",
+        access_token=SHOP_ACCESS_TOKEN
+    )
+
+    print("✅ Tranzaksiya yaratildi!")
+    print("Payment URL:", transaction["payment_url"])
+    print("Cheque ID:", transaction["cheque_id"])
+
+    # 2) Tranzaksiya holatini tekshirish
+    status = client.check_transaction(
+        access_token=SHOP_ACCESS_TOKEN,
+        cheque_id=transaction["cheque_id"]
+    )
+
+    print("Transaction status:", status["status"])
+
+except TsPayError as e:
+    print("❌ Xato:", str(e))
+```
+
+### 🔹 2. Transaction Status Check Example
+
+```python
+from tspay import TsPayClient
+from tspay.exceptions import TsPayError
+
+SHOP_ACCESS_TOKEN = "your_shop_access_token"
+
+client = TsPayClient()
+
+try:
+    # Oldindan mavjud tranzaksiya (masalan DB yoki callback orqali olingan)
+    cheque_id = "e3b0c442-98fc-4b01-a3f7-7c4e4f8d6f2a"
+
+    # Tranzaksiya holatini tekshirish
+    status = client.check_transaction(
+        access_token=SHOP_ACCESS_TOKEN,
+        cheque_id=cheque_id
+    )
+
+    print("✅ Tranzaksiya topildi")
+    print("Cheque ID:", cheque_id)
+    print("Holati:", status["status"])
+    print("Summa:", status["amount"])
+    print("Vaqti:", status["created_at"])
+
+except TsPayError as e:
+    print("❌ Tekshirishda xato:", str(e))
+```
+
+#ErrorHandling #PaymentIntegration #PythonSDK
+### 🔹 3. Full Example with Error Handling
+
+```python
+from tspay import TsPayClient
+from tspay.exceptions import AuthenticationError, TransactionNotFound, NetworkError
+
+client = TsPayClient()
+SHOP_ACCESS_TOKEN = "invalid_token"
+
+try:
+    txn = client.create_transaction(
+        amount=20000,
+        redirect_url="https://example.com/callback",
+        comment="Test order",
+        access_token=SHOP_ACCESS_TOKEN
+    )
+except AuthenticationError as e:
+    print("❌ Access token noto‘g‘ri:", e)
+except TransactionNotFound as e:
+    print("❌ Tranzaksiya topilmadi:", e)
+except NetworkError as e:
+    print("❌ Internet muammo:", e)
+```
+
+### 🔹 4. To‘liq Payment Flow (production)
+
+```python
+from tspay import TsPayClient
+from tspay.exceptions import TsPayError
+SHOP_ACCESS_TOKEN = "your_shop_access_token"
+
+def process_payment(amount: float, comment: str):
+    client = TsPayClient()
+    try:
+        # 1) Tranzaksiya yaratish
+        transaction = client.create_transaction(
+            amount=amount,
+            redirect_url="https://example.com/payment/callback",
+            comment=comment,
+            access_token=SHOP_ACCESS_TOKEN
+        )
+
+        # 2) Foydalanuvchiga to‘lov sahifasini yuborish
+        return {
+            "success": True,
+            "payment_url": transaction["payment_url"],
+            "cheque_id": transaction["cheque_id"]
+        }
+
+    except TsPayError as e:
+        return {"success": False, "error": str(e)}
+
+# --- Usage ---
+result = process_payment(10000, "Order #500")
+if result["success"]:
+    print("Payment URL:", result["payment_url"])
+else:
+    print("❌ Error:", result["error"])
+```
+
+### MIT License
+
+```MIT License
+MIT License
+
+Copyright (c) 2025 Muhammadakbar Komilov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Social Links  
+
+<p align="center">
+  <a href="https://github.com/tspayuz">
+    <img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white" />
+  </a>
+  <a href="https://tspay.uz">
+    <img src="https://img.shields.io/badge/Website-1a73e8?style=for-the-badge&logo=google-chrome&logoColor=white" />
+  </a>
+  <a href="https://t.me/tspayuz">
+    <img src="https://img.shields.io/badge/Telegram-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" />
+  </a>
+  <a href="https://instagram.com/tspay.uz">
+    <img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" />
+  </a>
+</p>
