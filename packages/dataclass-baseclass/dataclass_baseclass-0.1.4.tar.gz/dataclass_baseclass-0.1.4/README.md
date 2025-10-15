@@ -1,0 +1,179 @@
+# Module dataclass_baseclass
+
+`DataClass` - inheritable contagious base class.
+
+Instead of (endless?) `@dataclass` decorating.
+
+## Usage
+
+    class A(DataClass):  # it's a dataclass
+
+    class B(A):  # it's a dataclass too
+
+as opposed to:
+
+    @dataclass
+    class A(): ...  # it's a dataclass
+
+    class B(A): ...  # it's *not* a dataclass, needs decorating
+
+    @dataclass
+    class B(A): ...  # now it's a dataclass
+
+Also:
+
+    class B(DataClass, A): ...  # all attributes from A become fields
+
+as opposed to:
+
+    class A():  ...
+
+    @dataclass
+    class B(A): ...  # no attributes from A are fields
+
+## Instantiation
+
+    class C(DataClass):
+        a: str
+        b: str
+
+    defaults: Data = {"a": "A", "b": "B"}
+
+    c = C(defaults, a="a", b="b")
+
+    or just:
+
+    c = C(a="a", b="b")
+
+It kind of supports freezing/unfreezing on the fly, but it is best to
+keep all classes in the chain either frozen or not.
+
+`frozen` attribute is dominant, ie as soon as you have one frozen parent
+class in the mix, class becomes frozen. If you want it unfrozen you need
+to specify `dataclass_params.frozen` as False:
+
+    class Unfrozen(Frozen, dataclass_params={"frozen": False}
+
+## Gotchas and features
+
+### Turning field into property in subclass
+
+This works:
+
+    class C(DataClass):
+        s: str
+
+    class CC(C):
+        @property
+        def s(self) -> str:
+            return "S"
+
+### Create a frozen (readonly) copy with `_frozen_copy()`
+
+## Loaders
+
+Tested with following `dataclass` loaders:
+
+-   [apischema](https://wyfo.github.io/apischema/)
+-   [typedload](https://ltworf.codeberg.page/typedload/)
+-   [dataclasses-json](https://lidatong.github.io/dataclasses-json)
+
+### `dataclasses-json`
+
+Works with `DataClassJsonMixin` and `from_dict()` (actually
+`_decode_dataclass()`). Unfortunately we turn dataclass_json_config into
+an attribute.
+
+I could not get it to work with `@dataclass_json` decorator, probably
+did not try hard enough.
+
+## Documentation and examples
+
+[Documentation](https://codeberg.org/sledge/dataclass_baseclass.html)
+
+[Tests](https://codeberg.org/sledge/dataclass-baseclass/src/branch/main/tests)
+should give a good idea of how to use it.
+
+## Test report
+
+``` sh
+Name                     Stmts   Miss  Cover
+--------------------------------------------
+dataclass_baseclass.py     180      0   100%
+--------------------------------------------
+TOTAL                      180      0   100%
+```
+
+## Notes / FAQ
+
+### And [Pydantic](https://docs.pydantic.dev/)?
+
+Pydantic is OK if you want to enter that world, stay there and comply.
+Some limitations with inheritance:
+
+#### Straight multiple inheritance
+
+    class A(BaseModel): ...
+
+    class B(BaseModel): ...
+
+    class C(A, B): ...
+
+The official stance on this (at least what I could figure out at the
+time of writing) is:
+
+> It will probably work, but not guaranteed, not officially supported
+
+It could be argued, of course, that multiple inheritance is an
+anti-pattern and it is **good** that it is not supported. I have no
+strong opinion on that. But:
+
+#### Protocols (or mix-ins, or whatever)
+
+    class A(BaseModel): ...
+
+    class P(Protocol): ...
+
+    class C(A, P): ...
+
+That is a no-go.
+
+With `DataClass`, we aim to enable all that.
+
+### Why not from scratch, why wrapping `dataclasses`?
+
+Considering the effort that was put into `dataclasses` my conclusion is
+that `dataclasses` is the recommended way to standardise directly
+accessible class/instance properties in the standard library.
+
+### Has this been tested in real life?
+
+I am using it in my personal (hobby?) projects. But nothing of a decent
+size in business environment.
+
+### A rant
+
+Metaclasses. A quote from [the official
+docs](https://docs.python.org/3/reference/datamodel.html#uses-for-metaclasses):
+
+> The potential uses for metaclasses are boundless. Some ideas that have
+> been explored include enum, logging, interface checking, automatic
+> delegation, automatic property creation, proxies, frameworks, and
+> automatic resource locking/synchronization.
+
+One could be easily forgiven to think that creating custom metaclasses
+is a valid thing to do, at least not discouraged. Some official examples
+of how to roll out your own metaclass, how to subclass `type`? I could
+not find it. `type` (meta)class is implementyed in `C`, and it is not
+light reading. Quite frustrating if one is after "*what methods are
+available for overriding and what are their footprints*".
+
+One is condemned to trawling the internet, which comes up with the
+venerable "*Let's make a singleton*" example in 99.98% of the cases.
+That gives you a clue that you need to override `__new__()`, which has
+the same footprint as `type()`. Then you look in some corners of the
+internet, or much better ask ChatGPT, which gives you a hint that you
+could also play with `__call__()` method.
+
+To sum it up, a laborious process. Why not documenting some examples and
+make life a tad easier...
