@@ -1,0 +1,1 @@
+from .wechat_video_automator import *
