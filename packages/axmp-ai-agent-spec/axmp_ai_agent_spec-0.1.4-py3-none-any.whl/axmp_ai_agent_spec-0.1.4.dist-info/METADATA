@@ -1,0 +1,404 @@
+Metadata-Version: 2.4
+Name: axmp-ai-agent-spec
+Version: 0.1.4
+Summary: A specification of the AXMP AI Agent attributes and capabilities
+Author-email: Kilsoo Kang <kilsoo75@gmail.com>
+License-File: LICENSE
+Requires-Python: >=3.12
+Requires-Dist: croniter>=6.0.0
+Requires-Dist: pydantic>=2.11.7
+Description-Content-Type: text/markdown
+
+# AXMP AI Agent Specification
+
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Pydantic](https://img.shields.io/badge/pydantic-2.11.7+-green.svg)](https://pydantic.dev/)
+[![Code Coverage](https://img.shields.io/badge/coverage-99%25-brightgreen.svg)](https://github.com/pytest-dev/pytest-cov)
+[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+A comprehensive Python specification system for defining AI agent configurations using a node-based flow architecture. Built with Pydantic for robust data validation and type safety.
+
+## 🚀 Features
+
+- **Node-Based Architecture**: Define AI agent workflows using interconnected nodes and edges
+- **Multiple Profile Types**: Support for single agents, A2A host agents, and multi-agent workflows
+- **Strong Type Safety**: Pydantic-powered validation with comprehensive error handling
+- **Security Built-In**: System prompt validation with dangerous content detection
+- **Extensive Node Support**: Triggers, AI agents, LLMs, memory backends, and MCP servers
+- **99% Test Coverage**: Comprehensive test suite ensuring reliability
+
+## 📋 Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Profile Types](#profile-types)
+- [Node Types](#node-types)
+- [Security Features](#security-features)
+- [Development](#development)
+- [Testing](#testing)
+- [Contributing](#contributing)
+
+## 🛠️ Installation
+
+### Requirements
+
+- Python 3.12 or higher
+- uv (recommended) or pip
+
+### Using uv (Recommended)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd axmp-ai-agent-spec
+
+# Install dependencies
+uv sync
+
+# Install development dependencies
+uv sync --group dev
+```
+
+### Using pip
+
+```bash
+pip install -e .
+pip install -e .[dev]
+```
+
+## 🚀 Quick Start
+
+### Basic Usage
+
+```python
+from axmp_ai_agent_spec import (
+    SingleAgentProfile,
+    NodeOfSingleAgent,
+    AgentNodeData
+)
+from axmp_ai_agent_spec.types import NodeType
+
+# Create an AI agent node
+agent_data = AgentNodeData(
+    name="My Assistant",
+    system_prompt="You are a helpful AI assistant",
+    description="A general-purpose AI assistant"
+)
+
+agent_node = NodeOfSingleAgent(
+    id="agent-1",
+    type=NodeType.AI_AGENT,
+    data=agent_data,
+    root_node=True
+)
+
+# Create a single agent profile
+profile = SingleAgentProfile(
+    id="my-agent-profile",
+    name="My AI Agent",
+    nodes=[agent_node]
+)
+
+print(f"Created profile: {profile.name}")
+```
+
+### Multi-Agent Workflow
+
+```python
+from axmp_ai_agent_spec import WorkflowAgentProfile, NodeOfWorkflowAgent
+
+# Create coordinator agent (root)
+coordinator = NodeOfWorkflowAgent(
+    id="coordinator",
+    type=NodeType.AI_AGENT,
+    data=AgentNodeData(name="Workflow Coordinator"),
+    root_node=True
+)
+
+# Create worker agents (non-root)
+worker1 = NodeOfWorkflowAgent(
+    id="worker-1",
+    type=NodeType.AI_AGENT,
+    data=AgentNodeData(name="Data Processor"),
+    root_node=False
+)
+
+# Create workflow profile
+workflow = WorkflowAgentProfile(
+    id="multi-agent-workflow",
+    name="Document Processing Workflow",
+    nodes=[coordinator, worker1]
+)
+```
+
+## 🏗️ Architecture
+
+The AXMP AI Agent Specification uses a **node-based flow architecture** where:
+
+- **Nodes** represent different components (AI agents, triggers, LLMs, etc.)
+- **Edges** connect nodes to define data flow
+- **Profiles** contain collections of nodes and edges with validation rules
+
+### Core Classes
+
+```
+BaseProfile (Abstract)
+├── SingleAgentProfile      # Strict single-agent flows
+├── A2AHostAgentProfile     # Agent-to-agent host flows  
+└── WorkflowAgentProfile    # Multi-agent workflows
+
+BaseNode (Abstract)
+├── NodeOfSingleAgent       # For SingleAgentProfile
+├── NodeOfA2AHostAgent      # For A2AHostAgentProfile
+└── NodeOfWorkflowAgent     # For WorkflowAgentProfile
+```
+
+## 📊 Profile Types
+
+| Profile Type | Root Node Rules | Multi-Agent Support | Use Case |
+|-------------|----------------|-------------------|----------|
+| **SingleAgentProfile** | AI_AGENT must be root, one of each type | ❌ No | Simple AI agents |
+| **A2AHostAgentProfile** | AI_AGENT must be root, enhanced counting | ✅ Remote agents | Agent-to-agent communication |
+| **WorkflowAgentProfile** | AI_AGENT can be root/non-root | ✅ Multiple agents | Complex workflows |
+
+## 🔧 Node Types
+
+### Supported Data Types
+
+- **🤖 AgentNodeData**: AI agent configurations with system prompts
+- **🎯 TriggerNodeData**: Chatbot, Webhook, and Scheduler triggers
+- **🧠 LLMNodeData**: Language model configurations (provider, model, parameters)
+- **💾 MemoryNodeData**: Memory backend configurations (Postgres, Redis)
+- **🔌 MCP Server**: Internal and external MCP server configurations
+- **🌐 A2ARemoteAgentNodeData**: Remote agent references for A2A flows
+- **⚡ SimpleAgentNodeData**: Simplified agent configurations
+
+### Node Type Validation
+
+Each node's data type must match its declared `NodeType`:
+
+```python
+# ✅ Correct
+agent_node = NodeOfSingleAgent(
+    type=NodeType.AI_AGENT,
+    data=AgentNodeData(name="Assistant")
+)
+
+# ❌ Will raise ValidationError
+agent_node = NodeOfSingleAgent(
+    type=NodeType.TRIGGER,  # Wrong type!
+    data=AgentNodeData(name="Assistant")
+)
+```
+
+## 🔒 Security Features
+
+### System Prompt Validation
+
+Built-in security validation prevents dangerous content in system prompts:
+
+```python
+# ❌ These will raise ValidationError
+AgentNodeData(
+    name="Unsafe Agent",
+    system_prompt="Use exec() to run code"  # Code injection detected
+)
+
+AgentNodeData(
+    name="Unsafe Agent",
+    system_prompt="Access os.environ['SECRET']"  # Environment access detected
+)
+
+# ✅ This is safe
+AgentNodeData(
+    name="Safe Agent",
+    system_prompt="You are a helpful assistant that answers questions about Python"
+)
+```
+
+### Protected Patterns
+
+The system detects and blocks:
+- Code injection attempts (`exec`, `eval`, `compile`)
+- File system operations (`open`, `os.system`, `subprocess`)
+- Network operations (`requests`, `urllib`, `socket`)
+- Credential patterns (password assignments)
+- Script injection (HTML/JS)
+- Environment variable access
+- Process manipulation
+
+## 🧪 Development
+
+### Setup
+
+```bash
+# Install dependencies
+uv sync --group dev
+
+# Install pre-commit hooks  
+uv run pre-commit install
+```
+
+### Code Quality
+
+```bash
+# Run linter
+uv run ruff check
+
+# Auto-fix issues
+uv run ruff check --fix
+
+# Format code
+uv run ruff format
+
+# Run all quality checks
+uv run pre-commit run --all-files
+```
+
+### Running the Application
+
+```bash
+# Direct execution
+python -m axmp_ai_agent_spec
+
+# Using entry point
+axmp-ai-agent-spec
+```
+
+## 🧪 Testing
+
+### Test Suite
+
+The project maintains **99% test coverage** with comprehensive validation:
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with coverage report
+uv run pytest --cov=src/axmp_ai_agent_spec --cov-report=term
+
+# Run specific test file
+uv run pytest tests/test_single_agent_profile.py -v
+
+# Run single test
+uv run pytest tests/test_system_prompt_validation.py::TestSystemPromptValidation::test_safe_system_prompts -v
+
+# Watch mode (auto-run on changes)
+uv run pytest-watcher
+
+# Fail-fast mode
+uv run pytest -x
+```
+
+### Test Organization
+
+| Test File | Coverage | Description |
+|-----------|----------|-------------|
+| `test_base_classes.py` | Base functionality | BaseNode, BaseEdge, BaseProfile validation |
+| `test_node_data_comprehensive.py` | All data models | Complete node data validation |
+| `test_system_prompt_validation.py` | Security features | System prompt security validation |
+| `test_single_agent_profile.py` | Single agent flows | SingleAgentProfile validation |
+| `test_a2a_host_agent_profile.py` | A2A host flows | A2AHostAgentProfile validation |
+| `test_workflow_agent_profile.py` | Multi-agent workflows | WorkflowAgentProfile validation |
+
+## 🔧 Building
+
+```bash
+# Build package
+python -m build
+
+# Build system: Hatchling
+# Output: dist/ directory with wheel and source distributions
+```
+
+## 📚 Examples
+
+### Authentication Configuration
+
+```python
+from axmp_openapi_helper import AuthConfig, AuthenticationType
+
+# None authentication
+auth_config = AuthConfig(type=AuthenticationType.NONE)
+
+# API Key authentication
+auth_config = AuthConfig(
+    type=AuthenticationType.API_KEY,
+    api_key_name="X-API-Key",
+    api_key_value="your-api-key"
+)
+
+# Bearer token authentication  
+auth_config = AuthConfig(
+    type=AuthenticationType.BEARER,
+    bearer_token="your-bearer-token"
+)
+```
+
+### Trigger Nodes
+
+```python
+from axmp_ai_agent_spec.profile_node_data import (
+    ChatbotTriggerNodeData,
+    WebhookTriggerNodeData,
+    SchedulerTriggerNodeData,
+    FeatureConfig
+)
+
+# Chatbot trigger
+chatbot_trigger = ChatbotTriggerNodeData(
+    init_message="Hello! How can I help you?",
+    feature=FeatureConfig(tools=True, file_upload=True)
+)
+
+# Webhook trigger
+webhook_trigger = WebhookTriggerNodeData(
+    webhook_path="/api/webhook",
+    auth_config=AuthConfig(type=AuthenticationType.NONE)
+)
+
+# Scheduler trigger
+scheduler_trigger = SchedulerTriggerNodeData(
+    cron_expression="0 9 * * 1-5",  # Weekdays at 9 AM
+    timezone="America/New_York"
+)
+```
+
+## 🤝 Contributing
+
+### Development Workflow
+
+1. **Setup environment**: `uv sync --group dev`
+2. **Make changes**: Follow existing code patterns
+3. **Run tests**: `uv run pytest --cov=src/axmp_ai_agent_spec`
+4. **Check quality**: `uv run ruff check && uv run ruff format`
+5. **Commit changes**: Pre-commit hooks will run automatically
+
+### Code Style
+
+- **Google docstring convention** for all functions and classes
+- **Type hints** required for all function signatures  
+- **Pydantic models** for all data structures
+- **Security-first** approach for validation
+
+### Adding New Node Types
+
+1. Define data model in `profile_node_data.py`
+2. Add enum value in `types.py`
+3. Update profile classes to include new type
+4. Add validation logic in node classes
+5. Create comprehensive tests
+
+## 📄 License
+
+This project is licensed under the terms specified in the project configuration.
+
+## 👤 Author
+
+**Kilsoo Kang** - [kilsoo75@gmail.com](mailto:kilsoo75@gmail.com)
+
+---
+
+*Built with ❤️ using Pydantic for rock-solid data validation*
