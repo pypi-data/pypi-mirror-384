@@ -1,0 +1,102 @@
+"""
+Zentis ETL Transform Module.
+
+This module handles the transformation phase of the Zentis ETL pipeline.
+It processes the extracted data, applies business rules, data cleaning, and formatting
+to prepare the data for loading into the target system.
+
+The transformation process typically includes:
+1. Data validation and quality checks
+2. Data type conversions and formatting
+3. Business rule application
+4. Data enrichment and calculated fields
+5. Data structure normalization
+6. Comprehensive logging throughout the process
+
+Classes:
+    ZentisTransform: Main class handling Zentis data transformation.
+"""
+
+import logging
+from typing import Union
+from nemo_library_etl.adapter.zentis.config_models_zentis import ConfigZentis
+from nemo_library_etl.adapter._utils.enums import ETLAdapter, ETLStep
+from nemo_library_etl.adapter._utils.file_handler import ETLFileHandler
+from nemo_library import NemoLibrary
+
+
+class ZentisTransform:
+    """
+    Handles transformation of extracted Zentis data.
+    
+    This class manages the transformation phase of the Zentis ETL pipeline,
+    providing methods to process, clean, and format the extracted data for loading
+    into the target system.
+    
+    The transformer:
+    - Uses NemoLibrary for core functionality and configuration
+    - Integrates with Prefect logging for pipeline visibility
+    - Applies business rules and data validation
+    - Handles data type conversions and formatting
+    - Provides data enrichment and calculated fields
+    - Ensures data quality and consistency
+    
+    Attributes:
+        nl (NemoLibrary): Core Nemo library instance for system integration.
+        config: Configuration object from the Nemo library.
+        logger: Prefect logger for pipeline execution tracking.
+        cfg (PipelineZentis): Pipeline configuration with transformation settings.
+    """
+    
+    def __init__(
+        self, 
+        nl: NemoLibrary, 
+        cfg: ConfigZentis, 
+        logger: Union[logging.Logger, object], 
+        fh: ETLFileHandler,
+    ) -> None:
+        """
+        Initialize the Zentis Transform instance.
+
+        Sets up the transformer with the necessary library instances, configuration,
+        and logging capabilities for the transformation process.
+
+        Args:
+            nl (NemoLibrary): Core Nemo library instance for system integration.
+            cfg (PipelineZentis): Pipeline configuration object containing
+                                                          transformation settings and rules.
+            logger (Union[logging.Logger, object]): Logger instance for recording execution details.
+                                                   Can be a standard Python logger or Prefect logger.
+        """
+        self.nl = nl
+        self.cfg = cfg
+        self.logger = logger
+        self.fh = fh
+
+        super().__init__()           
+
+    def transform(self) -> None:
+        """
+        Execute the main transformation process for Zentis data.
+        
+        This method orchestrates the complete transformation process by:
+        1. Loading extracted data from the previous ETL phase
+        2. Applying data validation and quality checks
+        3. Performing data type conversions and formatting
+        4. Applying business rules and logic
+        5. Creating calculated fields and data enrichment
+        6. Ensuring data consistency and integrity
+        7. Preparing data for the loading phase
+        
+        The method provides detailed logging for monitoring and debugging purposes
+        and handles errors gracefully to ensure pipeline stability.
+        
+        Note:
+            The actual transformation logic needs to be implemented based on
+            the specific Zentis system requirements and business rules.
+        """
+        self.logger.info("Transforming all Zentis objects")
+
+        # transform objects
+                
+        
