@@ -1,0 +1,68 @@
+name: Release Please
+
+on:
+  workflow_run:
+    workflows: ["Build and Test"]
+    types:
+      - completed
+
+jobs:
+  release-please:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write # to create labels (googleapis/release-please-action)
+      pull-requests: write # to create release PR (googleapis/release-please-action)
+      id-token: write
+      contents: write
+      attestations: write
+      actions: read
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: rust # The version is specified in the Cargo.toml file
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Download artifacts from CI
+        uses: dawidd6/action-download-artifact@v9
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build-test.yml
+          commit: ${{ github.event.workflow_run.head_sha }}
+          workflow_conclusion: success
+          path: artifact-download
+
+      # Create dist directory
+      - name: Create dist directory
+        if: ${{ steps.release.outputs.release_created }}
+        run: mkdir -p dist
+        shell: bash
+
+      # Move all wheels to dist directory
+      - name: Collect wheels
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          find artifact-download -name "*.whl" -o -name "*.tar.gz" | xargs -I{} cp {} dist/
+          echo "Package files in dist directory:"
+          ls -la dist/
+        shell: bash
+
+      - name: Generate artifact attestation
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/*"
+
+      # Publish to PyPI
+      - name: Publish to PyPI
+        if: ${{ steps.release.outputs.release_created }}
+        uses: PyO3/maturin-action@v1
+        with:
+          command: upload
+          args: --non-interactive --skip-existing dist/*
