@@ -1,0 +1,168 @@
+# PyBDS
+
+**Python API for automating Minecraft Bedrock Dedicated Server (BDS)**
+
+PyBDS is a Python library that allows you to interact with Minecraft Bedrock Dedicated Servers using a **modern async API**. It integrates with a small JavaScript behavior pack that emits game events directly to Python, so you can programmatically react to in-game events, run commands, and manage multiple servers — all from Python.
+
+---
+
+## Features
+
+* Automatically downloads and installs the latest BDS for Windows or Linux.
+* Installs a behavior pack that forwards events to Python.
+* Supports multiple independent servers per project.
+* Fully async event hooks for Python scripts.
+* Send Minecraft commands directly from Python.
+* Automatically handles BDS logging and parsing.
+* Cross-platform (Windows and Linux supported).
+
+---
+
+## Installation
+
+```bash
+pip install PyBDS
+```
+
+> Note: PyBDS will attempt to download and install BDS automatically. If network restrictions prevent this, you can manually download BDS and extract it to `./server/` in your project directory.
+
+---
+
+## Quick Start Example
+
+```python
+import asyncio
+from minecraft_bds import BDS
+
+# Event handler example
+@BDS.event
+async def World_Loaded(data):
+    # Called when the Minecraft world is loaded
+    await BDS.RunCommand('say Server loaded world!')
+
+@BDS.event
+async def Entity_Killed(data):
+    entity, killer = data.get('entity'), data.get('killer')
+    print(f"{entity} was killed by {killer}")
+
+# Start the server and event loop
+asyncio.run(BDS.start())
+```
+
+---
+
+## API Reference
+
+### `BDS.event`
+
+A decorator to subscribe to Minecraft events emitted by the behavior pack.
+
+```python
+@BDS.event
+async def EventName(data):
+    ...
+```
+
+**Parameters:**
+
+* `data` — a dictionary containing event-specific information:
+
+  * `World_Loaded` → empty dict
+  * `Entity_Killed` → `{ "entity": <entity_type>, "killer": <player_or_entity> }`
+  * `Block_Break` → `{ "player": <player_name>, "block": <block_type> }`
+  * Additional events can be emitted via the behavior pack.
+
+---
+
+### `await BDS.RunCommand(command: str)`
+
+Send a Minecraft command to the BDS server.
+
+**Example:**
+
+```python
+await BDS.RunCommand('give @p minecraft:diamond 5')
+```
+
+---
+
+### `BDS.start(base_path: str | Path = None)`
+
+Start the BDS server and begin listening for events.
+
+* `base_path` (optional) — path where the server should be installed. Defaults to `./server/` relative to your script.
+
+This method is **async** and must be run inside an `asyncio` loop.
+
+**Example:**
+
+```python
+import asyncio
+from minecraft_bds import BDS
+
+asyncio.run(BDS.start())
+```
+
+---
+
+### `BDS.stop()`
+
+Stops the server gracefully and closes the event loop.
+
+---
+
+### Event System Notes
+
+* Events are emitted in real-time from the server’s behavior pack.
+* All handlers are **async functions** and can run commands or perform I/O.
+* Multiple handlers can be registered for the same event.
+
+---
+
+## Multi-Server Support
+
+By default, PyBDS installs the server in `./server/` relative to your script.
+You can create multiple independent servers by specifying different `base_path` values when initializing the `MinecraftBDS` instance:
+
+```python
+from minecraft_bds.core import MinecraftBDS
+server1 = MinecraftBDS(base_path="./server1")
+server2 = MinecraftBDS(base_path="./server2")
+```
+
+Each server will have its own world, behavior pack, and logs.
+
+---
+
+## Logging
+
+All BDS console output is forwarded to Python’s `asyncio` logger.
+You can also hook into specific events to capture structured data programmatically.
+
+---
+
+## Supported Platforms
+
+* **Windows 10 / 11**
+* **Linux x86_64**
+  *(macOS is not officially supported)*
+
+---
+
+## License
+
+MIT License — free for personal or commercial use.
+
+---
+
+This README gives:
+
+* Clear purpose
+* Installation instructions
+* Full async event API
+* Multi-server usage
+* Logging and platform notes
+
+---
+
+## This project was generated with ChatGPT from code and all!!
