@@ -1,0 +1,27 @@
+# DEPy
+
+![PyPI version](https://img.shields.io/pypi/v/DEPy.svg)
+
+A differential expression analysis package for bulk proteomics (and metabolomics) data, which leverages transcriptomics tools.
+Bringing the power of R packages like DEP to Python.
+All you need is a matrix of features and their intensity values.
+
+* PyPI package: https://pypi.org/project/DEPy/
+* GitHub: [SebastianDHA/DEPy](https://github.com/SebastianDHA/DEPy)
+* Free software: MIT License
+
+## Features
+
+* A container for your -omics data, much like SummarizedExperiment or DEP in R.
+* Filtering and subsetting your samples and features
+* Missing value filtering
+* Imputation using ImputeLCMD (many methods)
+* Transforming (log, centering, standardizing, vsn)
+* Leverage surrogate variable analysis (sva) to adjust for latent batch effects
+* Use the flexibility and power of limma-trend to improve your DEA results and accommodate mixed effects
+* Limma arrayWeights to adjust variable sample quality (often an issue in human and animal datasets)
+* Visualize your DEA results with elegant volcano plots
+
+## Credits
+This package leverages amazing packages from the R and Bioconductor community, including [limma](https://bioconductor.org/packages/3.20/bioc/html/limma.html), [vsn](https://bioconductor.org/packages/release/bioc/html/vsn.html), [sva](https://bioconductor.org/packages/release/bioc/html/sva.html), [ImputeLCMD](https://cran.r-project.org/package=imputeLCMD), and [Tidyverse](https://www.tidyverse.org/).
+This package was created with [Cookiecutter](https://github.com/audreyfeldroy/cookiecutter) and the [audreyfeldroy/cookiecutter-pypackage](https://github.com/audreyfeldroy/cookiecutter-pypackage) project template.
