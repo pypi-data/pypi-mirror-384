@@ -1,0 +1,200 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ddtestpy"
+dynamic = ["version"]
+dependencies = [
+    "bytecode>=0.15.0",
+    "msgpack>=1.0.0",
+]
+license = "Apache-2.0"
+
+[project.entry-points.pytest11]
+ddtestpy = "ddtestpy.internal.pytest.plugin"
+
+[tool.hatch.version]
+path = "ddtestpy/__init__.py"
+
+
+[tool.hatch.envs.hatch-test]
+dependencies = [
+  "slipcover",
+  "pytest-socket",
+  "pytest-randomly~=3.15",
+  "pytest-rerunfailures~=14.0",
+  "pytest-xdist[psutil]~=3.5",
+]
+extra-dependencies = [
+  "pytest-memray",
+  "ddtrace",
+]
+randomize = true
+parallel = true
+retries = 2
+retry-delay = 1
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.13", "3.12"]
+pytest = ["8.1.2", "8.4.*"]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.9", "3.10", "3.11"]
+pytest = ["7.2.0", "8.1.2", "8.4.*"]
+
+[tool.hatch.envs.hatch-test.overrides]
+matrix.pytest.dependencies = [
+  "pytest=={matrix:pytest}"
+]
+
+[tool.hatch.envs.hatch-test.scripts]
+run = "pytest{env:$HATCH_TEST_ARGS:} -p no:ddtestpy {args:tests}"
+run-cov = "python -m slipcover --source ddtestpy/internal --pretty-print -m pytest{env:$HATCH_TEST_ARGS:} -p no:ddtestpy {args:tests}"
+cov-html = "python -m slipcover --source ddtestpy --html --out slipcover.html -m pytest{env:$HATCH_TEST_ARGS:} -p no:ddtestpy {args:tests}"
+cov-combine = "true"
+cov-report = "true"
+
+[tool.hatch.envs.int_test]
+dependencies = [
+    "pytest",
+    "pytest-socket",
+    "flask"
+]
+
+[[tool.hatch.envs.int_test.matrix]]
+python = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+[tool.hatch.envs.int_test.env-vars]
+DD_API_KEY = "foobar"
+
+[tool.hatch.envs.int_test.scripts]
+test = "pytest {args:test_fixtures}"
+
+
+[tool.hatch.envs.qa]
+python = "3.13"
+dependencies = [
+    "black",
+    "ruff", 
+    "mypy",
+    "pytest-mypy-plugins",
+    "ddtrace",
+]
+
+[tool.hatch.envs.qa.scripts]
+# Combined QA check - runs all code quality tools
+qa = [
+    "black --check ddtestpy/ tests/",
+    "ruff check ddtestpy/ tests/",
+    "python -m mypy ddtestpy/ tests/",
+]
+fix = [
+    "black {args:ddtestpy/ tests/}",
+    "ruff check --fix --unsafe-fixes {args:ddtestpy/ tests/}",
+    "python -m mypy ddtestpy/ tests/",
+]
+# Individual commands for specific fixes
+lint = "ruff check {args:ddtestpy/ tests/}"
+lint-fix = "ruff check --fix {args:ddtestpy/ tests/}"
+format = "black {args:ddtestpy/ tests/}"
+format-check = "black --check {args:ddtestpy/ tests/}"
+typecheck = "python -m mypy {args:ddtestpy/ tests/}"
+
+[tool.black]
+line-length = 120
+target_version = ['py37', 'py38', 'py39', 'py310', 'py311', 'py312']
+extend-exclude = '''
+(
+  ddtestpy/vendor/    # exclude vendored third-party code
+)
+'''
+
+[tool.ruff]
+line-length = 120
+exclude = [
+    "ddtestpy/vendor/",
+]
+lint.select = [
+    "A",
+    "D",
+    "E",
+    "F",
+    "G",
+    "I",
+    "W",
+]
+lint.ignore = [
+    "D100",  # Missing docstring in public module
+    "D101",  # Missing docstring in public class
+    "D102",  # Missing docstring in public method
+    "D103",  # Missing docstring in public function
+    "D104",  # Missing docstring in public package
+    "D105",  # Missing docstring in magic method
+    "D107",  # Missing docstring in `__init__`
+    "D200",  # One-line docstring should fit on one line
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+lines-after-imports = 2
+force-sort-within-sections = true
+known-first-party = [ "ddtestpy" ]
+relative-imports-order = "furthest-to-closest"
+
+
+[tool.ruff.lint.per-file-ignores]
+"ddtestpy/vendor/*" = ["D"]
+
+[tool.coverage.run]
+source = ["ddtestpy"]
+omit = [
+    "tests/*",
+    "ddtestpy/vendor/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["ddtestpy", "build", "dist", ".git"]
+# pytest-socket configuration - allow connections to localhost only
+addopts = "--allow-hosts=localhost,127.0.0.1,0.0.0.0,::1"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.mypy]
+python_version = "3.9"  # Target minimum supported version
+# Turn it up to 11
+strict = true
+# Don’t hide missing types from third-party libs—fail loudly
+ignore_missing_imports = false
+disallow_any_unimported = true
+# Extra signal / nicer output
+warn_unreachable = true
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+# Exclude problematic modules for now
+exclude = [
+    "build/",
+    "dist/",
+    "ddtestpy/vendor/",
+]
+
