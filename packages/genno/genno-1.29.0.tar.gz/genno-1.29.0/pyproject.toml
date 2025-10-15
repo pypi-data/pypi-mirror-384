@@ -1,0 +1,144 @@
+[build-system]
+requires = ["hatchling", "versioningit"]
+build-backend = "hatchling.build"
+
+[project]
+dynamic = ["version"]
+name = "genno"
+description = "Efficient, transparent calculation on N-D data"
+authors = [{ name = "genno contributors" }]
+maintainers = [
+  { name = "Paul Natsuo Kishimoto", email = "mail@paul.kishimoto.name" },
+]
+readme = "README.rst"
+classifiers = [
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+requires-python = ">=3.10"
+dependencies = [
+  "dask[array] >= 2.14",
+  "fastparquet; python_version >= '3.14'",
+  "pandas >= 1.0",
+  "pandas[parquet]; python_version < '3.14'",
+  "platformdirs",
+  "pint",
+  "PyYAML",
+  # 2022.6.0 is affected by pydata/xarray#6822
+  "xarray >= 0.17, != 2022.6.0",
+]
+
+[project.optional-dependencies]
+# Graphviz, for Computer.describe()
+graphviz = ["graphviz"]
+docs = [
+  "furo",
+  "IPython",
+  "pickleshare",
+]
+# Specific packages for which compatibility is provided
+plotnine = ["plotnine"]
+pyam = ["pyam-iamc"]
+sdmx = ["sdmx1"]
+# All compat packages together
+compat = ["genno[plotnine]", "genno[pyam]", "genno[sdmx]"]
+tests = [
+  "genno[compat,graphviz]",
+  "bottleneck",
+  "jupyter",
+  "nbclient",
+  "pytest",
+  "pytest-cov",
+  "pytest-rerunfailures",
+  "pytest-xdist",
+]
+sparse = [
+  "numba >= 0.54",  # Override >= 0.49 as of sparse 0.15.4
+  "sparse >= 0.12",
+]
+
+[project.urls]
+homepage = "https://github.com/khaeru/genno"
+repository = "https://github.com/khaeru/genno"
+documentation = "https://genno.rtfd.io/en/stable/"
+
+[tool.coverage.report]
+omit = [
+  ".venv/*",
+  "**/genno/compat/sphinx/*",
+]
+exclude_also = [
+  # Imports only used by type checkers
+  "if TYPE_CHECKING:",
+  # Exclude bodies of abstract functions
+  "\\.{3}$",
+  "return NotImplemented",
+  # A pragma comment that excludes an entire file:
+  "\\A(?s:.*# pragma: exclude file.*)\\Z",
+]
+
+[tool.hatch]
+version.source = "versioningit"
+
+[tool.mypy]
+files = [
+  "conftest.py",
+  "doc",
+  "genno",
+]
+
+# Settings recommended by https://careers.wolt.com/en/blog/tech/professional-grade-mypy-configuration
+# check_untyped_defs = true  # 66 errors
+# disallow_untyped_defs = true  # 535 errors
+# disallow_any_unimported = true  # 20 errors
+# warn_return_any = true  # 24 errors
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Packages/modules for which no type hints are available
+module = [
+  "graphviz",
+  "pandas.*",
+  "pyam.*",
+  "scipy.*",
+  "sparse.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=genno --cov-report="
+filterwarnings = [
+  "ignore:elementwise comparison failed.*:FutureWarning:genno.operator",
+  # Mirror (a) filter(s) set in .core.sparsedataarray
+  "ignore:Conversion of an array with ndim > 0 to a scalar:DeprecationWarning:sparse._coo.core",
+  # Upstream changes that won't affect genno
+  "ignore:configure_currency.*will no longer be the default:DeprecationWarning:iam_units",
+  "ignore:Jupyter is migrating its paths.*:DeprecationWarning:jupyter_client.connect",
+  # https://github.com/dateutil/dateutil/issues/1314
+  "ignore:datetime.datetime.utcfromtimestamp.. is deprecated.*:DeprecationWarning:dateutil",
+  # .compat.pyam → ixmp4 → pandera
+  "ignore:Importing pandas-specific classes:FutureWarning:pandera",
+]
+# commented: This doubles the number of tests in the entire suite.
+# Use only to identify more narrow applications of the same fixture.
+# usefixtures = "parametrize_copy_on_write"
+
+[tool.ruff.lint]
+select = ["C9", "E", "F", "I", "W"]
+ignore = ["E501", "W191"]
+# Exceptions:
+# - .core.computer.add_queue: 11
+mccabe.max-complexity = 10
+
+[tool.versioningit]
+default-version = "0.1.dev1"  # Match setuptools-scm
