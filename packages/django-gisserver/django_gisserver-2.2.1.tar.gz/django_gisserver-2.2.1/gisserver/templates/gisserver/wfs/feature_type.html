@@ -1,0 +1,54 @@
+{% load i18n gisserver_tags %}
+
+{% block title %}<h3><a id="feature-{{ feature_type.name }}">{{ feature_type.title }}</a></h3>{% endblock %}
+{% block description %}
+  {% if feature_type.abstract %}{{ feature_type.abstract|linebreaks }}{% endif %}
+{% endblock %}
+
+{% block metadata %}
+  <dl>
+  {% block metadata-items %}
+    <dt>{% translate "XML Namespace" %}:</dt><dd><code>{{ feature_type.xml_namespace }}</code></dd>
+    <dt>{% translate "Typename" %}:</dt><dd><abbr title="{{ feature_type.xml_name }}">{% feature_qname feature_type %}</abbr></dd>
+    <dt>{% translate "Supported CRS" %}:</dt>
+    <dd>
+      {% if GISSERVER_SUPPORTED_CRS_ONLY %}
+        {% blocktranslate trimmed with default_crs=feature_type.crs supported_crs=feature_type.supported_crs|join:", " %}
+          {{ supported_crs }}, and all others. Source data uses {{ default_crs }}.
+        {% endblocktranslate %}
+      {% else %}
+        {% blocktranslate trimmed with default_crs=feature_type.crs supported_crs=feature_type.supported_crs|join:", " %}
+          {{ supported_crs }}. Source data uses {{ default_crs }}.
+        {% endblocktranslate %}
+      {% endif %}
+    </dd>
+    {% if wfs_output_formats %}
+      <dt>{% translate "Formats" %}:</dt>
+      <dd>{% block metadata-formats %}
+        {% for output_format in wfs_output_formats %}
+            <a href="?{{ base_query }}SERVICE=WFS&VERSION={{ version }}&REQUEST=GetFeature&TYPENAMES={% feature_qname feature_type %}&OUTPUTFORMAT={{ output_format.identifier }}">{{ output_format.title|default:output_format }}</a>{% block format-sep %},{% endblock %}
+        {% endfor %}
+        <a href="?{{ base_query }}SERVICE=WFS&VERSION={{ version }}&REQUEST=DescribeFeatureType&TYPENAMES={% feature_qname feature_type %}">XML Schema</a>
+      {% endblock %}
+    </dd>
+    {% endif %}
+  {% endblock %}
+  </dl>
+{% endblock %}
+
+{% block fields %}
+<p>{% translate "The following fields are available:" %}</p>
+<table class="table table-striped">
+  <colgroup>
+    <col class="field-name" />
+    <col class="field-type" />
+    <col class="field-description" />
+  </colgroup>
+  <thead><tr><th>{% translate "Field Name" %}</th><th>{% translate "Type" %}</th><th>{% translate "Description" %}</th></tr></thead>
+  <tbody>
+  {% for field in feature_type.fields %}
+    {% include "gisserver/wfs/feature_field.html" with level=0 %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
