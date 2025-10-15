@@ -1,0 +1,532 @@
+name: MCP Version Compatibility Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly to catch new MCP versions
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  discover-mcp-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      mcp-versions: ${{ steps.get-mcp-versions.outputs.versions }}
+
+    steps:
+    - name: Get available MCP versions
+      id: get-mcp-versions
+      run: |
+        # Get all available versions from PyPI
+        versions=$(pip index versions mcp 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | sort -V)
+
+        # Filter to versions >= 1.2.0 and get only latest patch version for each minor
+        declare -A latest_minor
+        for version in $versions; do
+          major=$(echo $version | cut -d. -f1)
+          minor=$(echo $version | cut -d. -f2)
+          patch=$(echo $version | cut -d. -f3)
+
+          # Include if version >= 1.2.0
+          if [ "$major" -gt 1 ] || ([ "$major" -eq 1 ] && [ "$minor" -ge 2 ]); then
+            minor_key="$major.$minor"
+            latest_minor[$minor_key]="$version"
+          fi
+        done
+
+        # Create JSON array from latest versions
+        filtered_versions=()
+        for version in "${latest_minor[@]}"; do
+          filtered_versions+=(\"$version\")
+        done
+
+        json_array="[$(IFS=,; echo "${filtered_versions[*]}")]"
+        echo "Found MCP versions: $json_array"
+        echo "versions=$json_array" >> $GITHUB_OUTPUT
+
+  discover-fastmcp-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      fastmcp-versions: ${{ steps.get-fastmcp-versions.outputs.versions }}
+
+    steps:
+    - name: Get available FastMCP versions
+      id: get-fastmcp-versions
+      run: |
+        # Get all available versions from PyPI
+        versions=$(pip index versions fastmcp 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | sort -V)
+
+        # Filter to versions >= 2.7.0, exclude 2.9.*, and get only latest patch version for each minor
+        declare -A latest_minor
+        for version in $versions; do
+          major=$(echo $version | cut -d. -f1)
+          minor=$(echo $version | cut -d. -f2)
+          patch=$(echo $version | cut -d. -f3)
+
+          # Skip 2.9.* versions (known compatibility issues)
+          if [ "$major" -eq 2 ] && [ "$minor" -eq 9 ]; then
+            echo "Skipping FastMCP $version (2.9.* versions have known issues)"
+            continue
+          fi
+
+          # Include if version >= 2.7.0
+          if [ "$major" -gt 2 ] || ([ "$major" -eq 2 ] && [ "$minor" -ge 7 ]); then
+            minor_key="$major.$minor"
+            latest_minor[$minor_key]="$version"
+          fi
+        done
+
+        # Create JSON array from latest versions
+        filtered_versions=()
+        for version in "${latest_minor[@]}"; do
+          filtered_versions+=("\"$version\"")
+        done
+
+        json_array="[$(IFS=,; echo "${filtered_versions[*]}")]"
+        echo "Found FastMCP versions: $json_array"
+        echo "versions=$json_array" >> $GITHUB_OUTPUT
+
+  test-fastmcp-compatibility:
+    runs-on: ubuntu-latest
+    needs: discover-fastmcp-versions
+    strategy:
+      matrix:
+        fastmcp-version: ${{ fromJson(needs.discover-fastmcp-versions.outputs.fastmcp-versions) }}
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Update pyproject.toml with FastMCP ${{ matrix.fastmcp-version }}
+      run: |
+        # Update the community extras section with the specific FastMCP version
+        sed -i -E 's/"fastmcp[>=]+[^"]+"/\"fastmcp==${{ matrix.fastmcp-version }}\"/' pyproject.toml
+
+        # Also update the MCP dependency to be flexible so FastMCP can choose its version
+        # Remove the strict MCP version constraint and use >=1.2.0
+        sed -i -E 's/"mcp[>=]+[^"]+"/\"mcp>=1.2.0\"/' pyproject.toml
+
+        # Show the updated dependencies for verification
+        echo "Updated dependencies:"
+        grep -A 5 "^dependencies = \[" pyproject.toml
+        echo ""
+        echo "Updated community extras:"
+        grep -A 2 "^\[project.optional-dependencies\]" pyproject.toml | grep -A 2 "community"
+
+    - name: Install dependencies with FastMCP ${{ matrix.fastmcp-version }}
+      run: |
+        # Install with both dev and community extras
+        # Let FastMCP determine which MCP version it needs
+        uv sync --extra dev --extra community
+
+    - name: Show installed versions
+      run: |
+        echo "Installed package versions:"
+        uv pip show mcp | grep "Version:" || echo "MCP not found"
+        uv pip show fastmcp | grep "Version:" || echo "FastMCP not found"
+
+    - name: Run community FastMCP tests with version ${{ matrix.fastmcp-version }}
+      run: |
+        echo "Running community FastMCP tests with version ${{ matrix.fastmcp-version }}"
+        set -o pipefail
+        uv run pytest -v 2>&1 | tee pytest.log
+
+    - name: Collect failure details
+      if: failure()
+      env:
+        PACKAGE_UNDER_TEST: fastmcp
+        PACKAGE_VERSION: ${{ matrix.fastmcp-version }}
+      run: |
+        python .github/scripts/collect_failure.py pytest.log
+
+    - name: Upload failure artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: compat-failure-fastmcp-${{ matrix.fastmcp-version }}
+        path: failure.json
+        retention-days: 7
+
+  test-without-fastmcp:
+    runs-on: ubuntu-latest
+    needs: discover-mcp-versions
+    strategy:
+      matrix:
+        mcp-version: ${{ fromJson(needs.discover-mcp-versions.outputs.mcp-versions) }}
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies with MCP ${{ matrix.mcp-version }} (no FastMCP)
+      run: |
+        # Create virtual environment
+        uv venv
+
+        # Install base dependencies first
+        uv pip install pydantic>=2.0.0 requests>=2.31.0 mcpcat-api==0.1.4
+
+        # Install the specific MCP version
+        uv pip install "mcp==${{ matrix.mcp-version }}"
+
+        # Install dev dependencies for testing
+        uv pip install pytest>=7.0.0 pytest-asyncio>=0.21.0 mypy>=1.0.0 ruff>=0.1.0 freezegun>=1.2.0
+
+        # Explicitly uninstall fastmcp if it somehow got installed
+        uv pip uninstall fastmcp -y 2>/dev/null || true
+
+        # Install the package itself in editable mode
+        uv pip install -e .
+
+    - name: Show installed MCP version
+      run: |
+        echo "Installed MCP version:"
+        uv pip show mcp | grep "Version:" || echo "MCP not found"
+
+    - name: Verify FastMCP is not installed
+      run: |
+        if uv pip show fastmcp 2>/dev/null; then
+          echo "ERROR: fastmcp should not be installed"
+          exit 1
+        else
+          echo "✓ Confirmed: fastmcp is not installed"
+        fi
+
+    - name: Run tests without community FastMCP
+      run: |
+        echo "Running tests with MCP ${{ matrix.mcp-version }} (no community FastMCP)"
+        # Run all tests except community tests
+        set -o pipefail
+        uv run pytest -v 2>&1 | tee pytest.log
+
+    - name: Collect failure details
+      if: failure()
+      env:
+        PACKAGE_UNDER_TEST: mcp
+        PACKAGE_VERSION: ${{ matrix.mcp-version }}
+      run: |
+        python .github/scripts/collect_failure.py pytest.log
+
+    - name: Upload failure artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: compat-failure-mcp-${{ matrix.mcp-version }}
+        path: failure.json
+        retention-days: 7
+
+  send-failure-notification:
+    runs-on: ubuntu-latest
+    needs: [discover-mcp-versions, discover-fastmcp-versions, test-fastmcp-compatibility, test-without-fastmcp]
+    if: failure()
+
+    steps:
+    - name: Download failure details
+      uses: actions/download-artifact@v4
+      with:
+        pattern: compat-failure-*
+        path: failure_artifacts
+        merge-multiple: true
+        if-no-files-found: ignore
+
+    - name: Send failure notification email
+      run: |
+        # Install resend
+        pip install resend
+
+        # Send email notification
+        python -c "
+        import resend
+        import os
+        import sys
+        import json
+        from pathlib import Path
+
+        # Get sensitive data from environment
+        api_key = os.environ.get('RESEND_API_KEY')
+        alert_email = os.environ.get('ALERT_EMAIL')
+
+        if not api_key:
+            print('Error: RESEND_API_KEY secret not configured')
+            sys.exit(1)
+
+        if not alert_email:
+            print('Error: ALERT_EMAIL secret not configured')
+            sys.exit(1)
+
+        # Set API key without printing it
+        resend.api_key = api_key
+
+        # Determine context
+        workflow_url = 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+
+        # Determine trigger context
+        trigger_info = ''
+        if '${{ github.event_name }}' == 'push':
+            trigger_info = '<li>Triggered by: Push to ${{ github.ref }}</li>'
+        elif '${{ github.event_name }}' == 'pull_request':
+            trigger_info = '<li>Triggered by: Pull Request</li>'
+        elif '${{ github.event_name }}' == 'schedule':
+            trigger_info = '<li>Triggered by: Weekly Schedule</li>'
+        else:
+            trigger_info = '<li>Triggered by: ${{ github.event_name }}</li>'
+
+        # Get the versions that were being tested
+        mcp_versions = '${{ needs.discover-mcp-versions.outputs.mcp-versions }}'
+        fastmcp_versions = '${{ needs.discover-fastmcp-versions.outputs.fastmcp-versions }}'
+
+        def parse_versions(raw: str, label: str) -> list[str]:
+            raw = (raw or '').strip()
+            if not raw:
+                return []
+
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                print(f'Warning: Could not parse {label} JSON: {exc}')
+                cleaned = raw.strip('[]')
+                if not cleaned:
+                    return []
+                items = []
+                for piece in cleaned.split(','):
+                    candidate = piece.strip()
+                    candidate = candidate.strip(chr(39))
+                    candidate = candidate.strip(chr(34))
+                    if candidate:
+                        items.append(candidate)
+                return items
+
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+
+            print(
+                f'Warning: Unexpected {label} payload type: '
+                f'{type(parsed).__name__}'
+            )
+            return []
+
+        mcp_list = parse_versions(mcp_versions, 'MCP versions')
+        fastmcp_list = parse_versions(fastmcp_versions, 'FastMCP versions')
+        print(
+            f'Using {len(mcp_list)} MCP versions and '
+            f'{len(fastmcp_list)} FastMCP versions'
+        )
+
+        # Format version lists
+        mcp_versions_html = '<br>'.join([f'  • MCP {v}' for v in mcp_list]) if mcp_list else 'No versions tested'
+        fastmcp_versions_html = '<br>'.join([f'  • FastMCP {v}' for v in fastmcp_list]) if fastmcp_list else 'No versions tested'
+        print(f'Formatted HTML lists with {len(mcp_list)} MCP and {len(fastmcp_list)} FastMCP versions')
+
+        failure_dir = Path('failure_artifacts')
+        failure_details = []
+        if failure_dir.exists():
+            for failure_path in failure_dir.rglob('failure.json'):
+                try:
+                    failure_payload = json.loads(failure_path.read_text())
+                except Exception as exc:
+                    print(f'Warning: Could not parse failure file {failure_path}: {exc}')
+                    continue
+                failure_payload['_source'] = str(failure_path)
+                failure_details.append(failure_payload)
+        print(f'Collected {len(failure_details)} failure detail files')
+
+        def failing_versions(package_name: str) -> list[str]:
+            versions = []
+            for entry in failure_details:
+                package_value = str(entry.get('package', '')).lower()
+                if package_value != package_name.lower():
+                    continue
+                version_value = str(entry.get('version', '')).strip()
+                if version_value and version_value not in versions:
+                    versions.append(version_value)
+            return versions
+
+        failing_mcp = failing_versions('mcp')
+        failing_fastmcp = failing_versions('fastmcp')
+
+        failing_sections = []
+        if failing_mcp:
+            failing_sections.append(
+                '<p><strong>MCP Versions Failing:</strong><br>'
+                + '<br>'.join([f'  • MCP {version}' for version in failing_mcp])
+                + '</p>'
+            )
+        if failing_fastmcp:
+            failing_sections.append(
+                '<p><strong>FastMCP Versions Failing:</strong><br>'
+                + '<br>'.join([f'  • FastMCP {version}' for version in failing_fastmcp])
+                + '</p>'
+            )
+        if not failing_sections:
+            if failure_details:
+                failing_sections.append(
+                    '<p>Failures detected but version details were unavailable.</p>'
+                )
+            else:
+                failing_sections.append(
+                    '<p>No failure artifacts were collected. Review the workflow logs for more information.</p>'
+                )
+        failing_versions_html = '\n'.join(failing_sections)
+
+        subject_parts: list[str] = []
+        if failing_mcp:
+            subject_parts.append('MCP ' + ', '.join(failing_mcp))
+        if failing_fastmcp:
+            subject_parts.append('FastMCP ' + ', '.join(failing_fastmcp))
+        subject_suffix = ' | '.join(subject_parts) if subject_parts else 'See workflow logs'
+        subject_line = f'🚨 MCPCat Compatibility Tests Failed - {subject_suffix}'
+        print(f'Email subject suffix: {subject_suffix}')
+
+        email_html = f'''
+        <h2>🚨 MCPCat Compatibility Tests Failed</h2>
+
+        <p>The MCP/FastMCP compatibility tests have failed in the main workflow. This requires immediate attention.</p>
+
+        <h3>Details:</h3>
+        <ul>
+          <li>Workflow: ${{ github.workflow }}</li>
+          <li>Repository: ${{ github.repository }}</li>
+          {trigger_info}
+          <li>Run ID: ${{ github.run_id }}</li>
+        </ul>
+
+        <p><a href=\"{workflow_url}\">View full workflow run details</a></p>
+
+        <h3>Failing Versions:</h3>
+        {failing_versions_html}
+
+        <h3>Versions Tested:</h3>
+        <p><strong>MCP Versions (without FastMCP):</strong><br>
+        {mcp_versions_html}</p>
+
+        <p><strong>FastMCP Versions (with MCP dependencies):</strong><br>
+        {fastmcp_versions_html}</p>
+
+        <h3>Impact:</h3>
+        <p>This failure indicates compatibility issues with one or more of the tested versions.</p>
+        <p>Check the workflow run for specific failing combinations.</p>
+
+        <h3>Action Required:</h3>
+        <ul>
+          <li>Review the specific test failures in the workflow</li>
+          <li>Identify which version combinations are failing</li>
+          <li>Check for breaking changes in dependencies</li>
+          <li>Fix compatibility issues before merging</li>
+        </ul>
+        '''
+
+        # Replace slashes with underscores for Resend tags
+        repo_tag = '${{ github.repository }}'.replace('/', '_')
+
+        params = {
+            'from': 'no-reply@mcpcat.io',  # Use Resend's default verified domain
+            'to': [alert_email],  # Use variable, not inline secret
+            'subject': subject_line,
+            'html': email_html,
+            'tags': [
+                {'name': 'alert_type', 'value': 'compatibility_failure'},
+                {'name': 'repository', 'value': repo_tag},
+                {'name': 'severity', 'value': 'high'}
+            ]
+        }
+
+        try:
+            # Validate email format
+            if not alert_email or '@' not in alert_email:
+                print('Error: Invalid email address format')
+                sys.exit(1)
+
+            # Send email without logging sensitive params
+            email = resend.Emails.send(params)
+            # Only print success message, not the email object which might contain sensitive data
+            print('Email notification sent successfully')
+        except resend.exceptions.ValidationError as e:
+            # ValidationError might mean the API key is invalid or email format issue
+            print(f'Resend ValidationError - Check that:')
+            print('1. RESEND_API_KEY is valid and starts with re_')
+            print('2. ALERT_EMAIL is a valid email address')
+            print('3. The from address domain is verified in Resend')
+            sys.exit(1)
+        except Exception as e:
+            # Print error type without sensitive details
+            print(f'Failed to send email notification: {type(e).__name__}')
+            # Exit with error code to indicate failure (but workflow continues)
+            sys.exit(1)
+        "
+      env:
+        RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+  report-compatibility:
+    runs-on: ubuntu-latest
+    needs: [discover-mcp-versions, discover-fastmcp-versions, test-fastmcp-compatibility, test-without-fastmcp, send-failure-notification]
+    if: always()
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Print compatibility report
+      run: |
+        echo "=========================================="
+        echo "     MCP VERSION COMPATIBILITY REPORT    "
+        echo "=========================================="
+        echo ""
+        echo "This report shows the compatibility status of MCPCat with different MCP and FastMCP versions."
+        echo ""
+        echo "Generated on: $(date)"
+        echo ""
+        echo "📋 OFFICIAL MCP COMPATIBILITY (without community FastMCP)"
+        echo "─────────────────────────────────────────"
+        echo "MCP versions tested: ${{ needs.discover-mcp-versions.outputs.mcp-versions }}"
+        echo "Tests run: All tests except community FastMCP tests"
+        echo "Python version: 3.12"
+        echo ""
+        echo "📋 COMMUNITY FASTMCP COMPATIBILITY TESTING"
+        echo "─────────────────────────────────────────"
+        echo "FastMCP versions tested: ${{ needs.discover-fastmcp-versions.outputs.fastmcp-versions }}"
+        echo "MCP version: Determined by each FastMCP version's requirements"
+        echo "Tests run: Community FastMCP tests only"
+        echo "Python version: 3.12"
+        echo ""
+        echo "🧪 TEST COVERAGE"
+        echo "─────────────────────────────────────────"
+        echo "✓ Official FastMCP (mcp.server.fastmcp) compatibility"
+        echo "✓ Community FastMCP (fastmcp package) compatibility - optional dependency"
+        echo "✓ Low-level Server compatibility"
+        echo "✓ All implementations tested with is_compatible_server function"
+        echo "✓ Package works without community FastMCP (using only official MCP)"
+        echo ""
+        echo "📦 INSTALLATION OPTIONS"
+        echo "─────────────────────────────────────────"
+        echo "• pip install mcpcat          - Official MCP only (includes mcp.server.fastmcp)"
+        echo "• pip install mcpcat[community] - Adds community FastMCP support"
+        echo ""
+        echo "📊 RESULTS"
+        echo "─────────────────────────────────────────"
+        echo "Check the individual test job results above for detailed compatibility status."
+        echo "Each MCP and FastMCP version was tested in separate matrix jobs."
+        echo ""
+        echo "=========================================="
