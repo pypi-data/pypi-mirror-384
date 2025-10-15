@@ -1,0 +1,39 @@
+---
+name: docker-build-test
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+    types:
+      - checks_requested
+
+jobs:
+  pudl_docker_build:
+    name: Test building the PUDL ETL Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Docker Metadata
+        id: docker_metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: catalystcoop/pudl-etl
+          flavor: |
+            latest=auto
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image but do not push to Docker Hub
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
