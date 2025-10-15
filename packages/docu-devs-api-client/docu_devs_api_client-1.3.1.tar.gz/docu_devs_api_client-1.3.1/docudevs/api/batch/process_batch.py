@@ -1,0 +1,169 @@
+from http import HTTPStatus
+from typing import Any, Optional, Union
+
+import httpx
+
+from ... import errors
+from ...client import AuthenticatedClient, Client
+from ...models.batch_create_response import BatchCreateResponse
+from ...models.process_batch_body import ProcessBatchBody
+from ...types import Response
+
+
+def _get_kwargs(
+    guid: str,
+    *,
+    body: ProcessBatchBody,
+) -> dict[str, Any]:
+    headers: dict[str, Any] = {}
+
+    _kwargs: dict[str, Any] = {
+        "method": "post",
+        "url": f"/document/batch/{guid}/process",
+    }
+
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
+    return _kwargs
+
+
+def _parse_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Optional[BatchCreateResponse]:
+    if response.status_code == 200:
+        response_200 = BatchCreateResponse.from_dict(response.json())
+
+        return response_200
+
+    if client.raise_on_unexpected_status:
+        raise errors.UnexpectedStatus(response.status_code, response.content)
+    else:
+        return None
+
+
+def _build_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Response[BatchCreateResponse]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    guid: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    body: ProcessBatchBody,
+) -> Response[BatchCreateResponse]:
+    """
+    Args:
+        guid (str):
+        body (ProcessBatchBody):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[BatchCreateResponse]
+    """
+
+    kwargs = _get_kwargs(
+        guid=guid,
+        body=body,
+    )
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+
+def sync(
+    guid: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    body: ProcessBatchBody,
+) -> Optional[BatchCreateResponse]:
+    """
+    Args:
+        guid (str):
+        body (ProcessBatchBody):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        BatchCreateResponse
+    """
+
+    return sync_detailed(
+        guid=guid,
+        client=client,
+        body=body,
+    ).parsed
+
+
+async def asyncio_detailed(
+    guid: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    body: ProcessBatchBody,
+) -> Response[BatchCreateResponse]:
+    """
+    Args:
+        guid (str):
+        body (ProcessBatchBody):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[BatchCreateResponse]
+    """
+
+    kwargs = _get_kwargs(
+        guid=guid,
+        body=body,
+    )
+
+    response = await client.get_async_httpx_client().request(**kwargs)
+
+    return _build_response(client=client, response=response)
+
+
+async def asyncio(
+    guid: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    body: ProcessBatchBody,
+) -> Optional[BatchCreateResponse]:
+    """
+    Args:
+        guid (str):
+        body (ProcessBatchBody):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        BatchCreateResponse
+    """
+
+    return (
+        await asyncio_detailed(
+            guid=guid,
+            client=client,
+            body=body,
+        )
+    ).parsed
