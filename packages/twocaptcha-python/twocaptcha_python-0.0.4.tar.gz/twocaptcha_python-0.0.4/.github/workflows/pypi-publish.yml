@@ -1,0 +1,46 @@
+name: Upload Python Package
+
+on:
+  # Trigger the workflow only on tag pushes with version patterns
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+" # Stable versions (e.g., 1.0.0)
+      - "[0-9]+.[0-9]+.[0-9]+a[0-9]+" # Alpha versions (e.g., 1.0.0a1)
+      - "[0-9]+.[0-9]+.[0-9]+b[0-9]+" # Beta versions (e.g., 1.0.0b1)
+      - "[0-9]+.[0-9]+.[0-9]+rc[0-9]+" # Release candidates (e.g., 1.0.0rc1)
+
+permissions:
+  contents: read # Required to read repository contents
+  id-token: write # Required for trusted publishing with OIDC
+
+jobs:
+  deploy:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+
+      # Step 2: Install uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7.1.0
+        with:
+          version: "latest"
+
+      # Step 3: Set up Python and install dependencies
+      - name: Set up Python
+        run: uv python install 3.13
+
+      # Step 4: Install build dependencies
+      - name: Install build dependencies
+        run: uv sync --dev
+
+      # Step 5: Build the Python package
+      - name: Build package
+        run: uv build
+
+      # Step 6: Publish the package to PyPI using trusted publishing
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.13.0
