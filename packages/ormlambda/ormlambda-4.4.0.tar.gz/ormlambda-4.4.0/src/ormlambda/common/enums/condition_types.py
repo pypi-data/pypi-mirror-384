@@ -1,0 +1,20 @@
+from enum import Enum
+
+
+class ConditionType(str, Enum):
+    EQUAL = "="
+    LESS_THAN = "<"
+    GREATER_THAN = ">"
+    LESS_THAN_OR_EQUAL = "<="
+    GREATER_THAN_OR_EQUAL = ">="
+    NOT_EQUAL = "!="
+    REGEXP = "REGEXP"
+    BETWEEN = "BETWEEN"
+    LIKE = "LIKE"
+    IN = "IN"
+    NOT_IN = "NOT IN"
+    IS = "IS"
+    IS_NOT = "IS NOT"
+
+    def __str__(self):
+        return super().__str__()
