@@ -1,0 +1,128 @@
+from snakemake.logging import logger
+from snakemake.utils import validate, min_version, update_config
+import re, yaml, json, pandas as pd
+import glob, os
+from datetime import datetime
+import numpy as np
+import shutil
+import sys
+import secrets
+min_version("8.16.0") # declare the the lowest version of snakemake that can run this script
+
+# configfile: "configs/params.yml"
+
+
+# validate the parameter settings
+# validate(config, "../resources/schemas/config_schema.yaml")
+
+
+# docker [image]
+container: "docker://condaforge/mambaforge:latest"
+"""
+Organize fastq file names to fit the expected naming format
+the idea is to make a copy of the fastq files to a new folder with the expected naming format
+this will be removed on the sucess of the pipeline
+"""
+
+# Create a directory for input fastq files (just a symlink to the original files)
+# Remove if exists to ensure a clean start
+fastq_files = os.path.join(config['work_dir'], "input_fastq_files")
+if os.path.exists(fastq_files):
+    shutil.rmtree(fastq_files)
+os.makedirs(fastq_files, exist_ok=True)
+
+GZ =  True  # will be set to True if the fastq files are gzipped
+for file in os.listdir(config['raw_data_dir']):    
+    if ".fastq" not in file:
+        logger.error(f"{file} is not a valid fastq file: skipping")
+        continue
+    base_name, extension = re.split(r'_R[12]', file)
+    
+    # detect if the file is gzipped 
+    GZ = True if file.endswith(".gz") else False
+
+    if "R1" in file:
+        new_file_name = f"{base_name}{extension.split('.fastq')[0]}_R1.fastq.gz"  if GZ else f"{base_name}{extension.split('.fastq')[0]}_R1.fastq"      
+        # copy file if it doesn't already exist
+        if not os.path.islink(os.path.abspath(os.path.join(fastq_files, new_file_name))) or not os.path.isfile(os.path.abspath(os.path.join(fastq_files, new_file_name))):
+            os.symlink(os.path.abspath(os.path.join(config['raw_data_dir'], file)), os.path.abspath(os.path.join(fastq_files, new_file_name)))
+    elif "R2" in file:
+        new_file_name = f"{base_name}{extension.split('.fastq')[0]}_R2.fastq.gz" if GZ else f"{base_name}{extension.split('.fastq')[0]}_R2.fastq"
+        if not os.path.islink(os.path.abspath(os.path.join(fastq_files, new_file_name))):           
+            os.symlink(os.path.abspath(os.path.join(config['raw_data_dir'], file)), os.path.abspath(os.path.join(fastq_files, new_file_name)))
+    else:
+        logger.error(f"Missing file(s) for sample {base_name}: {r1_path} or {r2_path}")
+
+"""
+Loop through each sample in the SAMPLES list.
+For each sample, determine the base name by removing the "_R1" or "_R2" suffix if present.
+Construct the file paths for the R1 and R2 fastq.gz files using the base name.
+Check if both R1 and R2 files exist in the specified raw data directory.
+If both files exist, append the base name to the SAMPLE_NAMES list.
+If either file is missing, log an error message indicating the missing file(s) for the sample.
+
+"""
+SAMPLES,  EXTENSION = glob_wildcards(os.path.join(fastq_files, '{sample}_{extension}'))
+SAMPLE_NAMES = []
+
+for sample in SAMPLES:
+    base_name = "_".join(sample.split("_")[:-1]) if sample.endswith(("_R1", "_R2")) else sample
+    r1_path = os.path.join(fastq_files, f'{base_name}_R1.fastq.gz') if GZ else os.path.join(fastq_files, f'{base_name}_R1.fastq')
+    r2_path = os.path.join(fastq_files, f'{base_name}_R2.fastq.gz') if GZ else os.path.join(fastq_files, f'{base_name}_R2.fastq')
+    
+    if (os.path.isfile(r1_path) or os.path.islink(r1_path)) and (os.path.isfile(r2_path) or os.path.islink(r2_path)) is True:
+        SAMPLE_NAMES.append(base_name)
+    else:
+        logger.error(f"Missing file(s) for sample {base_name}: {r1_path} or {r2_path}")
+
+onstart:
+    print("Starting the pipeline")
+    update_config(config,
+        { "runID": f"MBR_{secrets.token_hex(8)}",
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "snakemake_version": snakemake.__version__,
+        "command_line_args": sys.argv})  
+# flow of execution
+# ruleorder: fastpQC > merge > trimming > filter > dereplication > denoise > removeChimera > searchExact > esv_table > multiqc
+
+rule all:           
+    input:
+        # Exact sequence search (this is where the magic of making ESVs happen)
+        expand(os.path.join(config["work_dir"], "Results",
+            "ESV_tables",f'{{sample}}_ESV_table.tsv'), sample=SAMPLE_NAMES),  
+
+        # MultiQC report
+        os.path.join(config["work_dir"], "Results", "report",
+            f"{os.path.basename(config['work_dir'])}_multiqc_reports",
+            f"{os.path.basename(config['work_dir'])}_multiqc_report.html"), 
+        # custom multiqc data
+        os.path.join(config["work_dir"], "Results", "report",
+        f"{os.path.basename(config['work_dir'])}_custom_multiqc_data_mqc.txt"),     
+        
+        # ESV table
+        os.path.join(config["work_dir"], "Results",
+            "report", f"{os.path.basename(config['work_dir'])}_ESV_table.tsv"),
+        
+
+        # summary report
+        os.path.join(config["work_dir"], "Results",
+            "report", f"{os.path.basename(config['work_dir'])}_summary_report.tsv")
+
+onsuccess:
+    # remove the copy of fastq files (to reduce memory footprint)
+    # this currently is a symlink; thus no memory is used; still, it is a good idea to remove it
+    shutil.rmtree(fastq_files)
+    # remove sample ESV tables
+    ESV_tables = os.path.join(config["work_dir"], "Results", "ESV_tables")
+    if os.path.exists(ESV_tables):
+        logger.info(f"Removing ESV tables directory: {ESV_tables}") 
+        shutil.rmtree(os.path.join(config["work_dir"], "Results", "ESV_tables"))
+    
+
+include: "rules/merge.smk"
+include: "rules/trimming.smk"
+include: "rules/filter.smk"
+include: "rules/dereplication.smk"
+include: "rules/denoise.smk"
+include: "rules/chimera.smk"
+include: "rules/search_exact.smk"
