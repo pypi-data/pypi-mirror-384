@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Lint, Typecheck, Test (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+
+      - name: Install project (dev)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint (black)
+        run: |
+          black --check src/sf_devtools src/tests || (echo "Run black to format code" && exit 1)
+
+      - name: Import order (isort)
+        run: |
+          isort --check-only src/sf_devtools src/tests || (echo "Run isort to sort imports" && exit 1)
+
+      - name: Type check (mypy)
+        run: |
+          mypy src/sf_devtools
+
+      - name: Unit tests
+        env:
+          PYTHONPATH: src
+        run: |
+          pytest -q --cov --cov-report=term-missing
+
+      - name: Build package
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: Upload dist artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-py312
+          path: dist/*
+          if-no-files-found: warn
