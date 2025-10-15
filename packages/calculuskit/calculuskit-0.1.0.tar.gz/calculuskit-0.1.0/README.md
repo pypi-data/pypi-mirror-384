@@ -1,0 +1,418 @@
+# CalculusKit
+
+A comprehensive Python library for mathematical calculus operations including derivatives, integrals, limits, series expansions, and advanced analysis tools.
+
+## Features
+
+### Core Operations
+- **Derivatives**: Numerical differentiation with multiple methods (forward, backward, central)
+- **Partial Derivatives**: Support for multivariable functions with gradient vectors
+- **Integration**: Numerical integration using trapezoidal, Simpson's, and midpoint rules
+- **Double Integrals**: Two-dimensional integration
+- **Limits**: Calculate limits from left, right, or both directions
+- **Series Expansions**: Taylor, Maclaurin, and Fourier series
+
+### Advanced Analysis
+- **Optimization**: Find critical points, extrema, and gradient descent
+- **Curve Analysis**: Arc length, curvature, surface area of revolution
+- **Numerical Utilities**: Stability checking, validation, and helper functions
+
+### Visualization (Optional)
+- **Function Plotting**: Visualize functions, derivatives, and integrals
+- **Tangent Lines**: Plot tangent lines at specific points
+- Requires: `pip install matplotlib`
+
+## Package Structure
+
+```
+calculuskit/
+├── core/          # Core calculus operations
+├── analysis/      # Advanced analysis tools
+├── utils/         # Utilities and validators
+└── visualization/ # Plotting (requires matplotlib)
+```
+
+See [STRUCTURE.md](STRUCTURE.md) for detailed documentation.
+
+## Installation
+
+### From PyPI (once published)
+
+```bash
+pip install calculuskit
+```
+
+### From source
+
+```bash
+git clone https://github.com/mohamedsajith/calculuskit.git
+cd calculuskit
+pip install -e .
+```
+
+## Quick Start
+
+### Function-based API
+
+```python
+import calculuskit as ck
+import math
+
+# Calculate derivative
+def f(x):
+    return x**2
+
+derivative_at_3 = ck.derivative(f, 3.0)
+print(f"Derivative of x^2 at x=3: {derivative_at_3}")  # Output: 6.0
+
+# Calculate integral
+def g(x):
+    return x**2
+
+integral = ck.integrate(g, 0, 1)
+print(f"Integral of x^2 from 0 to 1: {integral}")  # Output: ~0.333
+
+# Calculate limit
+def h(x):
+    return (x**2 - 1) / (x - 1)
+
+limit_at_1 = ck.limit(h, 1.0)
+print(f"Limit of (x^2-1)/(x-1) as x->1: {limit_at_1}")  # Output: 2.0
+
+# Taylor series expansion
+taylor_exp = ck.taylor_series(math.exp, 0, 1.0, n=10)
+print(f"e^1 approximation: {taylor_exp}")  # Output: ~2.718
+```
+
+### Class-based API
+
+```python
+import calculuskit as ck
+import math
+
+# Derivative class
+def f(x):
+    return x**3
+
+df = ck.Derivative(f)
+print(f"f'(2) = {df.at(2)}")  # Output: 12.0
+print(f"f'(3) = {df(3)}")     # Can also call directly
+
+# Partial Derivative class
+def g(x, y):
+    return x**2 + y**2
+
+pdg = ck.PartialDerivative(g)
+print(f"∂g/∂x at (2,3) = {pdg.at((2.0, 3.0), 0)}")  # Output: 4.0
+gradient = pdg.gradient_vector((2.0, 3.0))
+print(f"∇g at (2,3) = {gradient}")  # Output: [4.0, 6.0]
+
+# Integral class
+def h(x):
+    return x**2
+
+integral = ck.Integral(h)
+print(f"∫h(x)dx from 0 to 1 = {integral.between(0, 1)}")
+avg = integral.average_value(0, 1)
+print(f"Average value = {avg}")
+
+# Limit class
+def j(x):
+    return (x**2 - 1) / (x - 1)
+
+lim = ck.Limit(j)
+print(f"lim x→1 = {lim.at(1.0)}")
+print(f"Is continuous at 1? {lim.is_continuous(1.0)}")
+
+# Taylor Series class
+taylor = ck.TaylorSeries(math.exp, n=10)
+print(f"e^1 ≈ {taylor.at(1.0, center=0)}")
+print(f"Polynomial: {taylor.polynomial_string(center=0)}")
+
+# Fourier Series class
+def square_wave(x):
+    return 1 if (x % (2*math.pi)) < math.pi else -1
+
+fourier = ck.FourierSeries(square_wave, period=2*math.pi, n=5)
+print(f"Square wave at π/2: {fourier.at(math.pi/2)}")
+```
+
+### Advanced Analysis
+
+```python
+import calculuskit as ck
+import math
+
+# Find critical points
+critical_points = ck.find_critical_points(
+    lambda x: x**3 - 3*x,  # f(x) = x³ - 3x
+    -3, 3                   # Search interval
+)
+print(f"Critical points: {critical_points}")  # Output: [-1.0, 1.0]
+
+# Find extrema (maxima and minima)
+extrema = ck.find_extrema(lambda x: x**3 - 3*x, -3, 3)
+print(f"Maxima: {extrema['maxima']}")
+print(f"Minima: {extrema['minima']}")
+
+# Gradient descent optimization
+x_min, f_min = ck.gradient_descent(
+    lambda x: (x - 2)**2,  # Minimize (x-2)²
+    x0=0,                   # Starting point
+    learning_rate=0.1
+)
+print(f"Minimum at x={x_min}, f(x)={f_min}")
+
+# Calculate arc length
+length = ck.arc_length(lambda x: x**2, 0, 1)
+print(f"Arc length: {length}")
+
+# Calculate curvature
+kappa = ck.curvature(lambda x: x**2, 0)
+print(f"Curvature at x=0: {kappa}")
+
+# Surface area of revolution
+area = ck.surface_area_of_revolution(
+    lambda x: math.sqrt(1 - x**2),  # Semicircle
+    -1, 1
+)
+print(f"Surface area of sphere: {area}")  # ≈ 4π
+```
+
+### Visualization
+
+```python
+import calculuskit as ck
+
+# Plot a function
+ck.plot_function(lambda x: x**2, -5, 5, title="Parabola")
+
+# Plot function and its derivative
+ck.plot_derivative(lambda x: x**3 - 3*x, -3, 3)
+
+# Plot with shaded integral area
+ck.plot_integral(lambda x: x**2, 0, 2)
+
+# Plot tangent line
+ck.plot_tangent_line(lambda x: x**2, x0=1, a=-2, b=4)
+```
+
+## API Reference
+
+### Function-based API
+
+#### Derivatives
+
+##### `derivative(func, x, h=1e-7, method='central')`
+
+Calculate the numerical derivative of a function at a point.
+
+**Parameters:**
+- `func`: The function to differentiate
+- `x`: The point at which to calculate the derivative
+- `h`: Step size for numerical differentiation (default: 1e-7)
+- `method`: Method to use - 'forward', 'backward', or 'central' (default: 'central')
+
+**Returns:** The derivative value at point x
+
+#### `partial_derivative(func, point, var_index, h=1e-7)`
+
+Calculate the partial derivative of a multivariable function.
+
+**Parameters:**
+- `func`: The multivariable function
+- `point`: Tuple of coordinates where to calculate the partial derivative
+- `var_index`: Index of the variable to differentiate with respect to
+- `h`: Step size for numerical differentiation (default: 1e-7)
+
+**Returns:** The partial derivative value
+
+### Integration
+
+#### `integrate(func, a, b, n=1000, method='simpson')`
+
+Calculate the definite integral of a function.
+
+**Parameters:**
+- `func`: The function to integrate
+- `a`: Lower bound of integration
+- `b`: Upper bound of integration
+- `n`: Number of subdivisions (default: 1000)
+- `method`: Integration method - 'trapezoidal', 'simpson', or 'midpoint' (default: 'simpson')
+
+**Returns:** The approximate integral value
+
+### Limits
+
+#### `limit(func, x0, direction='both', epsilon=1e-10)`
+
+Calculate the limit of a function at a point.
+
+**Parameters:**
+- `func`: The function to evaluate
+- `x0`: The point to approach
+- `direction`: Direction to approach from - 'left', 'right', or 'both' (default: 'both')
+- `epsilon`: Small value to approach the point (default: 1e-10)
+
+**Returns:** The limit value
+
+### Series
+
+#### `taylor_series(func, x0, x, n=10)`
+
+Calculate the Taylor series expansion of a function.
+
+**Parameters:**
+- `func`: The function to expand
+- `x0`: The point around which to expand
+- `x`: The point at which to evaluate the series
+- `n`: Number of terms in the series (default: 10)
+
+**Returns:** The Taylor series approximation
+
+#### `maclaurin_series(func, x, n=10)`
+
+Calculate the Maclaurin series expansion (Taylor series around 0).
+
+**Parameters:**
+- `func`: The function to expand
+- `x`: The point at which to evaluate the series
+- `n`: Number of terms in the series (default: 10)
+
+**Returns:** The Maclaurin series approximation
+
+### Class-based API
+
+#### `Derivative(func, h=1e-7, method='central')`
+
+Create a derivative calculator for a function.
+
+**Methods:**
+- `at(x)`: Calculate derivative at point x
+- `__call__(x)`: Call object as function to get derivative
+- `gradient(x, dx, n_points)`: Get derivative values over a range
+
+#### `PartialDerivative(func, h=1e-7)`
+
+Create a partial derivative calculator for multivariable functions.
+
+**Methods:**
+- `at(point, var_index)`: Calculate partial derivative
+- `gradient_vector(point)`: Get gradient vector (all partial derivatives)
+- `jacobian(point)`: Get Jacobian matrix
+
+#### `Integral(func, n=1000, method='simpson')`
+
+Create an integral calculator for a function.
+
+**Methods:**
+- `between(a, b)`: Calculate definite integral
+- `definite(a, b)`: Alias for between
+- `cumulative(a, b, num_points)`: Get cumulative integral values
+- `average_value(a, b)`: Get average value over interval
+
+#### `DoubleIntegral(func, n=100, method='simpson')`
+
+Create a double integral calculator for two-variable functions.
+
+**Methods:**
+- `over(x_min, x_max, y_min, y_max)`: Calculate double integral over rectangular region
+
+#### `Limit(func, epsilon=1e-10)`
+
+Create a limit calculator for a function.
+
+**Methods:**
+- `at(x0, direction='both')`: Calculate limit at point
+- `left(x0)`: Calculate left-hand limit
+- `right(x0)`: Calculate right-hand limit
+- `exists(x0)`: Check if limit exists
+- `is_continuous(x0)`: Check if function is continuous
+- `as_x_approaches_infinity(direction='positive')`: Calculate limit at infinity
+
+#### `TaylorSeries(func, n=10)`
+
+Create a Taylor series calculator for a function.
+
+**Methods:**
+- `at(x, center=0.0)`: Evaluate series at point
+- `coefficients(center=0.0)`: Get series coefficients
+- `polynomial_string(center=0.0)`: Get string representation
+- `error_estimate(x, center=0.0)`: Estimate approximation error
+
+#### `MaclaurinSeries(func, n=10)`
+
+Create a Maclaurin series calculator (Taylor series centered at 0).
+
+**Methods:**
+- `at(x)`: Evaluate series at point
+- `coefficients()`: Get series coefficients
+- `polynomial_string()`: Get string representation
+- `error_estimate(x)`: Estimate approximation error
+
+#### `FourierSeries(func, period=2π, n=10)`
+
+Create a Fourier series calculator for periodic functions.
+
+**Methods:**
+- `a0()`: Get a0 coefficient (DC component)
+- `an(n)`: Get nth cosine coefficient
+- `bn(n)`: Get nth sine coefficient
+- `at(x)`: Evaluate series at point
+
+## Development
+
+### Setup Development Environment
+
+```bash
+# Clone the repository
+git clone https://github.com/mohamedsajith/calculuskit.git
+cd calculuskit
+
+# Install with development dependencies
+pip install -e ".[dev]"
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Code Quality
+
+This project uses:
+- **Ruff**: For linting and formatting
+- **mypy**: For static type checking
+- **pre-commit**: For automated code quality checks
+
+Run pre-commit manually:
+```bash
+pre-commit run --all-files
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+Mohamed Sajith
+
+## Acknowledgments
+
+- Built with NumPy for efficient numerical computations
+- Inspired by classical calculus textbooks and numerical analysis methods
