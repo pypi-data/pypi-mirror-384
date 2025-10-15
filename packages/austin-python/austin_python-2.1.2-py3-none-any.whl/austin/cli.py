@@ -1,0 +1,238 @@
+# This file is part of "austin-python" which is released under GPL.
+#
+# See file LICENCE or go to http://www.gnu.org/licenses/ for full license
+# details.
+#
+# austin-python is a Python wrapper around Austin, the CPython frame stack
+# sampler.
+#
+# Copyright (c) 2018-2020 Gabriele N. Tornetta <phoenix1987@gmail.com>.
+# All rights reserved.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+from argparse import REMAINDER
+from argparse import ArgumentParser
+from argparse import Namespace
+from dataclasses import dataclass
+from typing import Any
+from typing import Callable
+from typing import List
+from typing import NoReturn
+from typing import Optional
+from typing import Sequence
+from typing import cast
+
+from austin.errors import AustinError
+
+
+class AustinCommandLineError(AustinError):
+    """Invalid Austin command line."""
+
+    pass
+
+
+@dataclass
+class AustinArguments(Namespace):
+    """Austin command line arguments.
+
+    This class is used to store the parsed command line arguments for Austin.
+    It extends :class:`argparse.Namespace` to provide a structured way to
+    access the command line options.
+    """
+
+    pid: Optional[int]
+    command: Optional[List[str]]
+    children: bool
+    exposure: Optional[int]
+    full: bool
+    interval: Optional[int]
+    memory: bool
+    cpu: bool
+    timeout: Optional[int]
+
+
+class AustinArgumentParser(ArgumentParser):
+    """Austin Command Line parser.
+
+    This command line parser is based on :class:`argparse.ArgumentParser` and
+    provides a minimal implementation for parsing the standard Austin command
+    line. The bool arguments of the constructor are used to specify whether
+    the corresponding Austin option should be parsed or not. For example, if
+    your application doesn't need the possiblity of switching to the
+    alternative format, you can exclude this option with ``alt_format=False``.
+
+    Note that al least one between ``pid`` and ``command`` is required, but
+    they cannot be used together when invoking Austin.
+    """
+
+    def __init__(
+        self,
+        name: str = "austin",
+        children: bool = True,
+        exposure: bool = True,
+        full: bool = True,
+        interval: bool = True,
+        memory: bool = True,
+        pid: bool = True,
+        cpu: bool = True,
+        timeout: bool = True,
+        command: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(prog=name, **kwargs)
+
+        def time(units: str) -> Callable[[str], int]:
+            """Parse time argument with units."""
+            base = int({"us": 1, "ms": 1e3, "s": 1e6}[units])
+
+            def parser(arg: str) -> int:
+                if arg.endswith("us"):
+                    return int(arg[:-2]) // base
+                if arg.endswith("ms"):
+                    return int(arg[:-2]) * 1000 // base
+                if arg.endswith("s"):
+                    return int(arg[:-1]) * 1000000 // base
+                return int(arg)
+
+            return parser
+
+        if not (pid and command):
+            raise AustinCommandLineError(
+                "Austin command line parser must have at least one between pid "
+                "and command."
+            )
+
+        if children:
+            self.add_argument(
+                "-C",
+                "--children",
+                help="Attach to child processes.",
+                action="store_true",
+            )
+
+        if exposure:
+            self.add_argument(
+                "-x",
+                "--exposure",
+                help="Sample for the given number of seconds only.",
+                type=time("s"),
+                default=None,
+            )
+
+        if full:
+            self.add_argument(
+                "-f",
+                "--full",
+                help="Produce the full set of metrics (time +mem -mem).",
+                action="store_true",
+            )
+
+        if interval:
+            self.add_argument(
+                "-i",
+                "--interval",
+                help="Sampling interval (default is 100 μs).",
+                type=time("us"),
+            )
+
+        if memory:
+            self.add_argument(
+                "-m", "--memory", help="Profile memory usage.", action="store_true"
+            )
+
+        if pid:
+            self.add_argument(
+                "-p",
+                "--pid",
+                help="The the ID of the process to which Austin should attach.",
+                type=int,
+            )
+
+        if cpu:
+            self.add_argument(
+                "-c", "--cpu", help="Capture on-CPU stacks only.", action="store_true"
+            )
+
+        if timeout:
+            self.add_argument(
+                "-t",
+                "--timeout",
+                help="Approximate start up wait time. Increase on slow machines "
+                "(default is 100 ms).",
+                type=time("ms"),
+            )
+
+        if command:
+            self.add_argument(
+                "command",
+                type=str,
+                nargs=REMAINDER,
+                help="The command to execute if no PID is provided, followed by "
+                "its arguments.",
+            )
+
+    def parse_args(  # type: ignore[override]
+        self,
+        args: Optional[Sequence[str]] = None,
+        namespace: Optional[Namespace] = None,
+    ) -> AustinArguments:
+        """Parse the list of arguments.
+
+        Return a :class:`AustinArguments` with the parsed result. If no PID
+        nor a command are passed, an instance of the
+        :class:`AustinCommandLineError` exception is thrown.
+        """
+        parsed_austin_args, unparsed = super().parse_known_args(args, namespace)
+        if unparsed:
+            raise AustinCommandLineError(
+                f"Some arguments were left unparsed: {unparsed}"
+            )
+
+        if not parsed_austin_args.pid and not parsed_austin_args.command:
+            raise AustinCommandLineError("No PID or command given.")
+
+        return cast(AustinArguments, parsed_austin_args)
+
+    def exit(self, status: int = 0, message: Optional[str] = None) -> NoReturn:
+        """Raise exception on error."""
+        raise AustinCommandLineError(message, status)
+
+    @staticmethod
+    def to_list(args: Namespace) -> List[str]:
+        """Convert a :class:`argparse.Namespace` to a list of arguments.
+
+        This is the opposite of the parsing of the command line. This static
+        method is intended to filter and reconstruct the command line arguments
+        that need to be passed to lower level APIs to start the actual Austin
+        process.
+        """
+        arg_list = []
+        if getattr(args, "children", None):
+            arg_list.append("-C")
+        if getattr(args, "full", None):
+            arg_list.append("-f")
+        if getattr(args, "interval", None):
+            arg_list += ["-i", str(args.interval)]
+        if getattr(args, "memory", None):
+            arg_list.append("-m")
+        if getattr(args, "pid", None):
+            arg_list += ["-p", str(args.pid)]
+        if getattr(args, "cpu", None):
+            arg_list.append("-c")
+        if getattr(args, "timeout", None):
+            arg_list += ["-t", str(args.timeout)]
+        if getattr(args, "command", None):
+            arg_list += args.command
+
+        return arg_list
