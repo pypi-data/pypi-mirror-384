@@ -1,0 +1,1 @@
+This directory was created on 2025-06-04 and is a copy of https://github.com/hubverse-org/hubUtils/tree/main/inst/testhubs/v4/flusight .

@@ -1,0 +1,1 @@
+This directory was created on 2025-06-05 and is a copy of the `epiENGAGE-baseline` and `epiENGAGE-ensemble_mean` models from https://github.com/reichlab/flu-metrocast .
