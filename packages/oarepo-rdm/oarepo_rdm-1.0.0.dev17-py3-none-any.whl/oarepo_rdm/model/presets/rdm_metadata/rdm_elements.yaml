@@ -1,0 +1,352 @@
+#
+# Metadata elements used in InvenioRDM.
+#
+#
+# WIP: do not use yet!
+#
+
+RDMPublicationDate:
+  type: edtf
+  label:
+    en: Publication date
+    cs: Datum publikace
+  hint:
+    en: The date when the resource was or will be made publicly available.
+    cs: Datum, kdy byl/bude zdroj zveřejněn.
+  help:
+    en: Provide the publication date in ISO 8601 format (YYYY-MM-DD). If the exact date is unknown, use the earliest known date.
+    cs: Uveďte datum publikace ve formátu ISO 8601 (RRRR-MM-DD). Pokud není přesné datum známo, použijte nejdříve známé datum.
+
+RDMPublisher:
+  type: fulltext+keyword
+  label:
+    en: Publisher
+    cs: Vydavatel
+  hint:
+    en: The entity responsible for making the resource available.
+    cs: Subjekt odpovědný za zpřístupnění zdroje.
+  help:
+    en: Provide the name of the publisher or organization that published the resource. This could be an institution, company, or individual.
+    cs: Uveďte název vydavatele nebo organizace, která zdroj vydala. Může to být instituce, společnost nebo jednotlivec.
+
+RDMIdentifier:
+  label:
+    cs: Identifikátor
+    en: Identifier
+  # we can't use IdentifierSchema class here as it needs to get an argument with
+  # a list of allowed schemes 
+  # marshmallow_schema_class: marshmallow_utils.schemas.identifier.IdentifierSchema
+  properties:
+    identifier:
+      type: keyword
+      required: true
+      label:
+        cs: identifikátor
+        en: Identifier
+    scheme:
+      type: keyword
+      required: true
+      label:
+        cs: Typ identifikátoru
+        en: Identifier Type
+
+RDMCreatibutor:
+  # no marshmallow here as RDM has separate marshmallow classes for creator and contributor
+  # marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.CreatorSchema
+  properties:
+    role:
+      type: vocabulary
+      vocabulary-type: contributor-types
+      label:
+        cs: Role
+        en: Role
+      hint:
+        cs: Vyberte roli tvůrce/přispěvatele z nabídky (editor, ilustrátor…).
+        en: Choose the role of the creator/contributor (editor, illustrator…).
+    affiliations:
+      type: array
+      label:
+        cs: Afiliace
+        en: Affiliation
+      items:
+        type: vocabulary
+        vocabulary-type: affiliations
+        keys:
+          - name:
+              type: keyword
+          - identifiers:
+              type: array
+              items:
+                type: RDMIdentifier
+
+    person_or_org:
+      type: RDMPersonOrOrg
+      label:
+        cs: Osoba nebo organizace
+        en: Person or Organization
+  
+RDMFunding:
+  label:
+    cs: "Granty a financování"
+    en: "Funding Reference"
+  marshmallow_ui_schema_class: oarepo_runtime.services.schema.rdm_ui.RDMFundersUISchema
+  marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.FundingSchema
+  properties:
+    funder:
+      type: vocabulary
+      class: oarepo_runtime.records.relations.UnstrictPIDRelation
+      keys:
+        - name:
+            type: fulltext
+        - identifiers:
+            type: array
+            items:
+              type: RDMIdentifier
+
+      vocabulary-type: funders
+      label:
+        cs: Poskytovatel financí
+        en: Funder
+      hint:
+        cs: Začněte zapisovat název poskytovatele, následně vyberte z nabídky našeptavače.
+        en: Start typing the name of the funder, then select the funder from the menu.
+
+    award:
+      keys:
+        - title
+        - number:
+            type: keyword
+        - identifiers:
+            type: array
+            items:
+              type: RDMIdentifier
+        - acronym:
+            type: keyword
+        - program:
+            type: keyword
+        - subjects:
+            type: array
+            items:
+              properties:
+                id: 
+                  type: keyword
+                subject: 
+                  type: keyword
+        - organizations:
+            type: array
+            items:
+              type: object
+              properties:
+                scheme: 
+                  type: keyword
+                id: 
+                  type: keyword
+                organization: 
+                  type: keyword
+      type: vocabulary
+      vocabulary-type: awards
+      label:
+        cs: Číslo projektu
+        en: Award number
+
+    # subjects seem not to be on funding in RDM
+    # subjects:
+    #   type: array
+    #   items:
+    #     type: vocabulary
+    #     vocabulary-type: subjects
+    #     keys:
+    #       - subject:
+    #           type: keyword
+    #       - scheme:
+    #           type: keyword
+    #       - props:
+    #           type: dynamic-object
+    #   label:
+    #     cs: Předměty
+    #     en: Subjects
+
+RDMSubject:
+  label:
+    cs: Předmět
+    en: Subject
+  marshmallow_ui_schema_class: oarepo_runtime.services.schema.rdm_ui.RDMSubjectUISchema
+  marshmallow_schema_class: invenio_vocabularies.contrib.subjects.schema.SubjectRelationSchema
+  properties:
+    id:
+      type: keyword
+      label.cs: Identifikátor předmětu
+      label.en: Subject Identifier
+
+    subject:
+      # TODO: in RDM, subjects are not yet multilingual in their serialization to record
+      # (they are internally), this probably will change in the future
+      type: multilingual
+      label.cs: Předmět
+      label.en: Subject
+
+RDMPersonOrOrg:
+  marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.PersonOrOrganizationSchema
+  marshmallow_ui_schema_class: oarepo_runtime.services.schema.rdm_ui.RDMPersonOrOrganizationUISchema
+  properties:
+    name:
+      type: keyword
+      label.cs: Plné jméno
+      label.en: Full Name
+    type:
+      type: keyword
+      enum: [personal, organizational]
+      label.cs: Typ
+      label.en: Type
+    given_name:
+      type: keyword
+      label.cs: Jméno
+      label.en: Name
+    family_name:
+      type: keyword
+      label.cs: Příjmení
+      label.en: Family Name
+    identifiers:
+      type: array
+      label:
+        en: Identifiers
+        cs: Identifikátory
+      items:
+        type: RDMIdentifier
+        marshmallow:
+          generate: false
+          read: false
+          write: false
+
+RDMRecordVersion:
+  type: keyword
+  label:
+    en: Record Version
+    cs: Verze záznamu
+
+RDMTitle:
+  type: fulltext+keyword
+  label:
+    en: Title
+    cs: Název
+
+RDMAdditionalTitles:
+  type: array
+  label:
+    en: Additional titles
+    cs: Další názvy záznamu
+  items:
+    type: object
+    marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.TitleSchema
+    properties:
+      title: 
+        type: fulltext
+      type:
+        type: vocabulary
+        vocabulary-type: title-types
+      lang:
+        type: vocabulary
+        vocabulary-type: languages
+
+RDMAdditionalDescriptions:
+  type: array
+  label:
+    en: Additional descriptions
+    cs: Další popisy záznamu
+  items:
+    type: object
+    marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.DescriptionSchema
+    properties:
+      description:
+        type: fulltext
+      type:
+        type: vocabulary
+        vocabulary-type: description-types
+      lang:
+        type: vocabulary
+        vocabulary-type: languages
+
+RDMIdentifiers:
+  label:
+    en: Identifiers
+    cs: Identifikátory
+  hint:
+    en: Alternate identifiers for the record.
+    cs: Alternativní identifikátory záznamu.
+  help:
+    en: Include any identifiers that reference this record, such as DOIs, Handles, or other scheme-based IDs.
+    cs: Uveďte jakékoliv identifikátory, které odkazují na tento záznam, jako jsou DOI, Handle nebo jiné identifikátory založené na schématu.
+  type: array
+  items:
+    type: RDMIdentifier
+
+RDMCreator:
+  type: RDMCreatibutor
+  ui_marshmallow_field_class: oarepo_rdm.services.schemas.RDMCreatorUIField
+  marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.CreatorSchema
+
+RDMContributor:
+  type: RDMCreatibutor
+  ui_marshmallow_field_class: oarepo_rdm.services.schemas.RDMContributorUIField
+  marshmallow_schema_class: invenio_rdm_records.services.schemas.metadata.ContributorSchema
+
+RDMCreators:
+  label:
+    en: Creators
+    cs: Autoři
+  type: array
+  items:
+    type: RDMCreator
+
+RDMContributors:
+  label:
+    en: Contributors
+    cs: Přispěvatelé
+  type: array
+  items:
+    type: RDMContributor
+
+RDMSubjects:
+  label:
+    en: Subjects
+    cs: Předměty
+  type: array
+  items:
+    type: RDMSubject
+
+RDMFundings:
+  type: array
+  label:
+    en: Funding references
+    cs: Financování
+  items:
+    type: RDMFunding
+  hint:
+    en: Information about grants or other funding sources supporting this research.
+    cs: Informace o grantech nebo jiných zdrojích financování podporujících tento výzkum.
+  help:
+    en: Include details of funding bodies, grant numbers, and related information.
+    cs: Uveďte podrobnosti o financujících institucích, číslech grantů a související informace.
+
+RDMResourceType:
+  type: vocabulary
+  vocabulary-type: resource-types
+  label:
+    en: Resource type
+    cs: Typ záznamu
+
+RDMLanguages:
+  type: array
+  items:
+    type: vocabulary
+    vocabulary-type: languages
+
+RDMSizes:
+  type: array
+  items:
+    type: keyword
+
+RDMFormats:
+  type: array
+  items:
+    type: keyword
