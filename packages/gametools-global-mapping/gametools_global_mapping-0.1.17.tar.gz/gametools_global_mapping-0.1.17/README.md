@@ -1,0 +1,1 @@
+A module that contains all mapping required by Game Tools 
