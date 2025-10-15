@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Account Settings</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+          rel="stylesheet">
+    <style>
+        :root {
+            --bg-start-dark: hsla(252, 40%, 29%, 1);
+            --bg-end-dark: hsla(270, 77%, 71%, 1);
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(90deg, var(--bg-start-dark), var(--bg-end-dark));
+            background-size: 400% 400%;
+            animation: gradientAnimation 15s ease infinite;
+        }
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .bg-card {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .form-input {
+             background-color: rgba(0, 0, 0, 0.2);
+             border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #confirm-modal {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+<div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-card p-6 flex flex-col justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-white mb-8">AuthTuna</h1>
+            <nav class="space-y-4">
+                <a href="{{ url_for('ui_dashboard') }}" class="flex items-center p-2 text-base font-normal text-gray-300 rounded-lg hover:bg-white/5">
+                    <span class="ml-3">Dashboard</span>
+                </a>
+                <a href="{{ url_for('ui_profile') }}" class="flex items-center p-2 text-base font-normal text-gray-300 rounded-lg hover:bg-white/5">
+                    <span class="ml-3">Profile</span>
+                </a>
+                <a href="{{ url_for('ui_settings') }}" class="flex items-center p-2 text-base font-normal text-white rounded-lg bg-white/10">
+                    <span class="ml-3">Settings</span>
+                </a>
+            </nav>
+        </div>
+        <div>
+            <a href="/auth/logout" class="flex items-center p-2 text-base font-normal text-gray-300 rounded-lg hover:bg-white/5">
+                <span class="ml-3">Logout</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 p-10">
+        <h1 class="text-3xl font-bold text-white">Account Settings</h1>
+        <p class="text-gray-400 mb-8">Manage your account security.</p>
+
+        <div class="max-w-4xl space-y-8">
+            <!-- Change Password Section -->
+            <div class="bg-card p-8 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold text-white mb-6">Change Password</h2>
+                <form id="password-form" class="space-y-6">
+                    <div>
+                        <label for="current-password" class="block text-sm font-medium text-gray-300 mb-2">Current Password</label>
+                        <input type="password" id="current-password" required class="form-input w-full text-white p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label for="new-password" class="block text-sm font-medium text-gray-300 mb-2">New Password</label>
+                        <input type="password" id="new-password" required class="form-input w-full text-white p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                     <div>
+                        <label for="confirm-password" class="block text-sm font-medium text-gray-300 mb-2">Confirm New Password</label>
+                        <input type="password" id="confirm-password" required class="form-input w-full text-white p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+                        Update Password
+                    </button>
+                </form>
+                <div id="password-message-box" class="mt-4 text-center text-sm font-medium"></div>
+            </div>
+
+            <!-- MFA Section -->
+            <div class="bg-card p-8 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold text-white mb-4">Two-Factor Authentication (2FA)</h2>
+                {% if user.mfa_enabled %}
+                    <p class="text-green-400 mb-4">2FA is currently <strong>enabled</strong> on your account.</p>
+                    <button id="disable-mfa-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+                        Disable Two-Factor Authentication
+                    </button>
+                {% else %}
+                    <p class="text-gray-400 mb-4">Protect your account with an extra layer of security.</p>
+                    <a href="/mfa/setup" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-colors">
+                        Setup Two-Factor Authentication
+                    </a>
+                {% endif %}
+                <div id="mfa-message-box" class="mt-4 text-center text-sm font-medium"></div>
+            </div>
+
+            <!-- Active Sessions Section -->
+            <div class="bg-card p-8 rounded-lg shadow-lg">
+                 <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 class="text-2xl font-semibold text-white">Active Sessions</h2>
+                        <p class="text-gray-400 mt-1">This is a list of devices that have logged into your account.</p>
+                    </div>
+                    <button id="terminate-all-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Terminate All Others</button>
+                </div>
+                <div id="sessions-list" class="space-y-4">
+                    <!-- Sessions will be loaded here -->
+                </div>
+                 <div id="sessions-message-box" class="mt-4 text-center text-sm font-medium"></div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden opacity-0 z-50">
+    <div class="bg-card rounded-lg shadow-xl p-8 max-w-sm w-full">
+        <h3 id="modal-title" class="text-xl font-bold text-white mb-4">Are you sure?</h3>
+        <p id="modal-body" class="text-gray-300 mb-6">This action cannot be undone.</p>
+        <div class="flex justify-end space-x-4">
+            <button id="modal-cancel-button" class="px-6 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 text-white font-semibold transition-colors">Cancel</button>
+            <button id="modal-confirm-button" class="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showMessage(box, text, type) {
+        let colorClass = '';
+        if (type === 'success') colorClass = 'text-green-400';
+        if (type === 'error') colorClass = 'text-red-400';
+
+        box.textContent = text;
+        box.className = `mt-4 text-center text-sm font-medium ${colorClass}`;
+        setTimeout(() => { box.textContent = ''; }, 4000);
+    }
+
+    // --- Confirmation Modal ---
+    const modal = document.getElementById('confirm-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const modalCancelButton = document.getElementById('modal-cancel-button');
+    const modalConfirmButton = document.getElementById('modal-confirm-button');
+    let confirmCallback = null;
+
+    function showModal(title, body, onConfirm) {
+        modalTitle.textContent = title;
+        modalBody.textContent = body;
+        confirmCallback = onConfirm;
+        modal.classList.remove('hidden');
+        setTimeout(() => modal.classList.remove('opacity-0'), 10);
+    }
+
+    modalCancelButton.addEventListener('click', () => {
+        modal.classList.add('opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+        confirmCallback = null;
+    });
+
+    modalConfirmButton.addEventListener('click', () => {
+        if (confirmCallback) {
+            confirmCallback();
+        }
+        modalCancelButton.click();
+    });
+
+    // --- Change Password ---
+    const passwordForm = document.getElementById('password-form');
+    const passwordMessageBox = document.getElementById('password-message-box');
+    passwordForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const button = e.target.querySelector('button[type="submit"]');
+        showMessage(passwordMessageBox, '', 'hidden');
+
+        const currentPassword = document.getElementById('current-password').value;
+        const newPassword = document.getElementById('new-password').value;
+        const confirmPassword = document.getElementById('confirm-password').value;
+
+        if (newPassword !== confirmPassword) {
+            showMessage(passwordMessageBox, "New passwords do not match.", 'error');
+            return;
+        }
+
+        button.disabled = true;
+
+        try {
+            const response = await fetch('/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword
+                })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                showMessage(passwordMessageBox, data.message || 'Password updated successfully!', 'success');
+                passwordForm.reset();
+            } else {
+                showMessage(passwordMessageBox, data.detail || 'Failed to update password.', 'error');
+            }
+        } catch (error) {
+            showMessage(passwordMessageBox, 'A network error occurred.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    // --- Disable MFA ---
+    const disableMfaButton = document.getElementById('disable-mfa-button');
+    const mfaMessageBox = document.getElementById('mfa-message-box');
+    if (disableMfaButton) {
+        disableMfaButton.addEventListener('click', () => {
+            showModal(
+                'Disable Two-Factor Authentication?',
+                'This will reduce the security of your account. Are you sure you want to proceed?',
+                async () => {
+                     try {
+                        const response = await fetch('/mfa/disable', { method: 'POST' });
+                        const data = await response.json();
+                        if (response.ok) {
+                            showMessage(mfaMessageBox, data.message || 'MFA disabled successfully! Page will reload.', 'success');
+                            setTimeout(() => window.location.reload(), 2000);
+                        } else {
+                            showMessage(mfaMessageBox, data.detail || 'An error occurred.', 'error');
+                        }
+                    } catch (error) {
+                         showMessage(mfaMessageBox, 'A network error occurred.', 'error');
+                    }
+                }
+            );
+        });
+    }
+
+    // --- Active Sessions ---
+    const sessionsList = document.getElementById('sessions-list');
+    const sessionsMessageBox = document.getElementById('sessions-message-box');
+    const terminateAllButton = document.getElementById('terminate-all-button');
+
+    async function loadSessions() {
+        try {
+            const response = await fetch('/ui/settings/sessions');
+            if (!response.ok) throw new Error('Failed to load sessions.');
+            const sessions = await response.json();
+
+            if (sessions.length <= 1) { // Only the current session
+                terminateAllButton.style.display = 'none';
+            } else {
+                 terminateAllButton.style.display = 'inline-block';
+            }
+
+            sessionsList.innerHTML = sessions.map(session => `
+                <div class="bg-black/20 p-4 rounded-lg flex items-center justify-between border border-white/10">
+                    <div>
+                        <p class="font-semibold text-white">${session.device}</p>
+                        <p class="text-sm text-gray-400">
+                            ${session.region} &bull; IP: ${session.last_ip}
+                            ${session.is_current ? '<span class="text-green-400 font-semibold ml-2">(Current Session)</span>' : ''}
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Last active: ${new Date(session.mtime * 1000).toLocaleString()}</p>
+                    </div>
+                    ${!session.is_current ? `<button onclick="terminateSession('${session.session_id}')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Terminate</button>` : ''}
+                </div>
+            `).join('');
+
+        } catch (error) {
+            showMessage(sessionsMessageBox, error.message, 'error');
+        }
+    }
+
+    async function terminateSession(sessionId) {
+        showModal(
+            'Terminate Session?',
+            'The user will be logged out on this device. Are you sure?',
+            async () => {
+                try {
+                    const response = await fetch(`/ui/settings/sessions/${sessionId}/terminate`, { method: 'POST' });
+                    const data = await response.json();
+                    if (response.ok) {
+                        showMessage(sessionsMessageBox, data.message || 'Session terminated.', 'success');
+                        loadSessions(); // Refresh the list
+                    } else {
+                        showMessage(sessionsMessageBox, data.detail || 'Failed to terminate session.', 'error');
+                    }
+                } catch (error) {
+                    showMessage(sessionsMessageBox, 'A network error occurred.', 'error');
+                }
+            }
+        );
+    }
+
+    terminateAllButton.addEventListener('click', () => {
+        showModal(
+            'Terminate All Other Sessions?',
+            'This will log you out from all other devices. Your current session will remain active.',
+            async () => {
+                try {
+                    const response = await fetch('/ui/settings/sessions/terminate-all', { method: 'POST' });
+                    const data = await response.json();
+                    if (response.ok) {
+                        showMessage(sessionsMessageBox, data.message || 'All other sessions terminated.', 'success');
+                        loadSessions(); // Refresh the list
+                    } else {
+                        showMessage(sessionsMessageBox, data.detail || 'Failed to terminate sessions.', 'error');
+                    }
+                } catch (error) {
+                    showMessage(sessionsMessageBox, 'A network error occurred.', 'error');
+                }
+            }
+        )
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSessions();
+    });
+
+</script>
+</body>
+</html>
+
