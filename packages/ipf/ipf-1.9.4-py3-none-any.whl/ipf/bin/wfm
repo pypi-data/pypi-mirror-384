@@ -1,0 +1,79 @@
+#!/bin/bash
+
+###
+# WorkFlow Manager
+###
+
+INSTALL_DIR=___INSTALL_DIR___
+. ${INSTALL_DIR}/lib/utils.sh
+INIT_DIR="$INSTALL_DIR"/etc/ipf/init.d
+INIT_FILES=( $( find "$INIT_DIR" -type f -name '*extmodules' ) )
+PRG=$( basename "$0" )
+VAR_DIR="$INSTALL_DIR"/var/ipf
+WORKFLOW_DIR="$INSTALL_DIR"/etc/ipf/workflow/glue2
+
+
+###
+# FUNCTIONS
+###
+
+print_workflow_files() {
+  [[ $DEBUG -eq $YES ]] && set -x
+  for fn in "${INIT_FILES[@]}"; do
+    wf_name=$( grep '^NAME=' "$fn" | head -1 | cut -d= -f2 )
+    wf_base=$( echo "$wf_name" | cut -d_ -f1 )
+    wf_cfg=$( ls "$WORKFLOW_DIR"/"$wf_name".json )
+    outfile=$( ls "$VAR_DIR"/"${wf_base}"*_modules.json )
+    logfile=$( ls "$VAR_DIR"/"$wf_base"*modules*.log )
+    pidfile=$( ls "$VAR_DIR"/"$wf_base"*modules*.pid )
+    echo "WORKFLOW: $wf_name"
+    echo "  CONFIG: $wf_cfg"
+    echo "  OUTPUT: $outfile"
+    echo "    INIT: $fn"
+    echo "     LOG: $logfile"
+    echo "     PID: $pidfile"
+    echo
+  done
+}
+
+
+print_usage() {
+  cat <<ENDHELP
+
+Usage:
+  $PRG [-h] {ACTION}
+
+ACTIONs: st status ls list go start stop kill end restart
+
+ENDHELP
+}
+
+
+###
+# MAIN
+###
+
+
+[[ $# -lt 1 ]] && {
+  print_usage
+  exit 0
+}
+
+[[ $DEBUG -eq $YES ]] && set -x
+
+ACTION=
+case $1 in
+  -h|--help|help) print_usage; exit 0;;
+  ls|list) print_workflow_files; exit 0;;
+  st|status) ACTION=status;;
+  go|start) ACTION=start;;
+  stop|kill|end) ACTION=stop;;
+  re|restart) ACTION=restart;;
+  *) die "invalid action";;
+esac
+
+if [[ -n "$ACTION" ]] ; then
+  for f in "${INIT_FILES[@]}"; do
+    /bin/bash "$f" "$ACTION"
+  done
+fi

@@ -1,0 +1,33 @@
+#!/bin/bash
+
+INSTALL_DIR=___INSTALL_DIR___
+CLEANSE="$INSTALL_DIR"/etc/cleanse.conf
+CONFIGS=( $( ls "$INSTALL_DIR"/etc/configure_extmodules*.conf ) )
+PYTHON="$INSTALL_DIR"/.venv/bin/python
+
+# get amqp credentials from separate file if it exists
+amqp_fn="$INSTALL_DIR"/etc/amqp.conf
+[[ -r "$amqp_fn" ]] && source "$amqp_fn"
+
+# Loop through all config files found
+for cfg in "${CONFIGS[@]}"; do
+  source "$CLEANSE" #unset var settings from any previous run
+  source "$cfg" #read in new var settings for this specific run
+
+  # create workflow files
+  $PYTHON "$INSTALL_DIR"/configure/configure_workflows.py \
+    ${AMQP_CERTIFICATE:+--amqp_certificate $AMQP_CERTIFICATE} \
+    ${AMQP_CERTIFICATE_KEY:+--amqp_certificate_key $AMQP_CERTIFICATE_KEY} \
+    ${AMQP_PASSWORD:+--amqp_password $AMQP_PASSWORD} \
+    ${AMQP_USERNAME:+--amqp_username $AMQP_USERNAME} \
+    ${LMOD_CACHE_FILE:+--lmod_cache_file $LMOD_CACHE_FILE} \
+    ${MODULEPATH:+--modulepath $MODULEPATH} \
+    ${MODULES:+--modules $MODULES} \
+    ${MODULES_EXCLUDE:+--modules_exclude $MODULES_EXCLUDE} \
+    ${MODULES_INTERVAL:+--modules_interval $MODULES_INTERVAL} \
+    ${PUBLISH:+--publish} \
+    ${RESOURCE_NAME:+--resource_name $RESOURCE_NAME} \
+    ${SUPPORT_CONTACT:+--support_contact $SUPPORT_CONTACT} \
+    ${WORKFLOWS:+--workflows $WORKFLOWS}
+
+done #for cfg in "${CONFIGS[@]}"; do
