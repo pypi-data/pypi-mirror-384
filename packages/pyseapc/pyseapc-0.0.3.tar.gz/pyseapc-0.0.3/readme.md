@@ -1,0 +1,89 @@
+# Python SDK for Schneider Electric Ecostructure Automation Expert Advanced Process Control
+
+This package allows user Python installations to interact with Schneider Electric Ecostructure Automation Expert Advanced Process Control (APC) as an external Python environment. This extends the functionality of the APC director environment native Python environments including the ability to import popular AI, optimization and analysis packages. 
+
+## Installation with an internet connection
+For machines with an internet connection simply run the following command from the machine hosting the Python environment to install this package and all dependencies.
+
+`pip install pyseapc`
+
+## Installing without and internet connection
+The process of installing `pyseapc` on machines without a direct internet connection requires three steps: Downloading the package and dependencies on a machine with internet, transfering the files to the target machine, and installing the package and dependencies on the target machine.
+
+1. Downloading the packages on an internet-connected machine
+    This process must be done from a machine with the same operating system, Python version and CPU architecture as the target machine that will be running the external Python environment. This is because some of the dependencies have different installationg files depending the the target machine configuration. Docker containers or virtual machines can be quite useful for this if finding an internet-connected machine with the specifications is difficult.
+On the internet-connected machine create a raw text file (.txt) name “requirements.txt” and paste the following contents into that file. Notepad or similar is useful for this. Do not use MS Word.
+
+```
+cffi==1.17.1
+cryptography==45.0.5
+grpcio==1.73.1
+grpcio-tools==1.73.1
+protobuf==6.31.1
+pycparser==2.22
+pyseapc==0.0.1
+pyOpenSSL==25.1.0
+setuptools==80.9.0
+typing_extensions==4.14.1
+```
+
+Run the following command from the directory containing “requirements.txt”: 
+
+`pip wheel -r requirements.txt --wheel-dir wheelhouse`
+
+This will create a directory named “wheelhouse” that contains the proper versions and architectures for all the necessary dependencies.
+
+2.  Transferring the packages to the target machine
+
+Copy  requirements.txt and wheelhouse to the target machine using whatever secure method required.
+
+3.  Installing the packages on the target machine
+
+Run the following command on the target machine from the directory containing wheelhouse and requirements.txt. 
+
+`pip install --no-index --find-links=./wheelhouse -r requirements.txt`
+
+Test running a Python script with `import pyseapc`. If this import succeeds, the offline installation was successful.
+
+## Examples
+A sample Python script is given below:
+
+```python
+import pyseapc
+import numpy
+
+def user_method(inputs: dict):
+    result = {
+        'average': np.mean(data['cv1']),
+        'stddev': np.std(data['cv1']),
+        'min': np.min(data['cv1']),
+        'max': np.max(data['cv1']),
+    }
+    return result
+
+app = pyseapc.ExternalPythonEnvironment(user_method, generate_ssl_keys=True)
+app.start(5001)
+```
+
+The corresponding Director code:
+```python
+apcglobal(cvValues = [])
+controllerName = "DRYER"
+cvTags = GetTagList(controllerName, "ControlledVariable")
+serverAddress = "https://localhost:5001"
+
+cvValues.append(GetControllerAttributes(controllerName, "OutletAirTemp", "ControlledVariable", "ProcessValue"))
+
+cert = '''-----BEGIN CERTIFICATE-----
+Copy of the public certificate here as printed by the Python process
+-----END CERTIFICATE-----'''
+
+results = CallRemotePython({'values': cvValues}, serverAddress, cert)
+
+# A specific time can also be set
+# results = CallRemotePythonWithTimeout({'values': cvValues}, serverAddress, cert, 5)
+print "Rolling Statistical Values:", results
+
+```
+
+Additional examples and documentation are available with the documentation distributed with APC.
