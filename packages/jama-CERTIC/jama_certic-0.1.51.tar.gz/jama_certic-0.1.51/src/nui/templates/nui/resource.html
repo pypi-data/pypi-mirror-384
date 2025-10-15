@@ -1,0 +1,160 @@
+{% extends "nui/_base.html" %}
+{% load humanize %}
+{% block content %}
+<c-nui.collection_breadcrumb :collection="collection" :project="project" />
+<hr/>
+{% if transient_message %}
+<div class="alert alert-success" role="alert">{{transient_message}}</div>
+{% endif %}
+<div class="row" style="margin-bottom:1em;">
+    <div class="col-2" style="margin:auto;">
+        {% if previous_resource %}
+            <a style="white-space:nowrap;" title="{{previous_resource.title}}" class="btn btn-outline-secondary" href="{% url "nui:resource" collection.pk previous_resource.pk %}">
+                <i class="bi bi-caret-left"></i>
+                {% if previous_resource.file.should_have_iiif %}
+                <img src="{{previous_resource.file.iiif_s_thumbnail_url}}" alt="{{previous_resource.title}}"/>
+                {% endif %}
+            </a>
+        {% endif %}
+    </div>
+    <div class="col" style="text-align:center;margin:auto;">
+        {% if resource.file.should_have_iiif %}
+            <div style="width:100%;height:50vh;" class="openseadragon" data-manifest="{{resource.file.iiif_infos_url}}"></div>
+        {% else %}
+            <h2>{{resource.title}}</h2>
+        {% endif %}
+    </div>
+    <div class="col-2" style="text-align:right;margin:auto;">
+        {% if next_resource %}
+            <a style="white-space:nowrap;" title="{{next_resource.title}}" class="btn btn-outline-secondary" href="{% url "nui:resource" collection.pk next_resource.pk %}">
+                {% if next_resource.file.should_have_iiif %}
+                <img src="{{next_resource.file.iiif_s_thumbnail_url}}" alt="{{next_resource.title}}"/>
+                {% endif %}
+                <i class="bi bi-caret-right"></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+<form method="post" action="{% url "nui:resource" collection.pk resource.pk %}">
+{% csrf_token %}    
+<table class="table table-hover table-bordered" id="itemProperties">
+    <thead>
+        <tr>
+            <th style="width:1em;"><i class="bi bi-trash3"></i></th>
+            <th>Propriété</th>
+            <th>Valeur</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td></td>
+            <td>Titre</td>
+            <td><textarea name="resource_title" required class="form-control form-control-sm stripvalue" rows="1">{{resource.title}}</textarea></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>Identifiant</td>
+            <td>{{resource.pk}}</td>
+        </tr>
+        {% if resource.ark %}
+        <tr>
+            <td></td>
+            <td>ARK</td>
+            <td>{{resource.ark}}</td>
+        </tr>        
+        {% endif %}
+        {% if resource.file %}
+        <tr>
+            <td></td>
+            <td>Type MIME</td>
+            <td>{{resource.file.file_type.mime}}</td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>Poids</td>
+            <td>{{resource.file.size|filesizeformat}} ({{resource.file.size}} octets)</td>
+        </tr>
+        {% if resource.file.denormalized_image_width %}
+        <tr>
+            <td></td>
+            <td>Taille de l'image</td>
+            <td>{{resource.file.denormalized_image_width}} x {{resource.file.denormalized_image_height}}</td>
+        </tr>
+        {% endif %}
+        {% if resource.file.should_have_iiif %}
+        <tr>
+            <td></td>
+            <td>Manifest IIIF</td>
+            <td><a target="_blank" href="{{resource.file.iiif_infos_url}}">{{resource.file.iiif_infos_url}}</a></td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td></td>
+            <td>Fichier original</td>
+            <td class="d-grid gap-2">
+                <a class="btn btn-outline-secondary btn-sm" download href="{% url "force_download" resource.file.pk %}">
+                    <i class="bi bi-download"></i>
+                    Télécharger {{resource.file.new_filename}}
+                </a>
+            </td>
+        </tr>
+        {% endif %}
+        {% for metaval in resource.metadataresourcevalue_set.all %}
+            <tr>
+                <td class="align-middle">
+                    {% if metaval.metadata.set.title != "ExifTool" and metaval.metadata.set.title != "OCR"  %}
+                        <input name="deletevalue_{{metaval.pk}}" type="checkbox" style="display:inline;" class="dashrow"/>
+                    {% endif %}
+                </td>
+                <td class="align-middle">{{metaval.metadata}}</td>
+                <td>
+                    <textarea required name="changevalue_{{metaval.pk}}" {% if metaval.metadata.set.title == "ExifTool" or metaval.metadata.set.title == "OCR" %}readonly disabled style="cursor: not-allowed;"{% endif %} class="form-control form-control-sm stripvalue" rows="1">{{metaval.value}}</textarea>
+                </td>
+            </tr>
+        {% endfor %}
+        {% if user_has_update_permission %}
+        <tr>
+            <td></td>
+            <td>
+                <button class="btn btn-sm btn-outline-secondary newMetaval">
+                    <i class="bi bi-plus-square"></i> ajouter une propriété
+                </button>
+            </td>
+            <td></td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% if user_has_update_permission %}
+<p style="text-align:right;">
+    <button class="btn btn-outline-primary" type="submit">
+        <i class="bi bi-floppy"></i>
+        Enregistrer
+    </button>
+</p>
+{% endif %}
+</form>
+
+<template id="newMetaval">
+    <tr>
+        <td class="align-middle">
+            <button class="btn btn-sm btn-link" class="removerow" onclick="removeRow(event);">
+                <i class="bi bi-trash3"></i>
+            </button>
+        </td>
+        <td>
+            <select class="form-select form-select-sm" onchange="setMetaIdForRow(event);">
+                <option value="">--</option>
+                {% for editable_metadata in editable_metadatas %}
+                <option value="{{editable_metadata.pk}}">{{editable_metadata}}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <textarea name="addvalue_" required class="form-control form-control-sm stripvalue" rows="1" onchange="this.value=this.value.trim();"></textarea>
+        </td>
+    </tr>
+  </template>
+
+{% endblock content %}
