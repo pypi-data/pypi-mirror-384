@@ -1,0 +1,71 @@
+[![pytest](https://github.com/ppak10/thermo-calc/actions/workflows/pytest.yml/badge.svg)](https://github.com/ppak10/thermo-calc/actions/workflows/pytest.yml)
+[![codecov](https://codecov.io/github/ppak10/thermo-calc/graph/badge.svg?token=YOM2JAD766)](https://codecov.io/github/ppak10/thermo-calc)
+
+# thermo-calc
+Wrapper around Thermo-calc's TC-Python SDK
+
+<p align="center">
+  <img src="./icon.svg" alt="Logo" width="50%">
+</p>
+
+## Getting Started
+### Installation
+```bash
+uv add thermo-calc
+```
+
+Install `tc-python` package (Assumes Thermo-Calc is installed in default location)
+```bash
+tcalc install
+```
+If `.whl` file for Thermo-Calc is elsewhere, provide path as input argument.
+
+### Agent
+#### Claude Code
+1. Install MCP tools and Agent
+- Defaults to claude code
+```bash
+tcalc mcp install
+```
+
+- If updating, you will need to remove the previously existing MCP tools
+```bash
+claude mcp remove tc
+```
+
+## Troubleshooting
+
+### Traffic Control (`tc`)
+If `tc` or `tc --help` outputs something like this:
+
+```bash
+(thermo-calc) ppak@MAIL-10:/mnt/am/ppak/GitHub/thermo-calc$ tc
+Usage:  tc [ OPTIONS ] OBJECT { COMMAND | help }
+        tc [-force] -batch filename
+where  OBJECT := { qdisc | class | filter | chain |
+                    action | monitor | exec }
+       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[aw] |
+                    -o[neline] | -j[son] | -p[retty] | -c[olor]
+                    -b[atch] [filename] | -n[etns] name | -N[umeric] |
+                     -nm | -nam[es] | { -cf | -conf } path
+                     -br[ief] }
+```
+
+its calling Traffic Control and use `tcalc` instead of `tc`
+
+### Installing TC-Python
+If you get something like this:
+
+```bash
+(thermo-calc) ppak@MAIL-10:/mnt/am/ppak/GitHub/thermo-calc$ uv add ~/Thermo-Calc/2025b/SDK/TC-Python/TC_Python-2025.2-30-py3-none-any.whl 
+Resolved 65 packages in 191ms
+Prepared 2 packages in 57ms
+░░░░░░░░░░░░░░░░░░░░ [0/4] Installing wheels...                                                                                                                                                                                                                                                             
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+error: Failed to install: tc_python-2025.2-30-py3-none-any.whl (tc-python==2025.2 (from file:///home/ppak/Thermo-Calc/2025b/SDK/TC-Python/TC_Python-2025.2-30-py3-none-any.whl))
+  Caused by: Wheel version does not match filename: 2025.2.30 != 2025.2
+```
+
+you need to change the `-` to a `.` by renaming `TC_Python-2025.2-30-py3-none-any.whl` to `TC_Python-2025.2.30-py3-none-any.whl`.
