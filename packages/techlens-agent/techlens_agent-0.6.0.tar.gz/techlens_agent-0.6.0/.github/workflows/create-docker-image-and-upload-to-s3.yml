@@ -1,0 +1,94 @@
+name: Build, Save, and Upload Docker Image to S3 (Techlens Agent)
+
+on:
+  push:
+    branches:
+      - main      # integration
+      - release   # uat
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'The target environment for the build'
+        required: true
+        type: choice
+        options:
+          - production
+        default: 'production'
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - '.github/workflows/**'
+      - 'entrypoint.sh'
+
+permissions:
+  id-token: write  # for AWS OIDC
+  contents: read
+
+env:
+  COMPOSE_FILE: docker-compose.yml
+  SERVICE: techlens-agent
+  AWS_REGION: us-east-1
+  S3_BUCKET_ENV: ${{ github.event_name == 'workflow_dispatch' && 'production' || github.ref == 'refs/heads/release' && 'uat' || github.ref == 'refs/heads/main' && 'integration' || 'local' }}
+  # techlens-integration-private | techlens-production-private | techlens-uat-private | fallback -> techlens-test-private
+  S3_BUCKET: techlens-${{ github.event_name == 'workflow_dispatch' && 'production' || github.ref == 'refs/heads/release' && 'uat' || github.ref == 'refs/heads/main' && 'integration' || 'local' }}-private
+  S3_PREFIX: 'agent-images'
+  IMAGE_NAME: techlens-agent-${{ github.event_name == 'workflow_dispatch' && 'production' || github.ref == 'refs/heads/release' && 'uat' || github.ref == 'refs/heads/main' && 'integration' || 'local' }}
+  IMAGE_TAG: 'latest'
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::872306475830:role/techlens-github-iam-role
+          aws-region: us-east-1
+
+      - name: Validate Compose config
+        run: docker compose -f "${COMPOSE_FILE}" config
+
+      - name: Build with Docker Compose
+        run: docker compose -f "${COMPOSE_FILE}" build "${SERVICE}"
+
+      - name: Save image to tar
+        run: |
+          docker tag techlens-agent:latest ${IMAGE_NAME}:${IMAGE_TAG}
+          TAR_NAME="${IMAGE_NAME}-${IMAGE_TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar"
+          echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
+          docker save -o "${TAR_NAME}" ${IMAGE_NAME}:${IMAGE_TAG}
+
+      - name: Upload tar to S3
+        run: |
+          S3_KEY="${IMAGE_NAME}-${IMAGE_TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar"
+          echo "S3_KEY=${S3_KEY}" >> $GITHUB_ENV
+          aws s3 cp "${TAR_NAME}" "s3://${S3_BUCKET}/${S3_PREFIX}/${S3_KEY}" \
+            --region "${AWS_REGION}" \
+            --metadata "run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --sse AES256
+
+      - name: Create modified docker-compose.yml
+        run: |
+          COMPOSE_NAME="docker-compose-${IMAGE_TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.yml"
+          echo "COMPOSE_NAME=${COMPOSE_NAME}" >> $GITHUB_ENV
+          # Replace the hardcoded service name and image tag with the environment-specific versions
+          sed -e "s|^ techlens-agent:|  techlens-agent-${S3_BUCKET_ENV}:|g" -e "s|techlens-agent:latest|techlens-agent-${S3_BUCKET_ENV}:latest|g" "${COMPOSE_FILE}" > "${COMPOSE_NAME}"
+
+      - name: Upload docker-compose.yml to S3
+        run: |
+          COMPOSE_S3_KEY="docker-compose-${IMAGE_TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.yml"
+          echo "COMPOSE_S3_KEY=${COMPOSE_S3_KEY}" >> $GITHUB_ENV
+          aws s3 cp "${COMPOSE_NAME}" "s3://${S3_BUCKET}/${S3_PREFIX}/${COMPOSE_S3_KEY}" \
+            --region "${AWS_REGION}" \
+            --metadata "run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --sse AES256
+
+      - name: Output artifact location
+        run: |
+          echo "Docker image uploaded to s3://${S3_BUCKET}/${S3_PREFIX}/${S3_KEY}"
+          echo "Docker compose uploaded to s3://${S3_BUCKET}/${S3_PREFIX}/${COMPOSE_S3_KEY}"
