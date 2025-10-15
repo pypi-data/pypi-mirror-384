@@ -1,0 +1,832 @@
+<!-- terminaide/templates/index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:image" content="{{ url_for('terminaide_static', path=preview_image) }}">
+    <meta property="og:type" content="website">
+    <title>{{ page_title }}</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('terminaide_static', path='favicon.ico') }}">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: monospace;
+            font-size: 16px;
+            line-height: 1.2;
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+            opacity: 0;
+            animation: pageLoad 1s ease-in forwards;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-height: 100vh;
+            padding: 20px 0;
+        }
+
+        .title-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 0;
+            overflow: hidden;
+        }
+
+        .supertitle {
+            color: #888;
+            font-size: 18px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .ascii-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 0;
+            padding: 0 40px;
+            box-sizing: border-box;
+        }
+
+        /* Responsive margins for different screen sizes */
+        @media (max-width: 1200px) {
+            .ascii-wrapper {
+                padding: 0 30px;
+            }
+        }
+
+        @media (max-width: 800px) {
+            .ascii-wrapper {
+                padding: 0 20px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .ascii-wrapper {
+                padding: 0 15px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .ascii-wrapper {
+                padding: 0 10px;
+            }
+        }
+
+        .ascii-art {
+            color: #fff;
+            line-height: 1.0;
+            white-space: pre;
+            text-align: center;
+            margin-bottom: 0;
+            font-size: 14px;
+            font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
+            transform-origin: center;
+            transform: scale(1);
+            overflow-x: auto;
+        }
+
+        .title {
+            color: #a9c4e4;
+            line-height: 1.2;
+            white-space: pre;
+            text-align: left;
+            margin-bottom: 0;
+            font-size: 19px;
+            transform-origin: center;
+            transform: scale(1);
+        }
+
+        /* Use JavaScript-based scaling for optimal fit */
+        .ascii-art.auto-scale,
+        .title.auto-scale {
+            transition: transform 0.3s ease;
+        }
+
+        .content-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .subtitle {
+            color: #fff;
+            max-width: 600px;
+            width: 90%;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        .menu-label {
+            color: #5f5;
+            width: 100%;
+            margin-bottom: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .menu-label.highlight {
+            color: #fff;
+            text-shadow: 0 0 10px #5f5;
+        }
+
+        .menu {
+            display: grid;
+            gap: 10px;
+            width: 90%;
+            max-width: 800px;
+            margin-top: 0;
+            justify-content: center;
+            justify-items: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .epititle {
+            color: #888;
+            width: 100%;
+            text-align: center;
+            font-size: 16px;
+            font-style: italic;
+            position: fixed;
+            bottom: 40px;
+            left: 0;
+            right: 0;
+        }
+
+        .epititle a,
+        .subtitle a {
+            color: inherit;
+            text-decoration: underline;
+            transition: color 0.2s ease;
+        }
+
+        .epititle a:hover,
+        .subtitle a:hover {
+            color: #fff;
+        }
+
+        /* Dynamic grid sizing based on number of items */
+        .menu[data-items="1"] {
+            grid-template-columns: 200px;
+        }
+
+        .menu[data-items="2"] {
+            grid-template-columns: repeat(2, 200px);
+        }
+
+        .menu[data-items="3"],
+        .menu[data-items="4"] {
+            grid-template-columns: repeat(2, 200px);
+        }
+
+        /* Center the third item when there are exactly 3 items */
+        .menu[data-items="3"] .menu-item:nth-child(3) {
+            grid-column: 1 / -1;
+        }
+
+        .menu[data-items="5"],
+        .menu[data-items="6"],
+        .menu[data-items="7"],
+        .menu[data-items="8"],
+        .menu[data-items="9"] {
+            grid-template-columns: repeat(3, 200px);
+        }
+
+        /* Center the 5th item when there are exactly 5 items */
+        .menu[data-items="5"] .menu-item:nth-child(5) {
+            grid-column: 2;
+        }
+
+        /* Center the 7th item when there are exactly 7 items */
+        .menu[data-items="7"] .menu-item:nth-child(7) {
+            grid-column: 2;
+        }
+
+        .menu[data-items="10"],
+        .menu[data-items="11"],
+        .menu[data-items="12"],
+        .menu[data-items="13"],
+        .menu[data-items="14"],
+        .menu[data-items="15"],
+        .menu[data-items="16"] {
+            grid-template-columns: repeat(4, 200px);
+        }
+
+        /* For more than 16 items, cap at 4 columns */
+        .menu {
+            grid-template-columns: repeat(auto-fit, 200px);
+            max-width: 840px;
+            /* 4 * 200px + gaps */
+        }
+
+        .menu-item {
+            display: block;
+            width: 200px;
+            padding: 8px 0;
+            text-align: center;
+            cursor: pointer;
+            color: #fff;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            opacity: 0;
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        .menu-item.selected {
+            background-color: #ddd;
+            color: #000;
+            outline: 2px solid #fff;
+            outline-offset: 2px;
+        }
+
+        .menu-item:not(.selected) {
+            background-color: #4a8;
+        }
+
+        .menu-item:not(.selected):hover {
+            background-color: #5b9;
+        }
+
+        .menu-item.external::after {
+            content: " ↗";
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pageLoad {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .menu-item:nth-child(1) {
+            animation-delay: 0.05s;
+        }
+
+        .menu-item:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .menu-item:nth-child(3) {
+            animation-delay: 0.15s;
+        }
+
+        .menu-item:nth-child(4) {
+            animation-delay: 0.2s;
+        }
+
+        .menu-item:nth-child(5) {
+            animation-delay: 0.25s;
+        }
+
+        .menu-item:nth-child(6) {
+            animation-delay: 0.3s;
+        }
+
+        .menu-item:nth-child(7) {
+            animation-delay: 0.35s;
+        }
+
+        .menu-item:nth-child(8) {
+            animation-delay: 0.4s;
+        }
+
+        .menu-item:nth-child(9) {
+            animation-delay: 0.45s;
+        }
+
+        /* Media query for tablets */
+        @media (max-width: 768px) {
+            .menu {
+                width: 95%;
+            }
+
+            .menu-item {
+                width: 150px;
+            }
+
+            .menu[data-items="1"] {
+                grid-template-columns: 150px;
+            }
+
+            .menu[data-items="2"],
+            .menu[data-items="3"],
+            .menu[data-items="4"] {
+                grid-template-columns: repeat(2, 150px);
+            }
+
+            .menu {
+                grid-template-columns: repeat(auto-fit, 150px);
+                max-width: 320px;
+            }
+        }
+
+        /* Media query for small mobile screens */
+        @media (max-width: 480px) {
+            .menu {
+                width: 100%;
+                max-width: 100%;
+                padding: 0 20px;
+                grid-template-columns: 1fr !important;
+                gap: 8px;
+            }
+
+            .menu-item {
+                width: 100%;
+                max-width: 280px;
+                margin: 0 auto;
+                padding: 12px 20px;
+                font-size: 14px;
+            }
+
+            .menu-label {
+                font-size: 14px;
+                margin-bottom: 20px;
+            }
+
+            .subtitle {
+                font-size: 14px;
+                width: 95%;
+                padding: 0 10px;
+            }
+
+            .supertitle {
+                font-size: 14px;
+            }
+
+            .container {
+                padding: 15px 0;
+            }
+
+            .epititle {
+                font-size: 14px;
+                bottom: 30px;
+                padding: 0 20px;
+            }
+        }
+
+        /* Media query for very small mobile screens */
+        @media (max-width: 360px) {
+            .menu-item {
+                max-width: 240px;
+                font-size: 13px;
+                padding: 10px 15px;
+            }
+
+            .subtitle {
+                font-size: 13px;
+            }
+        }
+
+        /* Fallback styles when ASCII art is not available */
+        .title-fallback {
+            color: #a9c4e4;
+            font-size: 48px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 0;
+            transform-origin: center;
+        }
+
+        /* Responsive scaling for fallback title to match ASCII art scaling */
+        @media (max-width: 1200px) {
+            .title-fallback {
+                font-size: 43px;
+                /* 48px * 0.9 */
+            }
+        }
+
+        @media (max-width: 1000px) {
+            .title-fallback {
+                font-size: 38px;
+                /* 48px * 0.8 */
+            }
+        }
+
+        @media (max-width: 800px) {
+            .title-fallback {
+                font-size: 34px;
+                /* 48px * 0.7 */
+            }
+        }
+
+        @media (max-width: 600px) {
+            .title-fallback {
+                font-size: 29px;
+                /* 48px * 0.6 */
+            }
+        }
+
+        @media (max-width: 480px) {
+            .title-fallback {
+                font-size: 24px;
+                /* 48px * 0.5 */
+            }
+        }
+
+        /* Plain text title display (when ascii_render=False) */
+        .display-title {
+            color: #a9c4e4;
+            font-size: 32px;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+            transform-origin: center;
+        }
+
+        /* Responsive scaling for display title */
+        @media (max-width: 1200px) {
+            .display-title {
+                font-size: 29px;
+            }
+        }
+
+        @media (max-width: 1000px) {
+            .display-title {
+                font-size: 26px;
+            }
+        }
+
+        @media (max-width: 800px) {
+            .display-title {
+                font-size: 23px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .display-title {
+                font-size: 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .display-title {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="title-container">
+            <!-- Supertitle above ASCII art (always present for consistent positioning) -->
+            <div class="supertitle">{{ supertitle or '' }}</div>
+
+            {% if ascii_art %}
+            <!-- Custom ASCII art (if provided) -->
+            <div class="ascii-wrapper">
+                <pre class="ascii-art">{{ ascii_art }}</pre>
+            </div>
+            {% endif %}
+
+            {% if title_ascii %}
+            <!-- Generated ASCII banner from title -->
+            <div class="ascii-wrapper">
+                <pre class="title">{{ title_ascii | safe }}</pre>
+            </div>
+            {% elif not ascii_art and title %}
+            <!-- Fallback for plain text title -->
+            <div class="title-fallback">{{ title }}</div>
+            {% endif %}
+
+            {% if display_title %}
+            <!-- Plain text title display -->
+            <div class="display-title">{{ display_title }}</div>
+            {% endif %}
+        </div>
+
+        <div class="content-wrapper">
+            {% if subtitle %}
+            <p class="subtitle">{{ subtitle }}</p>
+            {% endif %}
+
+            <div class="menu-label">
+                <span id="menu-label-text"></span>
+            </div>
+
+            <div class="menu" data-items="2">
+                <!-- Menu items will be dynamically generated by JavaScript -->
+            </div>
+        </div>
+
+        {% if epititle %}
+        <div class="epititle">
+            {% if epititle.type == 'text' %}
+                {{ epititle.content | replace('\n', '<br>') | safe }}
+            {% elif epititle.type == 'link' %}
+                {% if epititle.is_external %}
+                    <a href="{{ epititle.path }}" {% if epititle.new_tab %}target="_blank"{% endif %}>{{ epititle.title }}</a>
+                {% else %}
+                    <a href="{{ epititle.path }}">{{ epititle.title }}</a>
+                {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Store template data as JSON in a script tag to avoid JS syntax errors -->
+    <script type="application/json" id="template-data">
+    {
+        "menuItems": {{ menu_items | tojson | safe }},
+        "instructions": {{ instructions | tojson | safe }}
+    }
+    </script>
+
+    <script>
+        // Parse template data from JSON script tag
+        const templateData = JSON.parse(document.getElementById('template-data').textContent);
+
+        // Extract data from parsed JSON
+        const menuItems = templateData.menuItems;
+        const instructions = templateData.instructions;
+
+        // Navigation state
+        let selectedIndex = 0;
+        let currentMenuItems = menuItems;
+        let gridCols = 1;
+        let gridRows = 1;
+
+        function scaleAsciiArt() {
+            const asciiElements = document.querySelectorAll('.ascii-art, .title');
+
+            asciiElements.forEach(element => {
+                const wrapper = element.parentElement;
+                if (!wrapper || !wrapper.classList.contains('ascii-wrapper')) return;
+
+                // Reset scale to measure natural size
+                element.style.transform = 'scale(1)';
+                element.classList.add('auto-scale');
+
+                // Get natural width and available width
+                const elementWidth = element.scrollWidth;
+                const wrapperWidth = wrapper.clientWidth;
+
+                // Reserve margin space (subtract from available width)
+                const marginSpace = Math.min(80, wrapperWidth * 0.1); // 10% margin or 80px max
+                const targetWidth = wrapperWidth - marginSpace;
+
+                // Calculate scale factor to fit within target width
+                let scale = 1;
+                if (elementWidth > targetWidth) {
+                    scale = Math.max(0.3, targetWidth / elementWidth);
+                }
+
+                // Apply scale
+                element.style.transform = `scale(${scale})`;
+            });
+        }
+
+        // Handle page show events (including back/forward navigation)
+        window.addEventListener('pageshow', function (event) {
+            if (event.persisted) {
+                // Page was loaded from bfcache, restart fade animation
+                document.body.style.animation = 'none';
+                document.body.offsetHeight; // Force reflow
+                document.body.style.animation = 'pageLoad 1s ease-in forwards';
+            }
+        });
+
+        // Function to convert URLs in text to clickable links
+        function makeUrlsClickable(element) {
+            const urlRegex = /(https?:\/\/[^\s<>"]+)/gi;
+            const originalHTML = element.innerHTML;
+            const newHTML = originalHTML.replace(urlRegex, '<a href="$1" target="_blank">$1</a>');
+            if (newHTML !== originalHTML) {
+                element.innerHTML = newHTML;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // Scale ASCII art to fit container
+            scaleAsciiArt();
+
+            // Make URLs clickable in subtitle
+            const subtitle = document.querySelector('.subtitle');
+            if (subtitle) {
+                makeUrlsClickable(subtitle);
+            }
+
+            // For epititle with type='text', make URLs clickable
+            const epititle = document.querySelector('.epititle');
+            if (epititle) {
+                // Only apply makeUrlsClickable if epititle doesn't already contain a link
+                if (!epititle.querySelector('a')) {
+                    makeUrlsClickable(epititle);
+                }
+            }
+
+            // Initialize with first group
+            renderMenu();
+
+            // Handle window resize
+            window.addEventListener('resize', function () {
+                scaleAsciiArt();
+            });
+
+            // Handle keyboard navigation
+            document.addEventListener('keydown', function (e) {
+
+                const currentRow = Math.floor(selectedIndex / gridCols);
+                const currentCol = selectedIndex % gridCols;
+
+                switch (e.key) {
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        if (currentRow > 0) {
+                            selectedIndex = (currentRow - 1) * gridCols + currentCol;
+                        }
+                        updateSelection();
+                        break;
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        const newRow = currentRow + 1;
+                        if (newRow < gridRows) {
+                            const newIndex = newRow * gridCols + currentCol;
+                            if (newIndex < currentMenuItems.length) {
+                                selectedIndex = newIndex;
+                            }
+                        }
+                        updateSelection();
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        if (selectedIndex > 0) {
+                            selectedIndex--;
+                        }
+                        updateSelection();
+                        break;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        if (selectedIndex < currentMenuItems.length - 1) {
+                            selectedIndex++;
+                        }
+                        updateSelection();
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        const menuElements = document.querySelectorAll('.menu-item');
+                        if (menuElements[selectedIndex]) {
+                            const item = currentMenuItems[selectedIndex];
+                            const href = menuElements[selectedIndex].getAttribute('href');
+                            
+                            // Determine whether to open in new tab
+                            let openInNewTab = false;
+                            if (item.new_tab !== undefined) {
+                                // Use explicit new_tab setting if provided
+                                openInNewTab = item.new_tab;
+                            } else {
+                                // Fall back to default behavior (external links in new tab)
+                                openInNewTab = href.startsWith('http://') || href.startsWith('https://');
+                            }
+                            
+                            if (openInNewTab) {
+                                window.open(href, '_blank');
+                            } else {
+                                window.location.href = href;
+                            }
+                        }
+                        break;
+                }
+            });
+        });
+
+        function calculateGrid(itemCount) {
+            if (itemCount <= 1) {
+                gridCols = 1;
+                gridRows = 1;
+            } else if (itemCount <= 2) {
+                gridCols = 2;
+                gridRows = 1;
+            } else if (itemCount <= 4) {
+                gridCols = 2;
+                gridRows = 2;
+            } else if (itemCount <= 9) {
+                gridCols = 3;
+                gridRows = Math.ceil(itemCount / 3);
+            } else if (itemCount <= 16) {
+                gridCols = 4;
+                gridRows = Math.ceil(itemCount / 4);
+            } else {
+                gridCols = 4;
+                gridRows = Math.ceil(itemCount / 4);
+            }
+        }
+
+        function renderMenu() {
+            const menu = document.querySelector('.menu');
+
+            // Calculate grid dimensions
+            calculateGrid(currentMenuItems.length);
+
+            // Update menu data attribute for CSS grid
+            menu.setAttribute('data-items', currentMenuItems.length);
+
+            // Clear existing menu
+            menu.innerHTML = '';
+
+            // Reset selection
+            selectedIndex = 0;
+
+            // Update menu label with instructions
+            const menuLabelElement = document.getElementById('menu-label-text');
+            if (instructions) {
+                menuLabelElement.textContent = instructions;
+            } else {
+                menuLabelElement.textContent = '';
+            }
+
+            // Add new menu items
+            currentMenuItems.forEach((item, index) => {
+                const link = document.createElement('a');
+                link.href = item.path;
+                
+                // Only show external indicator for actual external URLs
+                const isExternalUrl = item.path.startsWith('http://') || item.path.startsWith('https://');
+                
+                link.className = 'menu-item' + (index === 0 ? ' selected' : '') + (isExternalUrl ? ' external' : '');
+                link.textContent = item.title;
+
+                // Add event listeners
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    selectedIndex = index;
+                    updateSelection();
+                    setTimeout(() => {
+                        // Determine whether to open in new tab
+                        let openInNewTab = false;
+                        if (item.new_tab !== undefined) {
+                            openInNewTab = item.new_tab;
+                        } else {
+                            openInNewTab = item.path.startsWith('http://') || item.path.startsWith('https://');
+                        }
+                        
+                        if (openInNewTab) {
+                            window.open(this.getAttribute('href'), '_blank');
+                        } else {
+                            window.location.href = this.getAttribute('href');
+                        }
+                    }, 100);
+                });
+
+                link.addEventListener('mouseenter', function () {
+                    selectedIndex = index;
+                    updateSelection();
+                });
+
+                menu.appendChild(link);
+            });
+        }
+
+        function updateSelection() {
+            const menuElements = document.querySelectorAll('.menu-item');
+            menuElements.forEach((item, index) => {
+                if (index === selectedIndex) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
