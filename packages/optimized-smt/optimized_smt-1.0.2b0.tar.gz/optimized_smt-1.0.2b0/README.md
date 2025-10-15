@@ -1,0 +1,128 @@
+## Optimized Sparse Merkle Tree Implementation
+
+### Copyright and License
+
+**Copyright © 2025 Legendary Requirements**
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+### Overview
+
+To understand the design of this library, see the [Algorithm documentation](Algorithm.md).
+
+This library doesn't have its own methods for determining the index and hash of a leaf node; they are provided at the discretion of the client implementation, with the only restrictions being that the index must be in the range of 0 to 2<sup>256</sup>-1 and the hash must be exactly 32 bytes long. The library's sole functions are to calculate the root hash, provide the proofs for each of the indexes, and validate proofs. All internal hash calculations use SHA-256.
+
+### Installation
+
+This library is available as a Python package.
+
+```shell
+python3 -m pip install "optimized-smt"
+```
+
+### Usage
+
+The only parameter accepted by the constructor defines whether to allow non-inclusion. If a leaf node hash is not provided, the library will throw an exception (allow non-inclusion set to false) or set the hash to the hash of the null value (allow non-inclusion set to true).
+
+```python
+# Construct an optimized SMT.
+optimized_smt = OptimizedSMT(allow_non_inclusion)
+```
+
+Populating the SMT is a three-step operation: adding indexes (to define the tree structure), setting hashes, and finalizing the SMT. Adding indexes and setting their hashes are separate operations as a tree's structure is often defined early and hashes arrive gradually over time.
+
+```python
+# Add some participating indexes (array of int).
+optimized_smt.add(some_indexes)
+
+# Add more participating indexes (array of int).
+optimized_smt.add(more_indexes)
+```
+
+```python
+# Set the hash for an index.
+optimized_smt.set_hash(index, hash)
+```
+
+Finalizing the SMT calculates the root hash and the proofs for the indexes.
+
+```python
+# Finalize the SMT.
+optimized_smt.finalize()
+```
+
+Validation requires the index, the hash, the root hash, and the proof.
+
+```python
+# Extract the root hash.
+root_hash = optimized_smt.root_hash
+
+# Get the proof for an index.
+proof = optimized_smt.proof(index)
+
+# Check that the proof is valid for the index, hash, and root hash.
+print("Valid" if proof.is_valid(index, hash, root_hash) else "Not valid")
+```
+
+Multiple proofs may be validated in batch by bundling each index, hash, and proof into a proof candidate.
+
+```python
+# Check that multiple proofs are valid.
+for proof_result in SMTProof.is_valid_batch(proof_candidates, root_hash):
+    print(f"Proof at index {hex(proof_result.index)[2:]} is {"valid" if proof_result.valid else "not valid"}")
+```
+
+Finally, to reuse the SMT, reset it.
+
+```python
+# Reset the SMT.
+optimized_smt.reset()
+```
+
+### Exporting and Importing Proofs
+
+Proofs may be exported to and imported from JSON and binary.
+
+#### JSON
+
+```python
+# Export to JSON.
+s = proof.to_json()
+```
+
+```python
+# Import from JSON.
+proof = SMTProof.from_json(s)
+```
+
+Because JSON doesn't handle large numbers or byte arrays, values are encoded in hexadecimal (default) or in base64. The JSON export may also be compact (no extraneous whitespace, default) or formatted for ease of readability.
+
+#### Binary
+
+```python
+# Export to binary.
+b = proof.to_binary()
+```
+
+```python
+# Import from binary.
+proof = SMTProof.from_binary(b)
+```
+
+The binary import will work with byte streams. Any source that is `Iterable[int]`, `Iterator[int]`, or `BufferedIOBase` may be used, and the import will stop when the proof is read completely. This allows multiple proofs to be stored in a single file, possibly mixed with other data (e.g., leaf node index and hash, root hash).
+
+### Performance
+
+On a MacBook Pro with an Apple M3 Pro chip running macOS 26, a tree with 1,000,000 indexes and hashes performs roughly as follows:
+
+| Operation         | Time |
+|-------------------|-----:|
+| Add               | 9.8s |
+| Set hash          | 2.9s |
+| Finalize          |  25s |
+| Validate (single) |  51s |
+| Validate (batch)  |  41s |
