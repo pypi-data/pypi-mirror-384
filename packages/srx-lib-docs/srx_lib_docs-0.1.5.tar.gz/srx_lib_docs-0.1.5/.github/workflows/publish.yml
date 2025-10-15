@@ -1,0 +1,45 @@
+name: Publish Python package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Derive version from tag
+        run: echo "PKG_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+      - name: Set version in pyproject.toml
+        run: |
+          python - <<'PY'
+          import re, pathlib, os
+          p = pathlib.Path('pyproject.toml')
+          s = p.read_text()
+          v = os.environ['PKG_VERSION']
+          s = re.sub(r'(?m)^version\s*=\s*"[^"]+"', f'version = "{v}"', s)
+          p.write_text(s)
+          print('Set version to', v)
+          PY
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      - name: Build
+        run: python -m build
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload --skip-existing dist/*
