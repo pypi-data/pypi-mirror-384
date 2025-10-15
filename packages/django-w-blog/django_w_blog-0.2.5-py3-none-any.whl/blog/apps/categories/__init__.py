@@ -1,0 +1,1 @@
+"""Blog article categories"""
