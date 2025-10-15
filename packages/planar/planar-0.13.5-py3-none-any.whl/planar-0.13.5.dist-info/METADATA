@@ -1,0 +1,203 @@
+Metadata-Version: 2.4
+Name: planar
+Version: 0.13.5
+Summary: Batteries-included framework for building durable agentic workflows and business applications.
+License-Expression: LicenseRef-Proprietary
+Requires-Dist: aiofiles>=24.1.0
+Requires-Dist: aiosqlite>=0.21.0
+Requires-Dist: alembic>=1.14.1
+Requires-Dist: anthropic>=0.49.0
+Requires-Dist: asyncpg
+Requires-Dist: boto3>=1.39.15
+Requires-Dist: cedarpy>=4.1.0
+Requires-Dist: fastapi[standard]>=0.115.7
+Requires-Dist: inflection>=0.5.1
+Requires-Dist: openai>=1.75
+Requires-Dist: pydantic-ai-slim[anthropic,bedrock,google,openai]>=0.7.5
+Requires-Dist: pygments>=2.19.1
+Requires-Dist: pyjwt[crypto]
+Requires-Dist: python-multipart>=0.0.20
+Requires-Dist: sqlalchemy[asyncio]>=2.0.37
+Requires-Dist: sqlmodel>=0.0.22
+Requires-Dist: typer>=0.15.2
+Requires-Dist: typing-extensions>=4.12.2
+Requires-Dist: zen-engine>=0.40.0
+Requires-Dist: azure-storage-blob>=12.19.0 ; extra == 'azure'
+Requires-Dist: azure-identity>=1.15.0 ; extra == 'azure'
+Requires-Dist: aiohttp>=3.8.0 ; extra == 'azure'
+Requires-Dist: duckdb>=1.3,<1.4 ; extra == 'data'
+Requires-Dist: ducklake>=0.1.1 ; extra == 'data'
+Requires-Dist: ibis-framework[duckdb]>=10.8.0 ; extra == 'data'
+Requires-Dist: polars>=1.31.0 ; extra == 'data'
+Requires-Dist: opentelemetry-api>=1.34.1 ; extra == 'otel'
+Requires-Dist: opentelemetry-exporter-otlp>=1.34.1 ; extra == 'otel'
+Requires-Dist: opentelemetry-instrumentation-logging>=0.55b1 ; extra == 'otel'
+Requires-Dist: opentelemetry-sdk>=1.34.1 ; extra == 'otel'
+Requires-Python: >=3.12
+Provides-Extra: azure
+Provides-Extra: data
+Provides-Extra: otel
+Description-Content-Type: text/markdown
+
+# Planar
+
+Planar is a batteries-included Python framework for building durable workflows, agent automations, and stateful APIs. Built on FastAPI and SQLModel, it combines orchestration, data modeling, and file management into a cohesive developer experience.
+
+## Feature Highlights
+
+- Durable workflow engine with resumable async steps, automatic retries, and suspension points
+- Agent step framework with first-class support for OpenAI, Anthropic, and other providers
+- Human task assignments and rule engine tooling baked into workflow execution
+- SQLModel-powered data layer with Alembic migrations and CRUD scaffolding out of the box
+- Built-in file management and storage adapters for local disk, Amazon S3, and Azure Blob Storage
+- CLI-driven developer workflow with templated scaffolding, hot reload, and environment-aware configuration
+
+## Installation
+
+Planar is published on PyPI. Add it to an existing project with `uv`:
+
+```bash
+uv add planar
+```
+
+To explore the CLI without updating `pyproject.toml`, use the ephemeral uvx runner:
+
+```bash
+uvx planar --help
+```
+
+## Quickstart
+
+Generate a new service, start up the dev server, and inspect the auto-generated APIs:
+
+```bash
+uvx planar scaffold --name my_service
+cd my_service
+uv run planar dev src/main.py
+```
+
+Open `http://127.0.0.1:8000/docs` to explore your service's routes and workflow endpoints. The scaffold prints the exact app path if it differs from `src/main.py`.
+
+## Define a Durable Workflow
+
+```python
+from datetime import timedelta
+
+from planar import PlanarApp
+from planar.workflows import step, suspend, workflow
+
+@step
+async def charge_customer(order_id: str) -> None:
+    ...
+
+@step
+async def notify_success(order_id: str) -> None:
+    ...
+
+@workflow
+async def process_order(order_id: str) -> None:
+    await charge_customer(order_id)
+    await suspend(interval=timedelta(hours=1))
+    await notify_success(order_id)
+
+
+app = PlanarApp()
+app.register_workflow(process_order)
+```
+
+Workflows are async functions composed of resumable steps. Planar persists every step, applies configurable retry policies, and resumes suspended workflows even after process restarts. Check `docs/workflows.md` for deeper concepts including event-driven waits, human steps, and agent integrations.
+
+## Core Capabilities
+
+- **Workflow orchestration**: Compose async steps with guaranteed persistence, scheduling, and concurrency control.
+- **Agent steps**: Run LLM-powered actions durably with provider-agnostic adapters and structured prompts.
+- **Human tasks and rules**: Build human-in-the-loop approvals and declarative rule evaluations alongside automated logic.
+- **Stateful data and files**: Model entities with SQLModel, manage migrations through Alembic, and store files using pluggable backends.
+- **Observability**: Structured logging and OpenTelemetry hooks surface workflow progress and performance metrics.
+
+## Command Line Interface
+
+```bash
+uvx planar scaffold --help   # generate a new project from the official template
+uv run planar dev [PATH]     # run with hot reload and development defaults
+uv run planar prod [PATH]    # run with production defaults
+```
+
+`[PATH]` points to the module that exports a `PlanarApp` instance (defaults to `app.py` or `main.py`). Use `--config PATH` to load a specific configuration file and `--app NAME` if your application variable is not named `app`.
+
+## Configuration
+
+Planar merges environment defaults with an optional YAML override. By convention it looks for `planar.dev.yaml`, `planar.prod.yaml`, or `planar.yaml` in your project directory, but you can supply a path explicitly via `--config` or the `PLANAR_CONFIG` environment variable.
+
+Example minimal override:
+
+```yaml
+ai_providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+storage:
+  directory: .files
+```
+
+For more configuration patterns and workflow design guidance, browse the documents in `docs/`.
+
+## Examples
+
+- `examples/expense_approval_workflow` — human approvals with AI agent collaboration
+- `examples/event_based_workflow` — event-driven orchestration and external wakeups
+- `examples/simple_service` — CRUD service paired with workflows
+
+Run any example with `uv run planar dev path/to/main.py`.
+
+## Local Development
+
+Planar is built with `uv`. Clone the repository and install dev dependencies:
+
+```bash
+uv sync --extra otel
+```
+
+Useful commands:
+
+- `uv run ruff check --fix` and `uv run ruff format` to lint and format
+- `uv run pyright` for static type checking
+- `uv run pytest` to run the test suite (use `-n auto` for parallel execution)
+- `uv run pytest --cov=planar` to collect coverage
+- `uv tool install pre-commit && uv tool run pre-commit install` to enable git hooks
+
+### PostgreSQL Test Suite
+
+```bash
+docker run --restart=always --name planar-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 127.0.0.1:5432:5432 \
+  -d docker.io/library/postgres
+
+PLANAR_TEST_POSTGRESQL=1 PLANAR_TEST_POSTGRESQL_CONTAINER=planar-postgres \
+  uv run pytest -s
+```
+
+Disable SQLite with `PLANAR_TEST_SQLITE=0`.
+
+### Cairo SVG Dependencies
+
+Some AI integration tests convert SVG assets using `cairosvg`. Install Cairo libraries locally before running those tests:
+
+```bash
+brew install cairo libffi pkg-config
+export DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib:${DYLD_FALLBACK_LIBRARY_PATH}"
+```
+
+Most Linux distributions ship the required libraries via their package manager.
+
+## Documentation
+
+Dive deeper into Planar's design and APIs in the `docs/` directory:
+
+- `docs/workflows.md`
+- `docs/design/event_based_waiting.md`
+- `docs/design/human_step.md`
+- `docs/design/agent_step.md`
+
+For agentic coding tools, use `docs/llm_prompt.md` as a drop-in reference document in whatever tool you are using.
