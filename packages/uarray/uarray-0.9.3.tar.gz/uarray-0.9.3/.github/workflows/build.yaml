@@ -1,0 +1,146 @@
+name: Build
+
+on:
+  # Trigger the workflow on push or pull request,
+  # but only for the main branch
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.2.1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+
+  make_sdist:
+    name: Make SDist
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Build SDist
+      run: pipx run build --sdist
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: cibw-sdist
+        path: dist/*.tar.gz
+
+  upload_all:
+    needs: [build_wheels, make_sdist]
+    permissions:
+      id-token: write
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+    - uses: actions/download-artifact@v5
+      with:
+        pattern: cibw-*
+        path: dist
+        merge-multiple: true
+
+    - uses: pypa/gh-action-pypi-publish@release/v1
+
+  doc_lint_cov:
+    name: Documentation, Linting and Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          # Update according to NEP-29
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install package
+        run: |
+          pip install -v .[all]
+      - name: Build documentation
+        run: |
+          sphinx-build -W -b html docs/ _build/html
+      - name: Upload documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: Documentation
+          path: _build/html
+      - name: Code style and tests
+        run: |
+          pytest --pyargs uarray
+      - name: mypy
+        run: |
+          mypy src/uarray
+      - name: Run clang-format style check for C/C++ code.
+        uses: jidicula/clang-format-action@v4.15.0
+        with:
+          clang-format-version: '19'
+          check-path: 'src'
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          directory: 'coverage/coverage*.xml'
+          env_vars: OS,PYTHON
+          fail_ci_if_error: false
+          verbose: true
+
+  pypy3:
+    name: Tests for PyPy3
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 'pypy-3.11'
+          cache: 'pip'
+      - name: Install package
+        run: |
+          pip install -v .[tests]
+      - name: Run tests
+        run: |
+          pytest --pyargs uarray
+
+  scipy_fft:
+    name: Run SciPy FFT tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          # Update according to NEP-29
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install package
+        run: |
+          pip install -v .[tests] pytest"<7"
+          pip install scipy==1.9.3
+      - name: SciPy tests
+        run: |
+          import scipy.fft
+          assert scipy.fft.test()
+        shell: python
