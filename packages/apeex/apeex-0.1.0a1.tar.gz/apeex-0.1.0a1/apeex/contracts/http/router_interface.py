@@ -1,0 +1,6 @@
+from typing import Protocol, Mapping, Any, Iterable
+from apeex.contracts.http import RequestInterface
+
+class RouterInterface(Protocol):
+    def add_route(self, path: str, methods: Iterable[str], handler: Any, name: str|None=None) -> None: ...
+    def match(self, request: RequestInterface) -> Mapping[str, Any] | None: ...

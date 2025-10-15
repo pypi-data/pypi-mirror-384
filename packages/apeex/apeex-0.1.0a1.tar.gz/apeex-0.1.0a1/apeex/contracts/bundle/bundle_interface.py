@@ -1,0 +1,9 @@
+from typing import Protocol
+from apeex.contracts.container import ContainerInterface
+from apeex.contracts.http import HttpKernelInterface
+
+class BundleInterface(Protocol):
+    name: str
+    def build(self, container: ContainerInterface) -> None: ...
+    def boot(self, kernel: HttpKernelInterface) -> None: ...
+    def shutdown(self) -> None: ...
