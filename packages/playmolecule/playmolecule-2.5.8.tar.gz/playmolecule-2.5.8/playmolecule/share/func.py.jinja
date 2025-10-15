@@ -1,0 +1,64 @@
+from pathlib import Path
+
+
+def {{ function_name }}(
+    {% for arg in function_args %}{{ arg }}
+    {% endfor %}
+):
+    """
+    {% for doc in function_docs %}{{ doc }}
+    {% endfor %}
+    Returns
+    -------
+    exec_dir : ExecutableDirectory
+        Returns an executable directory with the setup for the run
+    """
+    args = locals() # Should be first line in the function
+
+    {% if function_resources %}
+    _execution_resources = {{ function_resources }}
+    {% else %}
+    _execution_resources = None
+    {% endif %}
+
+    from playmolecule.apps import _write_inputs, ExecutableDirectory
+    from datetime import datetime
+    import uuid
+    import shutil
+    import os
+    from {{ module_path }} import __manifest__
+
+    assert "outdir" in args or "execdir" in args, "Functions must accept either 'outdir' or 'execdir'"
+
+    if "outdir" in args:
+        outdir = args["outdir"]
+        args["outdir"] = "."
+    else:
+        if isinstance(args["execdir"], _File):
+            args["execdir"] = args["execdir"].path
+        outdir = args["execdir"]
+        args["execdir"] = "."
+
+    if "scratchdir" in args:
+        if args["scratchdir"] is None:
+            args["scratchdir"] = os.path.join(outdir, "scratch")
+        os.makedirs(args["scratchdir"], exist_ok=True)
+
+    now = datetime.now()
+    identifier = f"_{now.strftime(r'%d_%m_%Y_%H_%M')}_{uuid.uuid4().hex[:8]}"
+    inputsdir = os.path.join(outdir, f"run{identifier}")
+    {% if new_mode %}
+    _write_inputs(outdir, inputsdir, args, __manifest__['functions'][{{function_idx}}], "{{function}}")
+    {% else %}
+    _write_inputs(outdir, inputsdir, args, __manifest__['functions'][{{function_idx}}])
+    {% endif %}
+
+    {% if run_sh %}
+    
+    target_run_sh = os.path.join(outdir, f"run{identifier}.sh")
+    shutil.copy("{{ run_sh }}", target_run_sh)
+    st = os.stat(target_run_sh)
+    os.chmod(target_run_sh, st.st_mode | stat.S_IEXEC)
+    {%endif %}
+
+    return ExecutableDirectory(outdir, runsh=os.path.basename(target_run_sh), _execution_resources=_execution_resources)
