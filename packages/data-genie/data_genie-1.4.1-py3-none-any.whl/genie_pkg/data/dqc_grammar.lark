@@ -1,0 +1,54 @@
+start: instruction+
+
+instruction: "apply checks" code_block -> predicates
+
+checks: row_count
+        | has_columns
+        | is_unique
+        | not_null
+        | is_positive
+        | has_one_of
+        | quantile
+        | is_date
+        | percent_value_length
+        | when_row_identified_by
+
+code_block: "{" checks+ "}"
+
+row_count: "row_count" COMPARATOR SIGNED_NUMBER
+has_columns: "has_columns(" array ","? "ignore_case="? BOOL? ")"
+is_unique: "is_unique(" NAME ")"
+not_null: "is_not_null(" NAME ")"
+is_positive: "is_positive(" NAME ")"
+has_one_of: "has_one_of(" NAME "," array ","? "ignore_case="? BOOL? ")"
+quantile: "quantile(" NAME "," QUANTILE ")" COMPARATOR SIGNED_NUMBER
+is_date: "is_date(" NAME ","? "pass_percent_threshold="? PERCENT? ","? "ignore_nulls="? BOOL? ")"
+percent_value_length: "percent_of_values_have_length(" NAME  ","? "pass_percent_threshold="? PERCENT? ","? "ignore_nulls="? BOOL? ")" EQ SIGNED_NUMBER
+when_row_identified_by: "when row_identified_by" row_identifier "then" column_equals_values
+
+array  : "[" [ESCAPED_STRING ("," ESCAPED_STRING)*] "]"
+row_identifier: "{" [KEY_VALUE ("," KEY_VALUE)*] "}"
+column_equals_values: "{" [COLUMN_EQUALS_VALUE ("," COLUMN_EQUALS_VALUE)*] "}"
+
+QUANTILE: "0." _INT
+LT: "<"
+GT: ">"
+EQ: "=="
+COMPARATOR: (LT | GT | EQ )
+BOOL: ("False" | "True")
+WHITESPACE: (" " | "\\n")+
+KEY_VALUE: ESCAPED_STRING ":" WS* ESCAPED_STRING
+COLUMN_EQUALS_VALUE: ESCAPED_STRING WS* "==" WS* ESCAPED_STRING
+PERCENT: /[1-9]//[0-9]/?/0/?
+%ignore WHITESPACE
+
+%import common.LETTER
+%import common.SIGNED_NUMBER
+%import common.NUMBER
+%import common.WS
+%import common.ESCAPED_STRING
+%import common.CNAME -> NAME
+%import common.FLOAT -> FLOAT
+%import common.INT -> _INT
+
+%ignore WS
