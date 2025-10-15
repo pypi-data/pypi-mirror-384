@@ -1,0 +1,23 @@
+# Metadata hook plugins
+
+-----
+
+Metadata hooks allow for the modification of [project metadata](../../config/metadata.md) after it has been loaded.
+
+## Known third-party
+
+- [hatch-docstring-description](https://github.com/flying-sheep/hatch-docstring-description) - set the project description using docstrings
+- [hatch-fancy-pypi-readme](https://github.com/hynek/hatch-fancy-pypi-readme) - dynamically construct the README
+- [hatch-nodejs-version](https://github.com/agoose77/hatch-nodejs-version) - uses fields from NodeJS `package.json` files
+- [hatch-odoo](https://github.com/acsone/hatch-odoo) - determine dependencies based on manifests of Odoo add-ons
+- [hatch-requirements-txt](https://github.com/repo-helper/hatch-requirements-txt) - read project dependencies from `requirements.txt` files
+- [UniDep](https://github.com/basnijholt/unidep) - for unified `pip` and `conda` dependency management using a single `requirements.yaml` file for both 
+
+::: hatchling.metadata.plugin.interface.MetadataHookInterface
+    options:
+      members:
+      - PLUGIN_NAME
+      - root
+      - config
+      - update
+      - get_known_classifiers
