@@ -1,0 +1,116 @@
+"""Portfolio analysis agent using LangGraph."""
+
+from typing import Annotated, TypedDict
+
+from langchain_anthropic import ChatAnthropic
+# SystemMessage removed - using llm.bind(system=...)
+from langgraph.graph import StateGraph, START, END, add_messages
+from langgraph.prebuilt import ToolNode
+
+from navam_invest.config.settings import get_settings
+from navam_invest.tools import bind_api_keys_to_tools, get_tools_by_category
+
+
+class PortfolioState(TypedDict):
+    """State for portfolio analysis agent."""
+
+    messages: Annotated[list, add_messages]
+
+
+async def create_portfolio_agent() -> StateGraph:
+    """Create a portfolio analysis agent using LangGraph.
+
+    Returns:
+        Compiled LangGraph agent for portfolio analysis
+    """
+    settings = get_settings()
+
+    # Initialize model
+    llm = ChatAnthropic(
+        model=settings.anthropic_model,
+        api_key=settings.anthropic_api_key,
+        temperature=settings.temperature,
+    )
+
+    # Get all portfolio-relevant tools (market + fundamentals + sentiment + SEC + news + files)
+    market_tools = get_tools_by_category("market")
+    file_tools = get_tools_by_category("files")
+    fundamentals_tools = get_tools_by_category("fundamentals")
+    sentiment_tools = get_tools_by_category("sentiment")
+    sec_tools = get_tools_by_category("sec")
+    news_tools = get_tools_by_category("news")
+    tools = (
+        market_tools
+        + file_tools
+        + fundamentals_tools
+        + sentiment_tools
+        + sec_tools
+        + news_tools
+    )
+
+    # Securely bind API keys to tools (keeps credentials out of LLM context)
+    tools_with_keys = bind_api_keys_to_tools(
+        tools,
+        alpha_vantage_key=settings.alpha_vantage_api_key or "",
+        fmp_key=settings.fmp_api_key or "",
+        finnhub_key=settings.finnhub_api_key or "",
+        tiingo_key=settings.tiingo_api_key or "",
+        newsapi_key=settings.newsapi_api_key or "",
+    )
+
+    llm_with_tools = llm.bind_tools(tools_with_keys)
+
+    # Define agent node
+    async def call_model(state: PortfolioState) -> dict:
+        """Call the LLM with tools."""
+        # Clean system message without API keys
+        system_msg = SystemMessage(
+            content="You are a portfolio analysis assistant with access to comprehensive market data, historical fundamentals, and sentiment analysis. "
+            "You have tools for:\n"
+            "- Reading local files (CSV, JSON, Excel, etc.) from the user's working directory\n"
+            "- Stock prices, company overviews, financial fundamentals, and ratios\n"
+            "- **Historical fundamentals** (5 years of daily metrics, quarterly statements, multi-year trends via Tiingo)\n"
+            "- Insider trading activity and stock screening\n"
+            "- **Alternative data & sentiment** (news sentiment, social media sentiment, insider sentiment, analyst recommendations)\n"
+            "- SEC filings (10-K, 10-Q, 13F)\n"
+            "- Market news, financial headlines, and company-specific news\n\n"
+            "Help users analyze their portfolio data files, stocks, fundamentals, insider activity, "
+            "regulatory filings, and market sentiment from multiple sources. When users have portfolio data in local files, use the file "
+            "reading tools to access and analyze their holdings. "
+            "For long-term fundamental analysis, use Tiingo tools to access up to 5 years of historical data and quarterly statements. "
+            "Provide detailed investment insights and recommendations based on the data you retrieve, "
+            "including sentiment analysis (news sentiment, social media buzz, insider trading patterns, and analyst recommendations)."
+        )
+
+        # Only add system message on first call to avoid breaking tool_use/tool_result pairs
+        messages = state["messages"]
+        if not messages or messages[0].type != "system":
+            messages = [system_msg] + messages
+
+        response = await llm_with_tools.ainvoke(messages)
+        return {"messages": [response]}
+
+    # Build graph
+    workflow = StateGraph(PortfolioState)
+
+    # Add nodes
+    workflow.add_node("agent", call_model)
+    workflow.add_node("tools", ToolNode(tools_with_keys))
+
+    # Add edges
+    workflow.add_edge(START, "agent")
+
+    # Conditional edge: if there are tool calls, go to tools; otherwise end
+    def should_continue(state: PortfolioState) -> str:
+        messages = state["messages"]
+        last_message = messages[-1]
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            return "tools"
+        return END
+
+    workflow.add_conditional_edges(
+        "agent", should_continue, {"tools": "tools", END: END}
+    )
+    workflow.add_edge("tools", "agent")
+
+    return workflow.compile()
