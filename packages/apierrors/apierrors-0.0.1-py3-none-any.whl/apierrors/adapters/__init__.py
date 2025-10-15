@@ -1,0 +1,1 @@
+from .fastapi_adapter import http_exception
