@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+#PBS -l walltime=06:40:00
+#PBS -N L1B2Ciw
+#PBS -m n
+
+# original memory was 1g but with ww3 spectra + SAR spectra it should be 2Go, now set in prun call
+# memory needed if about 4Go for 17.7km tiles and 14Go for 2km tiles, 71 running in parallel on datarmor
+echo start
+# inputs
+
+#$1 str l1bsafe
+#$2 str productid of the run: B17 for instance
+#$3 str outputdir
+#$4 str path of python micromamba env (without /bin/python)
+#$5 str overwrite [optional]
+#$6 str ww3spectra [optional]
+myvariable=$(whoami)
+. /appli/anaconda/latest/etc/profile.d/conda.sh
+#conda activate /home/datawork-cersat-public/cache/project/mpc-sentinel1/workspace/mamba/envs/xsar_oct22
+#conda activate /home/datawork-cersat-public/project/mpc-sentinel1/workspace/mamba/envs/l1bprocmars23
+#echo 'which python?'
+#which python
+
+exe=do_IW_L1C_SAFE_from_L1B_SAFE
+
+SHORT=s:,p:,c:,o:,r,e:,h
+LONG=safe:,productid:,configprod:,outputdir:,redo,env:,help
+OPTS=$(getopt -a -n do_IW_L1C_SAFE_from_L1B_SAFE --options $SHORT --longoptions $LONG -- "$@")
+eval set -- "$OPTS"
+help()
+{
+    echo "Usage: do_IW_L1C_SAFE_from_L1B_SAFE [ -s | --safe ]
+               [ -o | --outputdir ]
+               [ -p | --productid ]
+               [ -c | --configprod ]
+               [ -r | --redo ]
+               [ -e | --env ]
+               [ -h | --help  ]"
+    exit 2
+}
+while :
+do
+  echo 'dollars=' $1 $2
+  case "$1" in
+    -s | --safe )
+      safe="$2"
+      shift 2
+      ;;
+    -p | --productid )
+      productid="$2"
+      shift 2
+      ;;
+    -c | --configprod )
+      configprod="$2"
+      shift 2
+      ;;
+    -o | --outputdir )
+      outputdir="$2"
+      shift 2
+      ;;
+    -r | --redo )
+      redo="true"
+      shift  #past argument
+      ;;
+    -e | --env )
+      env="$2"
+      shift 2
+      ;;
+    -h | --help)
+      help
+      ;;
+    --)
+      shift;
+      break
+      ;;
+    *)
+      echo "Unexpected option: $1"
+      ;;
+  esac
+done
+
+echo "redo: "$redo
+echo "outputdir: "$outputdir
+echo "productid: "$productid
+echo 'configuration file forproducts: '$configprod
+echo "safe: "$safe
+echo "env: "$env
+options='--l1bsafe '$safe" --outputdir "$outputdir" --productid "$productid" --configproducts "$configprod
+
+#if [ "$redo" == "--overwrite" ];
+if [ ! -z "$redo" ]
+then
+    options=$options" --overwrite "
+  else
+    echo 'no overwritting of Level-1C XSP files'
+fi
+
+echo 'final options: '$options
+conda activate $env
+which python
+$exe $options
