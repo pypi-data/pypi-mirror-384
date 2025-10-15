@@ -1,0 +1,155 @@
+{% extends 'fittings/base.html' %}
+
+{% load i18n %}
+{% load humanize %}
+{% load filters %}
+{% load sri %}
+{% load evelinks %}
+
+{% block more_css %}
+    {% sri_static "tnnt_templates/libs/multi-select/0.9.12/css/multi-select.min.css" %}
+
+    <style>
+        .ms-container {
+            width: 100% !important;
+        }
+    </style>
+{% endblock %}
+
+{% block page_title %}{% translate "Add Doctrine" %}{% endblock %}
+
+{% block fittings_block %}
+    {% if msg %}
+        <div class="alert alert-{{ msg.0 }} alert-dismissible" role="alert">
+            <button type="button" class="close" data-dismiss="alert" aria-label="close">
+                <span aria-hidden="true">&times</span>
+            </button>
+
+            {% if msg.0 != 'warning' %}
+                <h4>
+                    {% if msg.0 == 'danger' %}
+                        {% translate "Oh No!" %}
+                    {% elif msg.0 == 'success' %}
+                        {% translate "Success!" %}
+                    {% endif %}
+                </h4>
+            {% endif %}
+
+            <p>{{ msg.1 }}</p>
+        </div>
+    {% endif %}
+
+    <div>
+        <div class="card card-primary mb-3">
+            <div class="card-header">
+                <div class="card-title mb-0">{% translate "New Doctrine" %}</div>
+            </div>
+
+            <div class="card-body">
+                <form class="form-signin" role="form" action="" method="POST">
+                    {% csrf_token %}
+
+                    <div class="form-group mb-3">
+                        <label for="name" class="form-label">
+                            {% translate "Doctrine Name" %}
+                        </label>
+
+                        <input type="text" class="form-control" name="name" id="name" required>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label for="description" class="form-label">
+                            {% translate "Doctrine Description" %}
+                        </label>
+
+                        <textarea class="form-control" name="description" id="description" rows="4"></textarea>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label for="fitSelect" class="form-label">
+                            {% translate "Select Fits" %}
+                        </label>
+
+                        <select multiple="multiple" id="fitSelect" name="fitSelect">
+                            {% for fit in fittings %}
+                                <option value="{{ fit.pk }}">
+                                    {{ fit.name }} ({{ fit.ship_type.name }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label for="iconSelect" class="form-label">
+                            {% translate "Select Doctrine Icon" %}
+                        </label>
+
+                        <select class="form-control" name="iconSelect" id="iconSelect" aria-describedby="helpBlock">
+                            {% for ship in ships %}
+                                <option value="{{ ship.ship_type|type_render_url:64 }}">
+                                    {{ ship.ship_type__name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+
+                        <span id="helpBlock" class="help-block text-muted">
+                            {% translate "If you do not see the ship type that you would like to use for the icon, add a fitting that uses that ship type and try again." %}
+                        </span>
+                    </div>
+
+                    <br>
+                    <button class="btn btn-primary btn-block" type="submit">
+                        {% translate "Submit" %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    {% sri_static "tnnt_templates/libs/multi-select/0.9.12/js/jquery.multi-select.min.js" %}
+    {% sri_static "tnnt_templates/libs/quicksearch/2.4.0/dist/jquery.quicksearch.min.js" %}
+
+    <script>
+        const translation_search = '{% translate "Search" %}';
+
+        $('#fitSelect').multiSelect({
+            selectableHeader: '<input type="text" class="form-control" autocomplete="off" placeholder="' + translation_search + '" style="margin-bottom: 3px;">',
+            selectionHeader: '<input type="text" class="form-control" autocomplete="off" placeholder="' + translation_search + '" style="margin-bottom: 3px;">',
+
+            afterInit: function (ms) {
+                let that = this,
+                    $selectableSearch = that.$selectableUl.prev(),
+                    $selectionSearch = that.$selectionUl.prev(),
+                    selectableSearchString = '#' + that.$container.attr('id') + ' .ms-elem-selectable:not(.ms-selected)',
+                    selectionSearchString = '#' + that.$container.attr('id') + ' .ms-elem-selection.ms-selected';
+
+                that.qs1 = $selectableSearch.quicksearch(selectableSearchString)
+                    .on('keydown', function (e) {
+                        if (e.which === 40) {
+                            that.$selectableUl.focus();
+                            return false;
+                        }
+                    });
+
+                that.qs2 = $selectionSearch.quicksearch(selectionSearchString)
+                    .on('keydown', function (e) {
+                        if (e.which === 40) {
+                            that.$selectionUl.focus();
+
+                            return false;
+                        }
+                    });
+            },
+            afterSelect: function () {
+                this.qs1.cache();
+                this.qs2.cache();
+            },
+            afterDeselect: function () {
+                this.qs1.cache();
+                this.qs2.cache();
+            }
+        });
+    </script>
+{% endblock %}

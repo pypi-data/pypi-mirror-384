@@ -1,0 +1,275 @@
+{% extends "package_monitor/base.html" %}
+
+{% load aa_i18n %}
+{% load i18n %}
+{% load sri %}
+{% load static %}
+
+{% block aa_package_monitor %}
+    <!-- Modal for Refreshing Distributions -->
+    <div class="modal fade" id="modalRefreshingDistributions" tabindex="-1" role="dialog" aria-labelledby="modalRefreshingDistributionsLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title fs-5" id="modalRefreshingDistributionsLabel">
+                        {% translate "Refreshing distributions" %}
+                    </div>
+
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button>
+                </div>
+
+                <div class="modal-body">
+                    <p>
+                        {% blocktranslate %}
+                            Refreshing data for approx. {{ all_count }} distributions...
+                        {% endblocktranslate %}
+                    </p>
+
+                    <div id="modalLoadInfo">
+                        {% if NIGHT_MODE %}
+                            <img
+                                src="{% static 'package_monitor/images/Spinner-1s-64px-dark.gif' %}"
+                                alt="Loading Data"
+                            >
+                        {% else %}
+                            <img
+                                src="{% static 'package_monitor/images/Spinner-1s-64px-light.gif' %}"
+                                alt="Loading Data"
+                            >
+                        {% endif %}
+
+                        <p class="text-muted"></p>
+                    </div>
+
+                    <div id="modalLoadError"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End Modal for Refreshing Distributions -->
+
+    <div class="card card-default card-tabs">
+        <div class="card-header">
+            <div class="card-title mb-0">
+                {{ page_title }}
+            </div>
+        </div>
+
+        <div class="card-body">
+            <div class="table-responsive mb-3">
+                <table id="tab_package_list" class="table table-hover w-100">
+                    <thead>
+                        <tr>
+                            <th>
+                                <span
+                                    class="dotted_underline"
+                                    title="{% translate 'Name of this distribution package' %}"
+                                    data-bs-tooltip="aa-package-monitor"
+                                >
+                                    {% translate "Name" %}
+                                </span>
+                            </th>
+
+                            <th>
+                                <span
+                                    class="dotted_underline"
+                                    title="{% translate 'Currently installed version of this package' %}"
+                                    data-bs-tooltip="aa-package-monitor"
+                                >
+                                    {% translate "Installed" %}
+                                </span>
+                            </th>
+
+                            <th>
+                                <span
+                                    class="dotted_underline"
+                                    title="{% translate 'Latest available stable version compliant with all requirements for this package' %}"
+                                    data-bs-tooltip="aa-package-monitor"
+                                >
+                                    {% translate "Latest" %}
+                                </span>
+                            </th>
+
+                            <th>
+                                {% translate "Description" %}
+                            </th>
+
+                            <th>
+                                <span
+                                    class="dotted_underline"
+                                    title="{% translate 'Currently installed Django apps included in this package' %}"
+                                    data-bs-tooltip="aa-package-monitor"
+                                >
+                                    {% translate "Included Apps" %}
+                                </span>
+                            </th>
+
+                            <th>
+                                <span
+                                    class="dotted_underline"
+                                    title="{% translate 'Other distribution packages that are using this package' %}"
+                                    data-bs-tooltip="aa-package-monitor"
+                                >
+                                    {% translate "Used By" %}
+                                </span>
+                            </th>
+                        </tr>
+                    </thead>
+                </table>
+            </div>
+
+            <p class="text-muted">
+                {% if show_all_packages %}
+                    {% translate "Showing all known distribution packages." %}
+                {% else %}
+                    {% translate "Showing only distribution packages that contain an installed Django app." %}
+
+                    {% if include_packages %}
+                        {% translate "In addition these packages are shown:" %} {{ include_packages|join:", " }}
+                    {% endif%}
+                {% endif%}
+                <br>
+                {% blocktranslate %}
+                    The latest stable of a package is retrieved from PyPI.
+                    Will show as "?" if PyPI has no info about a package.
+                {% endblocktranslate %}
+            </p>
+
+            {% if outdated_count %}
+                <span
+                    class="copy_to_clipboard"
+                    data-clipboard-text="{{ outdated_install_command }}"
+                    title="{{ outdated_install_command }}"
+                    data-bs-tooltip="aa-package-monitor"
+                >
+                    {% blocktranslate count count=outdated_count %}
+                        Command for installing one outdated package
+                    {% plural %}
+                        Command for installing all {{ count }} outdated packages
+                    {% endblocktranslate %}
+                    <i class="fa-regular fa-copy ms-2"></i>
+                </span>
+            {% else %}
+                <span class="text-muted">
+                    {% translate "No outdated packages to install." %}
+                </span>
+            {% endif %}
+        </div>
+    </div>
+{% endblock aa_package_monitor %}
+
+{% block extra_javascript %}
+    {% include "bundles/datatables-js-bs5.html" %}
+    {% include "bundles/clipboard-js.html" %}
+
+    {% get_datatables_language_static LANGUAGE_CODE as DT_LANG_PATH %}
+
+    <script>
+        /* global bootstrap, ClipboardJS */
+
+        $(document).ready(() => {
+            'use strict';
+
+            /** Copy given text to the clipboard */
+            const clipboard = new ClipboardJS('.copy_to_clipboard');
+
+            clipboard.on('success', (e) => {
+                e.clearSelection();
+            }).on('error', (e) => {
+                console.error('Action:', e.action);
+                console.error('Trigger:', e.trigger);
+            });
+
+            /* dataTable def */
+            $('#tab_package_list').DataTable({
+                language: {
+                    url: '{{ DT_LANG_PATH }}'
+                },
+                ajax: {
+                    url: '{% url "package_monitor:package_list_data" %}?filter={{ filter }}',
+                    dataSrc: '',
+                    cache: false
+                },
+
+                columns: [
+                    {
+                        data: 'name_link'
+                    },
+                    {
+                        data: 'current'
+                    },
+                    {
+                        data: 'latest'
+                    },
+                    {
+                        data: 'description'
+                    },
+                    {
+                        data: 'apps'
+                    },
+                    {
+                        data: 'used_by'
+                    }
+                ],
+
+                ordering: false,
+                info: false,
+
+                columnDefs: [
+                    {
+                        'sortable': false,
+                        'targets': [0, 1, 2, 3, 4]
+                    },
+                ],
+
+                paging: false,
+
+                rowCallback: (row, data, index) => {
+                    if (data['is_outdated']) {
+                        $(row).find('td:eq(1)').addClass('table-warning')
+                        $(row).find('td:eq(2)').addClass('table-warning fw-bold')
+                        {#$(row).find('td:eq(2)').css('font-weight', 'bold')#}
+                    }
+                },
+                initComplete: () => {
+                    // Convert title attributes to Bootstrap tooltips
+                    document.querySelectorAll('#tab_package_list [title]')
+                        .forEach((el) => {
+                            el.setAttribute('data-bs-tooltip', 'aa-package-monitor');
+                        });
+
+                    // Enable all tooltips for this package
+                    document.querySelectorAll(`[data-bs-tooltip="aa-package-monitor"]`)
+                        .forEach((tooltipTriggerEl) => {
+                            return new bootstrap.Tooltip(tooltipTriggerEl);
+                        });
+                }
+            });
+
+            $('#modalRefreshingDistributions').on('show.bs.modal', (event) => {
+                $('#modalLoadError').html('');
+                $('#modalLoadInfo').show();
+
+                $.get('{% url "package_monitor:refresh_distributions" %}')
+                    .done(() => {
+                        window.location.reload(true);
+                    })
+                    .fail(( jqXHR ) => {
+                        console.log(jqXHR);
+
+                        $('#modalLoadInfo').hide();
+                        $('#modalLoadError').html(
+                            `<p class="text-danger">An unexpected error occurred: ${jqXHR.status} ${jqXHR.statusText}</p><p class="text-danger">Please close this window and try again.</p>`
+                        );
+                    });
+            });
+        });
+    </script>
+{% endblock extra_javascript %}
+
+{% block extra_css %}
+    {% include 'bundles/datatables-css-bs5.html' %}
+
+    {% sri_static "package_monitor/css/global.css" %}
+    {% sri_static "package_monitor/css/package_list.css" %}
+{% endblock extra_css %}
