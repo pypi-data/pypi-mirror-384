@@ -1,0 +1,130 @@
+Metadata-Version: 2.4
+Name: code-graph-rag-mcp
+Version: 0.1.2
+Summary: Local-first code knowledge graph MCP server
+Author: Andrew
+License-Expression: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: mcp>=0.1.0
+Requires-Dist: pydantic>=2.6
+Requires-Dist: watchfiles>=0.21
+Requires-Dist: tree-sitter==0.21.1
+Requires-Dist: tree-sitter-languages==1.9.1
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: sqlite-utils>=3.36
+Requires-Dist: typer>=0.9
+Requires-Dist: numpy>=1.26
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+
+# Code GraphRAG MCP Server
+
+A Model Context Protocol server for source-code introspection. It keeps a local-first knowledge graph for your repositories: Tree-sitter derived symbols and relations, AST-aligned chunks, EmbeddingGemma vectors stored in sqlite-vec, and graph traversal through bfsvtab. Wheels ship the native extensions, so the server starts instantly with `uvx`.
+
+## Features
+
+- Hybrid retrieval combining vector search and breadth-first graph expansion over code relations
+- Live repository sync via filesystem watcher and job queue
+- Deterministic provenance for every symbol, relation, and chunk
+- Bundled sqlite-vec and bfsvtab binaries—no manual compilation required
+
+## Installation
+
+```bash
+uvx code-graph-rag-mcp serve --config /workspace/config.yaml
+```
+
+### MCP manifest example
+
+```json
+{
+  "mcpServers": {
+    "code-graph": {
+      "command": "uvx",
+      "args": ["code-graph-rag-mcp", "serve", "--config", "/workspace/config.yaml"],
+      "env": {
+        "CODE_GRAPH_RAG_WATCH_DIR": "/workspace/repo",
+        "CODE_GRAPH_RAG_DB_PATH": "/workspace/data/code.sqlite"
+      }
+    }
+  }
+}
+```
+
+This manifest block works for Claude Desktop (`claude_desktop_config.json`), Cursor (`~/.cursor/mcp.json`), or any other MCP host.
+
+## Configuration
+
+### Minimal `config.yaml`
+
+```yaml
+watch:
+  dir: "/workspace/repo"
+database:
+  sqlite_path: "/workspace/data/code.sqlite"
+```
+
+### Environment overrides
+
+| Variable | Description |
+| --- | --- |
+| `CODE_GRAPH_RAG_CONFIG` | Alternate path to the YAML config. |
+| `CODE_GRAPH_RAG_WATCH_DIR` | Override repository directory to watch. |
+| `CODE_GRAPH_RAG_WATCH_DEBOUNCE_MS` | Debounce delay (ms) for watcher events. |
+| `CODE_GRAPH_RAG_DB_PATH` | Override SQLite database location. |
+| `CODE_GRAPH_RAG_EXTENSIONS_DIR` | Directory containing custom sqlite-vec/bfsvtab binaries. |
+| `CODE_GRAPH_RAG_SQLITE_VEC` / `CODE_GRAPH_RAG_BFSVTAB` | Explicit extension paths. |
+| `CODE_GRAPH_RAG_RETRIEVAL_K` | Default semantic top-k. |
+| `CODE_GRAPH_RAG_RETRIEVAL_HOPS` | Graph expansion hop count. |
+| `CODE_GRAPH_RAG_EMBED_MODEL` / `CODE_GRAPH_RAG_EMBED_ENDPOINT` | Embedding model overrides. |
+
+## Available tools
+
+| Tool | Purpose |
+| --- | --- |
+| `ingest_repo` | Full ingest or reingest of the repository. |
+| `refresh_path` | Reindex a single file. |
+| `purge_path` | Remove a file and its graph artifacts. |
+| `hybrid_search` | Semantic + graph search returning chunks with BFS neighbors. |
+| `symbol_lookup` | Fuzzy lookup of symbols by name. |
+| `explain_symbol` | Show metadata, owning chunk, and outgoing edges for a node ID. |
+| `status` | Report ingest counts and extension readiness. |
+
+## Architecture overview
+
+1. **Watcher → queue** – `watchfiles` monitors the repo and enqueues jobs on create/modify/delete.
+2. **Indexer** – Tree-sitter adapters extract symbols/relations; the chunker builds AST-aligned snippets; EmbeddingGemma generates embeddings.
+3. **SQLite** – files, nodes, edges, chunks, and vectors live in sqlite-vec tables; bfsvtab enables efficient BFS traversal.
+4. **MCP surface** – tools expose ingest, search, and introspection over stdio to any MCP client.
+
+## Example workflow
+
+1. Start the server with `uvx` and point it at your repository.
+2. Call `ingest_repo` to seed the database.
+3. Use `hybrid_search` to find relevant code; responses include semantic scores plus graph neighbors.
+4. Inspect specific nodes with `explain_symbol` or `symbol_lookup`.
+5. Work normally—the watcher reindexes files as they change.
+
+## Development
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+pytest
+```
+
+Rebuild the bundled sqlite-vec/bfsvtab binaries (only if needed) with:
+
+```bash
+python scripts/build_sqlite_extensions.py
+```
+
+## Support
+
+- File issues or feature requests in this repository.
+- Learn more about MCP at [modelcontextprotocol.io](https://modelcontextprotocol.io).
+- License: MIT.
