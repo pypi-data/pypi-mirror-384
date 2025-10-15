@@ -1,0 +1,140 @@
+{% extends "base-layout.html" %}
+
+{% block css %}
+{{ super() }}
+{% endblock %}
+
+{% macro completeness_cutoffs() %}
+<!-- Grey with black text -->
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+  <div class="container-fluid">
+    <ul class="navbar-nav">
+		{% for level_id, _ in levels.items() %}
+			<li class="nav-item">
+				<a class="nav-link {% if level_id == extras.default_level %}active{% endif %}" href="#" onclick="return updateOverview({{level_id}});">Completeness {{ level_id }}x</a>
+			</li>
+		{% endfor%}
+    </ul>
+  </div>
+</nav>
+{% endmacro %}
+
+
+{% macro incompletely_covered_intervals(active_level) %}
+ <form id="geneStatsForm" action="{{url_for('gene_overview')}}" method="post">
+	 <input type="hidden" name="build" value="{{extras.build}}"/>
+	 <input type="hidden" name="default_level" id="defaultLevel" value="{{extras.default_level}}"/>
+	 <input type="hidden" name="completeness_thresholds" value="{{extras.completeness_thresholds|join(',')}}"/>
+	 <input type="hidden" name="samples" value="{{extras.samples|safe}}"/>
+	 <input type="hidden" name="interval_type" value="{{extras.interval_type}}"/>
+	 {% if extras.hgnc_gene_ids %} <!-- genes should be loaded in database -->
+	 	<input type="hidden" name="hgnc_gene_ids" value="{{extras.hgnc_gene_ids|join(',')}}"/>
+	 {% endif %}
+</form>
+	<div class="row">
+		<div class="col-md-12">
+			<table class="table table-bordered">
+			<caption>Incompletely covered {{ extras.interval_type }}</caption>
+				<thead>
+					<tr>
+						<th scope="col">Gene</th>
+						<th scope="col">{{ extras.interval_type }}</th>
+						<th scope="col">Sample</th>
+						<th scope="col">Completeness {{ extras.default_level }}x [%]</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for row in incomplete_coverage_rows|sort %}
+						<tr>
+							<td>
+								<a href="#" onclick="getGeneStatsPage({{row[1]}});">
+									{{row[0]}}
+								</a> <!-- link to gene -->
+							</td>
+							<td>
+								{{ row[2] }} <!-- Ensembl ID -->
+								{% if row[3].mane_select %}
+									<span class="badge bg-dark float-end ms-1">MANE Select: {{row[3].mane_select}}</span>
+								{% endif %}
+								{% if row[3].mane_plus_clinical %}
+									<span class="badge bg-dark float-end">MANE Plus Clinical: {{row[3].mane_plus_clinical}}</span>
+								{% endif %}
+								{% if row[3].mrna %}
+									<span class="badge bg-secondary float-end">{{row[3].mrna}}</span>
+								{% endif %}
+							</td>
+							<td>{{ row[4] }}</td> <!-- sample name -->
+							<td class="text-right">{{ row[5] }}</td> <!-- coverage stats -->
+						</tr>
+					{% else %}
+						<tr>
+							<td colspan="4">No intervals found..</td>
+						</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+	</div>
+
+	{{samples_coverage_stats}}
+
+{% endmacro %}
+
+{% block title %}
+<title>Chanjo2 genes coverage overview</title>
+{% endblock %}
+
+
+{% block content %}
+	<div class="col-md-12">
+		<div class="panel panel-default">
+			<div class="panel-heading">
+				<h4>Incomplete {{ extras.interval_type }}</h4>
+			</div>
+			<ul class="list-group">
+				<li class="list-group-item">
+					Samples:
+					{% for sample in extras.samples %}
+						<strong>{{ sample.name }}</strong>
+					{% endfor %}
+				</li>
+			</ul>
+		</div>
+	</div>
+
+	{{ completeness_cutoffs() }}
+
+	<br>
+
+	{{ incompletely_covered_intervals() }}
+
+{% endblock %}
+
+
+{% block js_code %}
+	{{ super() }}
+	<script>
+		let theForm = document.getElementById("geneStatsForm");
+
+		function updateOverview(customLevel)
+		{
+			document.getElementById("defaultLevel").value = customLevel;
+			theForm.action = '{{url_for("overview")}}';
+			theForm.removeAttribute("target");
+			theForm.submit();
+		}
+
+		function getGeneStatsPage(hgncId)
+		{
+			event.preventDefault();
+			var geneInput = document.createElement("input");
+			geneInput.setAttribute("type", "hidden");
+			geneInput.setAttribute("name", "hgnc_gene_id");
+			geneInput.setAttribute("value", hgncId);
+			theForm.appendChild(geneInput);
+			theForm.setAttribute("target", "_blank");
+			theForm.setAttribute("rel", "noopener");
+			theForm.submit();
+		}
+	</script>
+{% endblock %}

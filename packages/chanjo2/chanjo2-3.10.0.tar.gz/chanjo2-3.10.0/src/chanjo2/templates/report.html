@@ -1,0 +1,273 @@
+{% extends "base-layout.html" %}
+
+{% block css %}
+{{ super() }}
+{% endblock %}
+
+{% macro errors_block() %}
+	{% for error_description, error_content in errors %}
+		{% if error_content %}
+			<div class="alert alert-danger">{{error_description}}: {{error_content|join(", ")}}</div>
+		{% endif %}
+	{% endfor %}
+{% endmacro %}
+
+{% macro report_filters() %}
+<div class="accordion" id="filter-accordion">
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="flush-headingOne">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#flush-collapseOne" aria-expanded="false" aria-controls="flush-collapseOne">
+       Customize
+      </button>
+    </h2>
+    <div id="flush-collapseOne" class="accordion-collapse collapse" aria-labelledby="flush-headingOne" data-bs-parent="#accordionFlushExample">
+		<div class="accordion-body">
+			<!-- hidden fields passed from previous query -->
+			<form name="customizeForm" action="{{url_for('report')}}" method="post">
+			<input type="hidden" id="build" name="build" value="{{extras.build}}">
+			<input type="hidden" id="interval_type" name="interval_type" value="{{extras.interval_type}}">
+			<input type="hidden" name="samples" value="{{extras.samples|safe}}"/>
+			  <div>
+				<div class="form-group">
+				  <div class="row" {% if hidden %}hidden{% endif %}>
+					<div class="col-6">
+					  <label class="form-label">Completeness cutoff</label>
+					  <select class="form-control" name="default_level" id="default_level">
+						{% for level, _ in levels.items() %}
+						  <option value="{{ level }}" {% if level == extras.default_level %} selected {% endif %}>{{ level }}x</option>
+						{% endfor %}
+					  </select>
+					</div>
+
+				<div class="col-6">
+				  <label class="form-label">Gene panel name to display</label>
+				  <input class="form-control" id="panel_name" name="panel_name" type="text" placeholder="Skeletal dysplasia 3.2" value="{{ extras.panel_name or '' }}">
+				</div>
+			  </div>
+			</div>
+
+			<div class="row">
+				<div class="col-7">
+				  <label class="form-label">Included genes (Comma separated list HGNC IDs, HGNC symbols or Ensembl IDs)</label>
+				  <div><input class="form-control" type="text" name="hgnc_gene_ids" value="{{ extras.hgnc_gene_ids|join(', ') }}" placeholder="17284, 21022,.."></div>
+				</div>
+				<div class="col-4 offset-1 mt-2">
+				  <button class="btn btn-primary mt-4" type="submit">Update</button>
+				</div>
+			</div>
+			</form>
+		</div>
+	</div>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro sex_rows_block() %}
+<div class="table-responsive">
+  <table class="table table-bordered table-hover">
+    <caption>Sex metrics from sequencing data</caption>
+	<thead>
+	  <tr>
+		<th rowspan="2" id="sample">Sample</th>
+		<th rowspan="2" id="group">Group</th>
+		<th rowspan="2" id="analusis_date">Analyzed at</th>
+		<th rowspan="2" id="predicted sex">Sex according to sequence data</th>
+		<th colspan="2" class="center-align" id="avg_coverage">Average coverage [x]</th>
+	  </tr>
+	  <tr>
+		<th class="th-secondary" id="cov_x">Chromosome X</th>
+		<th class="th-secondary" id="cov_y">Chromosome Y</th>
+	  </tr>
+	</thead>
+	<tbody>
+		{% for sample in sex_rows %}
+		<tr>
+		  <td>{{ sample.sample }}</td>
+		  <td>{{ sample.case }}</td>
+		  <td>{{ sample.analysis_date.date() }}</td>
+		  <td>{{sample.predicted_sex}}</td>
+		  <td class="text-right">{{ sample.x_coverage }}</td>
+		  <td class="text-right">{{ sample.y_coverage }}</td>
+		</tr>
+	  {% endfor %}
+	</tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% macro important_metrics() %}
+<div class="table-responsive">
+  <table class="table table-bordered table-hover">
+    <caption>Average coverage and coverage completeness data</caption>
+	<thead>
+	  <tr>
+		<th>Sample</th>
+		<th>Average coverage[x]</th>
+		{% for level_int, level_key in levels.items() %}
+		  <th>Completeness {{ level_int }}x [%]</th>
+		{% endfor %}
+	  </tr>
+	</thead>
+	<tbody>
+	  {% for sample, stats in completeness_rows %}
+		<tr>
+			<td>{{ sample }}</td>
+			<td>{{ stats.mean_coverage|round(2) if stats.mean_coverage is defined }}</td>
+			{% for level_int, level_key in levels.items() %}
+				<td>{{ stats[level_key] if stats[level_key] is defined }} </td>
+			{% endfor %}
+		</tr>
+	  {% endfor %}
+	</tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% macro default_level_metrics() %}
+<div>
+	<label>
+		Show genes
+		<input type="checkbox" name="show_genes" style="vertical-align:middle;" onKeyDown="doSomething();" tabindex="0" onclick="toggle_visibility(['incompletelyCoveredGenesHeader', 'incompletelyCoveredGenesCell']);">
+	</label>
+</div>
+<table class="table table-bordered table-hover">
+	 <caption>Genes/Transcripts/Exons coverage at default coverage threshold</caption>
+      <thead>
+        <tr>
+          <th>Sample</th>
+          <th>Fully covered {{ interval_type }} [%]</th>
+          <th>Incompletely covered {{ interval_type }}</th>
+		  <th id="incompletelyCoveredGenesHeader"  style="display: none;">Incompletely covered genes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for data in default_level_completeness_rows %}
+          <tr>
+			  <td>{{data[0]}}</td>
+			  {% if data[1] == 100.00 %}
+			  	<td colspan="2">
+				  No incompletely covered intervals.
+				</td>
+			  {% else %}
+				<td class="text-right">{{ data[1] }}</td>
+				<td class="text-center">{{ data[2] }}</td>
+			  	<td id="incompletelyCoveredGenesCell" class="text-center" style="display: none;">
+					{{ data[3]|sort|join(", ") }}
+				</td>
+			  {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+ </table>
+
+{% endmacro %}
+
+{% macro explanations() %}
+<h4>General</h4>
+<p>
+  <a href="https://github.com/Clinical-Genomics/chanjo2" target="_blank" rel="noopener" title="chanjo2">Chanjo2</a>
+  was used for coverage analysis based on reads alignment. Chanjo2 computes coverage and coverage completeness using an internal module based on <a href="https://github.com/38/d4-format" target="_blank" rel="noopener">d4tools</a>.
+
+  The genome has been analyzed at the {{ extras.interval_type }} level, for genes defined at <a href="http://www.genenames.org/" target="_blank" rel="noopener">HGNC</a>.
+</p>
+
+{% if extras.panel_name %}
+  <p>
+	Final coverage metrics were calculated for genes from the clinical panels.
+	Note that <strong>estimations were made regarding coverage and completeness
+	  on the level of {{ extras.interval_type }}</strong>.
+  </p>
+{% endif %}
+
+<p>
+  <strong>Average coverage</strong>:
+  defined as the mean coverage over a list of genes. Values were calculated as the mean of coverage values over single genes or intervals (transcripts or exons) from single genes
+  e.g. 38.24
+</p>
+
+<p>
+  <strong>Completeness</strong>:
+  defined as the ratio of bases
+  sequenced deeper than a specified cutoff. Values were calculated across pooled genes or genes' intervals, according to the sequencing technology used
+  e.g. 10x
+</p>
+
+<p>
+  <strong>Gene/Transcripts/Exons coverage</strong>:
+  defined as the ratio of these intervals are fully covered
+  ('i.e. with a completeness of') 100% 'at' {{ extras.default_level }}x.
+</p>
+
+<p>
+  <strong>Gender prediction from data</strong>:
+  calculated by comparing relative chromosome coverage (X/Y).
+  Some reads randomly map to the Y chromosome.
+  Therefore, a less than 10 fold difference is used to infer a "male" sample.
+</p>
+
+{% endmacro %}
+
+{% block title %}
+<title>Coverage report</title>
+{% endblock %}
+
+
+{% block pdf_export %}
+	<div class="collapse navbar-collapse justify-content-end" id="bs-example-navbar-collapse-1">
+		<button class="navbar-brand" onclick="window.focus(); window.print();">Create PDF</button>
+	</div><!-- /.navbar-collapse -->
+{% endblock %}
+
+{% block content%}
+	{{ report_filters() }}
+
+	{% if extras.case_name %}
+		<h2>Case name: {{extras.case_name}}</h2>
+	{% endif %}
+
+	<!-- Quality report -->
+
+	<h2>Quality report: clinical sequencing</h2>
+	{% if extras.panel_name %}
+		<p>Based on gene panel: <strong>{{ extras.panel_name }}</strong></p>
+	{% endif %}
+
+	{{ sex_rows_block() }}
+
+	<h3>Generally important metrics</h3>
+
+	{{ important_metrics() }}
+
+	<h3> {{ interval_type|capitalize }} coverage at {{ extras.default_level }}x</h3>
+
+	{{ default_level_metrics() }}
+	<hr>
+	{{ errors_block() }}
+	<!--End of Quality report -->
+
+	<h3 class="mt-5">Explanations</h3>
+
+	{{ explanations() }}
+
+{% endblock %}
+
+
+{% block js_code %}
+	{{ super() }}
+
+	<script>
+		function toggle_visibility(ids)
+		{
+			for (let id of ids) {
+				var e = document.getElementById(id);
+				if (e.style.display == 'block'){
+					e.style.display = 'none';
+				}
+				else {
+					e.style.display = 'block';
+				}
+			}
+		}
+	</script>
+
+{% endblock %}
