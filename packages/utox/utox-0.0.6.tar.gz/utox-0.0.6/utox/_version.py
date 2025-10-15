@@ -1,0 +1,6 @@
+__name__ = "utlx"
+__description__ = ""
+__version__ = "0.0.4"
+__author__ = "luyi"
+__author_email__ = "2662017230@qq.com"
+__copyright__ = "Copyright 2025 luyi"
