@@ -1,0 +1,234 @@
+Metadata-Version: 2.4
+Name: emp_utl
+Version: 1.2.0
+Summary: Customized modules for reusability in Project Enterprise Management Program (EMP)
+Home-page: https://github.com/AbdoCherry/EMP_UTL-S
+Author: AbdoCherry
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE.md
+Requires-Dist: attrs==24.2.0
+Requires-Dist: boltons==24.1.0
+Requires-Dist: certifi==2024.8.30
+Requires-Dist: charset-normalizer==3.4.0
+Requires-Dist: config-client==1.4.0
+Requires-Dist: confluent-kafka==2.12.0
+Requires-Dist: docutils==0.21.2
+Requires-Dist: face==24.0.0
+Requires-Dist: feather-format==0.4.1
+Requires-Dist: glom==24.11.0
+Requires-Dist: idna==3.10
+Requires-Dist: importlib_metadata==8.5.0
+Requires-Dist: jaraco.classes==3.4.0
+Requires-Dist: jaraco.context==6.0.1
+Requires-Dist: jaraco.functools==4.1.0
+Requires-Dist: keyring==25.5.0
+Requires-Dist: markdown-it-py==3.0.0
+Requires-Dist: mdurl==0.1.2
+Requires-Dist: more-itertools==10.5.0
+Requires-Dist: mysql-connector-python==9.1.0
+Requires-Dist: nh3==0.2.18
+Requires-Dist: numpy==2.1.3
+Requires-Dist: pandas==2.2.3
+Requires-Dist: pkginfo==1.10.0
+Requires-Dist: pyarrow==18.0.0
+Requires-Dist: Pygments==2.18.0
+Requires-Dist: python-dateutil==2.9.0.post0
+Requires-Dist: pytz==2024.2
+Requires-Dist: readme_renderer==44.0
+Requires-Dist: requests==2.32.3
+Requires-Dist: requests-toolbelt==1.0.0
+Requires-Dist: rfc3986==2.0.0
+Requires-Dist: rich==13.9.4
+Requires-Dist: ruff==0.11.7
+Requires-Dist: setuptools==75.5.0
+Requires-Dist: six==1.16.0
+Requires-Dist: twine==5.1.1
+Requires-Dist: tzdata==2024.2
+Requires-Dist: urllib3==2.2.3
+Requires-Dist: wheel==0.45.0
+Requires-Dist: zipp==3.21.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# EMP - Utility Service (UTL-S)
+
+This package is holding multiple modules which are specific and dedicated in their usage for the Enterprise Management Program (__EMP__) - Serverless functions. To reuse those modules collected in this repository it is more advantageous to provide them as a single package and installing them in the respective microservice.
+
+Contained in this module they are the all functions of the modules:
+
+- Custom Logger for EMP
+- Custom Config Loader for EMP
+- Custom MySQL Loader for EMP
+
+All mentioned modules are already tested and published only if the unit tests exceeds the coverage of at least 90%. Therefore the latest module can be installed without any additional effort for the aimed module / service.
+
+## Usage
+
+1. Install the package via the usual pip command `pip3 install emp-utl`
+2. Import the needed module according your necessity
+
+## Logging Module
+
+The `setup_logger` function in the Logging Module simplifies consistent logging across services, creating structured, environment-aware log files. The JSON-formatted output is ideal for integration with monitoring tools like AWS CloudWatch, Splunk, and New Relic.
+
+### Key Features
+
+- Environment-based Logging: Generates separate log files based on the specified environment (dev, int, stg, prd), automatically creating a logs directory.
+- Formatted JSON Logs: Logs are formatted in JSON, making them easily readable and compatible with modern monitoring tools.
+- Dynamic Log Levels: Automatically switches to overwrite mode in non-production environments and append mode in production, facilitating easy log management.
+
+### Usage of Logger
+
+1. Import the logger after installation
+
+    `from emp_utl.emp_logger import setup_logger`
+
+2. Setting up the logger
+
+    ```python
+    # Example usage
+    logger = setup_logger(SERVICE = 'Customer', module = 'Serverless')
+    logger.info(msg = 'Logger setup successfully for service customer')
+    ```
+
+### Additional Notes
+
+- __Environment Detection__: If ENVIRONMENT is not specified, the logger defaults to dev.
+- __Custom File Naming__: Log files are generated with a name format of EMP-<SERVICE>-<module>.log, aiding easy identification. The file will saved in `./logs/` directory.
+- __Directory Creation__: The module will automatically create a logs folder if it does not already exist.
+
+*This logger module is built to seamlessly integrate into various environments, supporting straightforward and organized logging across applications.*
+
+## Configuration Loader Module
+
+The `load_cnf` function enables EMP services to load configurations dynamically, based on the specified environment, for seamless transitions between development, staging, and production setups. This approach ensures consistent, secure configuration access across all EMP services.
+
+### Key Features
+
+- __Primary Source: Spring Cloud Config Server__: The loader first attempts to connect to a Spring Cloud Config Server at a configurable address and port. By default, it connects to `localhost` on port `8888`, but you can specify a different host via the `BASE_URL` environment variable.
+- __Secured Access__: Since the Config Server is protected by Spring Security, it requires a username and password, provided through the `EMP_CONFIG_USERNAME` and `EMP_ENCRYPT_KEY` environment variables.
+- __Fallback Mechanism__: If the Config Server is unavailable, the loader retrieves values from OS environment variables, ensuring uninterrupted access to necessary configurations.
+
+### Usage of configuration loader
+
+1. Import the config loader after installation
+
+    ```python
+    from emp_utl.emp_config import load_cnf
+    ```
+
+2. Setting up the config loader
+
+    ```python
+    # Example usage
+    env_vars: Dict[str, str] = load_cnf(service_name = 'location-service', required_keys = ['AWS_KEY_IAM', 'AWS_KEY_SECRET'], logger = logger)
+    ```
+
+3. Environment variables are retrieved as a dictionary for use within the application.
+
+### Additional Notes
+
+- Logger: Verify that as shown in firs section the logger is priorely set up. Otherwise use another custom logger.
+- Environment Configuration: Set the environment variable BASE_URL to customize the host for the Config Server. The default port is 8888, but this can be changed in the server setup if needed.
+- Fallback to OS Variables: If the Config Server cannot be reached, the module attempts to load configurations from the OS environment, ensuring critical variables remain accessible.
+- Security Requirements: Ensure EMP_CONFIG_USERNAME and EMP_ENCRYPT_KEY are set in your environment for authenticated access to the Config Server.
+
+*This configuration loader module is custom-built for the EMP project, facilitating secure, centralized configuration management.*
+
+## MySQL Loader Module
+
+The load_mysql function streamlines database connections for EMP services by dynamically establishing a connection to MySQL databases based on specified environment variables. This module provides secure, reusable, and environment-aware database connection management. The most easiest way to push / load pandas dataframes to MySQL tables. Ensure in this case that the sql files which do create the MySQL Schema, optionally stored functions/procedures and triggers can be executed as long the are located in directory `./sql/`
+
+### Key Features
+
+- Dynamic Configuration: Reads database credentials and connection details (host, port, user, password, and database name) from environment variables, ensuring environment-specific configuration.
+- Connection Pooling: Supports connection pooling to optimize database performance and resource utilization.
+- Automatic Reconnection: Handles database reconnection seamlessly, ensuring uninterrupted database operations during transient outages.
+- Secure Access: Prioritizes security by requiring sensitive database credentials (e.g., password) to be set as environment variables, keeping them out of source code.
+
+### Usage of MySQL Loader
+
+1. Import the MySQL loader after installation:
+
+    ```python
+    from emp_utl.emp_mysql import load_mysql
+    ```
+
+2. Establish a database connection
+
+    ```python
+    # Example usage
+    load_mysql(env_vars: env_vars, schema: env_vars['SCHEMA_NAME'], df_dict: df_dict, logger: logger)
+    ```
+
+### Additional Notes (Parameters)
+
+- env_vars = loaded priorily via the `load_cnf` function, ensure that the schema name, database credentials are set and also the correct key names
+- schema = Retrieve the schema name from the dictionary `env_vars`
+- df_dict = Dictionary which holds the pandas dataframes. __IMPORTANT__ the keys in `df_dict` do need to map the exact table name in MySQL
+
+*This MySQL loader module simplifies secure, reusable, and scalable database management for EMP microservices, enabling consistent and efficient interactions with MySQL databases.*
+
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.3] - 2025-04-30 - Changes
+
+- Resolving minor git errors
+- Unit Tests passed, but import at other projects failed in execution
+
+## [1.0.2] - 2025-04-30 - Changes
+
+- Removed excessive `logger.info` statement in `run_sql_script()` to reduce `.log` file clutter.
+
+## [1.0.1] - 2025-03-15 - Addition
+
+- Initial stable version with modules: `utl_config`, `utl_logger`, `utl_mysql`.
+
+## [1.1.0] - 2025-03-22 - Changes
+
+- Major changes to catch configurations provision via Spring Cloud Config Server
+
+## [1.1.1] - 2025-04-03 - Changes
+
+- Fixing minor issues in `utl_config`
+
+## [1.1.3] - 2025-05-01 - Changes
+
+- Fixing minor issues in `utl_logger`
+
+## [1.1.4] - 2025-09-15 - Tests
+
+- Achieved 100% test coverage for:
+  - `utl_config.py`
+  - `utl_logger.py`
+  - `utl_mysql.py`
+- Added unit tests for all edge cases, fallback paths, and custom SQL delimiters.
+- No functional code changes — this version is functionally identical to `1.1.3`.
+
+## [1.2.0] - 2025-10-14 - Enhancement
+
+- Introduced Kafka-based logging in `utl_logger`:
+  - Added `KafkaLoggingHandler` with resilient producer configuration and failover support.
+  - Integrated Kafka handler into `setup_logger()` for non-dev environments (`int`, `stg`, `prd`).
+  - Implemented delivery report callbacks and retry mechanisms.
+- Updated all unit tests to mock Kafka producer behavior and achieve 100% coverage.
+- Revised README and function docstrings for clarity and completeness.
