@@ -1,0 +1,169 @@
+Metadata-Version: 2.4
+Name: missensemble
+Version: 0.1.9
+Summary: A package for missing data imputation
+License: Apache-2.0
+License-File: LICENSE
+Author: Dimitris Katsimpokis
+Author-email: dimi.katsimpokis@gmail.com
+Requires-Python: >=3.11,<4.0
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Requires-Dist: matplotlib (>=3.10.3,<4.0.0)
+Requires-Dist: numpy (>=2.3.2,<3.0.0)
+Requires-Dist: pandas (>=2.3.1,<3.0.0)
+Requires-Dist: poetry-dynamic-versioning (>=1.9.1,<2.0.0)
+Requires-Dist: pytest (>=8.4.1,<9.0.0)
+Requires-Dist: scikit-learn (>=1.7.1,<2.0.0)
+Requires-Dist: seaborn (>=0.13.2,<0.14.0)
+Requires-Dist: xgboost (>=3.0.2,<4.0.0)
+Project-URL: Homepage, https://github.com/dkatsimpokis/MissEnsemble
+Description-Content-Type: text/markdown
+
+
+# MissEnsemble
+[![Release](https://github.com/dkatsimpokis/MissEnsemble/actions/workflows/release.yml/badge.svg)](https://github.com/dkatsimpokis/MissEnsemble/actions/workflows/release.yml)
+[![PyPI](https://badge.fury.io/py/missensemble.svg)](https://pypi.org/project/missensemble/)
+[![Unittests](https://github.com/dkatsimpokis/MissEnsemble/actions/workflows/unittesting.yml/badge.svg)](https://github.com/dkatsimpokis/MissEnsemble/actions/workflows/unittesting.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%20License%202.0-blue)](https://github.com/dkatsimpokis/MissEnsemble/blob/main/LICENSE)
+
+MissEnsemble is a generalization of the popular MissForest algorithm (Stekhoven et al., 2012) for missing value imputation. It extends MissForest by supporting multiple ensemble methods and provides a scikit-learn compatible API. Currently supported ensemble methods:
+
+- Random Forests
+- XGBoost
+
+MissEnsemble natively handles different types of input values (e.g., strings, numbers, etc). You only need to specify which column names belong to which variable type (numerical, categorical, or ordinal).
+
+In addition, MissEnsemble provides built-in visualization functions for convergence and imputation validation (when true values are available).
+
+## Setup
+Install from PyPI:
+
+```bash
+pip install missensemble
+```
+
+## Usage Example
+
+You must specify whether each column in your DataFrame is categorical, ordinal, or numerical. This ensures the imputation method treats each variable appropriately. Assign every column to one of these types. Example with a DataFrame of five variables in total:
+
+```python
+import numpy as np
+import pandas as pd
+from missensemble import MissEnsemble
+
+# Create example dataframe (100 x 5)
+data = pd.DataFrame({
+    "col1": np.random.choice(['A', 'B', 'C'], size=100),
+    "col2": np.random.choice(['X', 'Y'], size=100),
+    "col3": np.random.randint(1, 5, size=100),
+    "col4": np.random.randn(100),
+    "col5": np.random.randn(100)
+})
+
+# Create NAs for col1 and col4
+for col in ['col1', 'col4']:
+    to_be_nas = data.sample(30)  # 30 values missing at random
+    to_be_nas[col] = np.nan
+    data.loc[to_be_nas.index] = to_be_nas
+
+# Initialize the MissEnsemble class
+estimator = MissEnsemble(
+    categorical_vars=['col1', 'col2'],
+    ordinal_vars=['col3'],
+    numerical_vars=['col4', 'col5'],
+)
+
+# Fit and transform the data
+imputed_data = estimator.fit_transform(data)
+```
+For an extended usage example, see the `example.ipynb` notebook.
+
+## Parameters
+The `MissEnsemble` class accepts the following parameters:
+
+- `n_iter` (int): Number of iterations to perform for imputation.
+- `categorical_vars` (list of str): List of column names representing categorical variables.
+- `ordinal_vars` (list of str): List of column names representing ordinal variables.
+- `numerical_vars` (list of str): List of column names representing numerical variables.
+- `ens_method` (str, optional): Ensemble method to use for imputation. Default is 'forest'. 'xgb' also supported.
+- `n_estimators` (int, optional): Number of estimators to use in the ensemble method. Default is 100.
+- `tol` (float, optional): Tolerance for convergence. Default is 1e-4.
+- `random_state` (int, optional): Random state for reproducibility. Default is 42.
+- `print_criteria` (bool, optional): Whether to print the imputation criteria during fitting. Default is False.
+
+If the converge criterion change is lower than `tol` for three rounds, the algorithm terminates earlier.
+
+## Requirements
+MissEnsemble requires Python 3.11+ and the following packages:
+- numpy
+- pandas
+- scikit-learn
+- xgboost 
+- seaborn
+- matplotlib
+
+The requirements are taken care of by pip automatically during the installation of the package.
+
+## Parameter specification of `MissEnsemble`
+
+### Supported Ensemble Methods
+You can select the ensemble method using the `ens_method` parameter:
+- `ens_method='forest'` for Random Forests (default)
+- `ens_method='xgb'` for XGBoost
+
+### Error Handling
+- Each column must be assigned to exactly one variable type: categorical, ordinal, or numerical.
+- If a column is assigned to multiple types or omitted, MissEnsemble will raise an error.
+
+### API Reference
+The MissEnsemble class inherits from the scikit-learn API. Public methods:
+- `fit(X)`: Fit the imputer to the data.
+- `transform(X)`: Impute missing values in new data.
+- `fit_transform(X)`: Fit and transform in one step.
+- `plot_criteria(plot_final=False)`: Visualize convergence criteria.
+- `check_imputation_fit(var_name, true_values, error_type, plot_type)`: Visualize and assess imputation quality.
+
+## Visualization Methods
+MissEnsemble offers visualization functionalities for convergence and imputation checks (the latter only if true values are available).
+
+### Convergence Criteria
+After fitting, use the `plot_criteria` method to show the minimization path of the stopping criteria:
+
+```python
+estimator.plot_criteria(plot_final=False)
+```
+
+which results in the following plot:
+
+![imputation criteria](docs/images/imputation_criteria.png)
+
+### Imputation check
+The `check_imputation_fit` method plots divergence of the imputed values as compared to the true values. In the following code, we check the imputation of `mean texture` (see `example.ipynb` notebook): 
+
+```python
+estimator.check_imputation_fit(
+    var_name='mean texture',
+    true_values=data.loc[:, 'mean texture'],
+    error_type='std_diff',
+    plot_type='hist'
+)
+```
+
+which results in the following plot:
+
+![imputation check](docs/images/imputation_check.png)
+
+Different divergence and plot types are offered in this method.
+
+## Contact
+For questions or support, please open an issue on GitHub.
+
+## Literature
+Stekhoven, D. J., & Bühlmann, P. (2012). MissForest—non-parametric missing value imputation for mixed-type data. Bioinformatics, 28(1), 112-118.
+
+
