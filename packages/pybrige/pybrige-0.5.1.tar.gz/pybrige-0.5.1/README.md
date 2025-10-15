@@ -1,0 +1,229 @@
+# pybrige
+
+[![PyPI version](https://img.shields.io/pypi/v/pybrige.svg)](https://pypi.org/project/pybrige/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pybrige.svg)](https://pypi.org/project/pybrige/)
+[![License](https://img.shields.io/pypi/l/pybrige.svg)](https://github.com/juliobrige/pybrige/blob/main/LICENSE)
+[![GitHub Workflow Status](https://github.com/juliobrige/pybrige/actions/workflows/python-tests.yml/badge.svg)](https://github.com/juliobrige/pybrige/actions/workflows/python-tests.yml)
+[![Coverage Status](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/juliobrige/pybrige)
+
+<br>
+
+**pt-BR**: Uma coleção de **utilitários para desenvolvedores Python** — logging elegante, medição de tempo, retry automático, manipulação de JSON, tratamento de strings e muito mais.
+
+**en-US**: A collection of **developer utilities for Python** — elegant logging, timing, retry decorator, JSON helpers, string utilities and more.
+
+---
+
+## ✨ Visão Geral
+
+O **pybrige** é um toolkit de produtividade para desenvolvedores Python, projetado para acelerar tarefas comuns do dia a dia com ferramentas robustas e fáceis de usar.
+
+Chega de copiar e colar o mesmo código de utilidade em todos os seus projetos! Com `pybrige` você obtém soluções prontas e testadas para configuração, logging, debugging e manipulação de dados.
+
+---
+
+## 🚀 Instalação
+
+```bash
+pip install pybrige
+
+---
+
+## ⚡ Guia Rápido (Quick Start)
+
+Veja como o `pybrige` pode simplificar seu código:
+
+```python
+import logging
+import requests
+from pybrige import setup_logging, load_env, EnvSpec, VarSpec, timer, retry, print_table
+
+# 1. Configure logs coloridos
+setup_logging(colors=True)
+
+# 2. Defina e carregue a configuração da aplicação
+try:
+    config = load_env(EnvSpec(
+        vars=[
+            VarSpec("API_URL", help="URL da API de dados"),
+            VarSpec("RETRIES", type="int", default=3),
+        ],
+        prefix="APP_"
+    ))
+except Exception as e:
+    logging.error(f"Erro de configuração: {e}")
+    exit(1)
+
+# 3. Use decorators para resiliência e análise de performance
+@retry(tries=config["RETRIES"], delay=1, exceptions=(requests.exceptions.RequestException,))
+@timer(template="[PERF] '{func_name}' contactou a API em {elapsed:.2f}s")
+def buscar_dados():
+    logging.info(f"A contactar a API em {config['API_URL']}...")
+    response = requests.get(config["API_URL"])
+    response.raise_for_status()
+    return response.json()
+
+# 4. Execute e apresente resultados
+try:
+    dados = buscar_dados()
+    logging.info("Dados recebidos com sucesso!")
+    print_table(dados, title="Relatório de Utilizadores")
+except Exception as e:
+    logging.critical(f"Não foi possível obter os dados: {e}")
+```
+
+---
+
+## 🔧 Funcionalidades Principais
+
+- **Configuração Segura**: Carregue e valide variáveis de ambiente (`load_env`, `EnvSpec`, `VarSpec`).
+- **Logging Inteligente**: Configure logs coloridos e amigáveis ao terminal (`setup_logging`).
+- **Decorators Poderosos**: 
+  - `@retry` → adiciona retentativas automáticas.  
+  - `@timer` → mede o tempo de execução de funções.
+- **Utilidades de Dados**:  
+  - Manipulação de JSON (`read_json`, `write_json`, `append_json_line`, `pretty_print_json`).  
+  - Transformações de texto (`slugify`, `camel_to_snake`, `snake_to_camel`, `normalize_whitespace`).  
+  - Extração (`extract_emails`, `extract_urls`, `remove_html_tags`).  
+  - Impressão de tabelas (`print_table` com `rich`).
+
+---
+
+## 📚 Exemplos de Uso
+
+### Logging
+```python
+from pybrige import setup_logging
+import logging
+
+setup_logging(colors=True)
+logging.info("Mensagem colorida!")
+```
+
+### Timer
+```python
+from pybrige import timer, setup_logging
+
+setup_logging(colors=True)
+
+@timer()
+def process_data():
+    return sum(range(100000))
+
+process_data()
+```
+
+### Retry
+```python
+from pybrige import retry
+import random
+
+@retry(tries=3, delay=1, backoff=2)
+def unstable():
+    if random.random() < 0.7:
+        raise ValueError("Falhou")
+    return "Sucesso!"
+
+print(unstable())
+```
+
+### JSON Helpers
+```python
+from pybrige import write_json, read_json
+
+data = {"id": 1, "name": "Alice"}
+write_json("data.json", data)
+
+print(read_json("data.json"))
+```
+
+### String Utils
+```python
+from pybrige import slugify, camel_to_snake, snake_to_camel, extract_emails, extract_urls
+
+print(slugify("Título de Exemplo com Áccentos"))  
+print(camel_to_snake("CamelCaseTest"))  
+print(snake_to_camel("snake_case_test"))  
+print(extract_emails("contato: dev@helper.org"))  
+print(extract_urls("Veja https://example.com"))  
+```
+
+### Hacker Style
+```python
+from pybrige import ascii_banner_hacker, matrix_rain_preview
+
+print(ascii_banner_hacker("F SOCIETY", subtitle="we are everyone"))
+print(matrix_rain_preview(lines=5, width=20))
+```
+
+---
+
+## 📌 Roadmap
+
+- [ ] Suporte a YAML (`io_utils`)  
+- [ ] Novas transformações de texto (snake → kebab, title case etc.)  
+- [ ] CLI para acessar utilitários diretamente no terminal  
+
+---
+
+## 📖 Referência da API (v0.2.0)
+
+### `validate_bi`
+Verifica o formato de um Bilhete de Identidade de Moçambique de 13 caracteres.
+
+```python
+from pybrige import validate_bi
+
+# Casos válidos
+print(validate_bi("123456789012A"))
+# Saída: True
+
+print(validate_bi(" 123456-789012-B ")) # Lida com espaços e hífens
+# Saída: True
+
+# Caso inválido
+print(validate_bi("documento_invalido"))
+# Saída: False
+
+### Core
+- `load_env(spec: EnvSpec)` → valida e carrega variáveis de ambiente.  
+- `require_vars(vars: list[str])` → garante que variáveis existem (versão legada).  
+- `setup_logging(level, colors, file, logger_name)` → configura logging.  
+
+### Decorators
+- `@timer(level, template, logger)` → mede e loga tempo de execução.  
+- `@retry(tries, delay, backoff, exceptions, ...)` → retentativas automáticas em caso de falha.  
+
+### Utils
+- `print_table(data, title)` → imprime tabelas com estilo (`rich`).  
+- `slugify(text, allow_unicode)` → texto → slug.  
+- `camel_to_snake(text)` / `snake_to_camel(text)` → conversões de nomenclatura.  
+- `normalize_whitespace(text)` → remove espaços extras.  
+- `remove_html_tags(text)` → remove tags HTML.  
+- `extract_emails(text)` / `extract_urls(text)` → extrações de emails e URLs.  
+- `read_json(path, safe)` / `write_json(path, data)` → helpers JSON.  
+- `append_json_line(path, record)` → escreve no formato JSON Lines.  
+- `pretty_print_json(data)` → retorna JSON formatado.  
+### `utils.text`
+* `slugify`, `camel_to_snake`, `snake_to_camel`, `normalize_whitespace`, `remove_html_tags`, `extract_emails`, `extract_urls`, **`validate_bi`**.
+
+
+
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas!  
+Sinta-se livre para abrir **issues** ou enviar um **pull request** no GitHub.  
+
+1. Fork o repositório  
+2. Crie sua branch: `git checkout -b minha-feature`  
+3. Commit: `git commit -m "Nova feature"`  
+4. Push: `git push origin minha-feature`  
+5. Abra o PR 🚀  
+
+---
+
+## 📄 Licença
+
+Distribuído sob a licença MIT.  
+Veja [LICENSE](LICENSE) para mais detalhes.

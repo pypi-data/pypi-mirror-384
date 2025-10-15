@@ -1,0 +1,60 @@
+# Nome do workflow
+name: DEBUG - Testes e Cobertura do pybrige
+
+# Gatilhos
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  debug-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Temporariamente, vamos focar-nos apenas numa versão do Python para acelerar a depuração
+        python-version: ["3.12"]
+
+    steps:
+    - name: Checkout do código
+      uses: actions/checkout@v4
+
+    - name: Configurar Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    # --- NOVOS PASSOS DE DIAGNÓSTICO ---
+    - name: 'DIAGNÓSTICO: Mostrar versões e ambiente'
+      run: |
+        echo "VERSÃO PYTHON:"
+        python -V
+        echo "VERSÃO PIP:"
+        pip --version
+        echo "PACOTES INSTALADOS (ANTES):"
+        pip list
+
+    - name: Instalar dependências
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-mock pytest-cov
+
+    - name: 'DIAGNÓSTICO: Verificar pacotes após instalação'
+      run: |
+        echo "PACOTES INSTALADOS (DEPOIS):"
+        pip list
+        echo "A VERIFICAR A INSTALAÇÃO DO PYBRIGE:"
+        pip list | grep pybrige || echo "pybrige não encontrado na lista"
+
+    - name: 'DIAGNÓSTICO: Tentar a importação direta (teste de sanidade)'
+      run: |
+        python -c "import pybrige; print(f'Importação direta OK, versão {pybrige.__version__}')"
+    # --- FIM DOS NOVOS PASSOS ---
+
+    # Passo final: Executar os testes com output máximo de verbosidade
+    # Removemos o --cov por agora para focar apenas no erro do teste
+    - name: Executar testes com output detalhado
+      run: |
+        python -m pytest -vv
