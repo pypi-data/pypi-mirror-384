@@ -1,0 +1,97 @@
+AGENT A
+
+
+https://agent_a.gitlab.io/
+
+INSTALLATION
+
+Agent A is distributed as a standard Python package and can be installed using
+pip.
+
+prerequisites:
+
+  - Python 3.8 or newer
+  - pip (Python's package installer)
+  - Tested on MacOS and Linux
+
+Initial Setup
+
+    Model API keys
+
+      Currently Agent A supports claude and gemini via their apis.
+
+      In your shell environment please set GOOGLE_API_KEY either/or ANTHROPIC_API_KEY to their applicable values.
+
+    Test
+    
+      The default model is set to use gemini flash 2.5, please see the configuation section if you are only using claude on how to update your configuration.
+
+      In your terminal after you have installed Agent A and set your key type:
+
+      a "hello"
+      And you should get a reply something like:
+
+      GREETING RESPONSE
+
+        acknowledgment
+          Hello back!
+      --- 4.53s ---------------
+      Please note this is uses the general prompt with plain text styling, to help make the responses readable in the terminal, see configuation for more details on how to edit and set the prompts and models
+
+
+
+FIRST RUN AND CONFIGURATION
+
+The first time you run the agent, it will set up a configuration directory at
+~/.agent_a. This directory will store your configuration, chat history, and
+customizable prompts.
+
+You will be prompted to approve the creation of these initial files. This is a
+one-time setup process.
+
+  $ a
+  Agent A needs to initialize or update its configuration.
+  The following changes will be made:
+    - Create directory: /home/user/.agent_a
+    - Create directory: /home/user/.agent_a/prompts
+    - Install/Update file: /home/user/.agent_a/user_agent_a.json
+      Reason: Default configuration file
+  ...
+  No user-modified files will be overwritten.
+  Do you want to proceed? [Y/n]: y
+
+
+UPGRADING
+
+To upgrade the agent to the latest version, run:
+
+  pip install --upgrade agent_a
+
+prompt upgrades:
+
+  When the agent is upgraded, it may include new or updated default prompts. The
+  upgrade process is designed to be non-destructive:
+
+  - New prompts from the update will be added to your ~/.agent_a/prompts.
+  - Your modified prompts will not be touched. The agent detects if you have
+    changed a default prompt and will not overwrite your customizations.
+  - Unmodified default prompts will be safely updated to their latest versions.
+
+
+USAGE
+
+- Run a prompt:
+    a "your request"
+
+- See the last set of changes:
+    adiff
+
+- Undo the last set of changes:
+    a undo
+
+- Run the lwc script:
+    lwc
+
+
+DOCUMENTATION
+https://agent_a.gitlab.io/documentation.html
