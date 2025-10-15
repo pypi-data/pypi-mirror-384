@@ -1,0 +1,356 @@
+# Description
+
+Pyhdf5_handler is a python library designed to read and write in hdf5 format. This library is based on the `h5py` library (https://docs.h5py.org/en/stable/index.html). This library has been developed by Maxime Jay-Allemand at Hydris hydrologie (https://www.hydris-hydrologie.fr/).  
+
+Read and write to hdf5 are currently limited to the following supported Python type:
+
+* Dictionary, list, tuple
+* Numeric value (int, float)
+* None type
+* String
+* Timestamp (datetime, pandas and numpy)
+* Pandas DatetimeIndex
+* Numpy array
+* Structured numpy array
+
+
+Basically, data are stored in hdf5 file using the h5py pythonic interface to the binary HDF5 format. All data are stored in dataset using Numpy. If the data type is not supported by the HDF5 format, the data will be converted to a supported type (byte for string). For each stored dataset, an attribute, containing the type of the original data, is auto-generated. This attribute help to convert back the data to its original type when reading the HDF5. 
+
+In some case, for unsupported datatype or for HDF5 which has not be created with pyhdf5_handler, data may be stored in byte sequence in the HDF5, that require to be decoded using str.decode().
+
+This library also feature concurrent access for reading and writing an hdf5 file. 
+
+The documentation is hosted at https://maximejay.codeberg.page/pyhdf5_handler.html.  
+
+# Installation
+
+Pyhdf5_handler can be installed using pip:  
+
+```bash
+pip install pyhdf5_handler  
+```
+
+Source code are hosted at https://codeberg.org/maximejay/pyhdf5_handler. Source code can be download and installed manually:
+
+```bash
+git clone https://codeberg.org/maximejay/pyhdf5_handler.git  
+pip install ./pyhdf5_handler  
+```
+
+# Documentation  
+
+The documentation is hosted at https://maximejay.codeberg.page/pyhdf5_handler.html This documentation is auto-generated using pdoc (https://pdoc.dev/docs/pdoc.html).  
+
+You are currently reading the Readme.md file which provide the main documentation. The API documentation of every function of the pyhdf5_handler library is located in the SubModules/src directory (lateral bar). Just navigate through the documentation tree.
+
+Two Python scripts for, testing purpose, can be found in the directory `tutorial` and may help to handle this library.
+
+To generate the documentation manually, `pdoc` (https://pdoc.dev/) must be installed first.
+
+```bash
+pdoc pyhdf5_handler/ -o ./html  
+```
+To generate the doc for several modules use for instance:
+```bash
+pdoc ./pyhdf5_handler/pyhdf5_handler/ easysmash/easysmash/ --math -o ./html 
+```
+
+To publish the documentation on codeberg pages, you must flatten the `html/` directory. All statics pages must be at the root directory. A script can be used for this:
+```bash
+#modify the path to the documentation folder inside the script !
+bash flatten_doc.sh
+```
+The script `flatten_doc.sh` can be found at https://codeberg.org/maximejay/pages.
+
+
+# Quick start  
+
+## Main utilities
+
+The pyhdf5_handler library brings convenient methods to write and read data in an HDF format with Python. Writing data in an HDF format can be achieved from Python dictionary or more complex class-object. The structure of HDF5  storage will mimic the structure of the original data. When reading back the HDF5 data, the original structure is preserved. This library also provides methods to search and read specific item that exists in the HDF5 file.
+
+### Input/Output in HDF5 format
+
+#### Writing a Python dictionary into an hdf5 file
+
+The function `pyhdf5_handler.src.hdf5_handler.save_dict_to_hdf5file` lets you write any Python dictionary into an hdf5 file. The hdf5 file will mimic the structure of the dictionary.
+
+```python
+# write a python dictionary in the hdf5 database
+dictionary = {
+    "dict": {
+        "int": 1,
+        "float": 2.0,
+        "none": None,
+        "timestamp": pd.Timestamp("2019-09-22 17:38:30"),
+        "list": [1, 2, 3, 4],
+        "array": np.array([1, 2, 3, 4]),
+        "date_range": pd.date_range(start="1/1/2018", end="1/08/2018"),
+        "list_mixte": [1.0, np.datetime64("2019-09-22 17:38:30")],
+    }
+}
+
+pyhdf5_handler.save_dict_to_hdf5file("./test.hdf5", dictionary)
+```
+Function argument `location` can be used to save the dictionary in a specific group. the group will be created if not exist. The function argument `replace` can be used to replace the HDF5 file, by default pyhdf5_handler will append to it.
+
+#### Writing a Python "object" (class) into an HDF5 file
+
+The function `pyhdf5_handler.src.hdf5_handler.save_object_to_hdf5file` lets you write any Python class-object into an hdf5 file. The hdf5 file will mimic the structure of this class object.
+
+Let's first create an complex Python class object using HydroSmash (https://smash.recover.inrae.fr/index.html). If you want to reproduce these steps, follow the documentation at https://smash.recover.inrae.fr/user_guide/data_and_format_description/lez.html.
+
+```python
+import smash
+import pyhdf5_handler
+
+setup, mesh = smash.factory.load_dataset("Lez")
+setup.update({"start_time": "2014-01-01 00:00", "end_time": "2014-02-02 00:00"})
+model = smash.Model(setup, mesh)
+model.forward_run()
+```
+
+The Python model class-object contain inputs, outputs and methods of the hydrological simulation on the Lez catchment.
+
+```python
+dir(model)
+ 'adjust_interception',
+ 'atmos_data',
+ 'copy',
+ 'forward_run',
+ ...,
+ 'response_data',
+ 'rr_final_states',
+ 'rr_initial_states',
+ 'rr_parameters',
+ 'setup',
+ 'mesh',
+ ...
+```
+This Python object is complex and contains a lot of data and methods. Let's write a part of this object, the model initial states `rr_initial_states` attribute. This attribute contains many methods and two Numpy.ndarray object. The function `pyhdf5_handler.src.hdf5_handler.save_object_to_hdf5file` won't save the methods but only the data:
+
+```python
+# save part of object model:
+pyhdf5_handler.save_object_to_hdf5file(
+    "./test.hdf5",
+    model.rr_initial_states,
+    location="./smash_object_rr_initial_states",
+)
+```
+model.rr_initial_states Python object will be appended to the file './test.hdf5' and written in the sub-group './smash_object_rr_initial_states' . Notice that this operation can be also achieved by building a dictionary manually:
+
+```python
+# save dict :
+pyhdf5_handler.save_dict_to_hdf5file(
+    "./test.hdf5",
+    {
+        "smash_rr_initial_states": {
+            "keys": model.rr_initial_states.keys,
+            "values": model.rr_initial_states.values,
+        }
+    },
+)
+```
+
+#### Viewing the content of an HDF5 file
+
+Two methods can be used to view the content of an hdf5 file. The method `pyhdf5_handler.src.hdf5_handler.hdf5file_view` print the full recursive arborescence of an hdf5 file, including  dataset and attribute:
+
+```python
+pyhdf5_handler.hdf5file_view("./test.hdf5")
+```
+
+The method `pyhdf5_handler.src.hdf5_handler.hdf5file_ls` list the different item (dataset only) at the current level:
+
+```python
+pyhdf5_handler.hdf5file_ls("./test.hdf5")
+```
+The arguments function `location` can be used to select a specific group in the hdf5 file:
+
+```python
+pyhdf5_handler.hdf5file_ls("./test.hdf5", location="dict")
+```
+
+#### Searching and getting an item in a hdf5 file
+
+The function `pyhdf5_handler.src.hdf5_handler.search_in_hdf5file` can be used to search an item in an hdf5 file. This funciton perform the search recursively inside the hdf5 and return a list of all matches found with key, data type and values returned in python dictionaries.
+
+```python
+res=pyhdf5_handler.search_in_hdf5file("./test.hdf5", key="date_range", location="./")
+```
+
+The function `pyhdf5_handler.src.hdf5_handler.get_hdf5file_item` can be used to read a specific attribute or dataset in an hdf5 file. if option `search_attrs` is True, then the function search in the h5py attributes first and return the first attribute found.
+
+```python
+pyhdf5_handler.get_hdf5file_item(path_to_hdf5="./test.hdf5", location="./dict", item="date_range", search_attrs=False)
+``` 
+
+Two other functions are specifics to attributes or dataset. `pyhdf5_handler.src.hdf5_handler.get_hdf5file_attribute` can be used to read an h5py attribute, while `pyhdf5_handler.src.hdf5_handler.get_hdf5file_dataset` can be used to read a specific dataset.
+
+The following code read the h5py attribute `_list` located in group `./dict`. Notice that the attribute `_list` was auto-generated by pyhdf5_handler when witting the dictionary `dict` (see above). This attribute store the original type of every data.
+
+```python
+pyhdf5_handler.get_hdf5file_attribute(
+        path_to_hdf5="./test.hdf5",
+        location="./dict",
+        attribute="_list",
+    )
+```
+Dataset `list_mixte` located in group "./dict" in the hdf5 file "./test.hdf5" can be read as follow:
+
+```python
+pyhdf5_handler.get_hdf5file_dataset(
+        path_to_hdf5="./test.hdf5", location="./dict", dataset="list_mixte"
+    )
+```
+
+### Input/Output on h5py instance (h5py object)
+
+Similarly to the described above methods (in section: `Input/Output on hdf5 file`), methods can be applied on an h5py instance. The hdf5 file must be opened first, and then must be closed manually after all operations. To open an hdf5 file, one can use the function `pyhdf5_handler.src.hdf5_handler.open_hdf5`:
+
+```python
+hdf5=pyhdf5_handler.open_hdf5("./test.hdf5")
+```
+After any read/write operations, the hdf5 file must be closed manually using:
+
+```python
+hdf5.close()
+```
+<u>**Warnings:** </u>Leaving a hdf5 file opened is dangerous and may block its access !
+
+All functions listed below apply on an h5py instance such as `hdf5` variable resulting from the `pyhdf5_handler.src.hdf5_handler.open_hdf5` call. Usage and documentation of these functions are equivalent to the one described above in section `Input/Ouput on hdf5 file`:
+
+* `pyhdf5_handler.src.hdf5_handler.save_dict_to_hdf5file` <-> `pyhdf5_handler.src.hdf5_handler.save_dict_to_hdf5()`
+* `pyhdf5_handler.src.hdf5_handler.save_object_to_hdf5file` <-> `pyhdf5_handler.src.hdf5_handler.save_object_to_hdf5`
+* `pyhdf5_handler.src.hdf5_handler.hdf5file_view` <-> `pyhdf5_handler.src.hdf5_handler.hdf5_view`
+* `pyhdf5_handler.src.hdf5_handler.hdf5file_ls` <-> `pyhdf5_handler.src.hdf5_handler.hdf5_ls`
+* `pyhdf5_handler.src.hdf5_handler.search_in_hdf5file` <-> `pyhdf5_handler.src.hdf5_handler.search_in_hdf5`
+* `pyhdf5_handler.src.hdf5_handler.get_hdf5file_item` <-> `pyhdf5_handler.src.hdf5_handler.get_hdf5_item`
+
+## Lower level utilities
+
+#### Create or open an hdf5 file:  
+
+```python
+hdf5 = pyhdf5_handler.open_hdf5("./test.hdf5", read_only=False, replace=False)  
+```
+
+#### Create a new group (like a folder) in the file:  
+
+```python
+hdf5 = pyhdf5_handler.add_hdf5_sub_group(hdf5, subgroup="my_group")  
+hdf5["my_group"]  
+<HDF5 group "/my_group" (0 members)>  
+```
+
+#### Store basic type such as integer, float, string or None
+
+The function `pyhdf5_handler.src.hdf5_handler.hdf5_dataset_creator` create every dataset:
+
+```python
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"str","str")
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"numbers",1.0)
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"none",None)  
+```
+
+#### Store Timestamp  
+
+Timestamp object will be stored as string with ts.strftime("%Y-%m-%d %H:%M") encoded as utf8. Again, the function `pyhdf5_handler.src.hdf5_handler.hdf5_dataset_creator` create every dataset:
+
+```python
+import numpy as np
+import pandas as pd
+
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"timestamp_numpy",np.datetime64('2019-09-22T17:38:30'))
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"timestamp_datetime",datetime.datetime.fromisoformat('2019-09-22T17:38:30'))
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"timestamp_pandas",pd.Timestamp('2019-09-22T17:38:30'))
+```
+
+#### Store list or tuple
+
+Again, the function `pyhdf5_handler.src.hdf5_handler.hdf5_dataset_creator` create every dataset:
+
+```python
+import numpy as np
+import pandas as pd
+
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_num",[1.0,2.0])
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_str",["a","b"])
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_mixte",[1.0,"a"])
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_date_numpy",[np.datetime64('2019-09-22 17:38:30'),np.datetime64('2019-09-22 18:38:30')])
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_date_datetime",[datetime.datetime.fromisoformat('2019-09-22 17:38:30'),datetime.datetime.fromisoformat('2019-09-22T18:38:30')])
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_date_pandas",[pd.Timestamp('2019-09-22 17:38:30'),pd.Timestamp('2019-09-22 17:38:30')])
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"list_date_range_pandas",pd.date_range(start='1/1/2018', end='1/08/2018'))
+```
+Remark: List of timestamp will be stored in an numpy array first. When you will read back the data, you will retreive the numpy array but not the orignal list. Thus the data will be string, not timestamp. You will need to convert it yourself. 
+
+
+#### handle structured ndarray
+
+Structured ndarray are numpy array which store different type of data. Pyhdf5_handler will treat these numpy data specifically:
+
+```python
+import numpy as np
+data = [('Alice', 25, 55.0), ('Bob', 32, 60.5)]
+dtypes = [('name', 'U10'), ('age', 'i4'), ('weight', 'f4')]
+people = np.array(data, dtype=dtypes)
+
+pyhdf5_handler.hdf5_dataset_creator(hdf5,"structured_array",people)
+```
+
+### Read the content of the hdf5
+
+```
+If you want to read a specific item you can use `pyhdf5_handler.src.hdf5_handler.hdf5_read_dataset` and specify the output dtype:  
+
+```python
+pyhdf5_handler.hdf5_read_dataset(item=hdf5["list_mixte"])
+pyhdf5_handler.hdf5_read_dataset(item=hdf5["str"],expected_type=str(type("str")))
+pyhdf5_handler.hdf5_read_dataset(item=hdf5["str"],expected_type=hdf5.attrs["str"])
+```
+
+If you don't mind of the output dtype and you prefer to read the content like it is, use:
+
+```python
+hdf5["list_mixte"][:]
+```
+
+### Close hdf5 files
+
+Do not forget to close the hdf5 !
+
+```python
+hdf5.close()
+```
+
+**If you get in trouble with your hdf5 file because your program crash while an hdf5 file was processed, you can try to close all opened hdf5 file using the function `pyhdf5_handler.src.hdf5_handler.close_all_hdf5_file`:**
+
+```python
+pyhdf5_handler.close_all_hdf5_file()
+```
+
+# Concurrent hdf5 file access
+
+Hdf5 does not allow concurrent access: two different program can't read and write some data at the same time. To face this issue, we provide the function parameter `wait_time`. This parameter ca be provided to mostly all functions of this library. `wait_time` delays (in seconds) the access of the file if busy. Default is set to 0. But if `wait_time>0` the access will be differed until this time is elapsed.
+Suppose that an external program regularly write data in the an hdf5 file. Each operation will last few seconds. To access to the same hdf5 file, you must provide a value greater than 0 for the option `wait_time`. If you know that the writing operation should not last more than 1 minutes, you can differ your current operation by 60 seconds maximum:
+
+```python
+data=pyhdf5_handler.read_hdf5file_as_dict("./test.hdf5", wait_time=60)
+```
+
+In that case pyhdf5_handler will try to access to the hdf5 file during 60 seconds maximum while the hdf5 file is blocked. If this time is elapsed, the function will return None.
+
+Remark: `wait_time` option must be used both side (i.e for the writer and for the reader) to be sure that all operations will proceed. If your program will require an extensive usage of the HDF5 datbase, please consider using an other storage format or an other library.
+
+
+# Release on Pypi  
+
+To release on Pipy follow the next steps (https://packaging.python.org/en/latest/tutorials/packaging-projects/):  
+First remove /dist if exist, then  
+
+```bash
+python3 -m pip install --upgrade build
+python3 -m build
+python3 -m pip install --upgrade twine
+python3 -m twine upload dist/*
+```
