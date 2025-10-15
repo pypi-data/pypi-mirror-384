@@ -1,0 +1,54 @@
+{% load base_filters %}
+
+<tr>
+    <td>
+        {% if obj %}
+            {% trans 'Corporate Membership for' %}
+        	{{ obj|truncatewords:10 }}
+        	#<a href="{% url "corpmembership.view" obj.id %}" title="Corporate Membership">{{ obj.id }}</a>
+            ({% if obj.renewal %}
+             {% with obj.get_previous_expire_dt as previous_expire_dt %}
+                {% if previous_expire_dt > obj.renew_dt %}
+                  {{ previous_expire_dt|date:'N d, Y' }}
+                {% else %}
+                  {{ obj.renew_dt|date:'N d, Y' }}
+                {% endif %}
+             {% endwith %}
+             {% else %}
+               {{ obj.join_dt|date:'N d, Y' }}
+             {% endif %} - 
+             {% if obj.expiration_dt %}{{ obj.expiration_dt|date:'N d, Y' }}{% endif %})
+        {% else %}
+            {% trans "Corporate Membership information not available" %}
+        {% endif%}
+    </td>
+    <td class="td-right">
+        {% if obj and obj.donation_amount and not obj.donation %}
+        {{ invoice.total|subtract:obj.donation_amount|format_currency }}
+         {% else %}
+           {{ invoice.total|format_currency }}
+ 		{% endif%}
+    </td>
+</tr>
+
+{% if obj.renewal %}
+   {% if obj.donation_amount and not obj.donation %}
+       <tr>
+            <td>
+                {% trans "Donation Amount " %}
+            </td>
+            <td class="td-right">
+                {{ obj.donation_amount|format_currency }}
+            </td>
+        </tr>
+       {% endif %}
+
+    {% for renew_entry in obj.indivmembershiprenewentry_set.all %}
+        <tr>
+            <td>
+                <a href="{% url 'profile' renew_entry.membership.user.username %}">{{ renew_entry.membership.user.get_full_name }} #{{ renew_entry.membership.member_number }}</a>
+            </td>
+            <td class="td-right"></td>
+        </tr>
+    {% endfor %}
+{% endif%}
