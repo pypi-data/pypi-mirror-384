@@ -1,0 +1,354 @@
+Metadata-Version: 2.4
+Name: x_dm_python
+Version: 1.1.3
+Classifier: Programming Language :: Rust
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Summary: Twitter DM 批量并发发送库 (Rust 实现, 提供 Python 绑定)
+Author-email: robin <robin528919@gmail.com>
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+Project-URL: Homepage, https://github.com/yourusername/twitter-dm-static
+Project-URL: Repository, https://github.com/yourusername/twitter-dm-static.git
+Project-URL: Issues, https://github.com/yourusername/twitter-dm-static/issues
+
+# Twitter DM Python
+
+基于 Rust 开发的 Twitter 私信批量发送库，提供了单条和批量并发发送私信的功能。
+
+## ✨ 功能特性
+
+- 🚀 **单条私信发送**: 向指定用户发送单条私信
+- 📦 **批量并发发送**: 同时向多个用户发送私信，提高效率
+- 🔒 **安全认证**: 基于 cookies 的 Twitter 认证机制
+- 📝 **详细日志**: 完整的发送日志和错误追踪
+- ⚡ **高性能**: 使用 Tokio 实现真正的并发请求
+- 🐍 **Python 绑定**: 通过 PyO3 提供完全异步的 Python 接口
+
+## 📦 安装
+
+### 从源码构建 Python 扩展
+
+```bash
+# 安装 maturin (Python 包构建工具)
+pip install maturin
+
+# 开发模式安装 (快速测试)
+maturin develop
+
+# 或者构建 release wheel
+maturin build --release
+```
+
+### 使用 Rust
+
+在 `Cargo.toml` 中添加依赖:
+
+```toml
+[dependencies]
+x_dm_python = { path = "." }
+tokio = { version = "1", features = ["full"] }
+```
+
+## 🚀 快速开始
+
+### Python 使用示例 (异步 API)
+
+> **重要**: 从版本 1.0.0 开始，Python API 已完全切换为异步。
+
+```python
+import asyncio
+import x_dm_python
+
+async def main():
+    # 初始化客户端 (需要有效的 cookies)
+    cookies = "ct0=your_csrf_token; auth_token=your_auth_token; twid=u%3D123456789"
+    client = x_dm_python.Twitter(cookies)
+
+    # 发送单条私信 (异步)
+    result = await client.send_direct_message("123456789", "Hello from Python!")
+    if result.success:
+        print(f"私信发送成功! Event ID: {result.event_id}")
+    else:
+        print(f"私信发送失败: {result.error_msg}")
+
+    # 批量发送私信 (异步并发)
+    user_ids = ["user_id_1", "user_id_2", "user_id_3"]
+    message = "这是一条批量测试消息！"
+    batch_result = await client.send_batch_direct_messages(user_ids, message)
+
+    print(f"成功: {batch_result.success_count}, 失败: {batch_result.failure_count}")
+    for res in batch_result.results:
+        if res.success:
+            print(f"用户 {res.user_id} 发送成功")
+        else:
+            print(f"用户 {res.user_id} 发送失败: {res.error_msg}")
+
+# 运行异步主函数
+asyncio.run(main())
+```
+
+更多异步示例请参考 [`examples/python_async_example.py`](examples/python_async_example.py)
+
+### Rust 使用示例
+
+```rust
+use x_dm_python::Twitter;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 初始化客户端
+    let cookies = "ct0=your_csrf_token; auth_token=your_auth_token; twid=u%3D123456789";
+    let client = Twitter::new(cookies.to_string(), None)?;
+
+    // 发送单条私信
+    let result = client.send_direct_message("123456789", "Hello, World!").await?;
+    if result.success {
+        println!("私信发送成功!");
+    }
+
+    // 批量发送私信
+    let user_ids = vec!["123456789".to_string(), "987654321".to_string()];
+    let results = client.send_batch_direct_messages(user_ids, "批量消息", None).await?;
+
+    println!("成功: {}, 失败: {}", results.success_count, results.failure_count);
+
+    Ok(())
+}
+```
+
+## 📖 API 文档
+
+### Twitter 类
+
+#### Python API
+
+> **注意**: 从版本 1.0.0 开始，所有发送方法均为异步方法
+
+- `Twitter(cookies: str, proxy_url: Optional[str] = None)`: 创建 Twitter 客户端
+- `async send_direct_message(user_id: str, message: str) -> DMResult`: 发送单条私信 (异步)
+- `async send_batch_direct_messages(user_ids: List[str], message: str, client_transaction_ids: Optional[List[str]] = None) -> BatchDMResult`: 批量发送私信 (异步)
+- `validate_cookies() -> bool`: 验证 cookies 是否有效 (同步)
+- `get_cookies() -> str`: 获取当前 cookies (同步)
+
+#### Rust API
+
+- `Twitter::new(cookies: String, proxy_url: Option<String>) -> Result<Self>`: 创建 Twitter 客户端
+- `async fn send_direct_message(&self, user_id: &str, message: &str) -> Result<DMResult>`: 发送单条私信
+- `async fn send_batch_direct_messages(&self, user_ids: Vec<String>, message: &str, client_transaction_ids: Option<Vec<String>>) -> Result<BatchDMResult>`: 批量发送私信
+- `fn validate_cookies(&self) -> bool`: 验证 cookies 是否有效
+
+### DMResult 结构体
+
+| 字段 | 类型 | 说明 |
+|-----|------|------|
+| `success` | `bool` | 发送是否成功 |
+| `user_id` | `str/String` | 目标用户ID |
+| `message` | `str/String` | 发送的消息内容 |
+| `error_msg` | `str/String` | 错误信息(如果有) |
+| `http_status` | `int/u16` | HTTP 状态码 |
+| `event_id` | `Optional[str]/Option<String>` | Twitter 响应中的事件ID |
+
+### BatchDMResult 结构体
+
+| 字段 | 类型 | 说明 |
+|-----|------|------|
+| `success_count` | `int/usize` | 成功发送的数量 |
+| `failure_count` | `int/usize` | 发送失败的数量 |
+| `results` | `List[DMResult]/Vec<DMResult>` | 每个私信的详细发送结果 |
+
+## 🔐 获取 Twitter Cookies
+
+1. 在浏览器中登录 Twitter
+2. 打开开发者工具 (F12)
+3. 转到 Network 标签页
+4. 发送一条私信
+5. 在请求头中找到 Cookie 字段
+6. 复制完整的 Cookie 值
+
+**重要**: 请确保 cookies 包含以下必要字段：
+- `ct0`: CSRF令牌
+- `auth_token`: 认证令牌
+- `twid`: 用户ID
+
+## ⚠️ 注意事项
+
+### 安全性
+- 🔐 **保护 cookies**: 不要在代码中硬编码 cookies，使用环境变量或配置文件
+- 🚫 **避免滥用**: 遵守 Twitter 的使用条款，避免发送垃圾信息
+- ⏱️ **请求频率**: 注意控制请求频率，避免触发反垃圾机制
+
+### 性能优化
+- 📊 **并发控制**: 批量发送时自动并发，无需手动控制
+- ⏰ **超时设置**: 默认请求超时 30 秒
+- 📝 **日志级别**: 使用环境变量 `RUST_LOG=debug` 设置日志级别
+
+## 🏗️ 架构设计
+
+本项目采用**组合模式 + Trait 抽象**的模块化架构：
+
+### 模块组织
+- **common 模块**: 认证、HTTP 客户端、错误处理
+- **x 模块**: X (Twitter) 功能模块
+  - **dm 子模块**: 私信发送功能
+  - **upload 子模块**: 图片上传功能
+- **python 模块**: Python 绑定层
+- **lib.rs**: 聚合导出层
+
+### 使用方式
+
+**聚合使用（推荐）**
+```rust
+use x_dm_python::Twitter;
+
+// 通过 Twitter 统一客户端访问
+let twitter = Twitter::new(cookies, proxy)?;
+
+// 发送私信
+twitter.send_direct_message("user_id", "message", None).await?;
+
+// 上传图片
+twitter.upload_image(image_bytes, MediaCategory::DmImage).await?;
+```
+
+**独立模块使用**
+```rust
+use x_dm_python::x::dm::{DMClient, DMService};
+use x_dm_python::x::upload::{UploadClient, UploadService};
+
+// 只使用 DM 功能
+let dm = DMClient::new(auth.clone(), client.clone());
+dm.send_message("user_id", "message", None).await?;
+
+// 只使用 Upload 功能
+let upload = UploadClient::new(auth.clone(), client.clone());
+upload.upload_from_bytes(image_bytes, MediaCategory::DmImage).await?;
+```
+
+### 技术栈
+- 🚀 **并发**: Tokio 异步运行时
+- 🔌 **Python 绑定**: PyO3 0.26 + pyo3-async-runtimes
+- 📝 **日志**: tracing
+- 🔒 **错误处理**: Result<T, E>
+- 📦 **JSON**: serde_json
+- 🌐 **HTTP**: rquest (支持 JA3/JA4 指纹绕过)
+
+## 📝 开发
+
+### 构建
+
+```bash
+# 构建 Rust 库
+cargo build --release
+
+# 构建带 Python 绑定的库 (使用 maturin)
+maturin develop  # 开发模式
+# 或者构建 release wheel
+maturin build --release
+
+# 运行测试
+cargo test
+```
+
+### 测试
+
+本项目遵循 Rust 官方测试最佳实践，分为**单元测试**和**集成测试**：
+
+#### 单元测试
+
+单元测试位于 `src/` 目录中，与被测试代码在同一文件：
+
+```bash
+# 运行所有单元测试
+cargo test
+
+# 运行特定模块的测试
+cargo test upload::types::tests
+cargo test upload::client::tests
+
+# 带日志输出的测试
+RUST_LOG=debug cargo test -- --nocapture
+```
+
+**单元测试覆盖**：
+- ✅ `src/upload/types.rs`: 类型定义和序列化测试（9个测试）
+- ✅ `src/upload/client.rs`: MD5 计算和数据处理测试（4个测试）
+- ✅ `src/common/auth.rs`: Cookie 解析和认证测试
+- ✅ `src/dm/client.rs`: 私信发送逻辑测试
+
+#### 集成测试
+
+集成测试位于 `tests/` 目录，测试完整的 API 使用场景：
+
+```bash
+# 运行所有测试（跳过需要真实 cookies 的集成测试）
+cargo test
+
+# 运行集成测试（需要真实 Twitter cookies）
+TWITTER_COOKIES="ct0=xxx; auth_token=yyy; twid=u%3D123" cargo test -- --ignored
+
+# 运行特定的集成测试
+cargo test test_upload_tweet_image -- --ignored
+```
+
+**集成测试覆盖**：
+- ✅ `tests/integration_upload.rs`: 图片上传完整流程测试
+  - `test_upload_tweet_image`: 推文图片上传
+  - `test_upload_dm_image`: 私信图片上传
+  - `test_upload_banner_image`: 横幅图片上传
+  - `test_upload_multiple_images`: 批量上传测试
+  - `test_cookies_validation`: Cookies 验证
+  - `test_media_category_enum`: 媒体类别枚举测试
+
+**注意事项**：
+- 🚫 **默认跳过集成测试**：集成测试标记为 `#[ignore]`，需要真实 cookies 才能运行
+- 🔐 **环境变量**：通过 `TWITTER_COOKIES` 传递认证信息
+- ✅ **独立运行**：单元测试可以独立运行，不依赖外部服务
+
+#### Python 测试
+
+```bash
+# Python 测试 (需先安装)
+maturin develop
+python -m pytest tests/
+```
+
+## 📚 文档索引
+
+本项目提供了完整的技术文档和示例代码：
+
+### 核心文档
+
+- **[CLAUDE.md](CLAUDE.md)** - 项目规范和架构设计
+- **[docs/API.md](docs/API.md)** - Twitter API 详细规格
+- **[docs/TESTING.md](docs/TESTING.md)** - 测试策略和详细说明
+- **[docs/LOGGING.md](docs/LOGGING.md)** - 日志使用规范
+- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - 开发指南
+
+### 代码示例
+
+- **[examples/upload_single.rs](examples/upload_single.rs)** - 单次上传示例
+- **[examples/upload_batch.rs](examples/upload_batch.rs)** - 批量上传同一张图片示例
+- **[examples/dm_with_media.rs](examples/dm_with_media.rs)** - 带图片私信示例
+- **[examples/dm_batch.py](examples/dm_batch.py)** - Python 批量私信示例
+
+---
+
+## 📜 许可证
+
+MIT License
+
+## 🔗 相关链接
+
+- [Rust 文档](https://docs.rs)
+- [PyO3 文档](https://pyo3.rs)
+- [Maturin 文档](https://maturin.rs)
+- [Tokio 文档](https://tokio.rs)
+
