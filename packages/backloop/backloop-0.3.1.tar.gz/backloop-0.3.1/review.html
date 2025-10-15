@@ -1,0 +1,2261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loopback Code Review</title>
+    <!-- Prism.js CSS for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css" rel="stylesheet" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            background-color: #f6f8fa;
+            color: #1f2328;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background: #fff;
+            border-bottom: 1px solid #d0d7de;
+            padding: 16px 20px;
+            box-shadow: 0 1px 3px rgba(16,22,26,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .approve-button {
+            background: #1f883d;
+            color: white;
+            border: 1px solid #1f883d;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background-color 0.2s;
+        }
+
+        .approve-button:hover {
+            background: #1a7f37;
+            border-color: #1a7f37;
+        }
+
+        .approve-button:disabled {
+            background: #8b949e;
+            border-color: #8b949e;
+            cursor: not-allowed;
+        }
+
+        .refresh-button {
+            background: #0969da;
+            color: white;
+            border: 1px solid #0969da;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: background-color 0.2s;
+            margin-right: 8px;
+        }
+
+        .refresh-button:hover {
+            background: #0550ae;
+            border-color: #0550ae;
+        }
+
+        .refresh-button:disabled {
+            background: #8b949e;
+            border-color: #8b949e;
+            cursor: not-allowed;
+        }
+
+        .refresh-button.hidden {
+            display: none;
+        }
+
+        .main-container {
+            display: flex;
+            height: calc(100vh - 65px);
+            background: #fff;
+        }
+
+        .files-sidebar {
+            width: 300px;
+            border-right: 1px solid #d0d7de;
+            background: #fff;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .files-sidebar-header {
+            background: #f6f8fa;
+            padding: 12px 16px;
+            border-bottom: 1px solid #d0d7de;
+            font-weight: 600;
+            font-size: 14px;
+            color: #24292f;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .files-count {
+            background: #eaeef2;
+            color: #656d76;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .diff-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .diff-pane {
+            flex: 1;
+            overflow-y: auto;
+            background: #fff;
+            border-right: 1px solid #d0d7de;
+        }
+
+        .diff-pane:last-child {
+            border-right: none;
+        }
+
+        .diff-pane-header {
+            background: #f6f8fa;
+            border-bottom: 1px solid #d0d7de;
+            padding: 8px 12px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #656d76;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .file-section {
+            border-bottom: 1px solid #d0d7de;
+        }
+
+        .file-header {
+            background: #f6f8fa;
+            padding: 8px 16px;
+            border-bottom: 1px solid #d0d7de;
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+
+        .file-header:hover {
+            background: #eaeef2;
+        }
+
+        .file-path {
+            font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+        }
+
+        .file-stats {
+            color: #656d76;
+            font-size: 12px;
+        }
+
+        .collapse-icon {
+            transform: rotate(90deg);
+            transition: transform 0.2s;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+
+        .collapsed .collapse-icon {
+            transform: rotate(0deg);
+        }
+
+        .collapsed .diff-content {
+            display: none;
+        }
+
+        .diff-line {
+            display: flex;
+            font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 20px;
+        }
+
+        .line-number {
+            width: 80px;
+            padding: 0 4px;
+            text-align: right;
+            color: #656d76;
+            background: #f6f8fa;
+            border-right: 1px solid #d0d7de;
+            cursor: pointer;
+            user-select: none;
+            flex-shrink: 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            position: relative;
+        }
+
+        .old-line-num,
+        .new-line-num {
+            width: 35px;
+            text-align: right;
+        }
+
+        .gutter-indicator {
+            width: 10px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .line-number:hover {
+            background: #0969da !important;
+            color: #fff;
+        }
+
+        .line-number:hover .old-line-num,
+        .line-number:hover .new-line-num,
+        .line-number:hover .gutter-indicator {
+            color: #fff;
+        }
+
+        .line-number:hover::after {
+            content: '+';
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #0969da;
+            color: white;
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .line-content {
+            flex: 1;
+            padding: 0 8px;
+            white-space: pre;
+            overflow-x: auto;
+        }
+
+        .context-line {
+            background: #fff;
+        }
+
+        .context-line .old-line-num,
+        .context-line .new-line-num {
+            color: #656d76;
+        }
+
+        .addition-line {
+            background: #e6ffed;
+        }
+
+        .addition-line .line-number {
+            background: #ccffd8;
+        }
+
+        .addition-line .gutter-indicator {
+            color: #1a7f37;
+        }
+
+        .deletion-line {
+            background: #ffeef0;
+        }
+
+        .deletion-line .line-number {
+            background: #ffd7d5;
+        }
+
+        .deletion-line .gutter-indicator {
+            color: #cf222e;
+        }
+
+        .diff-line:hover {
+            background: #f6f8fa;
+        }
+
+        .addition-line:hover {
+            background: #d3f6db;
+        }
+
+        .deletion-line:hover {
+            background: #ffd8da;
+        }
+
+        .empty-line {
+            background: #f8f9fa;
+            min-height: 20px;
+        }
+
+        .empty-line .line-number {
+            background: #f8f9fa;
+        }
+
+        /* Comment System Styles */
+        .comment-badge {
+            position: absolute;
+            right: -8px;
+            top: 1px;
+            background: #0969da;
+            color: white;
+            border-radius: 10px;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: bold;
+            min-width: 16px;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .comment-form {
+            background: #fff;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            margin: 8px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(16,22,26,0.1);
+        }
+
+        .comment-form textarea {
+            width: 100%;
+            min-height: 80px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            padding: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 8px;
+        }
+
+        .comment-form textarea:focus {
+            outline: none;
+            border-color: #0969da;
+            box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+        }
+
+        .comment-form-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn-primary {
+            background: #1f883d;
+            color: white;
+            border-color: #1f883d;
+        }
+
+        .btn-primary:hover {
+            background: #1a7f37;
+            border-color: #1a7f37;
+        }
+
+        .btn-secondary {
+            background: #f6f8fa;
+            color: #24292f;
+            border-color: #d0d7de;
+        }
+
+        .btn-secondary:hover {
+            background: #f3f4f6;
+            border-color: #d0d7de;
+        }
+
+        .comment-thread {
+            background: #fff;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            margin: 8px;
+            overflow: hidden;
+        }
+
+        .comment {
+            border-bottom: 1px solid #d0d7de;
+            padding: 12px;
+        }
+
+        .comment:last-child {
+            border-bottom: none;
+        }
+
+        .comment-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #656d76;
+        }
+
+        .comment-author {
+            font-weight: 600;
+            color: #24292f;
+        }
+
+        .comment-timestamp {
+            color: #656d76;
+        }
+
+        .comment-body {
+            color: #24292f;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .comment-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+
+        .comment-action {
+            color: #656d76;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .comment-action:hover {
+            color: #0969da;
+        }
+
+        .comment-delete-btn {
+            background: #da3633 !important;
+            color: white !important;
+            border: none !important;
+            padding: 2px 8px !important;
+            border-radius: 4px !important;
+            font-size: 12px !important;
+            cursor: pointer !important;
+            margin-left: 8px !important;
+            transition: background-color 0.2s ease !important;
+        }
+        
+        .comment-delete-btn:hover {
+            background: #b91c1c !important;
+        }
+
+        .comment-toggle {
+            cursor: pointer;
+            color: #0969da;
+            font-size: 12px;
+            margin: 4px 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .comment-toggle:hover {
+            text-decoration: underline;
+        }
+
+        .comment-thread.collapsed .comment {
+            display: none;
+        }
+
+        .comment-thread.collapsed .comment:first-child {
+            display: block;
+        }
+
+        .file-tree {
+            padding: 8px 0;
+        }
+
+        .file-tree-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #24292f;
+        }
+
+        .file-tree-item:hover {
+            background: #f6f8fa;
+        }
+
+        .file-tree-item.active {
+            background: #ddf4ff;
+            color: #0969da;
+        }
+
+        .file-icon {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            color: #656d76;
+        }
+
+        .file-name {
+            flex: 1;
+            font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+            font-size: 13px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-changes {
+            margin-left: 8px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .folder-item {
+            font-weight: 500;
+            color: #656d76;
+        }
+
+        .folder-icon {
+            margin-right: 6px;
+        }
+
+        .folder-children {
+            margin-left: 20px;
+        }
+
+        .collapsed .folder-children {
+            display: none;
+        }
+
+        .folder-toggle {
+            transform: rotate(90deg);
+            transition: transform 0.2s;
+            font-size: 10px;
+            margin-right: 4px;
+            color: #656d76;
+        }
+
+        .collapsed .folder-toggle {
+            transform: rotate(0deg);
+        }
+
+        .additions {
+            color: #1a7f37;
+        }
+
+        .deletions {
+            color: #d1242f;
+        }
+
+        /* File Status Styles */
+        .status-badge {
+            margin-left: 8px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-added {
+            background: #ddf4ff;
+            color: #0969da;
+        }
+
+        .status-deleted {
+            background: #ffebe9;
+            color: #cf222e;
+        }
+
+        .status-renamed {
+            background: #fff8c5;
+            color: #9a6700;
+        }
+        
+        .status-untracked {
+            background: #f6f8fa;
+            color: #656d76;
+        }
+
+        .binary-indicator {
+            color: #656d76;
+            font-style: italic;
+            font-size: 12px;
+        }
+        
+        .status-tag {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .untracked-tag {
+            background: #f6f8fa;
+            color: #8b949e;
+            border: 1px solid #d0d7de;
+        }
+
+        /* File tree status colors */
+        .file-added .file-name {
+            color: #1a7f37;
+        }
+
+        .file-deleted .file-name {
+            color: #cf222e;
+            text-decoration: line-through;
+        }
+
+        .file-renamed .file-name {
+            color: #9a6700;
+        }
+        
+        .file-untracked .file-name {
+            color: #8b949e;
+            opacity: 0.7;
+        }
+
+        /* File editing styles */
+        .edit-button {
+            background: #0969da;
+            color: white;
+            border: 1px solid #0969da;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-left: 8px;
+            transition: background-color 0.2s;
+        }
+
+        .edit-button:hover {
+            background: #0550ae;
+            border-color: #0550ae;
+        }
+
+        .edit-button:disabled {
+            background: #8b949e;
+            border-color: #8b949e;
+            cursor: not-allowed;
+        }
+
+        .edit-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .edit-modal-content {
+            background: white;
+            border-radius: 6px;
+            width: 90%;
+            height: 80%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+
+        .edit-modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #d0d7de;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f6f8fa;
+            border-radius: 6px 6px 0 0;
+        }
+
+        .edit-modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #24292f;
+        }
+
+        .edit-modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #656d76;
+            padding: 4px;
+        }
+
+        .edit-modal-close:hover {
+            color: #24292f;
+        }
+
+        .edit-modal-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .edit-line-numbers {
+            width: 60px;
+            background: #f6f8fa;
+            border-right: 1px solid #d0d7de;
+            font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 16px;
+            padding: 12px 8px;
+            color: #656d76;
+            overflow-y: auto;
+            overflow-x: hidden;
+            text-align: right;
+            user-select: none;
+            white-space: pre;
+        }
+
+        .edit-textarea {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 16px;
+            padding: 12px;
+            resize: none;
+            white-space: pre;
+            overflow-wrap: normal;
+            overflow-x: auto;
+        }
+
+        .edit-modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid #d0d7de;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            background: #f6f8fa;
+        }
+
+        .line-edit-indicator {
+            position: absolute;
+            right: 2px;
+            top: 2px;
+            background: #0969da;
+            color: white;
+            border-radius: 2px;
+            padding: 1px 4px;
+            font-size: 10px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .line-edit-indicator:hover {
+            background: #0550ae;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Loopback Code Review</h1>
+        <div>
+            <button id="refresh-button" class="refresh-button hidden">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/>
+                </svg>
+                Refresh
+            </button>
+            <button id="approve-button" class="approve-button">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                </svg>
+                Approve
+            </button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="files-sidebar">
+            <div class="files-sidebar-header">
+                Files changed
+                <span class="files-count" id="files-count">0</span>
+            </div>
+            <div class="file-tree" id="file-tree">
+                <!-- File tree will be populated here -->
+            </div>
+        </div>
+
+        <div class="diff-container">
+            <div class="diff-pane" id="old-pane">
+                <div class="diff-pane-header">Original</div>
+                <div id="old-content">
+                    <!-- Original file content will be populated here -->
+                </div>
+            </div>
+            <div class="diff-pane" id="new-pane">
+                <div class="diff-pane-header">Modified</div>
+                <div id="new-content">
+                    <!-- Modified file content will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global comment functions - NOT in module scope
+        let commentIdCounter = 1;
+        let commentsData = {};
+        
+        function showCommentForm(filePath, lineNumber, side, lineElement) {
+            console.log('Global showCommentForm called:', filePath, lineNumber, side);
+            // Check if form already exists for this line
+            const existingForm = lineElement.parentElement.querySelector('.comment-form');
+            if (existingForm) {
+                existingForm.remove();
+                return;
+            }
+
+            const commentForm = document.createElement('div');
+            commentForm.className = 'comment-form';
+            commentForm.innerHTML = `
+                <textarea placeholder="Leave a comment..."></textarea>
+                <div class="comment-form-buttons">
+                    <button class="btn btn-secondary" onclick="this.closest('.comment-form').remove()">Cancel</button>
+                    <button class="btn btn-primary" onclick="submitComment(this)">Comment</button>
+                </div>
+            `;
+
+            // Store metadata on the form
+            commentForm.dataset.filePath = filePath;
+            commentForm.dataset.lineNumber = lineNumber;
+            commentForm.dataset.side = side;
+            commentForm.dataset.lineElementId = lineElement.id;
+
+            // Insert after the line element
+            lineElement.parentElement.insertBefore(commentForm, lineElement.nextSibling);
+            commentForm.querySelector('textarea').focus();
+        }
+        
+        async function submitComment(buttonElement) {
+            const form = buttonElement.closest('.comment-form');
+            const textarea = form.querySelector('textarea');
+            const content = textarea.value.trim();
+
+            if (!content) {
+                alert('Please enter a comment.');
+                return;
+            }
+
+            const filePath = form.dataset.filePath;
+            const lineNumber = parseInt(form.dataset.lineNumber);
+            const side = form.dataset.side;
+
+            // Get review ID from URL
+            const pathParts = window.location.pathname.split('/');
+            const reviewId = pathParts[2]; // /review/{review_id}/view
+            
+            try {
+                // Make API call to add comment
+                const response = await fetch(`/review/${reviewId}/api/comments`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        file_path: filePath,
+                        line_number: lineNumber,
+                        side: side,
+                        content: content,
+                        author: 'Reviewer'
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to add comment');
+                }
+                
+                const result = await response.json();
+                const comment = result.comment;
+                const queuePosition = result.queue_position;
+                
+                // Add queue position to comment for display
+                comment.queuePosition = queuePosition;
+                
+                // Store comment locally
+                const key = `${filePath}:${lineNumber}:${side}`;
+                if (!commentsData[key]) {
+                    commentsData[key] = [];
+                }
+                commentsData[key].push(comment);
+                
+                // Get line element by stored ID
+                const lineElementId = form.dataset.lineElementId;
+                const lineElement = document.getElementById(lineElementId);
+                
+                // Remove form and display comment with queue position
+                form.remove();
+                displayCommentWithQueue(comment, lineNumber, side, lineElement);
+                
+                console.log(`Comment added at queue position ${queuePosition}:`, comment);
+            } catch (error) {
+                console.error('Error adding comment:', error);
+                // Fall back to local storage
+                const comment = {
+                    id: commentIdCounter++,
+                    content: content,
+                    author: 'Reviewer',
+                    timestamp: new Date().toLocaleString(),
+                    filePath: filePath,
+                    lineNumber: lineNumber,
+                    side: side,
+                    queuePosition: commentIdCounter // Use local counter as queue position
+                };
+                
+                const key = `${filePath}:${lineNumber}:${side}`;
+                if (!commentsData[key]) {
+                    commentsData[key] = [];
+                }
+                commentsData[key].push(comment);
+                
+                // Get line element by stored ID
+                const lineElementId = form.dataset.lineElementId;
+                const lineElement = document.getElementById(lineElementId);
+                
+                form.remove();
+                displayCommentWithQueue(comment, lineNumber, side, lineElement);
+            }
+        }
+        
+        function displayCommentWithQueue(comment, lineNumber, side, lineElement) {
+            console.log('Displaying comment:', comment, 'after line element:', lineElement);
+            
+            if (!lineElement) {
+                console.error('Line element is null, cannot display comment');
+                return;
+            }
+            
+            // Create comment display element
+            const commentDiv = document.createElement('div');
+            commentDiv.className = 'comment-thread';
+            commentDiv.dataset.commentId = comment.id;
+            commentDiv.style.margin = '8px';
+            commentDiv.style.maxWidth = 'calc(100% - 16px)';
+            commentDiv.style.backgroundColor = '#f6f8fa';
+            commentDiv.style.border = '1px solid #d0d7de';
+            commentDiv.style.borderRadius = '6px';
+            
+            // Escape HTML content to prevent issues
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            };
+            
+            // Determine status badge HTML
+            let statusBadge = '';
+            if (comment.status === 'in_progress') {
+                statusBadge = `
+                    <span style="background: #fb8500; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                        In Progress
+                    </span>
+                `;
+            } else if (comment.status === 'resolved') {
+                statusBadge = `
+                    <span style="background: #1a7f37; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                        ✓ Resolved
+                    </span>
+                `;
+                // Update comment appearance for resolved status
+                commentDiv.style.opacity = '0.7';
+                commentDiv.style.borderColor = '#1a7f37';
+            } else if (comment.queuePosition) {
+                statusBadge = `
+                    <span style="background: #0969da; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                        Queue #${comment.queuePosition}
+                    </span>
+                `;
+            }
+            
+            commentDiv.innerHTML = `
+                <div class="comment">
+                    <div class="comment-header">
+                        <span class="comment-author">${escapeHtml(comment.author)}</span>
+                        <span class="comment-timestamp">${escapeHtml(comment.timestamp)}</span>
+                        ${statusBadge}
+                        <button class="comment-delete-btn" onclick="deleteComment('${comment.id}', this)" 
+                                style="margin-left: 8px; background: #da3633; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;"
+                                title="Delete comment">
+                            ×
+                        </button>
+                    </div>
+                    <div class="comment-body" ${comment.status === 'resolved' ? 'style="text-decoration: line-through;"' : ''}>${escapeHtml(comment.content)}</div>
+                </div>
+            `;
+            
+            // Insert the comment display after the line element
+            if (lineElement.parentElement) {
+                lineElement.parentElement.insertBefore(commentDiv, lineElement.nextSibling);
+                console.log('Comment display element inserted after line element');
+            } else {
+                console.error('Line element has no parent, cannot insert comment');
+            }
+        }
+        
+        async function deleteComment(commentId, buttonElement) {
+            if (!confirm('Are you sure you want to delete this comment?')) {
+                return;
+            }
+            
+            // Get review ID from URL
+            const pathParts = window.location.pathname.split('/');
+            const reviewId = pathParts[2]; // /review/{review_id}/view
+            
+            try {
+                // Make API call to delete comment
+                const response = await fetch(`/review/${reviewId}/api/comments/${commentId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to delete comment');
+                }
+                
+                // Remove comment from UI
+                const commentThread = buttonElement.closest('.comment-thread');
+                if (commentThread) {
+                    commentThread.remove();
+                }
+                
+                // Remove from local storage
+                for (const key in commentsData) {
+                    commentsData[key] = commentsData[key].filter(c => c.id !== commentId);
+                    if (commentsData[key].length === 0) {
+                        delete commentsData[key];
+                    }
+                }
+                
+                console.log('Comment deleted:', commentId);
+            } catch (error) {
+                console.error('Error deleting comment:', error);
+                alert('Failed to delete comment: ' + error.message);
+            }
+        }
+        
+        // Utility function for escaping HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // File editing functionality
+        async function openFileEditor(filePath, lineNumber = null) {
+            try {
+                // First, try to read the file content from the file system
+                // In a real implementation, this would be an API call
+                const pathParts = window.location.pathname.split('/');
+                const reviewId = pathParts[2];
+                const response = await fetch(`/review/${reviewId}/api/file-content?path=${encodeURIComponent(filePath)}`);
+                let fileContent = '';
+                
+                if (response.ok) {
+                    fileContent = await response.text();
+                } else {
+                    // If we can't read the file, start with empty content
+                    console.warn('Could not read file, starting with empty content');
+                    fileContent = '';
+                }
+                
+                showEditModal(filePath, fileContent, lineNumber);
+                
+            } catch (error) {
+                console.error('Error opening file editor:', error);
+                alert('Failed to open file editor: ' + error.message);
+            }
+        }
+        
+        function showEditModal(filePath, content, jumpToLine = null) {
+            // Remove existing modal if any
+            const existingModal = document.querySelector('.edit-modal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            const modal = document.createElement('div');
+            modal.className = 'edit-modal';
+            
+            // Generate line numbers
+            const lines = content.split('\n');
+            const lineNumbers = lines.map((_, i) => i + 1).join('\n');
+            
+            modal.innerHTML = `
+                <div class="edit-modal-content">
+                    <div class="edit-modal-header">
+                        <div class="edit-modal-title">Edit: ${escapeHtml(filePath)}</div>
+                        <button class="edit-modal-close" onclick="closeEditModal()">&times;</button>
+                    </div>
+                    <div class="edit-modal-body">
+                        <div class="edit-line-numbers">${lineNumbers}</div>
+                        <textarea class="edit-textarea" data-file-path="${escapeHtml(filePath)}" data-original-content="${escapeHtml(content)}">${escapeHtml(content)}</textarea>
+                    </div>
+                    <div class="edit-modal-footer">
+                        <button class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                        <button class="btn btn-primary" onclick="saveFileEdit()">Save Changes</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            const textarea = modal.querySelector('.edit-textarea');
+            textarea.focus();
+            
+            // Set up line number synchronization
+            const lineNumbersEl = modal.querySelector('.edit-line-numbers');
+            textarea.addEventListener('scroll', () => {
+                lineNumbersEl.scrollTop = textarea.scrollTop;
+            });
+            
+            // Update line numbers on content change
+            textarea.addEventListener('input', () => {
+                const newLines = textarea.value.split('\n');
+                const newLineNumbers = newLines.map((_, i) => i + 1).join('\n');
+                lineNumbersEl.textContent = newLineNumbers;
+            });
+            
+            // Jump to specific line if requested
+            if (jumpToLine) {
+                const lineHeight = 16; // matches CSS line-height
+                const targetScrollTop = (jumpToLine - 1) * lineHeight;
+                textarea.scrollTop = targetScrollTop;
+                lineNumbersEl.scrollTop = targetScrollTop;
+                
+                // Select the line
+                setTimeout(() => {
+                    const startPos = content.split('\n').slice(0, jumpToLine - 1).join('\n').length + (jumpToLine > 1 ? 1 : 0);
+                    const endPos = startPos + (lines[jumpToLine - 1] ? lines[jumpToLine - 1].length : 0);
+                    textarea.setSelectionRange(startPos, endPos);
+                }, 100);
+            }
+        }
+        
+        function closeEditModal() {
+            const modal = document.querySelector('.edit-modal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+        
+        async function saveFileEdit() {
+            const modal = document.querySelector('.edit-modal');
+            if (!modal) return;
+            
+            const textarea = modal.querySelector('.edit-textarea');
+            const filePath = textarea.dataset.filePath;
+            const originalContent = textarea.dataset.originalContent;
+            const newContent = textarea.value;
+            
+            try {
+                // Create a unified diff patch
+                const patch = createUnifiedDiff(originalContent, newContent, filePath);
+                
+                const pathParts = window.location.pathname.split('/');
+                const reviewId = pathParts[2];
+                const response = await fetch(`/review/${reviewId}/api/edit`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filename: filePath,
+                        patch: patch
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to save file');
+                }
+                
+                const result = await response.json();
+                console.log('File saved successfully:', result);
+                
+                // Close modal
+                closeEditModal();
+                
+                // Refresh the diff view to show the new changes
+                window.location.reload();
+                
+            } catch (error) {
+                console.error('Error saving file:', error);
+                alert('Failed to save file: ' + error.message);
+            }
+        }
+        
+        // Create a unified diff patch from original and new content
+        function createUnifiedDiff(originalContent, newContent, filePath) {
+            // Handle the case where content doesn't end with newline
+            const originalEndsWithNewline = originalContent.endsWith('\n');
+            const newEndsWithNewline = newContent.endsWith('\n');
+            
+            // Split lines properly - remove empty trailing element if no trailing newline
+            let originalLines = originalContent.split('\n');
+            let newLines = newContent.split('\n');
+            
+            if (!originalEndsWithNewline && originalLines[originalLines.length - 1] === '') {
+                originalLines.pop();
+            }
+            if (!newEndsWithNewline && newLines[newLines.length - 1] === '') {
+                newLines.pop();
+            }
+            
+            // Simple unified diff creation - replace entire file
+            // In a real implementation, you'd use a proper diff algorithm
+            let patch = `--- a/${filePath}\n+++ b/${filePath}\n`;
+            patch += `@@ -1,${originalLines.length} +1,${newLines.length} @@\n`;
+            
+            // Add all old lines as deletions
+            for (let i = 0; i < originalLines.length; i++) {
+                patch += `-${originalLines[i]}`;
+                // Add newline unless it's the last line and original doesn't end with newline
+                if (i < originalLines.length - 1 || originalEndsWithNewline) {
+                    patch += '\n';
+                } else {
+                    patch += '\n\\ No newline at end of file\n';
+                }
+            }
+            
+            // Add all new lines as additions
+            for (let i = 0; i < newLines.length; i++) {
+                patch += `+${newLines[i]}`;
+                // Add newline unless it's the last line and new doesn't end with newline
+                if (i < newLines.length - 1 || newEndsWithNewline) {
+                    patch += '\n';
+                } else {
+                    patch += '\n\\ No newline at end of file\n';
+                }
+            }
+            
+            return patch;
+        }
+        
+        function showLineEditOption(lineElement, filePath, lineNumber, side) {
+            // Remove existing edit indicators
+            const existingIndicators = lineElement.querySelectorAll('.line-edit-indicator');
+            existingIndicators.forEach(indicator => indicator.remove());
+            
+            // Add edit indicator
+            const editIndicator = document.createElement('div');
+            editIndicator.className = 'line-edit-indicator';
+            editIndicator.textContent = 'Edit';
+            editIndicator.title = 'Edit this file';
+            editIndicator.onclick = (e) => {
+                e.stopPropagation();
+                openFileEditor(filePath, parseInt(lineNumber));
+            };
+            
+            const lineNumberEl = lineElement.querySelector('.line-number');
+            if (lineNumberEl) {
+                lineNumberEl.style.position = 'relative';
+                lineNumberEl.appendChild(editIndicator);
+            }
+        }
+
+        // Make functions available globally
+        window.showCommentForm = showCommentForm;
+        window.submitComment = submitComment;
+        window.deleteComment = deleteComment;
+        window.openFileEditor = openFileEditor;
+        window.closeEditModal = closeEditModal;
+        window.saveFileEdit = saveFileEdit;
+        
+        // Setup global click handler for line numbers (like old index.html)
+        console.log('Setting up global click handler...');
+        document.addEventListener('click', (e) => {
+            console.log('Document clicked, target:', e.target, 'className:', e.target.className);
+            
+            // Check if clicking on line number or its children
+            const lineNumber = e.target.closest('.line-number');
+            console.log('Found line-number element?', lineNumber);
+            if (!lineNumber) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const lineElement = lineNumber.closest('.diff-line');
+            console.log('Found diff-line?', lineElement);
+            if (!lineElement || lineElement.classList.contains('empty-line')) {
+                console.log('Line element is empty or not found');
+                return;
+            }
+
+            // Extract line information
+            const fileSection = lineElement.closest('.file-section');
+            console.log('Found file-section?', fileSection);
+            if (!fileSection) return;
+            
+            const filePathEl = fileSection.querySelector('.file-path');
+            console.log('Found file-path element?', filePathEl);
+            if (!filePathEl) return;
+            
+            const filePath = filePathEl.textContent;
+            const diffPane = lineElement.closest('.diff-pane');
+            const side = diffPane.id === 'old-pane' ? 'old' : 'new';
+            
+            const oldNumEl = lineNumber.querySelector('.old-line-num');
+            const newNumEl = lineNumber.querySelector('.new-line-num');
+            const oldNum = oldNumEl ? oldNumEl.textContent.trim() : null;
+            const newNum = newNumEl ? newNumEl.textContent.trim() : null;
+            
+            console.log('Line numbers - old:', oldNum, 'new:', newNum, 'side:', side);
+            
+            // Use the appropriate line number for the side
+            const lineNum = side === 'old' ? oldNum : newNum;
+            
+            if (lineNum) {
+                console.log('Line clicked (global handler):', filePath, lineNum, side);
+                // Show comment form
+                showCommentForm(filePath, lineNum, side, lineElement);
+            } else {
+                console.log('No line number found for side:', side);
+            }
+        });
+        console.log('Global click handler setup complete.');
+    </script>
+
+    <script type="module">
+        // Parse query parameters to determine diff type
+        const urlParams = new URLSearchParams(window.location.search);
+        const commit = urlParams.get('commit');
+        const range = urlParams.get('range');
+        const since = urlParams.get('since');
+        const live = urlParams.get('live') === 'true';
+        const mock = urlParams.get('mock') === 'true';
+
+        // Build hierarchical file tree structure
+        function buildFileTree(files) {
+            const tree = {};
+            
+            files.forEach(file => {
+                const parts = file.path.split('/');
+                let current = tree;
+                
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const isFile = i === parts.length - 1;
+                    
+                    if (!current[part]) {
+                        current[part] = isFile ? {
+                            type: 'file',
+                            data: file,
+                            path: file.path
+                        } : {
+                            type: 'folder',
+                            children: {},
+                            expanded: true
+                        };
+                    }
+                    
+                    if (!isFile) {
+                        current = current[part].children;
+                    }
+                }
+            });
+            
+            return tree;
+        }
+
+        // Render file tree
+        function renderFileTree(tree, container, depth = 0) {
+            const keys = Object.keys(tree).sort((a, b) => {
+                const aIsFile = tree[a].type === 'file';
+                const bIsFile = tree[b].type === 'file';
+                
+                if (aIsFile !== bIsFile) {
+                    return aIsFile ? 1 : -1; // Folders first
+                }
+                
+                return a.localeCompare(b);
+            });
+            
+            keys.forEach(key => {
+                const item = tree[key];
+                const itemElement = document.createElement('div');
+                
+                if (item.type === 'file') {
+                    itemElement.className = 'file-tree-item';
+                    itemElement.style.paddingLeft = `${16 + depth * 20}px`;
+                    
+                    // Determine file status indicator and styling
+                    let statusIndicator = '';
+                    let statusClass = '';
+                    const file = item.data;
+                    
+                    switch (file.status) {
+                        case 'added':
+                            statusIndicator = '+ ';
+                            statusClass = ' file-added';
+                            break;
+                        case 'deleted':
+                            statusIndicator = '- ';
+                            statusClass = ' file-deleted';
+                            break;
+                        case 'renamed':
+                            statusIndicator = '→ ';
+                            statusClass = ' file-renamed';
+                            break;
+                        case 'untracked':
+                            statusIndicator = '';
+                            statusClass = ' file-untracked';
+                            break;
+                        case 'modified':
+                        default:
+                            statusIndicator = '';
+                            statusClass = '';
+                            break;
+                    }
+                    
+                    itemElement.className += statusClass;
+                    
+                    // Handle binary files and status tags
+                    let changesDisplay = '';
+                    if (file.status === 'untracked') {
+                        changesDisplay = '<span class="status-tag untracked-tag">UNTRACKED</span>';
+                    } else if (file.binary) {
+                        changesDisplay = '<span class="binary-indicator">Binary file</span>';
+                    } else if (file.additions > 0 || file.deletions > 0) {
+                        changesDisplay = `
+                            <span class="additions">+${file.additions}</span>
+                            <span class="deletions">−${file.deletions}</span>
+                        `;
+                    }
+                    
+                    const fileName = file.status === 'renamed' 
+                        ? `${statusIndicator}${file.oldPath} → ${key}`
+                        : `${statusIndicator}${key}`;
+                    
+                    itemElement.innerHTML = `
+                        <svg class="file-icon" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M2 1.75A1.75 1.75 0 013.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75z"/>
+                        </svg>
+                        <span class="file-name" title="${file.status === 'renamed' ? 'Renamed from: ' + file.oldPath : ''}">${fileName}</span>
+                        <span class="file-changes">${changesDisplay}</span>
+                    `;
+                    
+                    // Add click handler to scroll to file
+                    itemElement.addEventListener('click', () => {
+                        scrollToFile(item.data.path);
+                        
+                        // Update active state
+                        document.querySelectorAll('.file-tree-item').forEach(el => {
+                            el.classList.remove('active');
+                        });
+                        itemElement.classList.add('active');
+                    });
+                    
+                } else {
+                    itemElement.className = 'file-tree-item folder-item';
+                    itemElement.style.paddingLeft = `${16 + depth * 20}px`;
+                    const expanded = item.expanded ? '' : 'collapsed';
+                    itemElement.innerHTML = `
+                        <span class="folder-toggle">▶</span>
+                        <svg class="file-icon folder-icon" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M1.75 2A1.75 1.75 0 000 3.75v8.5C0 13.216.784 14 1.75 14h12.5A1.75 1.75 0 0016 12.25v-8.5A1.75 1.75 0 0014.25 2H7.5L6.25.75A1.75 1.75 0 005.086.25H1.75z"/>
+                        </svg>
+                        <span class="file-name">${key}</span>
+                    `;
+                    
+                    // Create folder children container
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = `folder-children ${expanded}`;
+                    
+                    // Add click handler for folder toggle
+                    itemElement.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const isExpanded = !childrenContainer.classList.contains('collapsed');
+                        
+                        if (isExpanded) {
+                            childrenContainer.classList.add('collapsed');
+                            itemElement.classList.add('collapsed');
+                        } else {
+                            childrenContainer.classList.remove('collapsed');
+                            itemElement.classList.remove('collapsed');
+                        }
+                        
+                        item.expanded = !isExpanded;
+                    });
+                    
+                    container.appendChild(itemElement);
+                    renderFileTree(item.children, childrenContainer, depth + 1);
+                    container.appendChild(childrenContainer);
+                    return;
+                }
+                
+                container.appendChild(itemElement);
+            });
+        }
+
+        // Scroll to specific file in diff view using anchors
+        function scrollToFile(filePath) {
+            // Create a sanitized anchor ID from the file path
+            const anchorId = 'file-' + filePath.replace(/[^a-zA-Z0-9]/g, '-');
+            
+            // Find and scroll to anchors in both panes
+            const diffPanes = [document.getElementById('old-pane'), document.getElementById('new-pane')];
+            
+            diffPanes.forEach(pane => {
+                const anchor = pane.querySelector(`#${anchorId}-${pane.id}`);
+                if (anchor) {
+                    // Use scrollIntoView with instant behavior
+                    anchor.scrollIntoView({ behavior: 'instant', block: 'start' });
+                }
+            });
+        }
+
+        // API Client for communication with backend
+        class ApiClient {
+            constructor(baseUrl = '') {
+                this.baseUrl = baseUrl;
+            }
+            
+            async getDiff(options = {}) {
+                const { commit, range } = options;
+                
+                const params = new URLSearchParams();
+                if (commit) params.append('commit', commit);
+                if (range) params.append('range', range);
+                
+                const response = await fetch(`${this.baseUrl}/api/diff?${params}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch diff: ${response.statusText}`);
+                }
+                return await response.json();
+            }
+            
+            async getLiveDiff(since = 'HEAD') {
+                const params = new URLSearchParams();
+                if (since) params.append('since', since);
+                
+                const response = await fetch(`${this.baseUrl}/api/diff/live?${params}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch live diff: ${response.statusText}`);
+                }
+                return await response.json();
+            }
+            
+            async getMockDiff() {
+                const response = await fetch(`${this.baseUrl}/api/diff/mock`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch mock diff: ${response.statusText}`);
+                }
+                return await response.json();
+            }
+            
+            async approve() {
+                // Extract review ID from current URL
+                const pathParts = window.location.pathname.split('/review/');
+                const reviewId = pathParts.length > 1 ? pathParts[1].split('/')[0] : 'default';
+                
+                const response = await fetch(`/review/${reviewId}/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        timestamp: new Date().toISOString()
+                    }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to approve: ${response.statusText}`);
+                }
+                return await response.json();
+            }
+        }
+        
+        // Initialize API client with root base URL
+        const apiClient = new ApiClient('');
+        
+        // Event source for file changes
+        let eventSource = null;
+        let lastEventId = null;
+        const changedFiles = new Set();
+
+        // Render diff content
+        function renderDiff(diff) {
+            const oldContent = document.getElementById('old-content');
+            const newContent = document.getElementById('new-content');
+            const fileTree = document.getElementById('file-tree');
+            const filesCount = document.getElementById('files-count');
+            
+            oldContent.innerHTML = '';
+            newContent.innerHTML = '';
+            fileTree.innerHTML = '';
+            
+            // Update files count
+            filesCount.textContent = diff.files.length;
+            
+            // Build and render file tree
+            const tree = buildFileTree(diff.files);
+            renderFileTree(tree, fileTree);
+
+            diff.files.forEach(file => {
+                // Create file sections
+                const oldFileSection = createFileSection(file, 'old');
+                const newFileSection = createFileSection(file, 'new');
+                
+                oldContent.appendChild(oldFileSection);
+                newContent.appendChild(newFileSection);
+            });
+        }
+
+        function createFileSection(file, side) {
+            const section = document.createElement('div');
+            // Add a shared unique class for this file that's the same on both sides
+            const fileId = 'file-' + file.path.replace(/[^a-zA-Z0-9]/g, '-');
+            section.className = `file-section ${fileId}`;
+            
+            // Create a unique anchor ID for this file in this pane
+            const anchorId = fileId;
+            const paneId = side === 'old' ? 'old-pane' : 'new-pane';
+            
+            // Add an anchor element at the top of the section
+            const anchor = document.createElement('div');
+            anchor.id = `${anchorId}-${paneId}`;
+            anchor.style.position = 'relative';
+            anchor.style.top = '-70px'; // Offset for header height
+            section.appendChild(anchor);
+            
+            // File header
+            const header = document.createElement('div');
+            header.className = 'file-header';
+            header.setAttribute('data-collapsed', 'false');
+            
+            // Status badge for file
+            let statusBadge = '';
+            switch (file.status) {
+                case 'added':
+                    statusBadge = '<span class="status-badge status-added">Added</span>';
+                    break;
+                case 'deleted':
+                    statusBadge = '<span class="status-badge status-deleted">Deleted</span>';
+                    break;
+                case 'renamed':
+                    statusBadge = '<span class="status-badge status-renamed">Renamed</span>';
+                    break;
+                case 'untracked':
+                    statusBadge = '<span class="status-badge status-untracked">Untracked</span>';
+                    break;
+            }
+            
+            let fileStats = '';
+            if (file.binary) {
+                fileStats = '<span class="file-stats binary-indicator">Binary file</span>';
+            } else if (file.additions > 0 || file.deletions > 0) {
+                fileStats = `<span class="file-stats"><span class="additions">+${file.additions}</span> <span class="deletions">-${file.deletions}</span></span>`;
+            }
+            
+            // Add edit button for live mode - only on the right/new side
+            let editButton = '';
+            if (live && side === 'new') {
+                editButton = `<button class="edit-button" onclick="openFileEditor('${file.path.replace(/'/g, "\\'")}')">Edit</button>`;
+            }
+            
+            header.innerHTML = `
+                <div style="display: flex; align-items: center;">
+                    <span class="collapse-icon">▶</span>
+                    <span class="file-path">${file.path}</span>
+                    ${statusBadge}
+                    ${editButton}
+                </div>
+                ${fileStats}
+            `;
+            
+            // Add synchronized collapse functionality
+            header.addEventListener('click', (e) => {
+                // Don't collapse if clicking on the edit button
+                if (e.target.classList.contains('edit-button')) {
+                    return;
+                }
+                
+                const isCollapsed = header.getAttribute('data-collapsed') === 'true';
+                const newCollapsedState = !isCollapsed;
+                
+                // Find all file sections with the same fileId (both old and new sides)
+                const matchingSections = document.querySelectorAll(`.${fileId}`);
+                
+                // Update collapsed state for all matching sections
+                matchingSections.forEach(matchingSection => {
+                    const matchingHeader = matchingSection.querySelector('.file-header');
+                    if (matchingHeader) {
+                        matchingHeader.setAttribute('data-collapsed', newCollapsedState.toString());
+                    }
+                    
+                    if (newCollapsedState) {
+                        matchingSection.classList.add('collapsed');
+                    } else {
+                        matchingSection.classList.remove('collapsed');
+                    }
+                });
+            });
+            
+            section.appendChild(header);
+            
+            // Diff content
+            const diffContent = document.createElement('div');
+            diffContent.className = 'diff-content';
+            
+            if (file.chunks && file.chunks.length > 0) {
+                file.chunks.forEach(chunk => {
+                    chunk.lines.forEach(line => {
+                        const lineElement = createLineElement(line, side, file.path);
+                        if (lineElement) {
+                            diffContent.appendChild(lineElement);
+                        }
+                    });
+                });
+            }
+            
+            section.appendChild(diffContent);
+            return section;
+        }
+
+        function createLineElement(line, side, filePath) {
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'diff-line';
+            
+            // Create unique ID for this line element
+            const lineNumber = side === 'old' ? line.oldNum : line.newNum;
+            if (lineNumber) {
+                const sanitizedPath = filePath.replace(/[^a-zA-Z0-9]/g, '-');
+                lineDiv.id = `line-${sanitizedPath}-${side}-${lineNumber}`;
+            }
+            
+            // Determine what to show based on side and line type
+            let shouldShow = true;
+            let cssClass = 'context-line';
+            let indicator = '';
+            let oldLineNum = '';
+            let newLineNum = '';
+            
+            if (side === 'old') {
+                if (line.type === 'addition') {
+                    shouldShow = false; // Don't show additions in old pane
+                } else {
+                    if (line.type === 'deletion') {
+                        cssClass = 'deletion-line';
+                        indicator = '−';
+                        oldLineNum = line.oldNum || '';
+                    } else {
+                        oldLineNum = line.oldNum || '';
+                        newLineNum = line.newNum || '';
+                    }
+                }
+            } else { // new side
+                if (line.type === 'deletion') {
+                    shouldShow = false; // Don't show deletions in new pane
+                } else {
+                    if (line.type === 'addition') {
+                        cssClass = 'addition-line';
+                        indicator = '+';
+                        newLineNum = line.newNum || '';
+                    } else {
+                        oldLineNum = line.oldNum || '';
+                        newLineNum = line.newNum || '';
+                    }
+                }
+            }
+            
+            if (!shouldShow) {
+                // Create empty line to maintain alignment
+                lineDiv.className = 'diff-line empty-line';
+                lineDiv.innerHTML = `
+                    <div class="line-number"></div>
+                    <div class="line-content"></div>
+                `;
+                return lineDiv;
+            }
+            
+            lineDiv.className += ' ' + cssClass;
+            
+            // Create line with proper line numbers and comment support
+            const lineNumberDiv = document.createElement('div');
+            lineNumberDiv.className = 'line-number';
+            lineNumberDiv.innerHTML = `
+                <span class="old-line-num">${oldLineNum}</span>
+                <span class="gutter-indicator">${indicator}</span>
+                <span class="new-line-num">${newLineNum}</span>
+            `;
+            
+            // Just mark it as clickable, the global handler will handle clicks
+            const hasLineNum = (side === 'old' && line.oldNum) || (side === 'new' && line.newNum);
+            if (hasLineNum) {
+                lineNumberDiv.style.cursor = 'pointer';  // Visual feedback
+            }
+            
+            const lineContentDiv = document.createElement('div');
+            lineContentDiv.className = 'line-content';
+            lineContentDiv.textContent = line.content || '';
+            
+            lineDiv.appendChild(lineNumberDiv);
+            lineDiv.appendChild(lineContentDiv);
+            
+            return lineDiv;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+
+        // Synchronized scrolling
+        function setupSynchronizedScrolling() {
+            const oldPane = document.getElementById('old-pane');
+            const newPane = document.getElementById('new-pane');
+            let isScrolling = false;
+
+            function syncScroll(source, target) {
+                if (isScrolling) return;
+                isScrolling = true;
+                target.scrollTop = source.scrollTop;
+                setTimeout(() => isScrolling = false, 10);
+            }
+
+            oldPane.addEventListener('scroll', () => syncScroll(oldPane, newPane));
+            newPane.addEventListener('scroll', () => syncScroll(newPane, oldPane));
+        }
+
+        // Long polling for server-side events
+        async function startEventPolling() {
+            try {
+                while (true) {
+                    const params = new URLSearchParams();
+                    if (lastEventId) {
+                        params.append('last_event_id', lastEventId);
+                    }
+                    
+                    const response = await fetch(`/api/events?${params}`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch events');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Process events
+                    if (data.events && data.events.length > 0) {
+                        for (const event of data.events) {
+                            handleServerEvent(event);
+                        }
+                        lastEventId = data.last_event_id;
+                    }
+                    
+                    // Small delay before next poll
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            } catch (error) {
+                console.error('Event polling error:', error);
+                // Restart polling after a delay
+                setTimeout(startEventPolling, 5000);
+            }
+        }
+        
+        // Handle server-side events
+        function handleServerEvent(event) {
+            console.log('Received server event:', event);
+            
+            switch (event.type) {
+                case 'file_changed':
+                    handleFileChanged(event.data);
+                    break;
+                case 'comment_dequeued':
+                    handleCommentDequeued(event.data);
+                    break;
+                case 'comment_resolved':
+                    handleCommentResolved(event.data);
+                    break;
+                case 'review_approved':
+                    console.log('Review approved:', event.data);
+                    window.close();
+                    break;
+                case 'review_updated':
+                    console.log('Review updated:', event.data);
+                    break;
+                default:
+                    console.log('Unknown event type:', event.type);
+            }
+        }
+        
+        // Handle comment dequeued events
+        function handleCommentDequeued(data) {
+            console.log('Comment dequeued:', data);
+            
+            // Update the specific comment's status
+            updateCommentStatus(data.comment_id, data.status);
+            
+            // Update queue positions for all remaining comments
+            updateAllCommentQueuePositions();
+        }
+        
+        // Handle comment resolved events
+        function handleCommentResolved(data) {
+            console.log('Comment resolved:', data);
+            
+            // Update the specific comment's status to resolved
+            updateCommentStatus(data.comment_id, data.status);
+        }
+        
+        // Update a specific comment's status
+        function updateCommentStatus(commentId, status) {
+            const commentThreads = document.querySelectorAll(`.comment-thread[data-comment-id="${commentId}"]`);
+            commentThreads.forEach(thread => {
+                const header = thread.querySelector('.comment-header');
+                if (header) {
+                    // Find existing status badges (queue, in-progress, or resolved)
+                    const existingBadge = header.querySelector('[style*="background: #0969da"], [style*="background: #fb8500"], [style*="background: #1a7f37"]');
+                    
+                    let badgeHtml = '';
+                    if (status === 'in_progress') {
+                        badgeHtml = `
+                            <span style="background: #fb8500; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                                In Progress
+                            </span>
+                        `;
+                    } else if (status === 'resolved') {
+                        badgeHtml = `
+                            <span style="background: #1a7f37; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                                ✓ Resolved
+                            </span>
+                        `;
+                    }
+                    
+                    if (existingBadge && badgeHtml) {
+                        // Replace existing badge with new status badge
+                        existingBadge.outerHTML = badgeHtml;
+                    } else if (!existingBadge && badgeHtml) {
+                        // Add status badge if no badge exists
+                        const timestamp = header.querySelector('.comment-timestamp');
+                        if (timestamp) {
+                            timestamp.insertAdjacentHTML('afterend', badgeHtml);
+                        }
+                    }
+                    
+                    // Update comment appearance for resolved status
+                    if (status === 'resolved') {
+                        thread.style.opacity = '0.7';
+                        thread.style.borderColor = '#1a7f37';
+                        const commentBody = thread.querySelector('.comment-body');
+                        if (commentBody) {
+                            commentBody.style.textDecoration = 'line-through';
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update queue positions for all comments that still have queue badges
+        function updateAllCommentQueuePositions() {
+            const allQueueBadges = document.querySelectorAll('[style*="background: #0969da"]:not([style*="In Progress"])');
+            
+            // Sort by current queue position to maintain order
+            const badgesArray = Array.from(allQueueBadges);
+            badgesArray.sort((a, b) => {
+                const posA = parseInt(a.textContent.replace(/[^\d]/g, '')) || 0;
+                const posB = parseInt(b.textContent.replace(/[^\d]/g, '')) || 0;
+                return posA - posB;
+            });
+            
+            // Update each badge with new position
+            badgesArray.forEach((badge, index) => {
+                const newPosition = index + 1;
+                badge.textContent = `Queue #${newPosition}`;
+                
+                // Update the comment data in local storage
+                const commentThread = badge.closest('.comment-thread');
+                if (commentThread) {
+                    const commentId = commentThread.dataset.commentId;
+                    updateCommentQueuePositionInData(commentId, newPosition);
+                }
+            });
+        }
+        
+        // Update comment queue position in local data
+        function updateCommentQueuePositionInData(commentId, newPosition) {
+            for (const key in commentsData) {
+                const comments = commentsData[key];
+                for (const comment of comments) {
+                    if (comment.id === commentId) {
+                        comment.queuePosition = newPosition;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Handle file change events
+        function handleFileChanged(data) {
+            const filePath = data.file_path;
+            const eventType = data.event_type;
+            
+            console.log('File changed:', filePath, eventType);
+            
+            // Add to changed files set
+            changedFiles.add(filePath);
+            
+            // Show refresh button if we're in live mode
+            showRefreshButton();
+        }
+        
+        // Show the refresh button
+        function showRefreshButton() {
+            const refreshButton = document.getElementById('refresh-button');
+            refreshButton.classList.remove('hidden');
+        }
+        
+        // Hide the refresh button
+        function hideRefreshButton() {
+            const refreshButton = document.getElementById('refresh-button');
+            refreshButton.classList.add('hidden');
+        }
+        
+        // Handle refresh button click
+        async function handleRefresh() {
+            const refreshButton = document.getElementById('refresh-button');
+            const originalText = refreshButton.innerHTML;
+            
+            try {
+                // Show loading state
+                refreshButton.disabled = true;
+                refreshButton.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="animation: spin 1s linear infinite;">
+                        <path d="M8 3a5 5 0 100 10 5 5 0 000-10zM1 8a7 7 0 1114 0A7 7 0 011 8z"/>
+                    </svg>
+                    Refreshing...
+                `;
+                
+                // Reload the page to get fresh diff data
+                window.location.reload();
+                
+            } catch (error) {
+                console.error('Failed to refresh:', error);
+                alert('Failed to refresh. Please try again.');
+                
+                // Reset button state
+                refreshButton.disabled = false;
+                refreshButton.innerHTML = originalText;
+            }
+        }
+
+        // Handle approve button click
+        async function handleApprove() {
+            const button = document.getElementById('approve-button');
+            const originalText = button.innerHTML;
+            
+            try {
+                // Show loading state
+                button.disabled = true;
+                button.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="animation: spin 1s linear infinite;">
+                        <path d="M8 3a5 5 0 100 10 5 5 0 000-10zM1 8a7 7 0 1114 0A7 7 0 011 8z"/>
+                    </svg>
+                    Approving...
+                `;
+                
+                // Call approve endpoint
+                await apiClient.approve();
+                
+                // Show success state
+                button.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+                    </svg>
+                    Approved
+                `;
+                
+                // Re-enable button after 2 seconds
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = originalText;
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Failed to approve:', error);
+                alert('Failed to approve. Please try again.');
+                
+                // Reset button state
+                button.disabled = false;
+                button.innerHTML = originalText;
+            }
+        }
+        
+        // Add spin animation style
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Load existing comments from the server
+        async function loadExistingComments() {
+            try {
+                // Get review ID from URL
+                const pathParts = window.location.pathname.split('/');
+                const reviewId = pathParts[2]; // /review/{review_id}/view
+                
+                const response = await fetch(`/review/${reviewId}/api/comments`);
+                if (!response.ok) {
+                    console.warn('Failed to load existing comments');
+                    return;
+                }
+                
+                const comments = await response.json();
+                console.log('Loaded existing comments:', comments);
+                
+                // Organize comments by file/line/side and store in commentsData
+                commentsData = {}; // Clear existing data
+                for (const comment of comments) {
+                    const key = `${comment.file_path}:${comment.line_number}:${comment.side}`;
+                    if (!commentsData[key]) {
+                        commentsData[key] = [];
+                    }
+                    commentsData[key].push(comment);
+                }
+                
+                // Display comments in the UI
+                displayExistingComments(comments);
+                
+            } catch (error) {
+                console.error('Error loading existing comments:', error);
+            }
+        }
+        
+        // Display existing comments in the UI
+        function displayExistingComments(comments) {
+            for (const comment of comments) {
+                // Find the line element for this comment
+                const sanitizedPath = comment.file_path.replace(/[^a-zA-Z0-9]/g, '-');
+                const lineElementId = `line-${sanitizedPath}-${comment.side}-${comment.line_number}`;
+                const lineElement = document.getElementById(lineElementId);
+                
+                if (lineElement) {
+                    console.log(`Displaying existing comment for ${comment.file_path}:${comment.line_number}:${comment.side}`);
+                    displayCommentWithQueue(comment, comment.line_number, comment.side, lineElement);
+                } else {
+                    console.warn(`Could not find line element ${lineElementId} for comment:`, comment);
+                    // The line might not exist in the current diff state - this is expected
+                    // when files have changed since the comment was made
+                }
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Set up button handlers
+            const approveButton = document.getElementById('approve-button');
+            const refreshButton = document.getElementById('refresh-button');
+            
+            approveButton.addEventListener('click', handleApprove);
+            refreshButton.addEventListener('click', handleRefresh);
+            
+            // Start event polling for live mode only
+            if (live || (!commit && !range)) {
+                startEventPolling();
+            }
+            
+            // Existing initialization code...
+            try {
+                // Load diff data from API based on query parameters
+                let diffData;
+                try {
+                    if (live || (!commit && !range)) {
+                        // Use live diff endpoint
+                        const sinceParam = since || 'HEAD';
+                        diffData = await apiClient.getLiveDiff(sinceParam);
+                    } else {
+                        // Use regular diff endpoint for commits/ranges
+                        const options = {};
+                        if (commit) options.commit = commit;
+                        if (range) options.range = range;
+                        
+                        diffData = await apiClient.getDiff(options);
+                    }
+                } catch (error) {
+                    console.error('API not available:', error);
+                    throw error;
+                }
+                
+                // Render the diff
+                renderDiff(diffData);
+                setupSynchronizedScrolling();
+                
+                // Load and display existing comments
+                await loadExistingComments();
+                
+                // Log that rendering is complete
+                console.log('Diff rendered, click handlers attached to line numbers');
+                
+            } catch (error) {
+                console.error('Failed to initialize application:', error);
+                // Show error message to user
+                const oldContent = document.getElementById('old-content');
+                const newContent = document.getElementById('new-content');
+                const errorMsg = `<div style="padding: 20px; color: #d1242f;">Failed to load diff data: ${error.message}</div>`;
+                oldContent.innerHTML = errorMsg;
+                newContent.innerHTML = errorMsg;
+            }
+        });
+    </script>
+</body>
+</html>
