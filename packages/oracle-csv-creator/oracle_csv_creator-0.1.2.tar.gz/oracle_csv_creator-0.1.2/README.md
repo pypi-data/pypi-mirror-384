@@ -1,0 +1,56 @@
+# oracle-csv-creator
+
+Oracle 테이블을 **병렬(멀티프로세스)** 로 CSV로 작성하는 도구입니다. `ROWID` 범위를 이용해
+익스텐트 단위로 나누어 읽고, 옵션에 따라 읽기 일관성(consistent)을 제공합니다.
+
+## 설치
+```bash
+pip install oracle-csv-creator
+```
+
+## 요구 사항
+- Python 3.9+
+- Oracle DB 접속 권한 (해당 계정은 `DBA_EXTENTS`, `DBA_OBJECTS`, `V$DATABASE` 조회 권한이 필요합니다.)
+- Python 패키지: `oracledb` (자동 설치)
+
+## 사용법
+
+### 1) CLI
+```bash
+oracle-csv-creator   --db-host 10.0.0.1 --db-port 1521 --service-name ORCL   --db-user SCOTT --db-password tiger   --owner HR --table EMPLOYEES   --path ./output --filename HR.EMPLOYEES   --degree 8 --header   --date-format "YYYY-MM-DD HH24:MI:SS"   --timestamp-format "YYYY-MM-DD HH24:MI:SS.FF"   --delimiter "," --quotechar ""   --encoding euc-kr --consistent
+```
+
+주요 옵션
+- `--degree`: 병렬 프로세스 수
+- `--header/--no-header`: 헤더 기록 여부 (기본: 기록)
+- `--consistent`: **읽기(트랜잭션 일관성) 활성화, no locking
+- `--delimiter`, `--quotechar`, `--encoding`: CSV 포맷 관련 옵션
+
+### 2) Python API
+```python
+from oracle_csv_creator import csv_writer
+
+db_info = {
+    "host": "10.0.0.1",
+    "user": "SCOTT",
+    "password": "tiger",
+    "port": 1521,
+    "service_name": "ORCL",
+}
+
+csv_writer(
+    db_info=db_info, #DB접속정보*
+    owner="HR", #오너명*
+    table_name="EMPLOYEES", #테이블명*
+    path="./output", #csv의 파일 형식
+    filename="HR.EMPLOYEES", #파일 명칭
+    degree=8, # 동시작업수
+    header=True, #header 포함여부
+    consistent=True,  #읽기 일관성 사용여부(병렬 처리시 적용)
+    date_format="YYYY-MM-DD HH24:MI:SS", #date타입의 문자열 표시 형식
+    timestamp_format="YYYY-MM-DD HH24:MI:SS.FF", #timestamp 타입의 문자열 표시 형식
+    delimiter=",", #구분값
+    quotechar="", #값을 감싸는 형식
+    encoding="euc-kr", #CSV 인코딩 방식. (ex: utf8, cp949..)
+)
+```
