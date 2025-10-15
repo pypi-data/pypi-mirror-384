@@ -1,0 +1,44 @@
+{% load i18n %}
+{% load ui %}
+{% load partials %}
+
+{% block list %}
+<div class="fixed-grid has-{{ column_count }}-cols has-1-cols-mobile m-2">
+    <div id="list-grid" class="grid m-0">
+        {% for instance in page.object_list %}
+            {% partialdef entry inline=True %}
+                <div id="list-entry-{{ instance.pk }}" class="list-entry cell pb-0" style="{% if column_height %}height: {{ column_height }}{% endif %}">
+                    <div class="box p-3"
+                         style="word-break: break-word; height: 100%; overflow-y: auto; {% if instance.get_absolute_url and detail_enabled %}cursor:pointer;{% endif %}"
+                         {% if instance.get_absolute_url and detail_enabled %}
+                            hx-get="{{ instance.get_absolute_url }}{% querystring %}" hx-swap="none" hx-indicator="#detail-indicator" hx-replace-url="{% querystring detail=instance.pk %}"
+                            x-on:click="$dispatch('unselect-list-entry'); selected = true; $nextTick(() => { $el.scrollIntoView({block: 'nearest'}) });" x-bind:class="selected ? 'selected' : ''"
+                         {% endif %}
+                         x-data="{selected: false}" @unselect-list-entry.window="selected = false"
+                    >
+                        <div id="list-data-{{ instance.pk }}" style="height: 100%">
+                            {% if list_entry_template %}
+                                {% include list_entry_template %}
+                            {% else %}
+                                {{ instance }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endpartialdef %}
+        {% endfor %}
+    </div>
+    {% if endless_scroll and page.has_next %}
+        <div id="endless-scroller"
+             hx-get="{% querystring page=page.next_page_number %}"
+             hx-target="#list-grid"
+             hx-trigger="intersect once"
+             hx-select=".list-entry"
+             hx-select-oob="#pagination-next-button,#pagination-end-index,#endless-scroller"
+             hx-swap="beforeend"
+             hx-replace-url="true"
+             hx-indicator="#endless-scroll-indicator"></div>
+        <progress id="endless-scroll-indicator" class="htmx-indicator progress is-small is-primary" max="100">15%</progress>
+    {% endif %}
+</div>
+{% endblock %}

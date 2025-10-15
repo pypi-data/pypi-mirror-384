@@ -1,0 +1,247 @@
+<!doctype html>
+{% load static %}
+{% load i18n %}
+{% load partials %}
+{% load ui %}
+
+<html lang="en" style="overflow: hidden;" {% block theme %}data-theme="{% base_theme request.user %}"{% endblock %}>
+
+<head>
+    {% block head %}
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        {% include 'ui/favicon.html' %}
+        <link rel="stylesheet" type="text/css" href="{% static "css/accrete.css" %}?v=0.0.159">
+        <link rel="stylesheet" type="text/css" href="{% static "css/icons.css" %}">
+        <link rel="stylesheet" type="text/css" href="{% static "css/fa.css" %}">
+        {% if style_template %}{% include style_template %}{% endif %}
+        {% custom_theme request.user %}
+        <script src="{% static "js/filter.js" %}" type="text/javascript"></script>
+        <script src="{% static "js/htmx.min.js" %}" defer type="text/javascript"></script>
+        <script src="{% static "js/ws.js" %}" type="text/javascript" defer></script>
+        <script src="{% static "js/alpine-focus-3.14.9.js" %}" defer type="text/javascript"></script>
+        <script src="{% static "js/alpine-sort-3.14.9.js" %}" defer type="text/javascript"></script>
+        <script src="{% static "js/alpine-3.14.9.js" %}" defer type="text/javascript"></script>
+        <script defer>
+            document.addEventListener("setTenant", function(evt){
+                document.body.setAttribute('data-tenant-id', evt.detail.value);
+            })
+            document.addEventListener('htmx:configRequest', function (evt) {
+                evt.detail.headers['X-TENANT-ID'] = getTenant();
+            })
+            document.addEventListener('htmx:afterRequest', function(evt) {
+                const url = new URL(window.location);
+                url.searchParams.set('tenant_id', document.body.getAttribute('data-tenant-id'));
+                history.replaceState(null, '', url);
+             })
+            function getTenant() {
+                return document.body.getAttribute('data-tenant-id')
+            }
+            window.addEventListener('DOMContentLoaded', (event) => {
+                const url = new URL(window.location);
+                if (!document.body.getAttribute('data-tenant-id') && url.searchParams.get('tenant_id')) {
+                    document.body.setAttribute('data-tenant-id', url.searchParams.get('tenant_id'));
+                }
+            })
+            {% if debug_htmx_ws %}
+                document.addEventListener("htmx:wsAfterMessage", function (evt) {
+                    console.log("HTMX WS message received:", evt.detail.message);
+                });
+                document.addEventListener("htmx:wsAfterSend", function (evt) {
+                    console.log("HTMX WS message sent: ", evt.detail.message);
+                });
+            {% endif %}
+        </script>
+        {% if script_template %}{% include script_template %}{% endif %}
+        <title>{% block title %}{{ title }}{% endblock %}</title>
+    {% endblock %}
+</head>
+
+{% block body %}
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' data-tenant-id="{{ tenant.id }}" hx-boost="true" hx-history="false"
+      x-data="{ showQuickSwitch: false, showPanel: false, openPanel() { if(window.innerWidth >= 1216) {this.showPanel = true}  } }"
+>
+    <nav id="navbar" class="navbar is-primary is-fixed-top" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            {% if has_panel %}
+                <div class="navbar-item is-hidden-widescreen pr-2" x-on:click.stop="$dispatch('toggle-panel')">
+                    <button>
+                        <i class="fa fa-indent" x-show="!showPanel"></i>
+                        <i class="fa fa-outdent" x-show="showPanel"></i>
+                    </button>
+                </div>
+            {% endif %}
+            {% tenant_quick_switch request.user %}
+
+            {% if navbar_brand_template %}
+                {% include navbar_brand_template %}
+            {% endif %}
+            
+            <a id="navbar-burger" role="button" class="navbar-burger"
+               aria-label="menu" aria-expanded="false"
+               onclick="this.classList.toggle('is-active'); document.getElementById('navbar-menu').classList.toggle('is-active');"
+               x-on:click="showPanel = false"
+            >
+                {# Display hamburger menu on mobile #}
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+            </a>
+        </div>
+
+        <div id="navbar-menu" class="navbar-menu is-fixed-top">
+            <div class="navbar-start">
+                {% if navbar_start_template %}
+                    {% include navbar_start_template %}
+                {% elif navbar_start_template is False %}
+                {% else %}
+                    {% combine_templates 'accrete_navbar.html' request %}
+                {% endif %}
+            </div>
+
+            <div class="navbar-end">
+
+                <div class="navbar-item has-dropdown" x-data="{navbarEndDropdown: false}"
+                     x-bind:class="navbarEndDropdown ? 'is-active' : ''"
+                     x-on:click="navbarEndDropdown = !navbarEndDropdown"
+                     x-on:click.outside="navbarEndDropdown = false"
+                >
+                    <a id="navbar-user-name" class="navbar-link is-arrowless">{{ user }}</a>
+                    <div id="navbar-end-dropdown" class="navbar-dropdown is-right">
+                        {% combine_templates 'accrete_navbar_end_dropdown.html' request %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="is-flex" style="padding-top: var(--bulma-navbar-height); height: 100svh;" x-init="showPanel = window.innerWidth >= 1216;">
+        {% if has_panel %}
+            <div x-show="showPanel">
+                <div id="action-panel" x-show="showPanel"
+                     @resize.debounce.100.window="openPanel()"
+                     @toggle-panel.window="showPanel = !showPanel"
+                     x-transition.duration.200ms
+                >
+                    <nav class="px-1" style="height: 100%; overflow-y: auto; position: sticky; top: 0">
+                        {% if panel_template %}{% include panel_template %}{% endif %}
+                        {% if ui_filter %}
+                            <div class="mt-4">
+                                <div class="mb-1" style="border-bottom: 1px var(--bulma-grey) solid">
+                                    <span>{% translate 'Filter' %}</span>
+                                </div>
+                                <div class="">
+                                    {% include 'ui/filter/filter.html' %}
+                                </div>
+                            </div>
+                        {% endif %}
+                    </nav>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="is-flex-grow-1" style="height: 100%; overflow-x: auto;">
+            <div id="content" x-ref="content" style="height: calc(100svh - var(--bulma-navbar-height))">
+                <div id="message" class="" style="position: fixed; top: calc(var(--bulma-navbar-height) + 5px); left: 50%; transform: translateX(-50%); z-index: 999">
+                    {% for message in messages %}
+                        <div class="mb-2" style="min-width: 330px; max-width: 330px" x-data="{ show: false }" x-show="show" x-cloak="" x-init="show = true; setTimeout(() => show = false, 4000)" x-transition.duration.200ms>
+                        <article class="message {{ message|message_class }}">
+                            <div class="message-body">
+                                {{ message }}
+                                <button class="delete" x-on:click="show = false;" style="position: absolute; top: 5px; right: 5px"></button>
+                            </div></article>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <div x-data="{showContentRight: {{ show_content_right|default_if_falsy:'false' }}}"
+                     @activate-detail.window="showContentRight = true;"
+                     @deactivate-detail.window="showContentRight = false;"
+                     class="is-flex is-flex-direction-row"
+                     style="overflow: hidden; height: calc(100svh - var(--bulma-navbar-height))"
+                >
+                
+                    <div id="overview-container" class="table-container is-flex is-flex-grow-1 is-flex-direction-column mb-0" x-bind:class="showContentRight ? 'is-hidden-mobile' : ''">
+                        {% if config.display_header %}
+                            <div id="overview-header">
+                                <div class="is-flex is-justify-content-space-between is-flex-wrap-wrap {% if is_centered %}container{% endif %}">
+                                    <div class="is-flex is-flex-wrap-wrap is-flex-grow-5 is-align-self-center py-2 mx-1 header-items">
+                                        {% block overview_header %}
+                                            <div class="" style="align-self: center">
+                                                <p class="title is-5">{{ title }}</p>
+                                            </div>
+                                            {% if header_template %}{% include header_template %}{% endif %}
+                                        {% endblock %}
+                                    </div>
+                                    {% if page %}
+                                        <div id="pagination" class="field has-addons is-flex-grow-1 is-flex-wrap-nowrap is-align-self-center py-2 mx-2" style="width: 200px">
+                                            {% partialdef pagination inline=True %}
+                                                <p class="control">
+                                                    <button id="pagination-prev-button" class="button"
+                                                            hx-get="{% if page.has_previous %}{% querystring page=page.previous_page_number %}{% else %}{% querystring page=page.paginator.num_pages %}{% endif %}"
+                                                            hx-replace-url="true"
+                                                            hx-select-oob="#overview,#pagination,#overview-buttons"
+                                                    >
+                                                        &lt;
+                                                    </button>
+                                                </p>
+                                                <p class="control is-expanded">
+                                                    <button class="button is-fullwidth px-1" style="white-space: normal">
+                                                        <span style="display: flex" class="is-flex-wrap-nowrap">
+                                                            <span id="pagination-start-index" class="is-flex is-flex-wrap-nowrap"><span>{{ page.start_index }}</span><span class="mx-1"> - </span></span>
+                                                            <span id="pagination-end-index">{{ page.end_index }}</span>
+                                                            <span class="is-flex is-flex-wrap-nowrap"><span class="mx-1">/</span><span>{{ page.paginator.count }}</span></span>
+                                                        </span>
+                                                    </button>
+                                                </p>
+                                                <p class="control">
+                                                    <button id="pagination-next-button" class="button"
+                                                            hx-get="{% if page.has_next %}{% querystring page=page.next_page_number %}{% else %}{% querystring page=1 %}{% endif %}"
+                                                            hx-replace-url="true"
+                                                            hx-select-oob="#overview,#pagination,#overview-buttons"
+                                                    >
+                                                        &gt;
+                                                    </button>
+                                                </p>
+                                            {% endpartialdef %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endif %}
+                        <div id="overview" class="is-flex-grow-1" style="overflow-y: auto;">
+                            <section class="{% if is_centered %}container{% endif %}">
+                                {% if overview_template %}{% include overview_template %}{% endif %}
+                            </section>
+                        </div>
+                    </div>
+
+                    <div id="detail-container" x-show="showContentRight" {% if show_content_right != 'true' %}style="display: none;"{% endif %}
+                         x-transition:enter.duration.200ms x-transition:leave.duration.50ms
+                    >
+                        <div id="detail-indicator" class="htmx-indicator">
+                            <progress class="progress is-primary" max="100"></progress>
+                        </div>
+                        <div class="is-flex is-flex-direction-column" style="height: 100%">
+                            <div class="is-flex is-flex-wrap-nowrap is-justify-content-space-between m-2">
+                                <div id="detail-header" class="is-flex is-flex-wrap-wrap is-flex-grow-1">
+                                    {% if detail_header_template %}{% include detail_header_template %}{% endif %}
+                                </div>
+                                <button class="button is-light is-align-self-baseline" style="border-radius: var(--bulma-radius-medium)"
+                                        x-on:click="showContentRight = false; const url = new URL(window.location); url.searchParams.delete('detail'); history.replaceState(null, '', url);"
+                                >
+                                    <span class="icon"><i class="fa fa-xmark"></i></span>
+                                </button>
+                            </div>
+                            <div id="detail-data" style="overflow-y: auto; flex-grow: 1">
+                                {% if detail_data_template %}{% include detail_data_template %}{% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% load i18n %}
+<div id="query-params" class="box mt-2" x-data="">
+    
+    <div id="query-param-selection" class="is-flex is-flex-direction-column" x-data="">
+        <div class="is-flex is-flex-direction-row is-flex-grow-1 is-justify-content-center">
+            <span class="is-align-self-center">{{ verbose_model_name }}</span>
+        </div>
+        <div class="is-flex is-flex-grow-1 is-flex-direction-row is-align-items-baseline">
+            {% if has_previous %}
+                <button class="button is-subtle"
+                        hx-get="{% url 'ui:filter_params' model=previous_model_name %}?path={{ previous_path }}&models={{ previous_seen_models }}" 
+                        hx-target="#query-params" 
+                        hx-select="#query-param-selection" 
+                        hx-swap="innerHTML"
+                >
+                    <span class="icon"><i class="fa fa-left-long"></i></span>
+                </button>
+                <span class="is-align-self-center">{{ previous_verbose_model_name }}</span>
+            {% endif %}
+        </div>
+        {% for param in params %}
+            {% url 'ui:filter_input' model=model_name as input_url %}
+            <div class="is-flex is-justify-content-space-between is-flex-wrap-nowrap" x-data="{ active: false, name: '{{ param.name }}' }">
+                <div class="button is-subtle has-text-left mb-2 is-flex-grow-1 is-align-self-baseline" style="white-space: normal;" x-on:click.outside="active = false;" x-bind:class="active ? 'is-active' : ''" x-on:click="active = !active">
+                    <div class="is-unselectable is-align-self-baseline"  style="width: 100%">
+                        {{ param.label }}
+                        <div class="mt-3" x-show="active" x-cloak="" x-transition:enter.duration.100ms x-transition:leave.duration.100ms x-on:click.stop="">
+                            <div class="is-flex is-flex-direction-column" x-data="{field_path: '{{ param.field_path }}'}" hx-target="#query-input" hx-swap="innerHTML">
+                                {% if param.choices %}
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup=~{{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals Not' %}</span>
+                                    </button>
+                                    {% if param.null %}
+                                        <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__isnull" x-on:click="closeParams()" class="button is-light mb-1">
+                                            <span class="has-text-left" style="width: 100%">{% translate 'Is Set' %}</span>
+                                        </button>
+                                    {% endif %}
+                                {% elif param.type == 'ForeignKey' or param.type == 'ManyToManyField' or param.type == 'FileField' or param.type == 'ImageField' %}
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__isnull" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Is Set' %}</span>
+                                    </button>
+                                {% elif param.type == 'BooleanField' %}
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup=~{{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals Not' %}</span>
+                                    </button>
+                                {% elif param.type == 'AutoField' or param.type == 'BigAutoField' or param.type == 'IntegerField' or param.type == 'PositiveSmallIntegerField' or param.type == 'DecimalField' or param.type == 'FloatField' %}
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__gte" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Grater or Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__lte" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Less or Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__isnull" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Is Set' %}</span>
+                                    </button>
+                                {% elif param.type == 'CharField' or param.type == 'TextField' %}
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__icontains" x-on:click="closeParams()" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Contains' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup=~{{ param.field_path }}__icontains" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Contains Not' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup=~{{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals Not' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__isnull" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Is Set' %}</span>
+                                    </button>
+                                {% elif param.type == 'DateTimeField' or param.type == 'DateField' or param.type == 'TimeField' %}
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__gte" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Grater or Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__lte" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Less or Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__exact" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Equals' %}</span>
+                                    </button>
+                                    <button hx-get="{{ input_url }}?lookup={{ param.field_path }}__isnull" x-on:click="closeParams()" class="button is-light mb-1">
+                                        <span class="has-text-left" style="width: 100%">{% translate 'Is Set' %}</span>
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% if param.is_relation %}
+                    <a class="button is-subtle is-align-self-baseline"
+                       hx-get="{% url 'ui:filter_params' model=param.model_name %}?path={{ param.field_path }}&models={{ seen_models }}"
+                       hx-target="#query-params"
+                       hx-select="#query-param-selection"
+                       hx-swap="innerHTML"
+                    ><span class="icon"><i class="fa fa-right-long"></i></span>
+                    </a>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</div>

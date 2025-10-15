@@ -1,0 +1,77 @@
+{% load i18n %}
+{% load ui %}
+{% load partials %}
+
+{% block table %}
+<table id="content-table" class="table can-compact is-fullwidth is-hoverable is-narrow my-0" hx-indicator=".htmx-indicator" x-data="">
+    <thead style="position: sticky; top: 0; z-index: 10; background-color: var(--bulma-scheme-main)">
+        <tr>
+            {% if instance_label %}<th>{{ instance_label }}</th>{% endif %}
+            {% for field in fields %}
+                <th style="text-align: {{ page.object_list|table_alignment:field }}">{{ page.object_list|verbose_field_name:field }}</th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody id="content-table-body" style="z-index: 9" x-ref="tbody">
+        {% for instance in page.object_list %}
+            {% partialdef tr inline=True %}
+                <tr id="tr-{{ instance.pk }}"
+                    {% if instance.get_absolute_url and detail_enabled %}
+                        style="cursor: pointer;"
+                        hx-get="{{ instance.get_absolute_url }}{% querystring %}" hx-swap="none"
+                        hx-replace-url="{% querystring detail=instance.pk %}"
+                        x-data="{selected: false}" @unselect-tr.window="selected = false"
+                        x-on:click="$dispatch('unselect-tr'); selected = true; $nextTick(() => { $el.scrollIntoView( {block: 'nearest'} ) });" x-bind:class="selected ? 'is-primary' : ''"
+                    {% endif %}
+                >
+                    {% partialdef td inline=True %}
+                        {% if instance_label %}<td>{{ instance }}</td>{% endif %}
+                        {% for field in fields %}
+                            <td style="text-align: {{ instance|table_alignment:field }}">
+                                <span>
+                                    <span class="responsive-heading has-text-weight-light" style="margin-right: .2rem">{{ instance|verbose_field_name:field }}:</span>
+                                    {{ instance|table_display:field|default_if_none:'' }}
+                                </span>
+                            </td>
+                        {% endfor %}
+                    {% endpartialdef %}
+                </tr>
+            {% endpartialdef %}
+        {% endfor %}
+    </tbody>
+    <tfoot style="position: sticky; bottom: 0; z-index: 10; background-color: var(--bulma-scheme-main);" class="has-text-weight-bold">
+        <tr id="tf-row">
+            {% partialdef tf inline=True %}
+                <td class="p-0"></td>
+                {% for field in fields %}
+                    {% if field in footer %}
+                        <td style="text-align: {{ page.object_list|table_alignment:field }}">
+                            <span class="">
+                                <span class="responsive-heading has-text-weight-light" style="margin-right: .2rem">{{ page.object_list|verbose_field_name:field }}:</span>
+                                {{ footer|get_item:field }}
+                            </span>
+                        </td>
+                    {% else %}
+                        <td class="p-0"></td>
+                    {% endif %}
+                {% endfor %}
+            {% endpartialdef %}
+        </tr>
+    </tfoot>
+</table>
+
+<div id="endless-scroller"
+     {% if page.has_next %}
+        hx-get="{% querystring page=page.next_page_number %}"
+        hx-trigger="intersect once"
+        hx-select="tbody > tr"
+        hx-target="#content-table-body"
+        hx-swap="beforeend"
+        hx-select-oob="#pagination-next-button,#pagination-end-index,#endless-scroller"
+        hx-indicator="#endless-scroll-indicator"
+        hx-replace-url="true"
+     {% endif %}
+>
+</div>
+<progress id="endless-scroll-indicator" class="htmx-indicator progress is-small is-primary" max="100">15%</progress>
+{% endblock %}

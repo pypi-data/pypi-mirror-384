@@ -1,0 +1,48 @@
+{% load i18n %}
+{% load ui %}
+
+<div hx-swap-oob="{% if is_update %}innerHTML:#{{ modal_id }}{% else %}beforeend:body{% endif %}">
+    <div id="{{ modal_id }}" x-data="{showModal: false, close() {$dispatch('close-modal-{{ modal_id }}')} }" x-ref="modal" x-trap="true" class="modal is-active is-justify-content-flex-start"
+         style="padding-top: calc(var(--bulma-navbar-height) + 20px); padding-bottom: 40px;"
+         @close-modal-{{ modal_id }}.window="showModal = false; setTimeout(() => $refs.modal.remove(), 200);"
+         @close-modals.window="showModal = false; setTimeout(() => $refs.modal.remove(), 200);"
+         {% if not is_blocking %}@keyup.escape.window="if (! $refs.{{ modal_id|xrefsave }}Indicator.classList.contains('htmx-request')) {$dispatch('close-modal-{{ modal_id }}')}"{% endif %}
+         hx-indicator="#{{ modal_id }}-indicator" hx-disabled-elt="#{{ modal_id }}-background"
+    >
+        <button id="{{ modal_id }}-background" class="modal-background" {% if not is_blocking %}@click="$dispatch('close-modal-{{ modal_id }}')"{% endif %} style="cursor: default"></button>
+
+        <div class="modal-card" style="width: {{ modal_width|default_if_none:'var(--bulma-modal-content-width)' }}" x-show="showModal" x-transition.duration.200ms x-init="$nextTick(() => {showModal = true;})">
+
+            <header class="modal-card-head pt-0 pr-0 pb-2 pl-2" style="box-shadow: none; background-color: var(--bulma-scheme-main)">
+                <div class="is-flex is-justify-content-space-between is-flex-wrap-nowrap" style="width: 100%">
+                    <p class="is-flex-grow-1 is-align-self-center has-text-weight-bold pt-1" style="text-align: center">{{ title|default_if_none:'' }}</p>
+                    {% if not is_blocking %}
+                        <button class="button is-subtle is-align-self-baseline"
+                                style="border-top-right-radius: var(--bulma-modal-card-head-radius); border-bottom-left-radius: var(--bulma-modal-card-head-radius); border-top-left-radius: 0; border-bottom-right-radius: 0"
+                                @click="$dispatch('close-modal-{{ modal_id }}')"
+                        ><span class="icon"><i class="fa fa-xmark"></i></span></button>
+                    {% endif %}
+                </div>
+            </header>
+
+            <section class="modal-card-body">
+                {% block modal_content %}{% endblock %}
+            </section>
+
+            <footer class="modal-card-foot pt-2 pb-3 px-3" style="background-color: var(--bulma-scheme-main)">
+                {% block modal_footer %}
+                    <div class="buttons is-right" style="width: 100%">
+                        {% block modal_buttons %}
+                            <button type="button" class="button is-light" @click="$dispatch('close-modal-{{ modal_id }}')">
+                                {% translate 'Close' %}
+                            </button>
+                        {% endblock %}
+                    </div>
+                {% endblock %}
+            </footer>
+            <div id="{{ modal_id }}-indicator" x-ref="{{ modal_id|xrefsave }}Indicator" class="htmx-indicator modal-request-overlay" style="position: absolute; inset: 0; background: rgba(47, 47, 62, 0.2)">
+                <progress class="progress is-primary" max="100" style="position: absolute; inset: 0; min-width: 300px; max-width: 20vw; margin: auto;"></progress>
+            </div>
+        </div>
+    </div>
+</div>
