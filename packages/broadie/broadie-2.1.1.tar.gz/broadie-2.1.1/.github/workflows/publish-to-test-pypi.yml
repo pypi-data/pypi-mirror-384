@@ -1,0 +1,65 @@
+name: Publish to TestPyPI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-testpypi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for setuptools-scm to access git history
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build setuptools-scm twine
+
+      - name: Modify project name for TestPyPI
+        run: |
+          sed -i 's/name = "broadie"/name = "broadie-dev"/' pyproject.toml
+          echo "✅ Changed project name to broadie-dev"
+          grep 'name = "broadie-dev"' pyproject.toml
+
+      - name: Generate dev version
+        id: version
+        run: |
+          BASE_VERSION=$(python -m setuptools_scm)
+          DEV_VERSION="${BASE_VERSION}"
+          echo "Base version: $BASE_VERSION"
+          echo "Dev version: $DEV_VERSION"
+          echo "dev_version=$DEV_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build package
+        run: python -m build
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.version.outputs.dev_version }}
+
+      - name: Verify dev version
+        run: |
+          EXPECTED_VERSION="${{ steps.version.outputs.dev_version }}"
+          echo "Expected dev version: $EXPECTED_VERSION"
+          echo "Package name: broadie"
+          if [ ! -f dist/*.whl ]; then
+            echo "Error: No wheel file found"
+            exit 1
+          fi
+          ls -la dist/
+
+      - name: Publish package to TestPyPI
+        run: |
+          python -m twine upload --repository-url https://test.pypi.org/legacy/ dist/* --skip-existing --verbose
+          echo "✅ Published to TestPyPI"
+          echo "📦 To install: pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ broadie==${{ steps.version.outputs.dev_version }}"
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}

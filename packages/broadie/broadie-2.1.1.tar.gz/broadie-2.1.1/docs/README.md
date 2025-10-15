@@ -1,0 +1,588 @@
+# Broadie
+
+**Opinionated AI Agent Framework for Reducing Hallucination**
+
+Broadie is a production-ready framework for building AI agents with LangGraph and LangServe. It drastically reduces hallucination through structured contracts between agents, LLMs, and tools using Pydantic models.
+
+## 🎯 Philosophy
+
+Broadie is **opinionated by design**. We believe AI agents should:
+- Use **strict Pydantic schemas** to enforce structured outputs and reduce hallucination
+- Define **clear contracts** between agents, LLMs, and tools
+- Leverage **built-in memory and persistence** for stateful conversations
+- Support **agent-to-agent (a2a) communication** through a central registry
+- Provide **easy deployment** with minimal configuration
+
+This opinionated approach reduces hallucination by a **huge margin** compared to free-form text generation.
+
+## 🚀 Getting Started
+
+### Step 1: Install Broadie
+
+```bash
+pip install broadie
+```
+
+### Step 2: Set Up Google Cloud Authentication
+
+Broadie requires access to Google Cloud Vertex AI. Set up Application Default Credentials:
+
+1. Create or select a **service account** in your Google Cloud project with Vertex AI permissions (`roles/aiplatform.user`)
+
+2. Generate and download a JSON key:
+   ```bash
+   gcloud iam service-accounts keys create key.json \
+     --iam-account=YOUR_SA_NAME@YOUR_PROJECT.iam.gserviceaccount.com
+   ```
+
+3. Export the path to the JSON file:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/key.json"
+   ```
+
+4. Set your GCP project and region:
+   ```bash
+   gcloud config set project YOUR_PROJECT_ID
+   gcloud config set ai/region us-central1
+   ```
+
+5. Verify authentication works:
+   ```bash
+   gcloud auth application-default print-access-token
+   ```
+
+### Step 3: Create Your First Agent
+
+Create a file `my_agent.py`:
+
+```python
+from broadie import create_agent
+
+# Create a simple agent - no tools, just conversation
+agent = create_agent(
+    name="assistant",
+    instruction="You are a helpful assistant. Be concise and friendly.",
+)
+```
+
+That's it! Now chat with your agent interactively:
+
+```bash
+broadie chat my_agent.py:agent
+```
+
+You'll get an interactive session where the agent remembers your conversation history.
+
+### Step 4: Understanding What Just Happened
+
+Your agent automatically gets:
+- **Conversation memory** - Remembers everything you discuss in the session
+- **Google Vertex AI integration** - Uses Gemini 2.0 Flash by default
+- **SQLite persistence** - Saves conversations to `broadie-agent.sqlite3`
+- **Thread management** - Each chat session gets a unique thread ID
+
+### Step 5: Serve as API
+
+Expose your agent as an HTTP API:
+
+```bash
+broadie serve my_agent.py:agent --port 8000
+```
+
+## 📚 Core Concepts
+
+### Reducing Hallucination with Structured Outputs
+
+Broadie's key feature is **enforcing contracts** using Pydantic models to prevent LLM hallucination:
+
+```python
+from broadie import create_agent, BaseModel, Field
+
+# Define strict output schema - LLM must follow this structure
+class WeatherReport(BaseModel):
+    location: str = Field(..., description="City name")
+    temperature: str = Field(..., description="Temperature with unit")
+    condition: str = Field(..., description="Weather condition")
+    recommendation: str = Field(..., description="What to wear/do")
+
+# Agent with structured output
+weather_agent = create_agent(
+    name="weather_assistant",
+    instruction="Provide weather information and recommendations",
+    output_schema=WeatherReport  # Enforces structure - no hallucination
+)
+```
+
+The LLM **cannot** return unstructured text or make up fields - it must conform to the schema.
+
+### Adding Tools to Your Agent
+
+Tools allow agents to interact with external systems using `ToolResponse` for structured results:
+
+```python
+from broadie import create_agent, tool, ToolResponse
+
+@tool("lookup_weather", description="Get current weather for a location")
+def lookup_weather(location: str) -> ToolResponse:
+    """Fetch weather data from API."""
+    # In production, call real weather API
+    return ToolResponse(
+        status="success",
+        message=f"Weather retrieved for {location}",
+        data={
+            "location": location,
+            "temperature": "22°C",
+            "condition": "sunny"
+        }
+    )
+
+# Agent with tool
+agent = create_agent(
+    name="weather_bot",
+    instruction="Help users check weather and provide advice",
+    tools=[lookup_weather]
+)
+```
+
+**ToolResponse** ensures tools return structured data that the LLM cannot hallucinate or modify.
+
+### Human-in-the-Loop with Approval Workflows
+
+For sensitive operations, you can require human approval before tools execute. This is perfect for actions like deleting files, sending emails, or making API calls that can't be undone.
+
+```python
+from broadie import create_agent, tool, ToolResponse
+
+# Tool that requires approval
+@tool(
+    name="delete_file",
+    description="Delete a file from the filesystem",
+    approval_required=True,  # Requires human approval
+    approval_message="⚠️ Delete file {filename}? This cannot be undone!",
+    risk_level="high"  # Options: low, medium, high, critical
+)
+def delete_file(filename: str) -> ToolResponse:
+    """Delete a file - requires approval before execution."""
+    import os
+    os.remove(filename)
+    return ToolResponse(
+        status="success",
+        message=f"File {filename} deleted",
+        data={"deleted": filename}
+    )
+
+# Agent with approval-required tool
+agent = create_agent(
+    name="file_manager",
+    instruction="Help manage files. Always confirm before deleting.",
+    tools=[delete_file]
+)
+```
+
+**How it works:**
+
+1. When the agent wants to use `delete_file`, execution **pauses**
+2. You receive an approval request with the formatted message: `"⚠️ Delete file report.txt? This cannot be undone!"`
+3. You approve or reject the action
+4. If approved, the tool executes; if rejected, the agent is notified
+
+**Chat with approval workflow:**
+
+```bash
+broadie chat file_manager.py:agent
+
+# You: Delete the old report.txt file
+# Agent: [Requests approval to delete report.txt]
+#
+# ⚠️ APPROVAL REQUIRED
+# Tool: delete_file
+# Message: Delete file report.txt? This cannot be undone!
+# Risk Level: high
+#
+# Approve? (yes/no): yes
+#
+# Agent: I've deleted report.txt as requested.
+```
+
+**Approval parameters:**
+
+- `approval_required`: Set to `True` to require approval
+- `approval_message`: Custom message with `{parameter}` placeholders for tool arguments
+- `risk_level`: Visual indicator of risk (`"low"`, `"medium"`, `"high"`, `"critical"`)
+- `approval_data`: Additional context (dict or callable) to help with the decision
+
+This ensures critical operations are always reviewed by a human before execution, adding a safety layer to your AI agents.
+
+### Combining Tools and Structured Outputs
+
+The most powerful pattern combines both:
+
+```python
+from broadie import create_agent, tool, ToolResponse
+from enum import Enum
+from broadie import BaseModel, Field
+
+# Enum prevents invalid values
+class Sentiment(str, Enum):
+    positive = "positive"
+    negative = "negative"
+    neutral = "neutral"
+
+# Structured output schema
+class EmailAnalysis(BaseModel):
+    summary: str = Field(..., description="Brief summary of email")
+    sentiment: Sentiment = Field(..., description="Overall sentiment")
+    requires_response: bool = Field(..., description="Does this need a reply?")
+    priority: int = Field(..., ge=1, le=5, description="Priority 1-5")
+
+# Tool with structured response
+@tool("fetch_email", description="Retrieve email by ID")
+def fetch_email(email_id: str) -> ToolResponse:
+    """Fetch email content."""
+    return ToolResponse(
+        status="success",
+        message=f"Email {email_id} retrieved",
+        data={
+            "from": "user@example.com",
+            "subject": "Meeting tomorrow",
+            "body": "Can we meet at 2pm?"
+        }
+    )
+
+# Agent combines tool + structured output
+email_agent = create_agent(
+    name="email_analyzer",
+    instruction="Analyze emails and provide structured insights",
+    tools=[fetch_email],
+    output_schema=EmailAnalysis  # LLM must return this exact structure
+)
+```
+
+This ensures:
+- Tools return reliable, structured data (not hallucinated)
+- LLM output conforms to your schema (no made-up fields)
+- Type safety throughout the entire pipeline
+
+### Conversation Memory and State
+
+Broadie automatically manages conversation history using **thread IDs**. Each chat session maintains its own conversation context:
+
+```bash
+# Start a chat session - gets automatic thread ID
+broadie chat my_agent.py:agent
+
+# You: My name is Alice
+# Agent: Nice to meet you, Alice! How can I help you today?
+
+# You: What's my name?
+# Agent: Your name is Alice!
+```
+
+Use specific thread IDs to resume conversations or maintain separate contexts:
+
+```bash
+# Continue a specific conversation thread
+broadie chat my_agent.py:agent --thread user_123
+
+# Different thread = fresh conversation (no shared history)
+broadie chat my_agent.py:agent --thread user_456
+```
+
+All conversation history is automatically persisted to `broadie-agent.sqlite3` and managed by LangGraph's checkpointer system. You don't need to configure anything - just chat, and the agent remembers!
+
+### Using Sub-Agents for Delegation
+
+Sub-agents handle specialized tasks:
+
+```python
+from broadie import create_agent, create_sub_agent
+
+# Specialized sub-agent for classification
+spam_detector = create_sub_agent(
+    name="spam_classifier",
+    prompt="Classify if text is spam. Return 'spam' or 'not_spam'.",
+)
+
+# Main agent delegates to sub-agent
+email_agent = create_agent(
+    name="email_manager",
+    instruction="Manage emails, delegate spam detection to sub-agent",
+    subagents=[spam_detector]
+)
+```
+
+Sub-agents automatically:
+- Inherit parent's `thread_id`
+- Share the same conversation context when needed
+- Are orchestrated through LangGraph's swarm architecture
+
+### Complete Example: Threat Intelligence Agent
+
+Here's a real-world example combining all concepts:
+
+```python
+import asyncio
+from enum import Enum
+from broadie import create_agent, create_sub_agent, tool, ToolResponse
+from broadie import BaseModel, Field
+
+# Structured enums prevent hallucination
+class ThreatLevel(str, Enum):
+    critical = "critical"
+    high = "high"
+    medium = "medium"
+    low = "low"
+    none = "none"
+
+class IndicatorType(str, Enum):
+    ip = "ip"
+    domain = "domain"
+    url = "url"
+    hash = "hash"
+
+# Output schema enforces structure
+class ThreatAnalysis(BaseModel):
+    summary: str = Field(..., description="Executive summary of threats found")
+    indicators: list[str] = Field(..., description="List of indicators found")
+    threat_level: ThreatLevel = Field(..., description="Overall threat assessment")
+    recommended_action: str = Field(..., description="What to do next")
+
+# Tool with structured response
+@tool("lookup_indicator", description="Check indicator reputation in threat intel database")
+def lookup_indicator(indicator: str, indicator_type: IndicatorType) -> ToolResponse:
+    """Query threat intelligence database."""
+    # Simulated threat intel lookup
+    is_malicious = "malware" in indicator.lower() or "phish" in indicator.lower()
+
+    return ToolResponse(
+        status="success",
+        message=f"Looked up {indicator_type} indicator: {indicator}",
+        data={
+            "indicator": indicator,
+            "type": indicator_type,
+            "malicious": is_malicious,
+            "confidence": 0.95 if is_malicious else 0.1
+        },
+        meta={"source": "threat_intel_db"}
+    )
+
+# Sub-agent for extraction
+extractor = create_sub_agent(
+    name="indicator_extractor",
+    prompt="Extract all IPs, domains, URLs, and hashes from text. Return as list.",
+)
+
+# Main threat intelligence agent
+threat_agent = create_agent(
+    name="threat_analyzer",
+    instruction="Analyze text for security threats. Extract indicators, check reputation, assess threat level.",
+    tools=[lookup_indicator],
+    subagents=[extractor],
+    output_schema=ThreatAnalysis
+)
+
+async def main():
+    email_text = """
+    Please click this link to verify your account:
+    http://evil-phishing-site.com/malware
+
+    Contact us at: suspicious-domain.com
+    """
+
+    result = await threat_agent.run(email_text)
+    print(result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+
+```bash
+# Google Cloud (Required)
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+DATABASE_URL=sqlite+aiosqlite:///broadie-agent.sqlite3
+# or your PostgreSQL URL postgresql://user:pass@localhost/broadie"
+
+# LangSmith Tracing (Optional - for observability)
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=your-langsmith-api-key
+LANGCHAIN_PROJECT=broadie
+
+# Slack Notifications (Optional)
+SLACK_BOT_TOKEN=xoxb-your-token
+SLACK_SIGNING_SECRET=your-secret
+
+# Email Notifications (Optional)
+SMTP_HOST=smtp.sendgrid.net
+SMTP_PORT=587
+SMTP_USE_TLS=true
+SMTP_USERNAME=apikey
+SMTP_PASSWORD=your-sendgrid-api-key
+EMAIL_FROM=alerts@yourdomain.com
+```
+
+### Database Configuration
+
+Broadie uses SQLAlchemy for persistence. Default is SQLite, but PostgreSQL is recommended for production:
+
+```python
+from broadie import create_agent
+
+# SQLite (default - good for development)
+agent = create_agent(
+    name="assistant",
+    instruction="You are helpful",
+    # Uses broadie-agent.sqlite3 in current directory by default
+)
+
+# PostgreSQL (recommended for production)
+agent = create_agent(
+    name="assistant",
+    instruction="You are helpful"
+)
+```
+
+## 📡 Channels and Notifications
+
+Agents can send notifications to Slack or email when tasks complete:
+
+```python
+agent = create_agent(
+    name="security_monitor",
+    instruction="Monitor for security threats",
+    channels=[
+        {
+            "type": "slack",
+            "target": "#security-alerts",
+            "instructions": "Format as Slack blocks with severity"
+        },
+        {
+            "type": "email",
+            "target": "security@company.com",
+            "instructions": "Send detailed email with all findings"
+        }
+    ]
+)
+```
+
+Make sure to set the required environment variables (see Configuration section).
+
+## 📊 Observability with LangSmith
+
+Monitor agent performance and debug issues with LangSmith integration:
+
+1. Sign up at smith.langchain.com (free tier available)
+2. Create a project and get your API key
+3. Set environment variables:
+   ```bash
+   export LANGCHAIN_TRACING_V2=true
+   export LANGCHAIN_API_KEY=your-api-key
+   export LANGCHAIN_PROJECT=broadie
+   ```
+
+All agent runs will be traced and visible in the LangSmith dashboard with:
+- Detailed execution traces
+- Tool calls and responses
+- Token usage and costs
+- Performance metrics
+- Error debugging
+
+## 🛠️ CLI Reference
+
+### Chat Command
+
+```bash
+# Interactive chat session
+broadie chat my_agent.py:agent
+
+# Chat with specific thread ID
+broadie chat my_agent.py:agent --thread user123
+```
+
+### Serve Command
+
+```bash
+# Serve agent as HTTP API
+broadie serve my_agent.py:agent --port 8000
+
+# Serve on all interfaces
+broadie serve my_agent.py:agent --host 0.0.0.0 --port 8000
+
+# Multiple workers for production
+broadie serve my_agent.py:agent --port 8000 --workers 4
+```
+
+## 🚀 Deployment Best Practices
+
+### Development
+
+```bash
+# Use SQLite for local development
+python my_agent.py
+
+# Interactive testing
+broadie chat my_agent.py:agent
+
+# Serve API locally
+broadie serve my_agent.py:agent --port 8000
+```
+
+### Production
+
+```bash
+# Use PostgreSQL for persistence
+export DATABASE_URL=postgresql://user:pass@db:5432/broadie
+
+# Enable tracing
+export LANGCHAIN_TRACING_V2=true
+
+# Serve on all interfaces with multiple workers
+broadie serve my_agent.py:agent --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### Docker Deployment
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY my_agent.py .
+COPY key.json /secrets/
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/secrets/key.json
+
+CMD ["broadie", "serve", "my_agent.py:agent", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+## ✨ Key Features Summary
+
+- **Structured Outputs** - Pydantic schemas enforce contracts and eliminate hallucination
+- **ToolResponse Pattern** - Type-safe tool outputs that LLMs cannot modify
+- **Built-in Persistence** - SQLAlchemy-backed conversation history
+- **Thread Management** - Automatic context handling across conversations
+- **Sub-Agents** - Delegate specialized tasks to focused agents
+- **Channels** - Built-in Slack and email notifications
+- **CLI Tools** - Interactive chat and API serving
+- **Observability** - LangSmith integration for tracing and debugging
+- **Production Ready** - Database migrations, health checks, error handling
+
+## 📞 Support
+
+For questions, issues, or contributions:
+
+**Email**: scientific-computing@broadinstitute.org
+
+## 🤝 Contributing
+
+Broadie is developed by the Broad Institute. We welcome contributions!
+
+---
+
+**Built with ❤️ by the Broad Institute**
