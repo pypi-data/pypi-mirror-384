@@ -1,0 +1,188 @@
+<?xml version="1.0"?>
+<odoo>
+  <record id="action_lead_sending_sim_letter" model="ir.actions.report">
+    <field name="name">Sim Sending Letter</field>
+    <field name="model">crm.lead</field>
+    <field name="report_type">qweb-pdf</field>
+    <field name="report_name">somconnexio.sim_sending_letter_lead_template</field>
+    <field name="report_file">somconnexio.sim_sending_letter_lead_template</field>
+    <field name="binding_model_id" ref="crm.model_crm_lead"/>
+    <field name="binding_type">report</field>
+    <field name="paperformat_id" ref="base.paperformat_euro"/>
+  </record>
+  <record id="action_lead_line_sending_sim_letter" model="ir.actions.report">
+    <field name="name">Sim Sending Letter OLD</field>
+    <field name="model">crm.lead.line</field>
+    <field name="report_type">qweb-pdf</field>
+    <field name="report_name">somconnexio.sim_sending_letter_lead_line_template</field>
+    <field name="report_file">somconnexio.sim_sending_letter_lead_line_template</field>
+    <field name="binding_model_id" ref="crm_lead_product.model_crm_lead_line"/>
+    <field name="binding_type">report</field>
+    <field name="paperformat_id" ref="base.paperformat_euro"/>
+  </record>
+  <!-- Main CRM Lead template -->
+  <template id="sim_sending_letter_lead_template">
+    <t t-call="web.html_container">
+      <!-- for lead (CRM Lead) in report -->
+      <t t-foreach="docs" t-as="lead">
+        <t t-foreach="lead.lead_line_ids" t-as="lead_line">
+          <t t-if="lead_line.is_mobile">
+            <t t-call="somconnexio.sim_sending_letter_lang_template" t-lang="lead.partner_id.lang"/>
+          </t>
+        </t>
+      </t>
+    </t>
+  </template>
+  <!-- Main CRM Lead Line template -->
+  <template id="sim_sending_letter_lead_line_template">
+    <t t-call="web.html_container">
+      <!-- for lead_line (CRM Lead Line) in report -->
+      <t t-foreach="docs" t-as="lead_line">
+        <t t-if="lead_line.is_mobile">
+          <t t-call="somconnexio.sim_sending_letter_lang_template" t-lang="lead_line.lead_id.partner_id.lang"/>
+        </t>
+      </t>
+    </t>
+  </template>
+  <!-- Translatable template -->
+  <template id="sim_sending_letter_lang_template">
+    <!-- Re-browse of the record with the partner lang -->
+    <t t-set="lead_line" t-value="lead_line.with_context({'lang':lead_line.lead_id.partner_id.lang})"/>
+    <meta charset="UTF-8"/>
+    <t t-set="base_url"
+       t-value="env['ir.config_parameter'].sudo().get_param('report.url') or env['ir.config_parameter'].sudo().get_param('web.base.url')"/>
+    <style type="text/css">
+      @font-face {
+        font-family: 'Work Sans';
+        src: url('<t t-esc="base_url"/>/somconnexio/static/src/fonts/WorkSans-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-style: normal;
+      }
+
+      .page {
+        font-family: 'Work Sans', sans-serif;
+        font-size: 14px;
+        line-height: 1.3em;
+        text-align: justify;
+        text-justify: inter-word;
+        margin-bottom: 5em;
+        margin-left: 5em;
+        margin-right: 5em;
+      }
+
+      ol li {
+        margin-bottom: 1.5em;
+      }
+
+      ul li {
+        margin-bottom: 1.2em;
+      }
+
+      .recipient {
+        font-size: 12px;
+        margin-bottom: 3em;
+        text-align: right;
+      }
+
+      .reference {
+        text-align: center;
+        padding: 1.5em;
+      }
+
+      .stand-out-message {
+        font-size: 12px;
+        background: #d4bb93;
+        text-align: center;
+        padding: 2em;
+      }
+    </style>
+    <div class="page">
+      <div class="oe_structure"/>
+      <div style="margin-left: 3em;">
+        <div class="recipient">
+          <strong><t t-esc="lead_line.lead_id.partner_id.name"/></strong><br/>
+          <t t-esc="lead_line.mobile_isp_info.delivery_full_street"/><br/>
+          <t t-esc="lead_line.mobile_isp_info.delivery_zip_code"/> - <t t-esc="lead_line.mobile_isp_info.delivery_city"/><br/>
+          <t t-esc="lead_line.mobile_isp_info.delivery_state_id.name"/><br/>
+        </div>
+        <br/>
+        <p>Hola <t t-esc="lead_line.lead_id.partner_id.firstname"/>,</p>
+        <!-- ALTA NOVA -->
+        <t t-if="lead_line.mobile_isp_info.type == 'new'">
+          <p>Com pots veure, ja tens la SIM de Som Connexió!</p>
+          <div class="reference">
+            <p>El número de referència de línia és:  <strong><t t-esc="lead_line.id"/></strong></p>
+          </div>
+          <p><strong>Passos següents:</strong></p>
+          <ol>
+            <li>Correus ens avisa que has rebut la SIM ( <strong>no cal que ho facis tu</strong>).</li>
+            <li>
+              T'activem la línia. El teu nou número de telèfon s'assignarà en el moment que l'activem.
+              Si també estàs en procés d'alta d'una fibra, primer completarem la fibra i després t'activarem la línia.
+            </li>
+            <li>
+              Un cop activa, rebràs un correu electrònic amb el teu nou número de telèfon i les instruccions per introduir la SIM i configurar el telèfon.
+            </li>
+          </ol>
+          <br/>
+          <p>Si tens qualsevol dubte, posa't en contacte amb nosaltres:</p>
+          <ul>
+            <li><strong>93 131 17 28</strong> de dl-dv, 10h-14h i 15h-17:30h (dijous tarda tancat)</li>
+            <li><strong><a href="mailto:serveis@somconnexio.coop">serveis@somconnexio.coop</a></strong></li>
+          </ul>
+          <br/>
+          <div class="stand-out-message">
+            <p>
+              <strong>! IMPORTANT:</strong> Trobaràs el PIN i el codi PUK de la teva SIM al suport de la targeta.
+              Et recomanem canviar el PIN per un número que et sigui fàcil de recordar.
+            </p>
+          </div>
+          <br/>
+          <p><strong>L'equip de Som Connexió</strong></p>
+        </t>
+        <!-- PORTABILITAT -->
+        <t t-elif="lead_line.mobile_isp_info.type == 'portability'">
+          <p>Com pots veure, ja tens la SIM de Som Connexió de la línia:</p>
+          <div class="reference">
+            <p><strong><t t-esc="lead_line.mobile_isp_info.phone_number"/></strong></p>
+          </div>
+          <p><strong>Passos següents:</strong></p>
+          <ol>
+            <li>Correus ens avisa que has rebut la SIM ( <strong>no cal que ho facis tu</strong>).</li>
+            <li>
+              Programem la teva portabilitat (canvi de companyia).
+              Aquest procés es fa efectiu en <strong>48h laborables</strong> (sense comptar caps de setmana o festius).
+              Si també estàs en procés de portabilitat d'una fibra, primer instal·larem la fibra i després iniciarem la portabilitat del mòbil.
+            </li>
+            <li>
+              Quan iniciem la portabilitat, rebràs un correu electrònic amb la data en què es farà efectiu el canvi i
+              les instruccions per introduir la SIM i configurar el telèfon.
+            </li>
+            <li>
+              El canvi es du a terme en la data indicada, <strong>de matinada, entre les 2h i les 6h</strong>, i a partir d'aquest
+              moment et quedaràs sense servei amb la teva operadora actual.
+              <strong>Quan et quedis sense connexió amb l'actual companyia, ja pots posar la SIM de Som Connexió.</strong>
+            </li>
+          </ol>
+          <br/>
+          <p>Si tens qualsevol dubte, posa't en contacte amb nosaltres:</p>
+          <ul>
+            <li><strong>93 131 17 28</strong> de dl-dv, 10h-14h i 15h-17:30h (dijous tarda tancat)</li>
+            <li><strong><a href="mailto:serveis@somconnexio.coop">serveis@somconnexio.coop</a></strong></li>
+          </ul>
+          <br/>
+          <div class="stand-out-message">
+            <p>
+              <strong>! IMPORTANT:</strong> Trobaràs el PIN i el codi PUK de la teva SIM al suport de la targeta.
+              Et recomanem canviar el PIN per un número que et sigui fàcil de recordar.
+            </p>
+          </div>
+          <br/>
+          <p><strong>L'equip de Som Connexió</strong></p>
+        </t>
+        </div>
+      <div class="oe_structure"/>
+    </div>
+    <div style="page-break-after: always;"/>
+  </template>
+</odoo>
