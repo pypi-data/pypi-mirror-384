@@ -1,0 +1,351 @@
+Metadata-Version: 2.4
+Name: istat-mcp-server
+Version: 0.1.2
+Summary: Model Context Protocol server for accessing Italian National Statistical Institute (ISTAT) data
+Project-URL: Homepage, https://github.com/Halpph/istat-mcp-server
+Project-URL: Documentation, https://github.com/Halpph/istat-mcp-server#readme
+Project-URL: Repository, https://github.com/Halpph/istat-mcp-server
+Project-URL: Issues, https://github.com/Halpph/istat-mcp-server/issues
+Author-email: Alessio Cesaretti <alessio.cesaretti@hotmail.it>
+License: MIT
+License-File: LICENSE
+Keywords: claude,data,istat,italy,llm,mcp,sdmx,statistics
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Information Analysis
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.10
+Requires-Dist: istatapi>=1.0.0
+Requires-Dist: mcp[cli,server]>=1.17.0
+Requires-Dist: requests>=2.32.0
+Provides-Extra: dev
+Requires-Dist: hatchling>=1.18.0; extra == 'dev'
+Requires-Dist: pytest-cov>=4.1.0; extra == 'dev'
+Requires-Dist: pytest-mock>=3.12.0; extra == 'dev'
+Requires-Dist: pytest>=8.0.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# ISTAT MCP Server
+
+[![PyPI](https://img.shields.io/pypi/v/istat-mcp-server.svg)](https://pypi.org/project/istat-mcp-server/)
+[![Tests](https://github.com/Halpph/istat-mcp-server/actions/workflows/test.yml/badge.svg)](https://github.com/Halpph/istat-mcp-server/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that enables Large Language Models to access and analyze data from the Italian National Statistical Institute (ISTAT) directly.
+
+## What is this?
+
+This MCP server allows LLMs like Claude to seamlessly query, filter, and download statistical datasets from ISTAT, enabling natural language data analysis workflows. Instead of manually searching for datasets, constructing API queries, and downloading data, you can simply ask your LLM to find and analyze Italian statistical data.
+
+**Built on top of:** This server uses the excellent [istatapi](https://github.com/ondata/guida-api-istat) open-source Python wrapper by ondata, which simplifies interaction with ISTAT's SDMX REST API.
+
+## Features
+
+- **Dataset Discovery**: Search and browse all available ISTAT datasets
+- **Dimension Exploration**: Inspect dataset structure and available filters
+- **Flexible Data Retrieval**: Get data directly in JSON or download large datasets
+- **Smart Error Handling**: Automatic fallback to file downloads for large/timeout scenarios
+- **Secure Storage**: Configurable storage directory with path traversal protection
+- **Cross-Platform**: Works on WSL, Windows, macOS, and Linux
+
+## Use Cases
+
+Enable your LLM to:
+- Find Italian economic indicators (GDP, unemployment, inflation)
+- Analyze demographic trends and population statistics
+- Compare regional data across Italy
+- Download and process large statistical datasets
+- Create data visualizations from ISTAT data
+- Answer questions about Italian statistics naturally
+
+## Installation
+
+### Quick Start (Recommended)
+
+The easiest way to use this MCP server is directly with `uvx` - no installation required:
+
+```bash
+uvx istat-mcp-server
+```
+
+### Install from PyPI
+
+```bash
+# Using pip
+pip install istat-mcp-server
+
+# Using uv
+uv pip install istat-mcp-server
+```
+
+### Install from Source (for development)
+
+```bash
+# Clone the repository
+git clone https://github.com/Halpph/istat-mcp-server.git
+cd istat-mcp-server
+
+# Install with uv (recommended)
+uv sync
+
+# Or install with pip
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -e .
+```
+
+## Configuration
+
+### Claude Desktop Setup
+
+Add this to your Claude Desktop configuration file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "uvx",
+      "args": ["istat-mcp-server"],
+      "env": {
+        "MCP_STORAGE_DIR": "/path/to/data/storage"
+      }
+    }
+  }
+}
+```
+
+That's it! Claude Desktop will automatically download and run the server from PyPI.
+
+#### Alternative: Running from local installation
+
+If you installed from source or want to run a development version:
+
+```json
+{
+  "mcpServers": {
+    "istat": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/istat-mcp-server",
+        "run",
+        "istat-mcp-server"
+      ],
+      "env": {
+        "MCP_STORAGE_DIR": "/path/to/data/storage"
+      }
+    }
+  }
+}
+```
+
+### Storage Configuration
+
+By default, downloaded files are saved to:
+- **WSL**: `/mnt/c/Users/Public/Downloads/mcp-data/`
+- **Windows**: `%USERPROFILE%\Downloads\mcp-data`
+- **Linux/macOS**: `./data`
+
+Override this by setting the `MCP_STORAGE_DIR` environment variable.
+
+### Other Environment Variables
+
+- `MCP_DEBUG`: Set to `true` for detailed error tracebacks in responses
+
+## Available Tools
+
+### Dataset Discovery
+
+- `get_list_of_available_datasets()` - List all available ISTAT datasets
+- `search_datasets(query)` - Search datasets by keyword
+
+### Dataset Exploration
+
+- `get_dataset_dimensions(dataflow_identifier)` - Get dimensions/structure of a dataset
+- `get_dimension_values(dataflow_identifier, dimension)` - Get possible values for a dimension
+
+### Data Retrieval
+
+- `get_data(dataflow_identifier, filters)` - Get data with filters (or URL if too large)
+- `get_data_limited(dataflow_identifier, filters, limit)` - Get limited number of records
+- `get_summary(dataflow_identifier, filters)` - Get statistical summary of filtered data
+
+### File Operations
+
+- `get_dataset_url(dataflow_identifier, filters)` - Get download URL with metadata
+- `download_dataset(url, output_path)` - Download dataset to local storage
+
+## Example Usage
+
+### With Claude Desktop
+
+Once configured, you can interact naturally:
+
+```
+You: "Find datasets about Italian unemployment"
+
+Claude: [Uses search_datasets tool]
+I found several unemployment datasets...
+
+You: "Get the monthly unemployment rate for 2024"
+
+Claude: [Uses get_dataset_dimensions, get_dimension_values, get_data tools]
+Here's the unemployment data for 2024...
+```
+
+### Programmatic Usage
+
+```python
+from mcp.client import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+# Connect to the server
+server_params = StdioServerParameters(
+    command="uvx",
+    args=["istat-mcp-server"]
+)
+
+async with stdio_client(server_params) as (read, write):
+    async with ClientSession(read, write) as session:
+        # List available tools
+        tools = await session.list_tools()
+
+        # Call a tool
+        result = await session.call_tool("search_datasets", {"query": "unemployment"})
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# With uv
+uv run pytest
+
+# With pip
+pytest
+```
+
+### Project Structure
+
+```
+istat-mcp-server/
+├── main.py              # Main MCP server implementation
+├── test_main.py         # Comprehensive test suite
+├── pyproject.toml       # Project metadata and dependencies
+├── uv.lock             # Dependency lock file
+├── README.md           # This file
+├── CONTRIBUTING.md     # Contribution guidelines
+├── LICENSE             # MIT License
+├── docs/               # Additional documentation
+│   ├── TESTING.md     # Testing guide
+│   └── ISTATAPI_REFERENCE.md  # API reference
+├── examples/           # Example configurations
+│   └── gemini-extension.json  # Gemini setup example
+└── .github/
+    └── workflows/      # CI/CD pipelines
+        ├── test.yml   # Automated testing
+        └── release.yml # Release automation
+```
+
+## How It Works
+
+1. **MCP Protocol**: The server implements the Model Context Protocol, exposing ISTAT data operations as "tools" that LLMs can call
+2. **ISTAT API Wrapper**: Uses the [istatapi](https://github.com/ondata/guida-api-istat) library to interact with ISTAT's SDMX REST API
+3. **Smart Handling**: Automatically handles large datasets by falling back to file downloads
+4. **Secure Storage**: All file operations are restricted to a configured storage directory
+
+## Credits
+
+- **ISTAT API Wrapper**: This project relies on [istatapi](https://github.com/ondata/guida-api-istat) by [ondata](https://github.com/ondata), an excellent open-source Python wrapper for ISTAT's SDMX API
+- **Data Source**: [ISTAT (Istituto Nazionale di Statistica)](https://www.istat.it/) - Italian National Institute of Statistics
+- **MCP Protocol**: [Anthropic's Model Context Protocol](https://modelcontextprotocol.io/)
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+## Contributing
+
+Contributions are welcome! We appreciate bug reports, feature requests, documentation improvements, and code contributions.
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+- Setting up your development environment
+- Running tests
+- Code style and conventions
+- Submitting pull requests
+
+Quick start for contributors:
+```bash
+# Fork and clone the repo
+git clone https://github.com/YOUR_USERNAME/istat-mcp-server.git
+cd istat-mcp-server
+
+# Install dependencies
+uv sync
+
+# Run tests
+uv run pytest
+
+# Make your changes and submit a PR!
+```
+
+## Roadmap
+
+Future enhancements planned:
+- [ ] Add caching for frequently accessed datasets
+- [ ] Support for more data export formats (CSV, JSON, Excel)
+- [ ] Integration with data visualization tools
+- [ ] Support for ISTAT time series analysis
+- [ ] Multi-language support (Italian/English metadata)
+
+## FAQ
+
+### How do I find the right dataset?
+
+Use the `search_datasets` tool with keywords like "unemployment", "GDP", "population", etc. The tool searches through all ISTAT dataset titles and descriptions.
+
+### Why am I getting a URL instead of data?
+
+For large datasets or when the API times out, the server automatically returns a download URL instead. You can then use the `download_dataset` tool to save the data locally.
+
+### Can I use this with other LLMs besides Claude?
+
+Yes! Any MCP-compatible client can use this server. See the [MCP documentation](https://modelcontextprotocol.io/) for more information.
+
+### Where is the downloaded data stored?
+
+By default:
+- WSL: `/mnt/c/Users/Public/Downloads/mcp-data/`
+- Windows: `%USERPROFILE%\Downloads\mcp-data`
+- Linux/macOS: `./data`
+
+You can customize this with the `MCP_STORAGE_DIR` environment variable.
+
+## Changelog
+
+See [Releases](https://github.com/Halpph/istat-mcp-server/releases) for version history and changes.
+
+## Support
+
+For issues or questions:
+- Open an issue on [GitHub](https://github.com/Halpph/istat-mcp-server/issues)
+- Check [ISTAT API documentation](https://www.istat.it/en/web-services)
+- Refer to [istatapi guide](https://github.com/ondata/guida-api-istat)
+
+## Acknowledgments
+
+- **[ondata](https://github.com/ondata)** for the excellent [istatapi](https://github.com/ondata/guida-api-istat) Python wrapper
+- **[ISTAT](https://www.istat.it/)** for providing comprehensive statistical data about Italy
+- **[Anthropic](https://www.anthropic.com/)** for developing the Model Context Protocol
