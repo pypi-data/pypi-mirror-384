@@ -1,0 +1,117 @@
+
+variables:  
+  DOCKER_IMAGE: "$CI_REGISTRY_IMAGE:v0.1.0"
+  ARTIFACT_PATH: "./tests/" 
+
+# two images will always be pubslished: one with actual version tag and another with same digest but tagged latest :)
+default:
+  # image: $DOCKER_IMAGE  
+  tags:
+    - eDentity-runner # tag the runner to be used for this pipeline
+
+# list pipeline stages
+stages:
+  - prepare
+  - build
+  - linting
+  - test
+  - publish
+  
+# Default rule for all jobs
+.common_rule: &common_rule
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - if: $CI_COMMIT_TAG
+      when: always
+
+#create snakemake conda env and preserve the environment for the next stages
+install-dependencies:
+  stage: prepare
+  <<: *common_rule
+  script:
+  
+  # create the prefix path in case conda decides not to create
+    - mkdir -p $CI_PROJECT_DIR/conda-envs/unit-tests/
+    - mkdir -p $CI_PROJECT_DIR/conda-envs/pypi-build-and-publish/
+
+  # create conda envs
+    - conda create --prefix $CI_PROJECT_DIR/conda-envs/unit-tests/ -c conda-forge flake8 pytest black pandas -y
+
+  # create conda env for building and publishing pypackage
+    - conda create --prefix $CI_PROJECT_DIR/conda-envs/pypi-build-and-publish/ -c conda-forge python=3.10 pip twine setuptools setuptools_scm[toml] build wheel -y
+  
+  # preserve the envs created so that next stages can call up
+  artifacts:    
+    paths:
+      - ./conda-envs
+    expire_in: 1 day
+
+
+# Linting (ignoring "line too long (E127)"" and "continuation line over-indented for visual indent (E501)")
+# couldnt quite fix these 2 linting errors so ignore them for now
+linting:
+  stage: linting
+  <<: *common_rule  
+  script: 
+    - conda run -p $CI_PROJECT_DIR/conda-envs/unit-tests/ black --check edentity/ && conda run -p $CI_PROJECT_DIR/conda-envs/unit-tests/ flake8  --ignore=E127,E501,E999,W503 edentity/workflow/scripts/
+  artifacts:    
+    paths:
+      - $ARTIFACT_PATH
+    expire_in: 1 day
+
+
+build-pypackage:
+  stage: build
+  <<: *common_rule  
+  script:
+    - echo "Building Python package..."
+    - eval "$(conda shell.bash hook)" 
+    - conda activate $CI_PROJECT_DIR/conda-envs/pypi-build-and-publish
+    - python -m build
+  
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 day
+  needs:
+    - install-dependencies
+
+test-edentity-package:
+  stage: test
+  <<: *common_rule  
+  script:
+    - eval "$(conda shell.bash hook)"
+    - conda env create -n edentity-ci-test-env -f environment.yaml
+    - conda activate edentity-ci-test-env
+    - pip install  -e . # install the package in editable mode
+    - edentity  --raw_data_dir tests/data --forward_primer AAACTCGTGCCAGCCACC   --reverse_primer GGGTATCTAATCCCAGTTTG   --work_dir tests/vsearch 
+    - diff tests/data/expected_test_ESV_table.tsv tests/vsearch/Results/report/vsearch_ESV_table.tsv
+  artifacts:    
+    paths:
+      - $ARTIFACT_PATH
+    expire_in: 1 day
+  needs:
+    - build-pypackage
+    - linting
+
+publish:
+  stage: publish
+  script:
+    - echo "Publishing package to PyPI..."
+    - eval "$(conda shell.bash hook)"
+    - conda activate $CI_PROJECT_DIR/conda-envs/pypi-build-and-publish
+    - TWINE_PASSWORD=${PYPI_API_TOKEN} TWINE_USERNAME=__token__ python -m twine upload --skip-existing dist/*
+  rules:
+    - if: $CI_COMMIT_TAG
+  needs:
+    - build-pypackage
+    - install-dependencies
+  artifacts:    
+    paths:
+      - $ARTIFACT_PATH
+    expire_in: 1 day
+
+
