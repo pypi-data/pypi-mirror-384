@@ -1,0 +1,227 @@
+[project]
+name = "conson-xp"
+dynamic = []
+description = "XP Protocol Communication Tools"
+authors = [
+    { name = "ldvchosal", email = "ldvchosal@github.com" },
+]
+dependencies = [
+    "click>=8.3",
+    "click-help-colors>=0.9",
+    "pyyaml>=6.0",
+    "structlog>=22.0",
+    "fastapi>=0.118",
+    "uvicorn>=0.37",
+    "pydantic>=2.11",
+    "HAP-python[QRCode]>=5.0.0",
+    "punq>=0.7.0",
+    "twisted>=25.5.0",
+    "bubus>=1.5.6",
+]
+requires-python = ">=3.11"
+readme = "README.md"
+version = "0.11.7"
+
+[project.license]
+file = "LICENSE"
+
+[project.urls]
+Homepage = "https://github.com/lduchosal/xp"
+"Bug Reports" = "https://github.com/lduchosal/xp/issues"
+Source = "https://github.com/lduchosal/xp"
+
+[project.scripts]
+xp = "xp.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "pytest-cov>=7.0",
+    "black>=25.9",
+    "flake8>=7.3",
+    "mypy>=1.18",
+    "ruff>=0.13.0",
+    "vulture>=2.14",
+    "httpx>=0.24.0",
+    "twine>=6.2.0",
+    "types-PyYAML",
+    "refurb>=2.2.0",
+    "pdm-backend>=2.4.5",
+    "isort>=6.0.1",
+    "absolufy-imports>=0.3.1",
+    "pytest-asyncio>=1.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+    "*_test.py",
+]
+python_classes = [
+    "Test*",
+]
+python_functions = [
+    "test_*",
+]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "reverseproxy: marks tests as unit tests",
+    "asyncio: marks tests as asyncio tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:click_help_colors.*",
+]
+
+[tool.coverage.run]
+source = [
+    "src/xp",
+]
+omit = [
+    "tests/*",
+    "src/xp/__main__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.black]
+line-length = 88
+target-version = [
+    "py39",
+]
+include = "\\.pyi?$"
+extend-exclude = "/(\n  # directories\n  \\.eggs\n  | \\.git\n  | \\.hg\n  | \\.mypy_cache\n  | \\.tox\n  | \\.venv\n  | build\n  | dist\n)/\n"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+ignore_missing_imports = true
+disable_error_code = [
+    "method-assign",
+]
+overrides = [
+    { module = "tests.*", disallow_untyped_defs = false },
+]
+
+[tool.isort]
+profile = "black"
+src_paths = [
+    "src",
+    "tests",
+]
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.version]
+source = "file"
+path = "src/xp/__init__.py"
+
+[tool.pdm.scripts]
+test = "env PYTHONPATH=src python -m pytest tests/ -v --cov=src/xp --cov-report=term-missing"
+test-quick = "env PYTHONPATH=src python -m pytest tests/ --tb=short -qq"
+test-ci = "env PYTHONPATH=src python -m pytest tests/ -v --cov=src/xp --cov-branch --cov-report=xml -m 'not reverseproxy'"
+test-unit = "env PYTHONPATH=src python -m pytest tests/unit/ -v"
+test-integration = "env PYTHONPATH=src python -m pytest tests/integration/ -v"
+test-cov = "env PYTHONPATH=src python -m pytest tests/ --quiet --cov=src/xp --cov-report=html --cov-report=term-missing --cov-fail-under=75"
+lint = "ruff check --fix src/ tests/"
+format = "black src/ tests/"
+typecheck = "mypy src/ tests/"
+vulture = "vulture src/ tests/"
+refurb = "refurb src/ tests/"
+isort = "isort src/ tests/"
+bump-version = "pdm bump -v patch"
+env = "echo ${PATH}"
+install = "pdm install"
+install-dev = "pdm install -G dev"
+version-show = "python -c 'import xp; print(xp.__version__)'"
+version-patch = "pdm bump patch"
+version-minor = "pdm bump minor"
+version-major = "pdm bump major"
+
+[tool.pdm.scripts.absolufy]
+shell = "find src tests -name '*.py' -type f -exec absolufy-imports --application-directories=src:tests {} +"
+
+[tool.pdm.scripts.update-readme]
+shell = "xp help > /tmp/xp-help.txt && sed -i '' -e '/<!-- BEGIN CLI HELP -->/,/<!-- END CLI HELP -->/{//!d;}' -e '/<!-- BEGIN CLI HELP -->/r /tmp/xp-help.txt' README.md && rm /tmp/xp-help.txt"
+
+[tool.pdm.scripts.check]
+composite = [
+    "clean",
+    "lint",
+    "format",
+    "typecheck",
+    "vulture",
+    "refurb",
+    "isort",
+    "absolufy",
+    "test-quick",
+    "test-cov",
+    "update-readme",
+]
+
+[tool.pdm.scripts.clean]
+shell = "rm -rf .coverage coverage.xml htmlcov/ .pytest_cache/ && find . -type d -name '__pycache__' -exec rm -rf {} +"
+
+[tool.vulture]
+exclude = [
+    "src/xp/cli",
+]
+ignore_decorators = [
+    "@click",
+]
+make_whitelist = true
+min_confidence = 80
+paths = [
+    "src",
+    "tests",
+]
+sort_by_size = true
+verbose = false
+
+[tool.pdm-bump]
+version-files = [
+    "src/xp/__init__.py:__version__",
+]
+
+[build-system]
+requires = [
+    "pdm-backend",
+]
+build-backend = "pdm.backend"
