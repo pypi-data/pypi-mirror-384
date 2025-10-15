@@ -1,0 +1,271 @@
+# st_pptx_viewer
+
+A powerful and configurable Streamlit component for rendering PowerPoint presentations using the PptxViewJS library.
+
+## Features
+
+- 🎨 **Fully Customizable**: Control canvas size, toolbar position, colors, and more
+- ⌨️ **Keyboard Navigation**: Arrow keys and Page Up/Down support
+- 📱 **Responsive Design**: Automatically adapts to slide aspect ratios
+- 🎯 **Easy Integration**: Simple API with sensible defaults
+- 🔧 **Flexible Configuration**: Dataclass-based configuration for type safety
+- ⛶ **Fullscreen Mode**: Optional fullscreen viewing
+- 🎭 **Custom Styling**: Add your own CSS for complete control
+
+## Installation
+
+### From Source
+
+The module uses CDN-hosted PptxViewJS by default, so no build step is required!
+
+```bash
+pip install -e ./st_pptx_viewer
+```
+
+Or use the automated installer:
+```bash
+cd st_pptx_viewer
+./install.sh
+```
+
+### From PyPI
+```bash
+pip install st-pptx-viewer
+```
+
+## Quick Start
+
+### Basic Usage
+
+```python
+import streamlit as st
+from st_pptx_viewer import pptx_viewer
+
+st.title("PowerPoint Viewer")
+
+uploaded_file = st.file_uploader("Upload a PPTX file", type=["pptx"])
+if uploaded_file:
+    pptx_viewer(uploaded_file)
+```
+
+### With Configuration
+
+```python
+import streamlit as st
+from st_pptx_viewer import pptx_viewer, PptxViewerConfig
+
+# Create custom configuration
+config = PptxViewerConfig(
+    width=1200,
+    show_toolbar=True,
+    show_slide_counter=True,
+    enable_keyboard=True,
+    toolbar_position='bottom',
+    enable_fullscreen=True,
+    canvas_border='2px solid #0066cc',
+    canvas_background='#f5f5f5',
+)
+
+uploaded_file = st.file_uploader("Upload a PPTX file", type=["pptx"])
+if uploaded_file:
+    pptx_viewer(uploaded_file, config=config)
+```
+
+### From File Path
+
+```python
+from pathlib import Path
+from st_pptx_viewer import pptx_viewer
+
+# Load from file path
+pptx_path = Path("./presentations/demo.pptx")
+pptx_viewer(pptx_path)
+```
+
+## Configuration Options
+
+The `PptxViewerConfig` dataclass provides the following options:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `width` | int | 960 | Canvas width in pixels |
+| `height` | int\|None | None | Canvas height (auto-calculated from aspect ratio if None) |
+| `show_toolbar` | bool | True | Show navigation toolbar |
+| `show_slide_counter` | bool | True | Show "Slide X / Y" counter |
+| `initial_slide` | int | 0 | Initial slide index (0-based) |
+| `enable_keyboard` | bool | True | Enable keyboard navigation |
+| `toolbar_position` | str | 'top' | Toolbar position: 'top' or 'bottom' |
+| `canvas_border` | str | '1px solid #ddd' | CSS border style for canvas |
+| `canvas_background` | str | '#fff' | Background color for canvas |
+| `canvas_border_radius` | int | 4 | Border radius in pixels |
+| `component_height` | int\|None | None | Total component height (auto-calculated if None) |
+| `custom_css` | str | '' | Additional custom CSS styles |
+| `pptxviewjs_path` | str\|Path\|None | None | Custom path to PptxViewJS.min.js (uses CDN if None) |
+| `enable_fullscreen` | bool | False | Show fullscreen button |
+| `toolbar_style` | dict | {} | Custom CSS styles for toolbar |
+
+## Advanced Examples
+
+### Custom Styling
+
+```python
+from st_pptx_viewer import pptx_viewer, PptxViewerConfig
+
+config = PptxViewerConfig(
+    width=1000,
+    toolbar_style={
+        'background': 'linear-gradient(to right, #667eea, #764ba2)',
+        'color': 'white',
+    },
+    custom_css="""
+        .toolbar button {
+            background: white !important;
+            color: #667eea !important;
+            font-weight: bold;
+        }
+        .toolbar button:hover {
+            background: #f0f0f0 !important;
+        }
+    """,
+    canvas_border='3px solid #667eea',
+    canvas_border_radius=12,
+)
+
+pptx_viewer(uploaded_file, config=config)
+```
+
+### Multiple Presentations
+
+```python
+import streamlit as st
+from st_pptx_viewer import pptx_viewer, PptxViewerConfig
+
+st.title("Compare Presentations")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Presentation A")
+    file_a = st.file_uploader("Upload A", type=["pptx"], key="a")
+    if file_a:
+        config = PptxViewerConfig(width=500)
+        pptx_viewer(file_a, config=config, key="viewer_a")
+
+with col2:
+    st.subheader("Presentation B")
+    file_b = st.file_uploader("Upload B", type=["pptx"], key="b")
+    if file_b:
+        config = PptxViewerConfig(width=500)
+        pptx_viewer(file_b, config=config, key="viewer_b")
+```
+
+### Starting at Specific Slide
+
+```python
+config = PptxViewerConfig(
+    initial_slide=5,  # Start at slide 6 (0-based index)
+    width=1000,
+)
+pptx_viewer(uploaded_file, config=config)
+```
+
+### Minimal Viewer (No Toolbar)
+
+```python
+config = PptxViewerConfig(
+    show_toolbar=False,
+    width=800,
+    canvas_border='none',
+)
+pptx_viewer(uploaded_file, config=config)
+```
+
+## Keyboard Shortcuts
+
+When `enable_keyboard=True` (default), the following shortcuts are available:
+
+- **Arrow Left** or **Page Up**: Previous slide
+- **Arrow Right**, **Page Down**, or **Space**: Next slide
+
+## Requirements
+
+- Python >= 3.8
+- Streamlit >= 1.0.0
+- Internet connection (for CDN-hosted PptxViewJS)
+
+## Troubleshooting
+
+### CDN Loading Issues
+
+The module uses CDN-hosted PptxViewJS by default. If you have connectivity issues:
+
+1. Check your internet connection
+2. Check if CDN is accessible: https://cdn.jsdelivr.net/npm/pptxviewjs/dist/PptxViewJS.min.js
+
+**Using a local bundle instead:**
+```python
+config = PptxViewerConfig(
+    pptxviewjs_path="/path/to/PptxViewJS.min.js"
+)
+```
+
+### Presentation Not Rendering
+
+- Ensure the PPTX file is valid and not corrupted
+- Check browser console for JavaScript errors
+- Try with a simpler presentation first
+
+### Layout Issues
+
+- Adjust `width` and `height` in configuration
+- Use `component_height` to control total iframe height
+- Add custom CSS via `custom_css` parameter
+
+## API Reference
+
+### `pptx_viewer(pptx_file, config=None, key=None)`
+
+Main function to render a PPTX file in Streamlit.
+
+**Parameters:**
+- `pptx_file` (bytes | BinaryIO | str | Path): PPTX file as bytes, file-like object, or path
+- `config` (PptxViewerConfig | None): Configuration options
+- `key` (str | None): Unique component key for Streamlit
+
+**Returns:** None
+
+### `PptxViewerConfig`
+
+Dataclass for configuration options. See Configuration Options section above.
+
+## License
+
+This module is part of the PptxViewJS project. See the main project LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please see the main project repository for contribution guidelines.
+
+## Related Projects
+
+- [PptxViewJS](https://github.com/sdafa123/js-slide-viewer) - The underlying JavaScript library
+- [Streamlit](https://streamlit.io) - The web framework this component is built for
+
+## Support
+
+For issues and questions:
+- GitHub Issues: [Report a bug](https://github.com/sdafa123/js-slide-viewer/issues)
+- Documentation: See examples in the `examples/` directory
+
+## Changelog
+
+### v1.1.0
+- Improved package maintainability
+
+### v1.0.0
+- Initial release
+- Full configuration support
+- Keyboard navigation
+- Fullscreen mode
+- Custom styling options
+
