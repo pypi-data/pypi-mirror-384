@@ -1,0 +1,437 @@
+{# 滚动动作处理模板 - 支持智能滚动区域识别和多种滚动方式 #}
+
+{# 滚动动作处理函数 #}
+def handle_scroll_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    处理滚动动作 - 支持智能滚动区域识别和多种滚动方式
+    
+    Args:
+        step_data: 步骤上下文对象
+        device: uiautomator2设备对象
+        runner_dir: 运行目录路径
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径，用于优化截图性能
+    
+    Returns:
+        Dict: 执行结果
+    """
+    logging.info("开始执行步骤 %s: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤')))
+
+    step_name = step_data.get('step_name', '滚动操作')
+    operation_type = step_data.get('operation_type', 'scroll')
+    # 兼容两种数据结构：直接在根级别的element_info和在parameters中的element_info
+    element_info = step_data.get('element_info', {}) or step_data.get('parameters', {}).get('element_info', {})
+    
+    # 获取滚动参数
+    direction = element_info.get('direction', 'down')
+    distance = element_info.get('distance', 800)
+    scroll_type = element_info.get('scroll_type', 'vertical')
+    
+    logging.info(f"开始执行滚动操作: {step_name}, 方向: {direction}, 距离: {distance}")
+    
+    try:
+        # 执行前无需等待UI稳定，直接进行操作
+        
+        # 优化截图逻辑：如果有前一步的截图，就复用它
+        step_number = step_data.get('step_number', 0)
+        
+        if previous_after_screenshot:
+            # 使用前一步的后截图作为当前步骤的前截图，避免重复截图
+            before_execution_screenshot_path = previous_after_screenshot
+            logging.info(f"📸 复用前一步截图作为执行前截图: {before_execution_screenshot_path}")
+        else:
+            # 第一步或没有前一步截图时，需要新截图
+            before_execution_screenshot_path = take_screenshot_and_save(
+                device, runner_dir, f"before_step{step_number}", "执行前截图 - 用于记录滚动前状态"
+            )
+        
+        # 更新步骤执行前截图信息
+        step_data['before_execution_screenshot_path'] = before_execution_screenshot_path
+        
+
+        
+        # 执行滚动操作
+        logging.info(f"执行滚动操作，方向: {direction}, 距离: {distance}")
+        
+
+        
+        # 根据滚动类型和方向执行
+        if scroll_type == 'vertical':
+            if direction.lower() in ['down', 'up']:
+                device.swipe_ext(direction.lower(), scale=distance/1000.0)
+            else:
+                logging.warning(f"垂直滚动不支持方向: {direction}，使用默认down")
+                device.swipe_ext("down", scale=distance/1000.0)
+        elif scroll_type == 'horizontal':
+            if direction.lower() in ['left', 'right']:
+                device.swipe_ext(direction.lower(), scale=distance/1000.0)
+            else:
+                logging.warning(f"水平滚动不支持方向: {direction}，使用默认right")
+                device.swipe_ext("right", scale=distance/1000.0)
+        else:
+            # 默认使用坐标滚动
+            screen_info = device.info
+            screen_width = screen_info.get('displayWidth', 1080)
+            screen_height = screen_info.get('displayHeight', 1920)
+            
+            start_x = screen_width // 2
+            start_y = screen_height // 2
+            
+            if direction.lower() == 'down':
+                end_x, end_y = start_x, start_y - distance
+            elif direction.lower() == 'up':
+                end_x, end_y = start_x, start_y + distance
+            elif direction.lower() == 'left':
+                end_x, end_y = start_x + distance, start_y
+            elif direction.lower() == 'right':
+                end_x, end_y = start_x - distance, start_y
+            else:
+                end_x, end_y = start_x, start_y - distance
+            
+            device.swipe(start_x, start_y, end_x, end_y, duration=0.5)
+        
+        # 等待滚动完成
+        time.sleep(0.5)
+        
+        # 等待UI稳定后进行执行后截图
+        logging.info("等待动作执行完成后UI稳定...")
+        ui_stable = wait_for_ui_stability(device, timeout=1.0)
+        if not ui_stable:
+            logging.warning("执行后UI稳定检查超时，继续截图")
+        
+        # 执行后截图（用于响应验证）
+        after_execution_screenshot_path = take_screenshot_and_save(
+            device, runner_dir, f"after_step{step_number}", "执行后截图 - 用于验证滚动结果"
+        )
+        step_data['after_execution_screenshot_path'] = after_execution_screenshot_path
+        
+        logging.info("步骤 %s 完成: %s, 成功: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), True))
+        
+        logging.info(f"✅ 滚动操作执行完成: {step_name}")
+        return {
+            "status": "success",
+            "message": f"滚动操作执行成功: {direction} {distance}px",
+            "scroll_direction": direction,
+            "scroll_distance": distance,
+            "scroll_type": scroll_type,
+            "screenshots": {
+                "before_execution": step_data.get('before_execution_screenshot_path'),
+                "after_execution": after_execution_screenshot_path
+            },
+
+        }
+        
+    except Exception as e:
+        error_msg = f"滚动操作执行失败: {e}"
+        logging.error(error_msg)
+        
+
+        
+        # 确保有截图记录错误状态
+        if not step_data.get('before_execution_screenshot_path'):
+            try:
+                error_screenshot_path = take_screenshot_and_save(
+                    device, runner_dir, f"error_{operation_type}", "错误截图 - 记录滚动操作失败时的界面状态"
+                )
+                step_data['before_execution_screenshot_path'] = error_screenshot_path
+            except Exception as screenshot_error:
+                logging.error(f"错误截图失败: {screenshot_error}")
+        
+        logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), error_msg))
+        
+        return {
+            "status": "failed",
+            "message": error_msg,
+
+        }
+
+
+{# 智能识别滚动区域函数 #}
+def find_scrollable_region(device, scroll_area_config, target_element_config):
+    """
+    智能识别滚动区域
+    
+    Args:
+        device: 设备对象
+        scroll_area_config: 滚动区域配置
+        target_element_config: 目标元素配置
+    
+    Returns:
+        Dict: 滚动区域信息
+    """
+    try:
+        # 方法1：使用指定的滚动区域坐标
+        if scroll_area_config.get('bounds'):
+            bounds = scroll_area_config['bounds']
+            if all(key in bounds for key in ['left', 'top', 'right', 'bottom']):
+                return {
+                    'found': True,
+                    'bounds': bounds,
+                    'method': '指定坐标区域'
+                }
+        
+        # 方法2：通过元素坐标定义滚动区域
+        if scroll_area_config.get('start_x') is not None:
+            start_x = scroll_area_config.get('start_x', 0)
+            start_y = scroll_area_config.get('start_y', 0)
+            width = scroll_area_config.get('width', 0)
+            height = scroll_area_config.get('height', 0)
+            
+            if width > 0 and height > 0:
+                return {
+                    'found': True,
+                    'bounds': {
+                        'left': start_x,
+                        'top': start_y,
+                        'right': start_x + width,
+                        'bottom': start_y + height
+                    },
+                    'method': '元素坐标区域'
+                }
+        
+        # 方法3：查找可滚动的UI元素
+        try:
+            scrollable_elements = device(scrollable=True)
+            if scrollable_elements.exists:
+                first_scrollable = scrollable_elements[0]
+                bounds = first_scrollable.info['bounds']
+                return {
+                    'found': True,
+                    'bounds': bounds,
+                    'method': '可滚动UI元素'
+                }
+        except Exception as scrollable_error:
+            logging.debug(f"查找可滚动元素失败: {scrollable_error}")
+        
+        # 方法4：通过类名查找常见的滚动容器
+        scroll_container_classes = [
+            'RecyclerView', 'ListView', 'ScrollView', 
+            'NestedScrollView', 'ViewPager', 'GridView'
+        ]
+        
+        for class_name in scroll_container_classes:
+            try:
+                elements = device(className=class_name)
+                if elements.exists:
+                    first_element = elements[0]
+                    bounds = first_element.info['bounds']
+                    return {
+                        'found': True,
+                        'bounds': bounds,
+                        'method': '滚动容器类: ' + class_name
+                    }
+            except:
+                continue
+        
+        # 方法5：通过ID查找滚动区域
+        scroll_ids = ['recycler_view', 'list_view', 'scroll_view', 'content']
+        for scroll_id in scroll_ids:
+            try:
+                element = device(resourceId=scroll_id)
+                if element.exists:
+                    bounds = element.info['bounds']
+                    return {
+                        'found': True,
+                        'bounds': bounds,
+                        'method': '滚动ID: ' + scroll_id
+                    }
+            except:
+                continue
+        
+        return {
+            'found': False,
+            'reason': '未找到合适的滚动区域'
+        }
+        
+    except Exception as e:
+        return {
+            'found': False,
+                                    'reason': '查找滚动区域异常: ' + str(e)
+        }
+
+
+{# 滑动方式滚动函数 #}
+def perform_swipe_scroll(device, direction, bounds, steps, element_info):
+    """
+    执行滑动方式滚动
+    
+    Args:
+        device: 设备对象
+        direction: 滚动方向
+        bounds: 滚动区域边界
+        steps: 滚动步数
+        element_info: 元素信息
+    
+    Returns:
+        Tuple: (success, details)
+    """
+    try:
+        center_x = (bounds['left'] + bounds['right']) // 2
+        center_y = (bounds['top'] + bounds['bottom']) // 2
+        region_width = bounds['right'] - bounds['left']
+        region_height = bounds['bottom'] - bounds['top']
+        
+        # 计算滚动距离
+        scroll_distance_ratio = element_info.get('distance_ratio', 0.6)
+        duration = element_info.get('duration', 0.5)
+        
+        success_count = 0
+        
+        for i in range(steps):
+            try:
+                if direction == 'down':
+                    start_x = center_x
+                    start_y = center_y + int(region_height * 0.2)
+                    end_x = center_x
+                    end_y = center_y - int(region_height * scroll_distance_ratio)
+                    
+                elif direction == 'up':
+                    start_x = center_x
+                    start_y = center_y - int(region_height * 0.2)
+                    end_x = center_x
+                    end_y = center_y + int(region_height * scroll_distance_ratio)
+                    
+                elif direction == 'left':
+                    start_x = center_x + int(region_width * 0.2)
+                    start_y = center_y
+                    end_x = center_x - int(region_width * scroll_distance_ratio)
+                    end_y = center_y
+                    
+                elif direction == 'right':
+                    start_x = center_x - int(region_width * 0.2)
+                    start_y = center_y
+                    end_x = center_x + int(region_width * scroll_distance_ratio)
+                    end_y = center_y
+                    
+                else:
+                    return False, f"不支持的滚动方向: {direction}"
+                
+                # 执行滑动
+                device.swipe(start_x, start_y, end_x, end_y, duration=duration)
+                success_count += 1
+                
+                # 滚动间隔
+                if i < steps - 1:
+                    time.sleep(0.3)
+                    
+            except Exception as swipe_error:
+                logging.warning(f"第{i+1}次滑动失败: {swipe_error}")
+        
+        success = success_count > 0
+        details = f"{direction}方向滑动滚动，成功{success_count}/{steps}次"
+        
+        return success, details
+        
+    except Exception as e:
+        return False, f"滑动滚动异常: {e}"
+
+
+{# 快速滑动方式滚动函数 #}
+def perform_fling_scroll(device, direction, bounds, steps, element_info):
+    """
+    执行快速滑动方式滚动
+    
+    Args:
+        device: 设备对象
+        direction: 滚动方向
+        bounds: 滚动区域边界
+        steps: 滚动步数
+        element_info: 元素信息
+    
+    Returns:
+        Tuple: (success, details)
+    """
+    try:
+        center_x = (bounds['left'] + bounds['right']) // 2
+        center_y = (bounds['top'] + bounds['bottom']) // 2
+        
+        # 快速滑动参数
+        velocity = element_info.get('velocity', 1000)  # 滑动速度
+        
+        success_count = 0
+        
+        for i in range(steps):
+            try:
+                if direction in ['down', 'up']:
+                    # 垂直方向快速滑动
+                    if direction == 'down':
+                        device.fling.vert.forward(steps=1)
+                    else:
+                        device.fling.vert.backward(steps=1)
+                        
+                elif direction in ['left', 'right']:
+                    # 水平方向快速滑动
+                    if direction == 'right':
+                        device.fling.horiz.forward(steps=1)
+                    else:
+                        device.fling.horiz.backward(steps=1)
+                
+                success_count += 1
+                
+                # 快速滑动间隔
+                if i < steps - 1:
+                    time.sleep(0.5)
+                    
+            except Exception as fling_error:
+                logging.warning(f"第{i+1}次快速滑动失败: {fling_error}")
+        
+        success = success_count > 0
+        details = f"{direction}方向快速滑动，成功{success_count}/{steps}次"
+        
+        return success, details
+        
+    except Exception as e:
+        return False, f"快速滑动异常: {e}"
+
+
+{# 滚轮方式滚动函数 #}
+def perform_wheel_scroll(device, direction, center_x, center_y, steps, element_info):
+    """
+    执行滚轮方式滚动
+    
+    Args:
+        device: 设备对象
+        direction: 滚动方向
+        center_x: 中心X坐标
+        center_y: 中心Y坐标
+        steps: 滚动步数
+        element_info: 元素信息
+    
+    Returns:
+        Tuple: (success, details)
+    """
+    try:
+        # 滚轮滚动（模拟鼠标滚轮，适用于支持的设备）
+        scroll_amount = element_info.get('scroll_amount', 3)
+        
+        success_count = 0
+        
+        for i in range(steps):
+            try:
+                # 使用shell命令模拟滚轮滚动
+                if direction == 'down':
+                    cmd = f"input motionevent DOWN {center_x} {center_y} && sleep 0.1 && input motionevent UP {center_x} {center_y}"
+                elif direction == 'up':
+                    cmd = f"input motionevent DOWN {center_x} {center_y} && sleep 0.1 && input motionevent UP {center_x} {center_y}"
+                else:
+                    return False, f"滚轮不支持水平方向: {direction}"
+                
+                # 执行shell命令
+                result = run_adb_command(cmd, timeout=5)
+                if result.get('success'):
+                    success_count += 1
+                
+                # 滚轮间隔
+                if i < steps - 1:
+                    time.sleep(0.2)
+                    
+            except Exception as wheel_error:
+                logging.warning(f"第{i+1}次滚轮滚动失败: {wheel_error}")
+        
+        success = success_count > 0
+        details = f"{direction}方向滚轮滚动，成功{success_count}/{steps}次"
+        
+        return success, details
+        
+    except Exception as e:
+        return False, f"滚轮滚动异常: {e}" 

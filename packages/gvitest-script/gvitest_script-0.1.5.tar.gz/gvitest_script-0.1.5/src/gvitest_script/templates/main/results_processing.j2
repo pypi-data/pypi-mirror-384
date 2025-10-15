@@ -1,0 +1,254 @@
+{# 结果处理模块 - 处理任务完成后的结果汇总和保存 #}
+
+{% macro process_results(action_sequence, task_status, task_status_file, start_time, runner_dir) -%}
+        # ==================== verify_after 验证结果汇总 ====================
+        # 只处理 verify_after 验证结果，没有最终预期结果验证
+
+        verify_after_validation_results = []
+        if 'verify_after_results' in globals() and verify_after_results:
+            verify_after_validation_results = verify_after_results
+            logging.info(f"verify_after 验证结果: {len(verify_after_validation_results)} 个")
+
+        if verify_after_validation_results:
+            logging.info(f"{'='*20} verify_after 验证结果汇总 {'='*20}")
+            
+            # 统计验证结果
+            total_validations = len(verify_after_validation_results)
+            total_passed = sum(1 for r in verify_after_validation_results if r.get('is_pass', False))
+            total_failed = total_validations - total_passed
+            
+            # 按任务分组统计
+            task_stats = {}
+            for result in verify_after_validation_results:
+                task_id = result.get('task_id', 'unknown')
+                if task_id not in task_stats:
+                    task_stats[task_id] = {'total': 0, 'passed': 0, 'failed': 0}
+                task_stats[task_id]['total'] += 1
+                if result.get('is_pass', False):
+                    task_stats[task_id]['passed'] += 1
+                else:
+                    task_stats[task_id]['failed'] += 1
+            
+            # 输出详细统计
+            logging.info(f"verify_after 验证总计: 总数={total_validations}, 通过={total_passed}, 失败={total_failed}")
+            
+            for task_id, stats in task_stats.items():
+                logging.info(f"  任务 {task_id}: 总数={stats['total']}, 通过={stats['passed']}, 失败={stats['failed']}")
+            
+            if total_failed > 0:
+                logging.warning(f"verify_after 验证有失败项: {total_failed} 个")
+                
+            # 保存验证结果到文件
+            validation_result_file = runner_dir / "validation_results.json"
+            with open(validation_result_file, "w", encoding="utf-8", newline='') as f:
+                json.dump({
+                    "summary": {
+                        "total_validations": total_validations,
+                        "total_passed": total_passed,
+                        "total_failed": total_failed,
+                        "success_rate": round((total_passed / total_validations * 100), 2) if total_validations > 0 else 0,
+                        "task_stats": task_stats
+                    },
+                    "verify_after_results": verify_after_validation_results
+                }, f, ensure_ascii=False, indent=2, default=str)
+        else:
+            logging.info("无 verify_after 验证执行")
+
+        # 无论是否有验证结果，都确保创建 validation_results.json 文件
+        validation_result_file = runner_dir / "validation_results.json"
+        if not validation_result_file.exists():
+            with open(validation_result_file, "w", encoding="utf-8", newline='') as f:
+                json.dump({
+                    "summary": {
+                        "total_validations": 0,
+                        "total_passed": 0,
+                        "total_failed": 0,
+                        "success_rate": 0,
+                        "task_stats": {}
+                    },
+                    "verify_after_results": []
+                }, f, ensure_ascii=False, indent=2, default=str)
+            logging.info("已创建空的validation_results.json文件")
+
+        # 保存执行结果
+        save_execution_results(action_sequence, runner_dir)
+
+        # 完成任务追踪
+        end_time = time.time()
+        total_duration = end_time - start_time
+        success_status = True
+
+        # 更新最终任务状态
+        task_status["status"] = "完成"
+        task_status["end_time"] = datetime.now().isoformat()
+        task_status["total_duration"] = round(total_duration, 3)
+        task_status["success"] = success_status
+        task_status["progress_percentage"] = 100.0
+        task_status["completed_steps"] = len(action_sequence)
+        task_status["successful_steps"] = sum(1 for step in action_sequence if step.get('status') == 'success')
+        task_status["passed_checkpoints"] = sum(1 for step in action_sequence if step.get('checkpoint', {}).get('is_pass', False))
+
+        # 添加 verify_after 验证结果统计
+        if 'verify_after_validation_results' in locals() and verify_after_validation_results:
+            task_status["validation_summary"] = {
+                "total_validations": len(verify_after_validation_results),
+                "passed_validations": sum(1 for r in verify_after_validation_results if r.get('is_pass', False)),
+                "failed_validations": sum(1 for r in verify_after_validation_results if not r.get('is_pass', False)),
+                "validation_success_rate": round(sum(1 for r in verify_after_validation_results if r.get('is_pass', False)) / len(verify_after_validation_results) * 100, 2),
+                "verify_after_count": len(verify_after_validation_results)
+            }
+        else:
+            task_status["validation_summary"] = {
+                "total_validations": 0,
+                "passed_validations": 0,
+                "failed_validations": 0,
+                "validation_success_rate": 0,
+                "verify_after_count": 0
+            }
+        task_status["action_sequence"] = action_sequence  # 确保动作序列被保存
+
+        # 最终检查点统计
+        final_checkpoint_summary = task_status.get("checkpoint_summary", {})
+        task_status["final_checkpoint_summary"] = {
+            "total_checkpoints": final_checkpoint_summary.get("total_checkpoints", 0),
+            "passed_checkpoints": final_checkpoint_summary.get("passed_checkpoints", 0),
+            "failed_checkpoints": final_checkpoint_summary.get("failed_checkpoints", 0),
+            "success_rate": final_checkpoint_summary.get("success_rate", 0),
+            "all_checkpoints_passed": final_checkpoint_summary.get("failed_checkpoints", 0) == 0
+        }
+
+        # 保存最终任务状态 
+        with open(task_status_file, 'w', encoding='utf-8', newline='') as f:
+            json.dump(task_status, f, ensure_ascii=False, indent=2, default=str)
+
+        logging.info(f"任务完成，总耗时: {total_duration:.2f}秒，成功: {success_status}")
+        logging.info(f"{'='*20} 任务执行完成 {'='*20}")
+{%- endmacro %}
+
+{% macro handle_main_error(main_error, task_status, task_status_file, start_time, action_sequence) -%}
+        logging.error(f"主函数执行失败: {main_error}")
+        import traceback
+        logging.error(traceback.format_exc())
+
+        # 完成任务追踪
+        end_time = time.time()
+        total_duration = end_time - start_time
+        success_status = False
+
+        # 更新失败任务状态
+        try:
+            task_status["status"] = "失败"
+            task_status["end_time"] = datetime.now().isoformat()
+            task_status["total_duration"] = round(total_duration, 3)
+            task_status["success"] = success_status
+            task_status["error_message"] = str(main_error)
+            task_status["action_sequence"] = action_sequence  # 确保动作序列被保存
+            
+            # 保存失败任务状态 
+            with open(task_status_file, 'w', encoding='utf-8', newline='') as f:
+                json.dump(task_status, f, ensure_ascii=False, indent=2, default=str)
+        except Exception as status_error:
+            logging.error(f"保存失败任务状态时出错: {status_error}")
+
+        logging.info(f"任务完成，总耗时: {total_duration:.2f}秒，成功: {success_status}")
+{%- endmacro %}
+
+def save_execution_results(action_sequence, runner_dir):
+    """保存执行结果到文件，保持控制流结构完整性"""
+    try:
+        results_file = runner_dir / "execution_results.json"
+        
+        # 🎯 保持原有结构，不展开控制流步骤
+        # 统计时需要考虑控制流的子步骤数量
+        total_actual_steps = 0
+        successful_actual_steps = 0
+        passed_actual_checkpoints = 0
+        
+        for step in action_sequence:
+            if step.get('step_type') == 'control_flow':
+                execution_result = step.get('execution_result', {})
+                executed_sub_steps = execution_result.get('executed_sub_steps', [])
+                
+                if executed_sub_steps:
+                    # 控制流有子步骤，统计子步骤
+                    total_actual_steps += len(executed_sub_steps)
+                    successful_actual_steps += sum(1 for sub_step in executed_sub_steps if sub_step.get('status') == 'success')
+                    passed_actual_checkpoints += sum(1 for sub_step in executed_sub_steps if sub_step.get('checkpoint', {}).get('is_pass', False))
+                    logging.info(f"控制流步骤 {step.get('step_name', '')} 包含 {len(executed_sub_steps)} 个已执行的子步骤")
+                else:
+                    # 控制流没有子步骤，统计控制流本身
+                    total_actual_steps += 1
+                    successful_actual_steps += 1 if step.get('status') == 'success' else 0
+                    passed_actual_checkpoints += 1 if step.get('checkpoint', {}).get('is_pass', False) else 0
+                    logging.warning(f"控制流步骤 {step.get('step_name', '')} 没有找到已执行的子步骤记录")
+            else:
+                # 普通步骤，直接统计
+                total_actual_steps += 1
+                successful_actual_steps += 1 if step.get('status') == 'success' else 0
+                passed_actual_checkpoints += 1 if step.get('checkpoint', {}).get('is_pass', False) else 0
+        
+        # 准备结果数据
+        results_data = {
+            "task_execution": {
+                "total_steps": total_actual_steps,
+                "successful_steps": successful_actual_steps,
+                "passed_checkpoints": passed_actual_checkpoints,
+                "execution_time": datetime.now().isoformat()
+            },
+            "step_results": []
+        }
+        
+        # 收集步骤结果（保持原有结构）
+        for step in action_sequence:
+            checkpoint_info = step.get('checkpoint', {})
+            
+            # 🎯 标准化空checkpoint：确保空配置时返回标准的none类型结构
+            if not checkpoint_info or checkpoint_info == {}:
+                # 空checkpoint配置，设置标准的none类型结构
+                standardized_checkpoint = {
+                    "type": "none",
+                    "description": "",
+                    "screenshot_path": None,
+                    "is_pass": None,
+                    "detail": "",
+                    "similarity_score": None,
+                    "status": "待执行",
+                    "execution_time": None,
+                    "executed_at": None,
+                    "error_message": None
+                }
+            else:
+                # 有checkpoint配置，使用实际值
+                standardized_checkpoint = {
+                    "type": checkpoint_info.get('type', 'none'),
+                    "description": checkpoint_info.get('description', ''),
+                    "screenshot_path": checkpoint_info.get('screenshot_path'),
+                    "is_pass": checkpoint_info.get('is_pass'),
+                    "detail": checkpoint_info.get('detail', ''),
+                    "similarity_score": checkpoint_info.get('similarity_score'),
+                    "status": checkpoint_info.get('status', '待执行'),
+                    "execution_time": checkpoint_info.get('execution_time'),
+                    "executed_at": checkpoint_info.get('executed_at'),
+                    "error_message": checkpoint_info.get('error_message')
+                }
+            
+            step_result = {
+                "step_number": step.get('step_number'),
+                "step_name": step.get('step_name'),
+                "operation_type": step.get('operation_type'),
+                "success": (step.get('status') == 'success'),
+                "checkpoint": standardized_checkpoint
+            }
+            
+            # 控制流字段已从源头移除，不再需要处理
+                
+            results_data["step_results"].append(step_result)
+        
+        # 保存到文件 
+        with open(results_file, 'w', encoding='utf-8', newline='') as f:
+            json.dump(results_data, f, ensure_ascii=False, indent=2, default=str)
+            
+            logging.info(f"执行结果已保存到: {results_file} (包含 {total_actual_steps} 个实际执行步骤)")
+        
+    except Exception as e:
+        logging.error(f"保存执行结果失败: {e}")

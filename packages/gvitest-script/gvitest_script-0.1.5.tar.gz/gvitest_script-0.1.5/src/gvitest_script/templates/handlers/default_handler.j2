@@ -1,0 +1,216 @@
+{# 默认动作处理器模板 - 用于处理未明确定义的操作类型 #}
+{# 适用于：未知或不常用的操作类型 #}
+
+# ==================== 默认动作处理器 ====================
+def handle_default_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    处理默认动作 - 用于处理未明确定义的操作类型
+    
+    Args:
+        step_data: 步骤上下文对象
+        device: uiautomator2设备对象
+        runner_dir: 运行目录路径
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径，用于优化截图性能
+    
+    Returns:
+        Dict: 执行结果
+    """
+    
+    step_number = step_data.get('step_number', 0)
+    step_name = step_data.get('step_name', '未知步骤')
+    operation_type = step_data.get('operation_type', 'unknown')
+    
+    logging.info(f"步骤 {step_number}: 执行默认处理器 - {operation_type}")
+
+    # 执行前无需等待UI稳定，直接进行操作
+
+    # 优化截图逻辑：如果有前一步的截图，就复用它
+    if previous_after_screenshot:
+        # 使用前一步的后截图作为当前步骤的前截图，避免重复截图
+        before_execution_screenshot_path = previous_after_screenshot
+        logging.info(f"📸 复用前一步截图作为执行前截图: {before_execution_screenshot_path}")
+    else:
+        # 第一步或没有前一步截图时，需要新截图
+        before_execution_screenshot_path = take_screenshot_and_save(
+            device, runner_dir, f"before_step{step_number}", "执行前截图 - 用于默认操作记录"
+        )
+    step_data['before_execution_screenshot_path'] = before_execution_screenshot_path
+    logging.info(f"执行前截图已保存: {before_execution_screenshot_path}")
+
+    # 默认处理逻辑
+    try:
+        logging.info(f"执行默认操作处理: {operation_type}")
+        
+        # 获取元素信息
+        element_info = step_data.get('element_info', {})
+        
+        # 根据操作类型进行基本处理
+        if operation_type.lower() == 'wait':
+            # 等待操作
+            wait_seconds = element_info.get('seconds', 1)
+            time.sleep(wait_seconds)
+            logging.info(f"⏱️ 等待操作完成: {step_name} 等待了 {wait_seconds} 秒")
+            checkpoint_result = {
+                "is_pass": True,
+                "detail": f"等待操作成功: 等待了 {wait_seconds} 秒"
+            }
+        
+        elif operation_type.lower() == 'key':
+            # 按键操作
+            key_code = element_info.get('key', 'BACK')
+            device.press(key_code)
+            logging.info(f"🔘 按键操作完成: {step_name} 按下了 {key_code} 键")
+            checkpoint_result = {
+                "is_pass": True,
+                "detail": f"按键操作成功: 按下了 {key_code} 键"
+            }
+        
+        elif operation_type.lower() in ['app', 'start_app', 'stop_app']:
+            # 应用操作
+            app_package = element_info.get('app_package', '')
+            
+            if app_package:
+                if operation_type.lower() in ['app', 'start_app']:
+                    device.app_start(app_package, stop=True)
+                    logging.info(f"🚀 应用启动完成: {app_package}")
+                    checkpoint_result = {
+                        "is_pass": True,
+                        "detail": f"应用启动成功: {app_package}"
+                    }
+                elif operation_type.lower() == 'stop_app':
+                    device.app_stop(app_package)
+                    logging.info(f"👋 应用停止完成: {app_package}")
+                    checkpoint_result = {
+                        "is_pass": True,
+                        "detail": f"应用停止成功: {app_package}"
+                    }
+                else:
+                    logging.error(f"❗ 未知应用操作: {operation_type}")
+                    checkpoint_result = {
+                        "is_pass": False,
+                        "detail": f"未知应用操作: {operation_type}"
+                    }
+            else:
+                logging.error("❗ 应用操作失败: 缺少应用包名")
+                checkpoint_result = {
+                    "is_pass": False,
+                    "detail": "应用操作失败: 缺少应用包名"
+                }
+        
+        elif operation_type.lower() == 'kill_all':
+            # 杀死所有应用操作
+            logging.info('执行杀死所有应用操作')
+            try:
+                device.app_stop_all()
+                logging.info(f'💀 杀死所有应用完成: {step_name}')
+                checkpoint_result = {
+                    "is_pass": True,
+                    "detail": "杀死所有应用成功"
+                }
+            except Exception as kill_error:
+                logging.error(f'杀死所有应用时出错: {kill_error}')
+                checkpoint_result = {
+                    "is_pass": False,
+                    "detail": f"杀死所有应用失败: {str(kill_error)}"
+                }
+        
+        elif operation_type.lower() in ['black_open', 'black_close', 'flower_open', 'flower_close', 
+                                       'lag_open', 'lag_close', 'flash_open', 'flash_close']:
+            # 摄像头检测操作
+            from datetime import datetime
+            
+            # 获取当前时间
+            current_time = datetime.now()
+            time_str = current_time.isoformat()
+            
+            logging.info(f'执行摄像头操作: {operation_type} 在 {time_str}')
+            
+            # 记录摄像头操作时间到文件
+            camera_log_file = os.path.join(runner_dir, 'camera_operations.json')
+            
+            # 解析操作类型和动作
+            if '_' in operation_type:
+                camera_type, action = operation_type.split('_', 1)
+            else:
+                camera_type = operation_type
+                action = 'unknown'
+            
+            # 准备摄像头操作记录
+            camera_record = {
+                "type": camera_type,
+                "action": action,
+                "timestamp": time_str,
+                "step_group_id": step_data.get('step_group_id', ''),
+                "step_number": step_data.get('step_number', 0),
+                "step_name": step_name
+            }
+            
+            # 读取或创建摄像头操作记录文件
+            camera_operations = []
+            if os.path.exists(camera_log_file):
+                try:
+                    with open(camera_log_file, 'r', encoding='utf-8') as f:
+                        camera_operations = json.load(f)
+                except Exception as e:
+                    logging.warning(f'读取摄像头操作记录失败: {e}')
+            
+            # 添加新记录
+            camera_operations.append(camera_record)
+            
+            # 保存摄像头操作记录 
+            try:
+                with open(camera_log_file, 'w', encoding='utf-8', newline='') as f:
+                    json.dump(camera_operations, f, ensure_ascii=False, indent=2)
+                logging.info(f'摄像头操作记录已保存: {camera_record}')
+            except Exception as e:
+                logging.error(f'保存摄像头操作记录失败: {e}')
+            
+            checkpoint_result = {
+                "is_pass": True,
+                "detail": f"摄像头操作成功: {operation_type} 执行时间: {time_str}"
+            }
+        
+        else:
+            # 未知操作类型
+            logging.warning(f"❗ 未知操作类型: {operation_type}")
+            checkpoint_result = {
+                "is_pass": False,
+                "detail": f"未知操作类型: {operation_type}，需要实现对应的处理器"
+            }
+        
+    except Exception as default_err:
+        logging.error(f"默认处理器执行出错: {default_err}")
+        checkpoint_result = {
+            "is_pass": False,
+            "detail": f"默认处理器执行出错: {default_err}"
+        }
+
+    # 获取执行结果
+    is_pass = checkpoint_result.get("is_pass")
+    detail = checkpoint_result.get("detail")
+
+    # 等待UI稳定后进行执行后截图
+    logging.info("等待动作执行完成后UI稳定...")
+    ui_stable = wait_for_ui_stability(device, timeout=1.0)
+    if not ui_stable:
+        logging.warning("执行后UI稳定检查超时，继续截图")
+
+    # 执行后截图（用于响应验证）
+    step_number = step_data.get('step_number', 0)
+    after_execution_screenshot_path = take_screenshot_and_save(
+        device, runner_dir, f"after_step{step_number}", "执行后截图 - 用于验证默认操作结果"
+    )
+    step_data['after_execution_screenshot_path'] = after_execution_screenshot_path
+
+    logging.info(f"{'✅' if is_pass else '❌'} 默认处理器完成: {detail}")
+    
+    return {
+        "status": "success" if is_pass else "failed",
+        "message": detail,
+        "screenshots": {
+            "before_execution": step_data.get('before_execution_screenshot_path'),
+            "after_execution": after_execution_screenshot_path
+        },
+
+    } 

@@ -1,0 +1,273 @@
+{% include 'base/imports.j2' %}
+{% include 'base/utilities.j2' %}
+{% include 'base/image_utils.j2' %}
+{% include 'base/validation_utils.j2' %}
+{% include 'base/expression_utils.j2' %}
+{% include 'base/can_utils.j2' %}
+{% from 'base/logging_setup.j2' import setup_logging %}
+# checkpoint_validation函数将通过include包含
+
+
+# ==================== 动作处理函数定义 ====================
+{# 脚本基础模板 - 导入基础模板和宏 #}
+
+{# 处理器需求检测和模板包含 - 需要在这里直接展开，因为需要访问context变量 #}
+{# 收集需要的操作类型，避免重复包含 #}
+{% set required_handlers = [] %}
+{% for step in context.action_sequence %}
+    {% if step %}
+        {% set step_type = (step.step_type | default('action') | string).lower() %}
+        
+        {% if step_type == 'control_flow' %}
+            {# 控制流步骤需要特殊处理 #}
+            {% if 'control_flow' not in required_handlers %}
+                {% set _ = required_handlers.append('control_flow') %}
+            {% endif %}
+            
+            {# 🔄 递归检查控制流内部的循环体步骤 #}
+            {% if step.control_flow_config and step.control_flow_config.loop_body %}
+                {% for loop_step in step.control_flow_config.loop_body %}
+                    {% if loop_step %}
+                        {% set loop_operation_type = (loop_step.operation_type | default('unknown') | string).lower() %}
+                        {% set loop_is_manual = (loop_step.mode | default('agent')) == 'manual' %}
+                        
+                        {% if loop_is_manual and 'manual' not in required_handlers %}
+                            {% set _ = required_handlers.append('manual') %}
+                        {% endif %}
+                        
+                        {% if loop_operation_type in ['click', 'tap', 'long_click', 'double_click'] and 'click' not in required_handlers %}
+                            {% set _ = required_handlers.append('click') %}
+                        {% elif loop_operation_type in ['type', 'input'] and 'type' not in required_handlers %}
+                            {% set _ = required_handlers.append('type') %}
+                        {% elif loop_operation_type in ['swipe', 'drag'] and 'swipe' not in required_handlers %}
+                            {% set _ = required_handlers.append('swipe') %}
+                        {% elif loop_operation_type == 'scroll' and 'scroll' not in required_handlers %}
+                            {% set _ = required_handlers.append('scroll') %}
+                        {% elif loop_operation_type == 'can_send' and 'can' not in required_handlers %}
+                            {% set _ = required_handlers.append('can') %}
+                        {% elif loop_operation_type not in ['click', 'tap', 'long_click', 'double_click', 'type', 'input', 'swipe', 'drag', 'scroll', 'can_send'] and 'default' not in required_handlers %}
+                            {% set _ = required_handlers.append('default') %}
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            
+            {# 🔄 递归检查控制流内部的分支步骤 (if-else) #}
+            {% if step.control_flow_config and step.control_flow_config.branches %}
+                {% for branch in step.control_flow_config.branches %}
+                    {% if branch.steps %}
+                        {% for branch_step in branch.steps %}
+                            {% if branch_step %}
+                                {% set branch_operation_type = (branch_step.operation_type | default('unknown') | string).lower() %}
+                                {% set branch_is_manual = (branch_step.mode | default('agent')) == 'manual' %}
+                                
+                                {% if branch_is_manual and 'manual' not in required_handlers %}
+                                    {% set _ = required_handlers.append('manual') %}
+                                {% endif %}
+                                
+                                {% if branch_operation_type in ['click', 'tap', 'long_click', 'double_click'] and 'click' not in required_handlers %}
+                                    {% set _ = required_handlers.append('click') %}
+                                {% elif branch_operation_type in ['type', 'input'] and 'type' not in required_handlers %}
+                                    {% set _ = required_handlers.append('type') %}
+                                {% elif branch_operation_type in ['swipe', 'drag'] and 'swipe' not in required_handlers %}
+                                    {% set _ = required_handlers.append('swipe') %}
+                                {% elif branch_operation_type == 'scroll' and 'scroll' not in required_handlers %}
+                                    {% set _ = required_handlers.append('scroll') %}
+                                {% elif branch_operation_type == 'can_send' and 'can' not in required_handlers %}
+                                    {% set _ = required_handlers.append('can') %}
+                                {% elif branch_operation_type not in ['click', 'tap', 'long_click', 'double_click', 'type', 'input', 'swipe', 'drag', 'scroll', 'can_send'] and 'default' not in required_handlers %}
+                                    {% set _ = required_handlers.append('default') %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% else %}
+            {# 普通动作步骤 - 基于operation_type选择处理器 #}
+            {% set operation_type = (step.operation_type | default('unknown') | string).lower() %}
+            
+            {# 专用处理器需求检测 #}
+            {% if operation_type in ['click', 'tap', 'long_click', 'double_click'] and 'click' not in required_handlers %}
+                {% set _ = required_handlers.append('click') %}
+            {% elif operation_type in ['type', 'input'] and 'type' not in required_handlers %}
+                {% set _ = required_handlers.append('type') %}
+            {% elif operation_type in ['swipe', 'drag'] and 'swipe' not in required_handlers %}
+                {% set _ = required_handlers.append('swipe') %}
+            {% elif operation_type == 'scroll' and 'scroll' not in required_handlers %}
+                {% set _ = required_handlers.append('scroll') %}
+            {% elif operation_type == 'can_send' and 'can' not in required_handlers %}
+                {% set _ = required_handlers.append('can') %}
+            {% elif operation_type == 'error' and 'error' not in required_handlers %}
+                {% set _ = required_handlers.append('error') %}
+            {% else %}
+                {# 通用处理器需求检测 - 所有其他操作类型 #}
+                {% if 'default' not in required_handlers %}
+                    {% set _ = required_handlers.append('default') %}
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    {% endif %}
+{% endfor %}
+
+{# ==================== 处理器模板包含 ==================== #}
+{# 为了确保所有处理器都被包含，我们直接包含所有处理器模板 #}
+{# 这样可以避免条件包含的问题，确保生成的脚本包含所有必要的函数 #}
+
+{# 包含所有处理器模板 #}
+{% include 'handlers/click_handler.j2' %}
+{% include 'handlers/type_handler.j2' %}
+{% include 'handlers/swipe_handler.j2' %}
+{% include 'handlers/scroll_handler.j2' %}
+{% include 'handlers/can_handler.j2' %}
+{% include 'handlers/control_flow_handler.j2' %}
+{% include 'handlers/error_handler.j2' %}
+{% include 'handlers/default_handler.j2' %}
+
+{# 检查点验证函数 #}
+{% include 'main/checkpoint_validation.j2' %}
+
+{# 动作分发器 - 需要在handler_detection之后，以便访问required_handlers变量 #}
+{% include 'main/action_dispatcher.j2' %}
+
+{# 结果处理函数 #}
+{% include 'main/results_processing.j2' %}
+
+# 主函数定义
+def main():
+    """主函数：执行自动化操作 - 函数分发架构"""
+    global device, runner_dir, screenshot_count, action_sequence
+    
+    try:
+        # 任务初始化 - 直接内联，避免context作用域问题
+        task_id = "{{ context.script_id }}"
+        description = "{{ context.description }}"
+        workspace_root = Path("{{ context.execution_config.workspace_root | escape_path_for_python }}")
+
+        # 开始任务追踪
+        logging.info(f"任务开始: {task_id} - {description}")
+        start_time = time.time()
+        
+        # 创建任务级别的状态追踪
+        task_status = {
+            "task_id": task_id,
+            "description": description,
+            "status": "初始化",
+            "start_time": datetime.now().isoformat(),
+            "current_step": 0,
+            "total_steps": 0,
+            "progress_percentage": 0.0,
+            "phase_history": []
+        }
+
+        # 设置日志系统
+        log_dir = workspace_root / task_id / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # 配置日志文件
+        log_file = log_dir / f"script_{task_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+        # 设置日志格式
+        log_format = '%(asctime)s - %(levelname)s - %(message)s'
+
+        # 清除任何已有的日志配置
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+
+        # 配置日志处理器 - 确保文件写入优先级和Windows兼容性
+        file_handler = logging.FileHandler(str(log_file), encoding='utf-8', mode='w')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter(log_format))
+    
+        # Windows兼容性：确保控制台输出编码正确
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter(log_format))
+    
+        # 配置根日志器
+        logging.root.setLevel(logging.INFO)
+        logging.root.addHandler(file_handler)
+        logging.root.addHandler(console_handler)
+
+        # 强制刷新日志
+        logging.getLogger().handlers[0].flush()
+
+        logging.info(f"日志系统初始化完成，日志文件: {log_file}")
+        logging.info(f"任务ID: {task_id}")
+        logging.info(f"当前时间: {datetime.now().isoformat()}")
+        logging.info(f"Python版本: {sys.version}")
+        logging.info(f"工作目录: {workspace_root}")
+    
+        # 强制刷新确保初始化日志被写入
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+    
+        # 连接设备
+        device = u2.connect()
+        logging.info("✨ 设备连接成功")
+        
+        # 设置工作目录
+        runner_dir = workspace_root / task_id / "runner"
+        runner_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 初始化变量
+        action_sequence = [
+        {% for step in context.action_sequence %}
+        {{ step.to_dict() | to_python_dict }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+        ]
+        screenshot_count = 0
+        
+        logging.info(f"任务开始: {description}")
+        logging.info(f"步骤总数: {len(action_sequence)}")
+        
+        # 更新任务状态
+        task_status["total_steps"] = len(action_sequence)
+        task_status["status"] = "执行中"
+        task_status["action_sequence"] = action_sequence  # 保存动作序列
+        
+        # 保存初始任务状态
+        task_status_file = runner_dir / "task_status.json"
+        with open(task_status_file, 'w', encoding='utf-8') as f:
+            json.dump(task_status, f, ensure_ascii=False, indent=2, default=str)
+        
+        # 预处理：标记每个任务的第一个步骤（优化CAN采集启动判断）
+        task_first_step_map = {}  # {task_id: first_step_index}
+        for idx, step in enumerate(action_sequence):
+            task_id = step.get('source_task_id')
+            if task_id and task_id not in task_first_step_map:
+                task_first_step_map[task_id] = idx
+        
+        logging.info(f"📋 预处理完成，发现 {len(task_first_step_map)} 个任务的首步信息")
+        
+        {% if context is defined and context.expected_results %}
+        # 初始化预期结果配置（全局可用）
+        all_expected_results = {{ context.expected_results | to_python_dict }}
+        {% else %}
+        all_expected_results = {}
+        {% endif %}
+        
+        # 使用 main_execution_loop.j2 中定义的完整执行循环宏
+        {% from 'main/main_execution_loop.j2' import execute_main_loop %}
+        {{ execute_main_loop(device, runner_dir, screenshot_count, action_sequence, task_status, task_status_file, start_time, task_first_step_map, all_expected_results) }}
+        
+        # 处理执行结果和验证结果
+        {% from 'main/results_processing.j2' import process_results %}
+        {{ process_results(action_sequence, task_status, task_status_file, start_time, runner_dir) }}
+        
+    except Exception as main_error:
+        {% from 'main/results_processing.j2' import handle_main_error %}
+        {{ handle_main_error(main_error, task_status, task_status_file, start_time, action_sequence) }}
+        raise
+
+
+# 入口点
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        logging.info("用户中断了脚本执行")
+    except Exception as main_error:
+        logging.error(f"脚本执行失败: {main_error}")
+        import traceback
+        logging.error(traceback.format_exc()) 

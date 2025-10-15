@@ -1,0 +1,418 @@
+def get_device_info(device):
+    """
+    获取设备信息 {# 基础工具函数模板 - 优化版本 #}
+    """
+    try:
+        info = device.info
+        device_info = {
+            "display_width": info.get("displayWidth", 1920),
+            "display_height": info.get("displayHeight", 1080),
+            "current_package": info.get("currentPackageName", ""),
+            "sdk_version": info.get("sdkInt", 0),
+            "device_model": info.get("productName", "unknown")
+        }
+        logging.info(f"设备信息: {device_info}")
+        return device_info
+    except Exception as e:
+        logging.error(f"获取设备信息失败: {e}")
+        return {
+            "display_width": 1920,
+            "display_height": 1080,
+            "current_package": "",
+            "sdk_version": 0,
+            "device_model": "unknown"
+        }
+
+def check_text_input_state(device):
+    """
+    检查文本输入状态
+    """
+    try:
+        # 检查是否有输入法激活
+        keyboard_shown = _is_keyboard_shown(device)
+        
+        # 检查是否有焦点的可编辑元素
+        focused_editable = False
+        try:
+            focused_element = device(focused=True)
+            if focused_element.exists:
+                element_info = focused_element.info
+                focused_editable = element_info.get('editable', False)
+        except:
+            pass
+        
+        # 检查是否有可编辑元素存在
+        editable_exists = False
+        try:
+            editable_elements = device(editable=True)
+            editable_exists = editable_elements.exists
+        except:
+            pass
+        
+        input_state = {
+            "is_input_active": keyboard_shown or focused_editable,
+            "keyboard_shown": keyboard_shown,
+            "focused_editable": focused_editable,
+            "editable_exists": editable_exists
+        }
+        
+        logging.debug(f"输入状态检查: {input_state}")
+        return input_state
+        
+    except Exception as e:
+        logging.error(f"检查输入状态失败: {e}")
+        return {
+            "is_input_active": False,
+            "keyboard_shown": False,
+            "focused_editable": False,
+            "editable_exists": False
+        }
+
+def run_adb_command(cmd, timeout=10):
+    """
+    执行ADB命令
+    
+    Args:
+        cmd: 要执行的命令
+        timeout: 超时时间（秒）
+    
+    Returns:
+        Dict: 执行结果 {"success": bool, "output": str, "error": str}
+    """
+    try:
+        import subprocess
+        import threading
+        import time
+        
+        result = {"success": False, "output": "", "error": ""}
+        
+        # 使用subprocess执行命令
+        process = subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # 设置超时
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+            result["success"] = process.returncode == 0
+            result["output"] = stdout
+            result["error"] = stderr
+        except subprocess.TimeoutExpired:
+            process.kill()
+            result["error"] = f"命令执行超时 ({timeout}秒)"
+        
+        return result
+        
+    except Exception as e:
+        return {"success": False, "output": "", "error": str(e)}
+
+
+def _is_keyboard_shown(device):
+    """
+    检查软键盘是否显示
+    """
+    try:
+        # 方法1：检查输入法包名
+        ime_packages = [
+            "com.android.inputmethod",
+            "com.google.android.inputmethod",
+            "com.samsung.android.honeyboard",
+            "com.sohu.inputmethod.sogou",
+            "com.baidu.input",
+            "com.iflytek.inputmethod"
+        ]
+        
+        current_package = device.info.get("currentPackageName", "")
+        if any(ime_pkg in current_package for ime_pkg in ime_packages):
+            return True
+        
+        # 方法2：检查键盘相关元素
+        keyboard_indicators = [
+            "keyboard", "inputmethod", "ime",
+            "输入法", "键盘", "搜索"
+        ]
+        
+        try:
+            dump = device.dump_hierarchy()
+            if dump:
+                dump_lower = dump.lower()
+                if any(indicator in dump_lower for indicator in keyboard_indicators):
+                    return True
+        except:
+            pass
+        
+        # 方法3：检查屏幕高度变化（简化版）
+        try:
+            screen_info = device.info
+            display_height = screen_info.get("displayHeight", 0)
+            if display_height > 0:
+                # 简化判断：如果屏幕高度明显小于标准值，可能是键盘显示
+                # 这里只是一个简单的启发式判断
+                pass
+        except:
+            pass
+        
+        return False
+        
+    except Exception as e:
+        logging.debug(f"键盘检查异常: {e}")
+        return False
+
+def wait_for_ui_stability(device, timeout=1.5):
+    """
+    等待UI稳定 - 优化版本，减少等待时间
+    """
+    try:
+        logging.debug(f"等待UI稳定，超时: {timeout}秒")
+        
+        # 优化的UI稳定检查
+        stable_count = 0
+        required_stable = 1  # 只需要1次检查稳定即可（降低要求）
+        check_interval = 0.3  # 每0.3秒检查一次（提高检查频率）
+        max_checks = int(timeout / check_interval)
+        
+        prev_dump = None
+        
+        for i in range(max_checks):
+            try:
+                # 获取当前UI状态
+                current_dump = device.dump_hierarchy()
+                
+                if prev_dump is not None:
+                    # 比较UI是否发生变化
+                    if current_dump == prev_dump:
+                        stable_count += 1
+                        if stable_count >= required_stable:
+                            logging.debug(f"UI已稳定 (检查{i+1}次)")
+                            return True
+                    else:
+                        stable_count = 0  # 重置稳定计数
+                
+                prev_dump = current_dump
+                time.sleep(check_interval)
+                
+            except Exception as check_error:
+                logging.debug(f"UI稳定检查异常: {check_error}")
+                time.sleep(check_interval)
+                continue
+        
+        logging.warning(f"UI稳定检查超时 ({timeout}秒)")
+        return False
+        
+    except Exception as e:
+        logging.error(f"UI稳定检查失败: {e}")
+        return False
+
+def format_duration(seconds):
+    """
+    格式化持续时间
+    """
+    if seconds < 60:
+        return f"{seconds:.2f}秒"
+    elif seconds < 3600:
+        minutes = int(seconds // 60)
+        remaining_seconds = seconds % 60
+        return f"{minutes}分{remaining_seconds:.2f}秒"
+    else:
+        hours = int(seconds // 3600)
+        remaining_minutes = int((seconds % 3600) // 60)
+        remaining_seconds = seconds % 60
+        return f"{hours}小时{remaining_minutes}分{remaining_seconds:.2f}秒"
+
+
+# CAN 采集生命周期管理
+can_capture_threads = {}  # 全局采集状态管理字典
+
+def start_can_capture(task_id: str, can_capture_config: dict, runner_dir: str):
+    """
+    启动指定任务的CAN信号采集线程
+    
+    Args:
+        task_id: 任务ID (如: drive_task, login_task)
+        can_capture_config: CAN采集配置
+        runner_dir: 运行目录路径 (如: /workspace/{script_id}/runner)
+    
+    Returns:
+        str: 采集文件路径
+    """
+    import threading
+    import os
+    from pathlib import Path
+    
+    # 检查是否已经在采集
+    if task_id in can_capture_threads:
+        logging.warning(f"任务 {task_id} 的CAN采集已在运行")
+        return can_capture_threads[task_id]['file_path']
+    
+    # 获取采集配置
+    channel_list = can_capture_config.get('channel_list', [])
+    ip = can_capture_config.get('ip', '127.0.0.1')
+    
+    # 自动生成文件路径（使用时间戳避免重复）
+    can_dir = os.path.join(runner_dir, 'can_signals')
+    os.makedirs(can_dir, exist_ok=True)
+    
+    # 使用时间戳生成唯一文件名
+    timestamp = int(time.time() * 1000)  # 毫秒级时间戳
+    file_path = os.path.join(can_dir, f'{task_id}_signals_{timestamp}.txt')
+    
+    # 创建停止事件
+    stop_event = threading.Event()
+    
+    # 启动采集线程
+    capture_thread = threading.Thread(
+        target=get_signal,
+        args=(channel_list, file_path, stop_event, ip),
+        daemon=True,
+        name=f"CAN_Capture_{task_id}"
+    )
+    
+    # 记录采集状态
+    can_capture_threads[task_id] = {
+        'thread': capture_thread,
+        'stop_event': stop_event,
+        'file_path': file_path,
+        'channel_list': channel_list,
+        'ip': ip,
+        'start_time': time.time()
+    }
+    
+    # 预创建采集文件，避免启动后立即读取时不存在
+    try:
+        Path(file_path).touch(exist_ok=True)
+    except Exception as e:
+        logging.warning(f"预创建CAN采集文件失败: {e}")
+
+    # 启动线程
+    capture_thread.start()
+    
+    logging.info(f"✅ 启动CAN采集: 任务={task_id}, 通道={channel_list}, 文件={file_path}")
+    
+    return file_path
+
+
+def stop_can_capture(task_id: str):
+    """
+    停止指定任务的CAN采集，清理资源
+    
+    Args:
+        task_id: 任务ID
+    
+    Returns:
+        bool: 是否成功停止
+    """
+    if task_id not in can_capture_threads:
+        logging.warning(f"任务 {task_id} 的CAN采集未在运行")
+        return False
+    
+    capture_info = can_capture_threads[task_id]
+    
+    # 设置停止事件
+    capture_info['stop_event'].set()
+    
+    # 等待线程结束
+    try:
+        capture_info['thread'].join(timeout=5.0)
+        if capture_info['thread'].is_alive():
+            logging.warning(f"CAN采集线程 {task_id} 未在超时时间内结束")
+        else:
+            logging.info(f"✅ CAN采集线程 {task_id} 已正常结束")
+    except Exception as e:
+        logging.error(f"等待CAN采集线程结束时出错: {e}")
+    
+    # 计算采集时长
+    duration = time.time() - capture_info['start_time']
+    
+    # 清理状态
+    del can_capture_threads[task_id]
+    
+    logging.info(f"🔄 停止CAN采集: 任务={task_id}, 持续时间={duration:.2f}秒")
+    
+    return True
+
+
+def get_current_can_file_path(task_id: str) -> str:
+    """
+    获取当前任务的采集文件路径
+    
+    Args:
+        task_id: 任务ID
+    
+    Returns:
+        str: 文件路径，如果未在采集则返回空字符串
+    """
+    if task_id in can_capture_threads:
+        return can_capture_threads[task_id]['file_path']
+    return ""
+
+
+def check_remaining_verify_steps(action_sequence: list, current_index: int, task_id: str) -> bool:
+    """
+    检查是否还有后续验证步骤
+    
+    Args:
+        action_sequence: 动作序列列表
+        current_index: 当前步骤索引
+        task_id: 任务ID
+    
+    Returns:
+        bool: 是否还有后续验证步骤
+    """
+    # 从当前位置向后查找
+    for i in range(current_index + 1, len(action_sequence)):
+        step = action_sequence[i]
+        
+        # 检查是否是相同任务的验证步骤
+        if (step.get('source_task_id') == task_id and 
+            step.get('verify_after') == True):
+            return True
+    
+    return False
+
+
+def is_can_capture_running(task_id: str) -> bool:
+    """
+    检查指定任务的CAN采集是否正在运行
+    
+    Args:
+        task_id: 任务ID
+    
+    Returns:
+        bool: 是否正在运行
+    """
+    return task_id in can_capture_threads
+
+
+def get_can_capture_status(task_id: str) -> dict:
+    """
+    获取CAN采集状态信息
+    
+    Args:
+        task_id: 任务ID
+    
+    Returns:
+        dict: 采集状态信息
+    """
+    if task_id not in can_capture_threads:
+        return {
+            'running': False,
+            'task_id': task_id
+        }
+    
+    capture_info = can_capture_threads[task_id]
+    duration = time.time() - capture_info['start_time']
+    
+    return {
+        'running': True,
+        'task_id': task_id,
+        'file_path': capture_info['file_path'],
+        'channel_list': capture_info['channel_list'],
+        'ip': capture_info['ip'],
+        'duration': duration,
+        'thread_alive': capture_info['thread'].is_alive()
+    }
+

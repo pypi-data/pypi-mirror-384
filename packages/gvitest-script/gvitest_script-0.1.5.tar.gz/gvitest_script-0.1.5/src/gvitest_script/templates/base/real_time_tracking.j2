@@ -1,0 +1,404 @@
+{# 
+实时状态追踪模板
+
+提供脚本执行过程中的实时状态更新功能
+- 支持状态文件更新
+- 计算执行进度和预估时间  
+- 包含详细的步骤状态信息
+#}
+
+{# 设置模板变量 #}
+{% set pretty_format = context.real_time_tracking_config.pretty_format %}
+{% set status_file_name = context.real_time_tracking_config.status_file_name %}
+{% set api_endpoint = context.real_time_tracking_config.api_endpoint %}
+{% set api_port = context.real_time_tracking_config.api_port %}
+
+def update_execution_status(context: dict, current_step: int = None, step_status: str = None, error_message: str = None):
+    """
+    更新执行状态到JSON文件
+    
+    Args:
+        context: 脚本上下文字典
+        current_step: 当前步骤索引
+        step_status: 步骤状态 ('running', 'success', 'failed')
+        error_message: 错误信息（如果有）
+    """
+    try:
+        {% if context.real_time_tracking_config.enable_tracking %}
+        import json
+        from datetime import datetime, timedelta
+        from pathlib import Path
+        
+        # 获取状态文件路径
+        status_file_path = Path(runner_dir) / "{{ status_file_name }}"
+        
+        # 读取现有状态（如果存在）
+        status_data = {}
+        if status_file_path.exists():
+            try:
+                with open(status_file_path, "r", encoding="utf-8") as f:
+                    status_data = json.load(f)
+            except Exception as read_err:
+                logger.warning(f"读取状态文件失败: {read_err}")
+                status_data = {}
+        
+        # 获取基础信息
+        script_id = context.get("script_id", "unknown")
+        total_steps = len(context.get("action_sequence", []))
+        current_time = datetime.now()
+        
+        # 更新基础状态信息
+        if not status_data:
+            # 初始化状态数据
+            status_data = {
+                "script_id": script_id,
+                "description": context.get("description", ""),
+                "total_steps": total_steps,
+                "current_step": 0,
+                "status": "initializing",
+                "start_time": current_time.isoformat(),
+                "last_update": current_time.isoformat(),
+                "progress_percentage": 0.0,
+                "estimated_completion": None,
+                "steps": [],
+                "expected_results_status": {
+                    "total": len(context.get("expected_results", [])),
+                    "completed": 0,
+                    "passed": 0,
+                    "failed": 0
+                }
+            }
+            # 初始化步骤状态
+            for i, step in enumerate(context.get("action_sequence", [])):
+                step_info = {
+                    "step_number": i,
+                    "step_name": step.get("step_name", f"Step {i}"),
+                    "operation_type": step.get("operation_type", "unknown"),
+                    "status": "pending",
+                    "start_time": None,
+                    "end_time": None,
+                    "duration": None,
+                    "error_message": None
+                }
+                {% if context.real_time_tracking_config.track_screenshot_info %}
+                step_info["screenshot_path"] = None
+
+                {% endif %}
+                status_data["steps"].append(step_info)
+        
+        # 更新当前步骤信息
+        if current_step is not None:
+            status_data["current_step"] = current_step
+            
+            # 更新进度百分比
+            if total_steps > 0:
+                status_data["progress_percentage"] = (current_step / total_steps) * 100.0
+            
+            # 更新步骤状态
+            if current_step < len(status_data["steps"]):
+                current_step_data = status_data["steps"][current_step]
+
+                if step_status == "running":
+                    current_step_data["status"] = "running"
+                    current_step_data["start_time"] = current_time.isoformat()
+                    status_data["status"] = "running"
+                elif step_status in ["success", "failed"]:
+                    current_step_data["status"] = step_status
+                    current_step_data["end_time"] = current_time.isoformat()
+
+                    # 计算执行时间
+                    if current_step_data["start_time"]:
+                        start_time = datetime.fromisoformat(current_step_data["start_time"])
+                        current_step_data["duration"] = (current_time - start_time).total_seconds()
+
+                    if error_message:
+                        current_step_data["error_message"] = error_message
+        
+        # 计算预估完成时间
+        {% if context.real_time_tracking_config.calculate_eta %}
+        if status_data["status"] == "running" and current_step is not None and current_step > 0:
+            try:
+                start_time = datetime.fromisoformat(status_data["start_time"])
+                elapsed_time = (current_time - start_time).total_seconds()
+                
+                if elapsed_time > 0 and status_data["progress_percentage"] > 0:
+                    estimated_total_time = elapsed_time / (status_data["progress_percentage"] / 100.0)
+                    remaining_time = estimated_total_time - elapsed_time
+                    
+                    if remaining_time > 0:
+                        eta = current_time + timedelta(seconds=remaining_time)
+                        status_data["estimated_completion"] = eta.isoformat()
+            except Exception as eta_err:
+                logger.warning(f"计算预估完成时间失败: {eta_err}")
+        {% endif %}
+        
+        # 更新最后修改时间
+        status_data["last_update"] = current_time.isoformat()
+        
+        # 写入状态文件
+        try:
+            status_file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 格式化JSON输出
+            indent = 2 if {{ pretty_format | lower }} else None
+            
+            with open(status_file_path, "w", encoding="utf-8") as f:
+                json.dump(status_data, f, ensure_ascii=False, indent=indent, default=str)
+            
+            logger.info(f"状态已更新: 步骤 {current_step}/{total_steps} ({status_data['progress_percentage']:.1f}%)")
+            
+        except Exception as write_err:
+            logger.error(f"写入状态文件失败: {write_err}")
+        
+        {% else %}
+        logger.info("实时状态追踪已禁用")
+        {% endif %}
+        
+    except Exception as e:
+        logger.error(f"更新执行状态失败: {e}")
+
+
+def update_step_screenshot(current_step: int, screenshot_path: str = None):
+    """
+    更新步骤的截图信息
+    
+    Args:
+        current_step: 当前步骤索引
+        screenshot_path: 截图文件路径
+    """
+    try:
+        {% if context.real_time_tracking_config.track_screenshot_info %}
+        import json
+        from pathlib import Path
+        
+        status_file_path = Path(runner_dir) / "{{ status_file_name }}"
+        
+        if not status_file_path.exists():
+            logger.warning("状态文件不存在，无法更新截图信息")
+            return
+        
+        # 读取状态文件
+        with open(status_file_path, "r", encoding="utf-8") as f:
+            status_data = json.load(f)
+        
+        # 更新截图信息
+        if current_step < len(status_data.get("steps", [])):
+            current_step_data = status_data["steps"][current_step]
+
+            if screenshot_path:
+                current_step_data["screenshot_path"] = screenshot_path
+            
+            # 更新最后修改时间
+            status_data["last_update"] = datetime.now().isoformat()
+            
+            # 写回文件
+            indent = 2 if {{ pretty_format | lower }} else None
+            with open(status_file_path, "w", encoding="utf-8") as f:
+                json.dump(status_data, f, ensure_ascii=False, indent=indent, default=str)
+            
+            logger.info(f"已更新步骤 {current_step} 的截图信息")
+        
+        {% else %}
+        logger.info("截图信息追踪已禁用")
+        {% endif %}
+        
+    except Exception as e:
+        logger.error(f"更新步骤截图失败: {e}")
+
+
+def update_expected_results_status(completed: int = None, passed: int = None, failed: int = None):
+    """
+    更新预期结果验证状态
+    
+    Args:
+        completed: 已完成的预期结果数量
+        passed: 通过的预期结果数量  
+        failed: 失败的预期结果数量
+    """
+    try:
+        {% if context.real_time_tracking_config.track_checkpoint_status %}
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        
+        status_file_path = Path(runner_dir) / "{{ status_file_name }}"
+        
+        if not status_file_path.exists():
+            logger.warning("状态文件不存在，无法更新预期结果状态")
+            return
+        
+        # 读取状态文件
+        with open(status_file_path, "r", encoding="utf-8") as f:
+            status_data = json.load(f)
+        
+        # 更新预期结果状态
+        results_status = status_data.setdefault("expected_results_status", {
+            "total": len(context.get("expected_results", [])),
+            "completed": 0,
+            "passed": 0,
+            "failed": 0
+        })
+        
+        if completed is not None:
+            results_status["completed"] = completed
+        if passed is not None:
+            results_status["passed"] = passed
+        if failed is not None:
+            results_status["failed"] = failed
+        
+        # 更新最后修改时间
+        status_data["last_update"] = datetime.now().isoformat()
+        
+        # 写回文件
+        indent = 2 if {{ pretty_format | lower }} else None
+        with open(status_file_path, "w", encoding="utf-8") as f:
+            json.dump(status_data, f, ensure_ascii=False, indent=indent, default=str)
+        
+        logger.info(f"预期结果状态已更新: 完成 {completed}, 通过 {passed}, 失败 {failed}")
+        
+        {% else %}
+        logger.info("预期结果状态追踪已禁用")
+        {% endif %}
+        
+    except Exception as e:
+        logger.error(f"更新预期结果状态失败: {e}")
+
+
+def finalize_execution_status(success: bool, error_message: str = None):
+    """
+    完成执行状态更新
+    
+    Args:
+        success: 整体执行是否成功
+        error_message: 错误信息（如果有）
+    """
+    try:
+        {% if context.real_time_tracking_config.enable_tracking %}
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        
+        status_file_path = Path(runner_dir) / "{{ status_file_name }}"
+        
+        if not status_file_path.exists():
+            logger.warning("状态文件不存在，无法完成状态更新")
+            return
+        
+        # 读取状态文件
+        with open(status_file_path, "r", encoding="utf-8") as f:
+            status_data = json.load(f)
+        
+        # 更新最终状态
+        current_time = datetime.now()
+        status_data["status"] = "completed" if success else "failed"
+        status_data["end_time"] = current_time.isoformat()
+        status_data["last_update"] = current_time.isoformat()
+        status_data["progress_percentage"] = 100.0
+        
+        if error_message:
+            status_data["error_message"] = error_message
+        
+        # 计算总执行时间
+        if status_data.get("start_time"):
+            start_time = datetime.fromisoformat(status_data["start_time"])
+            total_duration = (current_time - start_time).total_seconds()
+            status_data["total_duration"] = total_duration
+        
+        # 写回文件
+        indent = 2 if {{ pretty_format | lower }} else None
+        with open(status_file_path, "w", encoding="utf-8") as f:
+            json.dump(status_data, f, ensure_ascii=False, indent=indent, default=str)
+        
+        logger.info(f"执行状态已完成: {'成功' if success else '失败'}")
+        
+        {% else %}
+        logger.info("实时状态追踪已禁用")
+        {% endif %}
+        
+    except Exception as e:
+        logger.error(f"完成执行状态更新失败: {e}")
+
+
+{# 以下是HTTP API相关的功能，用于前端实时查询状态 #}
+
+{% if context.real_time_tracking_config.enable_http_api %}
+def start_status_api_server():
+    """
+    启动状态查询API服务器（后台线程）
+    """
+    try:
+        import threading
+        from http.server import HTTPServer, BaseHTTPRequestHandler
+        import json
+        from pathlib import Path
+        from urllib.parse import urlparse, parse_qs
+        
+        class StatusHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                try:
+                    # 解析请求路径
+                    parsed_path = urlparse(self.path)
+                    
+                    if parsed_path.path == "{{ api_endpoint }}":
+                        # 读取状态文件
+                        status_file_path = Path(runner_dir) / "{{ status_file_name }}"
+                        
+                        if status_file_path.exists():
+                            with open(status_file_path, "r", encoding="utf-8") as f:
+                                status_data = json.load(f)
+                            
+                            # 设置响应头
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'application/json; charset=utf-8')
+                            self.send_header('Access-Control-Allow-Origin', '*')  # CORS支持
+                            self.end_headers()
+                            
+                            # 发送状态数据
+                            response = json.dumps(status_data, ensure_ascii=False, indent=2)
+                            self.wfile.write(response.encode('utf-8'))
+                        else:
+                            # 状态文件不存在
+                            self.send_response(404)
+                            self.send_header('Content-Type', 'application/json; charset=utf-8')
+                            self.end_headers()
+                            
+                            error_response = json.dumps({
+                                "error": "Status file not found",
+                                "message": "脚本尚未开始执行或状态文件丢失"
+                            }, ensure_ascii=False)
+                            self.wfile.write(error_response.encode('utf-8'))
+                    else:
+                        # 路径不匹配
+                        self.send_response(404)
+                        self.end_headers()
+                
+                except Exception as e:
+                    logger.error(f"API请求处理失败: {e}")
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    
+                    error_response = json.dumps({
+                        "error": "Internal server error",
+                        "message": str(e)
+                    }, ensure_ascii=False)
+                    self.wfile.write(error_response.encode('utf-8'))
+            
+            def log_message(self, format, *args):
+                # 禁用默认日志，避免干扰主日志
+                pass
+        
+        def run_server():
+            server_address = ('', {{ api_port }})
+            httpd = HTTPServer(server_address, StatusHandler)
+            logger.info(f"状态查询API服务器启动: http://localhost:{{ api_port }}{{ api_endpoint }}")
+            httpd.serve_forever()
+        
+        # 在后台线程中启动服务器
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+        
+    except Exception as e:
+        logger.error(f"启动状态API服务器失败: {e}")
+
+{% endif %} 

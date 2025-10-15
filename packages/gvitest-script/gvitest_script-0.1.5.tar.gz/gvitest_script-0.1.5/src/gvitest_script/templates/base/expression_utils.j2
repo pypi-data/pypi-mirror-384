@@ -1,0 +1,658 @@
+def evaluate_condition_expression(condition, expression, can_file_path=None):
+    """
+    评估条件表达式
+    
+    支持的条件表达式格式：
+    - 简单条件: "[BAffi]"
+    - AND逻辑: "[BAffi] && [8DAZR]"
+    - OR逻辑: "[BAffi] || [8DAZR]"
+    - 复杂组合: "([BAffi] || [8DAZR]) && [XY123]"
+    - 嵌套括号: "(([BAffi] && [8DAZR]) || [XY123]) && [ABC12]"
+    
+    Args:
+        condition: 条件列表，每个元素是一个ValidationModel
+        expression: 条件表达式字符串，支持 &&、||、() 运算符
+        can_file_path: CAN信号文件路径（可选），用于CAN条件验证
+    
+    Returns:
+        bool: 条件是否满足
+    
+    Note:
+        此函数依赖脚本中的全局变量: device, runner_dir, screenshot_count
+    """
+    try:
+        # 如果没有条件列表，直接返回True
+        if not condition:
+            return True
+        
+        # 如果没有表达式，默认所有条件都要满足（AND逻辑）
+        if not expression or not expression.strip():
+            return _evaluate_all_conditions(condition, can_file_path)
+        
+        # 解析并评估表达式
+        return _evaluate_expression(condition, expression.strip(), can_file_path)
+        
+    except Exception as e:
+        logging.error(f"条件表达式评估异常: {e}")
+        return False
+
+
+def _evaluate_all_conditions(condition, can_file_path=None):
+    """
+    评估所有条件（AND逻辑）
+    
+    Args:
+        condition: 条件列表
+        can_file_path: CAN信号文件路径（可选）
+    
+    Returns:
+        bool: 所有条件是否都满足
+    """
+    try:
+        # 使用脚本全局变量
+        global device, runner_dir, screenshot_count
+        
+        for validation_model in condition:
+            # 获取CAN文件路径（如果是CAN条件需要）
+            current_can_file_path = can_file_path if validation_model.get('data_source') == 'can_signal' else None
+            
+            result = validate_validation_model(
+                validation_model=validation_model,
+                device=device,
+                runner_dir=runner_dir,
+                screenshot_count=screenshot_count,
+                can_file_path=current_can_file_path
+            )
+            if not result.get('is_pass', False):
+                return False
+        return True
+    except Exception as e:
+        logging.error(f"评估所有条件异常: {e}")
+        return False
+
+
+def _evaluate_expression(condition, expression, can_file_path=None):
+    """
+    解析并评估条件表达式
+    
+    Args:
+        condition: 条件列表
+        expression: 条件表达式字符串
+        can_file_path: CAN信号文件路径（可选）
+    
+    Returns:
+        bool: 表达式评估结果
+    """
+    # 创建条件映射表
+    condition_map = _create_condition_map(condition, can_file_path)
+    
+    # 解析表达式
+    return _parse_expression(expression, condition_map)
+
+
+def _create_condition_map(condition, can_file_path=None):
+    """
+    创建条件映射表，将条件列表转换为名称到结果的映射
+    
+    支持的条件类型：
+    1. ValidationModel: 验证模型（预期结果验证或控制流条件判断）
+    2. 简单条件: 包含 is_pass 字段的简单条件对象
+    3. 布尔条件: 直接包含布尔值的条件对象
+    
+    映射策略：
+    - 优先使用条件的 id 字段作为键
+    - 如果没有 id，则使用默认的 condition1, condition2, ... 命名
+    
+    Args:
+        condition: 条件列表，每个元素可能是ValidationModel或其他类型的条件
+    
+    Returns:
+        Dict[str, bool]: 条件名称到验证结果的映射
+        
+    Note:
+        此函数依赖脚本全局变量: device, runner_dir, screenshot_count
+    """
+    condition_map = {}
+    
+    try:
+        # 使用脚本全局变量
+        global device, runner_dir, screenshot_count
+        
+        logging.info(f"开始创建条件映射，数量: {len(condition)}")
+        
+        # 首先分离 CAN 条件和非 CAN 条件
+        can_conditions = []
+        other_conditions = []
+        
+        for condition_item in condition:
+            data_source = condition_item.get('data_source', '')
+            validation_type = condition_item.get('validation_type', '')
+            
+            if data_source == 'can_signal' and validation_type == 'signal':
+                can_conditions.append(condition_item)
+            else:
+                other_conditions.append(condition_item)
+        
+        # 批量处理 CAN 条件
+        if can_conditions:
+            logging.info(f"处理 {len(can_conditions)} 个 CAN 条件")
+            
+            if can_file_path:
+                # 检查文件是否存在
+                import os
+                if not os.path.exists(can_file_path):
+                    logging.error(f"CAN采集文件不存在: {can_file_path}")
+                    # 所有CAN条件设为False
+                    for can_condition in can_conditions:
+                        condition_id = can_condition.get('id', 'unknown')
+                        condition_map[condition_id] = False
+                        logging.info(f"condition={condition_id}, result=False")
+                else:
+                    # 构造 judge_signal 需要的格式
+                    target_signals = []
+                    for can_condition in can_conditions:
+                        target_signals.append({
+                            "title": can_condition.get('can_title'),
+                            "values": can_condition.get('can_values', []),
+                            "logic_id": can_condition.get('id')
+                        })
+                    
+                    # 一次性调用 judge_signal 处理所有 CAN 条件
+                    judge_results = judge_signal(target_signals, can_file_path)
+                    
+                    # 将结果映射到条件映射表
+                    for result in judge_results:
+                        condition_id = result.get('id')
+                        is_pass = result.get('is_pass', False)
+                        condition_map[condition_id] = is_pass
+                        logging.info(f"condition={condition_id}, result={is_pass}")
+            else:
+                logging.warning("未找到 CAN 文件路径，所有 CAN 条件设为 False")
+                for can_condition in can_conditions:
+                    condition_id = can_condition.get('id', 'unknown')
+                    condition_map[condition_id] = False
+        
+        # 处理非 CAN 条件
+        for i, condition_item in enumerate(other_conditions):
+            # 确定条件名称（优先级：id > 默认名称）
+            condition_name = None
+            if condition_item.get('id'):
+                condition_name = condition_item['id']
+            else:
+                condition_name = f"condition{i+1}"
+            
+            # 简洁日志，仅记录最终结果
+            
+            # 判断条件类型并评估
+            if _is_validation_model(condition_item):
+                # 传统的 ValidationModel 验证
+                result = validate_validation_model(
+                    validation_model=condition_item,
+                    device=device,
+                    runner_dir=runner_dir,
+                    screenshot_count=screenshot_count
+                )
+                is_pass = result.get('is_pass', False)
+                condition_map[condition_name] = is_pass
+                logging.info(f"condition={condition_name}, result={is_pass}")
+                    
+            elif _is_simple_condition(condition_item):
+                # 简单条件类型：直接获取is_pass字段
+                is_pass = condition_item.get('is_pass', False)
+                condition_map[condition_name] = is_pass
+                logging.info(f"condition={condition_name}, result={is_pass}")
+                    
+            elif _is_boolean_condition(condition_item):
+                # 布尔条件类型：直接获取布尔值
+                value = condition_item.get('value', False)
+                condition_map[condition_name] = value
+                logging.info(f"condition={condition_name}, result={value}")
+                    
+            else:
+                # 未知类型：记录警告并默认为False
+                logging.warning(f"❌ 条件 {i+1} [{condition_name}] 未知的条件类型: {type(condition_item)}, 内容: {condition_item}")
+                condition_map[condition_name] = False
+        
+        # 条件映射创建完成
+        return condition_map
+    except Exception as e:
+        logging.error(f"创建条件映射异常: {e}")
+        return {}
+
+
+def _is_validation_model(condition_item):
+    """
+    判断是否为ValidationModel类型
+    
+    Args:
+        condition_item: 条件项
+    
+    Returns:
+        bool: 是否为ValidationModel
+    """
+    # 检查是否包含ValidationModel的特征字段
+    validation_fields = [
+        'data_source', 'validation_type', 'expect_exists', 
+        'target_image_path', 'reference_image_path', 'target_text',
+        'can_title', 'can_values'  # 添加 CAN 相关字段
+    ]
+    return any(field in condition_item for field in validation_fields)
+
+
+def _is_simple_condition(condition_item):
+    """
+    判断是否为简单条件类型（包含is_pass字段）
+    
+    Args:
+        condition_item: 条件项
+    
+    Returns:
+        bool: 是否为简单条件
+    """
+    return 'is_pass' in condition_item
+
+
+def _is_boolean_condition(condition_item):
+    """
+    判断是否为布尔条件类型（包含value字段）
+    
+    Args:
+        condition_item: 条件项
+    
+    Returns:
+        bool: 是否为布尔条件
+    """
+    return 'value' in condition_item and isinstance(condition_item['value'], bool)
+
+
+def _parse_expression(expression, condition_map):
+    """
+    解析条件表达式
+    
+    支持的语法：
+    - [BAffi]: 单个条件
+    - [BAffi] && [8DAZR]: AND逻辑
+    - [BAffi] || [8DAZR]: OR逻辑
+    - ([BAffi] || [8DAZR]) && [XY123]: 复杂组合
+    - true/false: 字面值
+    
+    Args:
+        expression: 条件表达式字符串
+        condition_map: 条件映射表
+    
+    Returns:
+        bool: 表达式评估结果
+    """
+    import re
+    
+    try:
+        
+        # 预处理表达式，标准化空格
+        expression = re.sub(r'\s+', ' ', expression.strip())
+        
+        # 处理特殊的字面值
+        if expression.lower() == 'true':
+            return True
+        elif expression.lower() == 'false':
+            return False
+        
+        # 处理括号
+        original_expression = expression
+        while '(' in expression:
+            expression = _evaluate_parentheses(expression, condition_map)
+        
+        # 处理AND和OR逻辑
+        result = _evaluate_logical_expression(expression, condition_map)
+        return result
+        
+    except Exception as e:
+        logging.error(f"❌ 表达式解析异常: {e}")
+        return False
+
+
+def _evaluate_parentheses(expression, condition_map):
+    """
+    处理括号内的表达式
+    
+    Args:
+        expression: 包含括号的表达式
+        condition_map: 条件映射表
+    
+    Returns:
+        str: 处理后的表达式
+    """
+    # 找到最内层的括号
+    start = expression.rfind('(')
+    if start == -1:
+        return expression
+    
+    end = expression.find(')', start)
+    if end == -1:
+        return expression
+    
+    # 提取括号内的表达式
+    inner_expr = expression[start + 1:end]
+    
+    # 评估括号内的表达式
+    inner_result = _evaluate_logical_expression(inner_expr, condition_map)
+    
+    # 替换括号内的表达式为结果
+    result_str = "true" if inner_result else "false"
+    new_expression = expression[:start] + result_str + expression[end + 1:]
+    
+    return new_expression
+
+
+def _evaluate_logical_expression(expression, condition_map):
+    """
+    评估逻辑表达式（AND/OR）
+    
+    Args:
+        expression: 逻辑表达式
+        condition_map: 条件映射表
+    
+    Returns:
+        bool: 逻辑表达式结果
+    """
+    # 分割表达式为条件列表
+    conditions = _split_expression(expression)
+    logging.info(f"🔧 分割表达式为条件列表: {conditions}")
+    
+    if not conditions:
+        logging.info(f"📋 没有条件，返回 True")
+        return True
+    
+    # 如果只有一个条件
+    if len(conditions) == 1:
+        logging.info(f"📋 只有一个条件，直接评估")
+        result = _evaluate_single_condition(conditions[0]['condition'], condition_map)
+        logging.info(f"✅ 单个条件评估结果: {result}")
+        return result
+    
+    # 处理多个条件的逻辑组合
+    logging.info(f"🔧 处理多个条件的逻辑组合，条件数量: {len(conditions)}")
+    result = _evaluate_single_condition(conditions[0]['condition'], condition_map)
+    logging.info(f"📋 初始条件结果: {result}")
+    
+    for i in range(1, len(conditions)):
+        operator = conditions[i].get('operator')
+        condition = conditions[i].get('condition')
+        
+        logging.info(f"🔧 处理第 {i+1} 个条件: {condition} (操作符: {operator})")
+        
+        if operator == '&&':
+            next_result = _evaluate_single_condition(condition, condition_map)
+            logging.info(f"🔧 AND操作: {result} && {next_result} = {result and next_result}")
+            result = result and next_result
+        elif operator == '||':
+            next_result = _evaluate_single_condition(condition, condition_map)
+            logging.info(f"🔧 OR操作: {result} || {next_result} = {result or next_result}")
+            result = result or next_result
+    
+    logging.info(f"✅ 逻辑表达式最终结果: {result}")
+    return result
+
+
+def _split_expression(expression):
+    """
+    分割表达式为条件列表
+    
+    Args:
+        expression: 逻辑表达式
+    
+    Returns:
+        List[Dict[str, str]]: 条件列表，每个元素包含condition和operator
+    """
+    import re
+    
+    # 移除多余空格
+    expression = expression.strip()
+    
+    # 分割AND和OR操作，支持操作符前后有无空格的情况
+    parts = re.split(r'\s*(&&|\|\|)\s*', expression)
+    
+    conditions = []
+    for i, part in enumerate(parts):
+        if i == 0:
+            # 第一个条件
+            conditions.append({'condition': part.strip()})
+        elif i % 2 == 1:
+            # 操作符
+            operator = part
+            if i + 1 < len(parts):
+                next_condition = parts[i + 1].strip()
+                conditions.append({
+                    'operator': operator,
+                    'condition': next_condition
+                })
+    
+    return conditions
+
+
+def _evaluate_single_condition(condition, condition_map):
+    """
+    评估单个条件
+    
+    支持的条件格式：
+    - [id]: 方括号包围的条件ID，如 [BAffi]、[8DAZR]
+    - true/false: 布尔字面量
+    
+    Args:
+        condition: 单个条件字符串
+        condition_map: 条件映射表
+    
+    Returns:
+        bool: 条件评估结果
+    """
+    condition = condition.strip()
+    logging.info(f"🔍 评估单个条件: '{condition}'")
+    
+    # 处理布尔字面量（不区分大小写）
+    if condition.lower() == 'true':
+        logging.info(f"✅ 条件为布尔字面量 'true'，返回 True")
+        return True
+    elif condition.lower() == 'false':
+        logging.info(f"❌ 条件为布尔字面量 'false'，返回 False")
+        return False
+    
+    # 处理 [id] 格式的条件
+    if condition.startswith('[') and condition.endswith(']'):
+        # 提取方括号内的id
+        condition_id = condition[1:-1]
+        logging.info(f"🔍 处理方括号格式条件，提取ID: '{condition_id}'")
+        
+        # 查找条件映射（优先查找不带方括号的ID）
+        if condition_id in condition_map:
+            result = condition_map[condition_id]
+            logging.info(f"✅ 找到条件ID '{condition_id}'，结果: {result}")
+            return result
+        
+        # 如果找不到，尝试查找带方括号的完整ID
+        if condition in condition_map:
+            result = condition_map[condition]
+            logging.info(f"✅ 找到完整条件 '{condition}'，结果: {result}")
+            return result
+        
+        # 如果都找不到条件，返回False
+        logging.warning(f"❌ 未找到条件ID '{condition_id}' 或 '{condition}'")
+        return False
+    
+    # 兼容处理：直接查找条件映射（用于向后兼容）
+    if condition in condition_map:
+        result = condition_map[condition]
+        logging.info(f"✅ 直接找到条件 '{condition}'，结果: {result}")
+        return result
+    
+    # 如果找不到条件，返回False
+    logging.warning(f"❌ 未找到条件 '{condition}'")
+    return False
+
+
+def validate_expression_syntax(expression):
+    """
+    验证表达式语法是否正确
+    
+    Args:
+        expression: 条件表达式字符串
+    
+    Returns:
+        Dict[str, Any]: 验证结果
+    """
+    try:
+        # 检查括号匹配
+        if not _check_parentheses_balance(expression):
+            return {
+                "is_valid": False,
+                "error": "括号不匹配",
+                "expression": expression
+            }
+        
+        # 检查操作符语法
+        if not _check_operator_syntax(expression):
+            return {
+                "is_valid": False,
+                "error": "操作符语法错误",
+                "expression": expression
+            }
+        
+        return {
+            "is_valid": True,
+            "expression": expression
+        }
+        
+    except Exception as e:
+        return {
+            "is_valid": False,
+            "error": f"语法验证异常: {e}",
+            "expression": expression
+        }
+
+
+def _check_parentheses_balance(expression):
+    """
+    检查括号是否匹配
+    
+    Args:
+        expression: 表达式字符串
+    
+    Returns:
+        bool: 括号是否匹配
+    """
+    stack = []
+    
+    for char in expression:
+        if char == '(':
+            stack.append(char)
+        elif char == ')':
+            if not stack:
+                return False
+            stack.pop()
+    
+    return len(stack) == 0
+
+
+def _check_operator_syntax(expression):
+    """
+    检查操作符语法是否正确
+    
+    Args:
+        expression: 表达式字符串
+    
+    Returns:
+        bool: 操作符语法是否正确
+    """
+    import re
+    
+    # 检查连续操作符
+    if re.search(r'(&&|\|\|)\s*(&&|\|\|)', expression):
+        return False
+    
+    # 检查操作符在开头或结尾
+    if re.match(r'^\s*(&&|\|\|)', expression) or re.search(r'(&&|\|\|)\s*$', expression):
+        return False
+    
+    return True
+
+
+def format_expression(expression):
+    """
+    格式化条件表达式，标准化空格和格式
+    
+    Args:
+        expression: 原始表达式
+    
+    Returns:
+        str: 格式化后的表达式
+    """
+    import re
+    
+    try:
+        # 移除多余空格
+        expression = re.sub(r'\s+', ' ', expression.strip())
+        
+        # 标准化操作符周围的空格
+        expression = re.sub(r'\s*(&&|\|\|)\s*', r' \1 ', expression)
+        
+        # 标准化括号周围的空格
+        expression = re.sub(r'\s*\(\s*', '(', expression)
+        expression = re.sub(r'\s*\)\s*', ')', expression)
+        
+        # 修复括号后的操作符空格
+        expression = re.sub(r'\)\s*(&&|\|\|)', r') \1', expression)
+        
+        # 移除开头和结尾的空格
+        expression = expression.strip()
+        
+        return expression
+        
+    except Exception as e:
+        logging.error(f"格式化表达式异常: {e}")
+        return expression
+
+
+def get_expression_variables(expression):
+    """
+    提取表达式中的变量名
+    
+    支持 [id] 格式的条件引用，提取方括号内的 id
+    
+    Args:
+        expression: 条件表达式字符串
+    
+    Returns:
+        List[str]: 变量名列表（不包含方括号）
+    """
+    import re
+    
+    try:
+        # 移除括号和操作符
+        cleaned = re.sub(r'[()&|]', ' ', expression)
+        
+        # 分割并提取变量名
+        variables = []
+        for part in cleaned.split():
+            part = part.strip()
+            if part and part not in ['true', 'false', '&&', '||']:
+                # 处理 [id] 格式
+                if part.startswith('[') and part.endswith(']'):
+                    # 提取方括号内的 id
+                    variable_id = part[1:-1]
+                    if variable_id:  # 确保不是空的方括号
+                        variables.append(variable_id)
+                else:
+                    # 向后兼容：直接的变量名
+                    variables.append(part)
+        
+        # 去重
+        return list(set(variables))
+        
+    except Exception as e:
+        logging.error(f"提取表达式变量异常: {e}")
+        return []
+
+
+
+
+
+
+

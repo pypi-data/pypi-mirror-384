@@ -1,0 +1,188 @@
+{# CAN 动作处理模板 - 专门处理 CAN 发送操作 #}
+
+{# CAN 动作处理函数 #}
+def handle_can_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    处理 CAN 发送动作
+    
+    Args:
+        step_data: 步骤上下文对象
+        device: uiautomator2设备对象（CAN 操作不需要，但保持接口一致）
+        runner_dir: 运行目录路径
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径
+    
+    Returns:
+        Dict: 执行结果
+    """
+    import time
+    import logging
+    
+    logging.info("开始执行 CAN 步骤 %s: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤')))
+    
+    step_name = step_data.get('step_name', 'CAN发送')
+    operation_type = step_data.get('operation_type', 'can_send')
+    can_configs = step_data.get('can_configs', {})
+    step_number = step_data.get('step_number', 0)
+    
+    # 关键字段概览，避免冗长日志
+    logging.info(f"CAN 参数概览: keys={list(can_configs.keys())}")
+    
+    # 验证必需参数
+    required_fields = ['channel_id', 'frame_id', 'signals', 'duration', 'interval']
+    for field in required_fields:
+        if field not in can_configs:
+            error_msg = f"CAN 发送失败：缺少必需参数 {field}"
+            logging.error(error_msg)
+            
+
+            
+            return {
+            "status": "failed",
+            "message": error_msg,
+            "execution_success": False,
+            "execution_detail": error_msg,
+            "operation_mode": "manual",
+            "operation_type": "can_send",
+            "error_type": "parameter_validation",
+
+        }
+    
+    try:
+        # 提取 CAN 配置参数（直接透传，不做转换）
+        channel_id = can_configs.get('channel_id')
+        frame_id = can_configs.get('frame_id')
+        signals = can_configs.get('signals', [])
+        duration = can_configs.get('duration')
+        interval = can_configs.get('interval')
+        ip = can_configs.get('ip', '127.0.0.1')
+        
+        logging.info(f"执行 CAN 发送:")
+        logging.info(f"  通道: {channel_id}")
+        logging.info(f"  帧ID: {frame_id}")
+        logging.info(f"  信号: {signals}")
+        logging.info(f"  持续时间: {duration}ms")
+        logging.info(f"  发送间隔: {interval}ms")
+        logging.info(f"  服务器: {ip}")
+        
+
+        
+        # 记录开始时间
+        start_time = time.time()
+        
+        # 发送 CAN 帧（使用注入的函数）
+        result = send_frame_to_can(channel_id, frame_id, signals, duration, interval, ip)
+        
+        # 计算执行时间
+        execution_time = time.time() - start_time
+        
+        # 判断发送结果
+        if isinstance(result, str) and ("成功" in result or "success" in result.lower()):
+            execution_success = True
+            execution_detail = f"CAN 发送成功: {result}"
+            logging.info(f"✅ CAN 发送完成: {step_name}")
+            
+
+        else:
+            execution_success = False
+            execution_detail = f"CAN 发送失败: {result}"
+            logging.error(f"❌ CAN 发送失败: {step_name} - {result}")
+            
+
+        
+        # 构造返回结果（与通用结构对齐）
+        return {
+            "status": "success" if execution_success else "failed",
+            "message": execution_detail,
+            "execution_success": execution_success,
+            "execution_detail": execution_detail,
+            "operation_mode": "manual",  # CAN 动作固定为 manual 模式
+            "operation_type": "can_send",
+            "execution_time": execution_time,
+            "can_channel": channel_id,
+            "can_frame_id": frame_id,
+            "can_signals": signals,
+            "can_duration": duration,
+            "can_interval": interval,
+            "can_server_ip": ip,
+
+        }
+        
+    except ImportError as e:
+        error_msg = f"CAN 工具模块导入失败: {str(e)}"
+        logging.error(error_msg)
+        
+
+        
+        return {
+            "status": "failed",
+            "message": error_msg,
+            "execution_success": False,
+            "execution_detail": error_msg,
+            "operation_mode": "manual",
+            "operation_type": "can_send",
+            "error_type": "module_import"
+        }
+        
+    except Exception as e:
+        error_msg = f"CAN 发送异常: {str(e)}"
+        logging.error(error_msg)
+        logging.exception("CAN 发送详细异常信息:")
+        
+
+        
+        return {
+            "status": "failed",
+            "message": error_msg,
+            "execution_success": False,
+            "execution_detail": error_msg,
+            "operation_mode": "manual",
+            "operation_type": "can_send",
+            "error_type": "execution_exception"
+        }
+
+
+def validate_can_configs(can_configs):
+    """验证 CAN 配置参数的完整性和正确性"""
+    if not can_configs:
+        return False, "缺少 can_configs 配置"
+    
+    # 验证必需字段
+    required_fields = ['channel_id', 'frame_id', 'signals', 'duration', 'interval']
+    for field in required_fields:
+        if not can_configs.get(field):
+            return False, f"缺少必需字段: {field}"
+    
+    # 验证 signals 为非空字典
+    signals = can_configs.get('signals', {})
+    if not isinstance(signals, dict) or len(signals) == 0:
+        return False, "signals 必须是非空字典，例如 {'HU_MediaVolSET': 0}"
+    
+    # 验证 frame_id 为整数
+    if not isinstance(can_configs.get('frame_id'), int):
+        return False, f"frame_id 必须是整数: {can_configs.get('frame_id')}"
+    
+    # 验证 duration 和 interval
+    duration = can_configs.get('duration', 0)
+    interval = can_configs.get('interval', 0)
+    if not isinstance(duration, (int, float)) or duration <= 0:
+        return False, f"duration 必须是正数: {duration}"
+    if not isinstance(interval, (int, float)) or interval <= 0:
+        return False, f"interval 必须是正数: {interval}"
+    
+    return True, "配置验证通过"
+
+
+def get_can_operation_summary(can_configs):
+    """获取 CAN 操作摘要信息，用于日志和状态显示"""
+    if not can_configs:
+        return "CAN 配置为空"
+    
+    channel_id = can_configs.get('channel_id', 'Unknown')
+    frame_id = can_configs.get('frame_id', 'Unknown')
+    signals = can_configs.get('signals', [])
+    duration = can_configs.get('duration', 0)
+    interval = can_configs.get('interval', 0)
+    signal_count = len(signals)
+    
+    return f"通道 {channel_id}, 帧 {frame_id}, {signal_count} 个信号, 持续 {duration}ms, 间隔 {interval}ms"

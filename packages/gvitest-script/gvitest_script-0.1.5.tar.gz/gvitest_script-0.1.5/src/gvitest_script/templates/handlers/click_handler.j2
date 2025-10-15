@@ -1,0 +1,325 @@
+{# 点击动作处理模板 - 专注于操作执行 #}
+
+{# 点击动作处理函数 #}
+def handle_click_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    处理点击动作 - 专注于操作执行
+    
+    Args:
+        step_data: 步骤上下文对象
+        device: uiautomator2设备对象
+        runner_dir: 运行目录路径
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径，用于优化截图性能
+    
+    Returns:
+        Dict: 执行结果
+    """
+    
+    logging.info("开始执行步骤 %s: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤')))
+
+    step_name = step_data.get('step_name', '点击操作')
+    operation_type = step_data.get('operation_type', 'click')
+    # 兼容两种数据结构：直接在根级别的element_info和在parameters中的element_info
+    element_info = step_data.get('element_info', {}) or step_data.get('parameters', {}).get('element_info', {})
+    
+    # 获取重试配置
+    max_retries = element_info.get('max_retries', 3)
+    retry_interval = element_info.get('retry_interval', 1.0)
+    
+    logging.info(f"开始执行{operation_type}操作: {step_name} (最大重试: {max_retries}次)")
+    
+    # 初始化执行状态（非业务验证）
+    execution_success = False
+    final_coordinates = None
+    coordinate_method = "未定位"
+    
+    # 重试循环
+    for retry_count in range(max_retries):
+        try:
+            if retry_count > 0:
+                logging.info(f"第{retry_count + 1}次尝试执行{operation_type}操作...")
+                time.sleep(retry_interval)
+            
+            # 执行前无需等待UI稳定，直接进行操作
+            
+            # 优化截图逻辑：如果有前一步的截图，就复用它
+            step_number = step_data.get('step_number', 0)
+            
+            if previous_after_screenshot:
+                # 使用前一步的后截图作为当前步骤的前截图，避免重复截图
+                before_execution_screenshot_path = previous_after_screenshot
+                logging.info(f"📸 复用前一步截图作为执行前截图: {before_execution_screenshot_path}")
+            else:
+                # 第一步或没有前一步截图时，需要新截图
+                before_execution_screenshot_path = take_screenshot_and_save(
+                    device, runner_dir, f"before_step{step_number}", "执行前截图 - 用于坐标定位和记录"
+                )
+            
+            # 更新步骤执行前截图信息
+            step_data['before_execution_screenshot_path'] = before_execution_screenshot_path
+            
+            # 获取坐标信息
+            target_x = element_info.get('start_x')
+            target_y = element_info.get('start_y') 
+            width = element_info.get('width', 0)
+            height = element_info.get('height', 0)
+            
+
+            
+            # 智能坐标定位
+            coordinate_found = False
+            final_x, final_y = target_x, target_y
+            
+            # 检查是否有图像定位信息
+            icon_path = element_info.get('icon_path')
+            # 获取录制时的截图路径（应该保持原始值，不被执行时截图覆盖）
+            reference_screenshot_path = step_data.get('screenshot_path')  # 录制时的截图路径
+            bbox = element_info.get('bbox', [])
+            # 使用刚拍摄的执行前截图进行检测
+        
+            if icon_path and reference_screenshot_path and before_execution_screenshot_path and bbox and len(bbox) == 4:
+                logging.info("尝试智能图像定位...")
+                try:
+                    # 解析bbox字符串（如果是字符串格式）
+                    if isinstance(bbox, str):
+                        bbox = [float(x) for x in bbox.split(',')]
+                    
+                    # 使用智能定位函数
+                    found_coords = locate_small_via_dynamic_medium(
+                        reference_image_data=reference_screenshot_path,
+                        target_image_data=icon_path,
+                        target_bbox=bbox,
+                        detect_image_data=before_execution_screenshot_path
+                    )
+                    
+                    if found_coords:
+                        x1, y1, x2, y2 = found_coords
+                        final_x = (x1 + x2) / 2
+                        final_y = (y1 + y2) / 2
+                        coordinate_found = True
+                        coordinate_method = "智能定位"
+                        logging.info(f"智能定位成功: ({final_x:.1f}, {final_y:.1f})")
+                    else:
+                        logging.warning("智能定位失败，使用预设坐标")
+                        if retry_count < max_retries - 1:
+                            continue  # 重试
+                        coordinate_method = "预设坐标(智能定位失败)"
+                        
+                except Exception as locate_error:
+                    logging.error(f"智能定位异常: {locate_error}")
+                    if retry_count < max_retries - 1:
+                        continue  # 重试
+                    coordinate_method = f"预设坐标(定位异常: {locate_error})"
+            else:
+                # 缺少必要的定位信息
+                missing_info = []
+                if not icon_path:
+                    missing_info.append("icon_path")
+                if not reference_screenshot_path:
+                    missing_info.append("screenshot_path") 
+                if not before_execution_screenshot_path:
+                    missing_info.append("before_execution_screenshot_path")
+                if not bbox or len(bbox) != 4:
+                    missing_info.append("bbox")
+                
+                logging.info(f"跳过智能定位，缺少: {', '.join(missing_info)}")
+                coordinate_method = "预设坐标(缺少定位信息)"
+            
+            # 验证坐标有效性
+            if final_x is None or final_y is None:
+                # 尝试从bbox计算中心点
+                if bbox and len(bbox) >= 4:
+                    x1, y1, x2, y2 = bbox[:4]
+                    final_x = (x1 + x2) / 2
+                    final_y = (y1 + y2) / 2
+                    coordinate_method = "bbox计算"
+                    logging.info(f"从bbox计算坐标: ({final_x}, {final_y})")
+                else:
+                    if retry_count < max_retries - 1:
+                        logging.warning("无有效坐标，准备重试...")
+                        continue
+                    error_msg = "无有效坐标进行点击操作"
+                    logging.error(error_msg)
+                    
+                    logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), error_msg))
+                    
+                    return {
+                        "status": "failed", 
+                        "message": error_msg,
+                        "screenshots": {
+                            "before_execution": before_execution_screenshot_path,
+                            "after_execution": None
+                        }
+                    }
+            
+            # 基本坐标范围验证
+            if not is_coordinates_valid(final_x, final_y, device):
+                if retry_count < max_retries - 1:
+                    logging.warning("坐标超出有效范围，准备重试...")
+                    continue
+                else:
+                    error_msg = "坐标超出有效范围: (" + str(final_x) + ", " + str(final_y) + ")"
+                    logging.error(error_msg)
+                    
+                    # 实时状态更新：错误处理
+    
+                    
+                    logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), error_msg))
+                    
+                    return {
+                        "status": "failed", 
+                        "message": error_msg,
+                        "screenshots": {
+                            "before_execution": before_execution_screenshot_path,
+                            "after_execution": None
+                        },
+                        "checkpoint_context": {
+                            "operation_completed": False,
+                            "operation_mode": step_data.get('mode', 'manual'),
+                            "error_occurred": True,
+                            "error_message": error_msg,
+                            "locating_success": False,
+                            "coordinate_method": coordinate_method
+                        }
+                    }
+            
+
+            
+            # 执行点击操作
+            logging.info("执行" + operation_type + "操作，坐标: (" + str(final_x) + ", " + str(final_y) + ")")
+            
+            # 根据操作类型执行相应的点击操作
+            if operation_type == 'click':
+                device.click(final_x, final_y)
+            elif operation_type == 'long_click':
+                duration = element_info.get('duration', 1.0)
+                device.long_click(final_x, final_y, duration=duration)
+            elif operation_type == 'double_click':
+                device.double_click(final_x, final_y)
+            else:
+                # 默认为普通点击
+                device.click(final_x, final_y)
+            
+            # 等待操作完成
+            time.sleep(0.5)
+            
+            # 等待UI稳定后进行执行后截图
+            logging.info("等待动作执行完成后UI稳定...")
+            ui_stable = wait_for_ui_stability(device, timeout=1.0)
+            if not ui_stable:
+                logging.warning("执行后UI稳定检查超时，继续截图")
+            
+            # 执行后截图（用于响应验证）
+            after_execution_screenshot_path = take_screenshot_and_save(
+                device, runner_dir, f"after_step{step_number}", "执行后截图 - 用于验证操作结果"
+            )
+            step_data['after_execution_screenshot_path'] = after_execution_screenshot_path
+            
+            # 记录执行成功
+            execution_success = True
+            final_coordinates = (final_x, final_y)
+            
+            # 简化的执行状态记录（非业务验证）
+            retry_info = " (第" + str(retry_count + 1) + "次尝试)" if retry_count > 0 else ""
+            execution_detail = operation_type + "操作执行完成，坐标: (" + str(round(final_x, 1)) + ", " + str(round(final_y, 1)) + "), 方法: " + coordinate_method + retry_info
+            
+            logging.info("步骤 %s 完成: %s, 成功: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), True))
+            
+            success_message = "✅ " + operation_type + "操作执行完成: " + step_name
+            if retry_count > 0:
+                success_message += " (第" + str(retry_count + 1) + "次尝试成功)"
+            logging.info(success_message)
+            
+            return {
+                "status": "success",
+                "message": operation_type + "操作执行成功",
+                "coordinates": final_coordinates,
+                "coordinate_method": coordinate_method,
+                "retry_count": retry_count,
+                "total_attempts": retry_count + 1,
+                "execution_detail": execution_detail,
+                "screenshots": {
+                    "before_execution": before_execution_screenshot_path,
+                    "after_execution": after_execution_screenshot_path
+                },
+
+            }
+            
+        except Exception as e:
+            error_msg = operation_type + "操作执行失败: " + str(e)
+            
+            if retry_count < max_retries - 1:
+                logging.warning(error_msg + "，准备第" + str(retry_count + 2) + "次尝试...")
+                continue
+            else:
+                logging.error(error_msg + " (已达最大重试次数)")
+                
+                # 确保有截图记录错误状态
+                if not step_data.get('before_execution_screenshot_path'):
+                    try:
+                        error_screenshot_path = take_screenshot_and_save(
+                            device, runner_dir, f"error_{operation_type}", "错误截图 - 记录操作失败时的界面状态"
+                        )
+                        step_data['before_execution_screenshot_path'] = error_screenshot_path
+                    except Exception as screenshot_error:
+                        logging.error(f"错误截图失败: {screenshot_error}")
+                
+                logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), error_msg))
+                
+                return {
+                    "status": "failed", 
+                    "message": error_msg + " (重试" + str(max_retries) + "次后失败)",
+                    "coordinates": final_coordinates,
+                    "retry_count": retry_count,
+                    "total_attempts": retry_count + 1,
+                    "screenshots": {
+                        "before_execution": step_data.get('before_execution_screenshot_path'),
+                        "after_execution": None
+                    }
+                }
+    
+    # 如果所有重试都失败了
+    final_error = operation_type + "操作重试" + str(max_retries) + "次后仍失败"
+    logging.error(final_error)
+    
+    logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), final_error))
+    
+    return {
+        "status": "failed",
+        "message": final_error,
+        "retry_count": max_retries - 1,
+        "total_attempts": max_retries,
+        "screenshots": {
+            "before_execution": step_data.get('before_execution_screenshot_path'),
+            "after_execution": None
+        }
+    }
+
+
+def is_coordinates_valid(target_x, target_y, device):
+    """
+    检查坐标是否在有效范围内（简化版）
+    
+    Args:
+        target_x: 目标X坐标
+        target_y: 目标Y坐标
+        device: 设备对象
+    
+    Returns:
+        bool: 坐标是否有效
+    """
+    if target_x is None or target_y is None:
+        return False
+    
+    try:
+        # 获取设备信息验证坐标范围
+        device_info = get_device_info(device)
+        screen_width = device_info.get('display_width', 1920)
+        screen_height = device_info.get('display_height', 1080)
+        
+        return (0 <= target_x <= screen_width and 0 <= target_y <= screen_height)
+        
+    except Exception as e:
+        logging.warning(f"坐标验证异常: {e}")
+        return True  # 异常时假设坐标有效 
