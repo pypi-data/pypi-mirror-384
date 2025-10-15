@@ -1,0 +1,71 @@
+# pyTensorlab
+
+pyTensorlab is a Python package for tensor computations and complex optimization. The
+packages provides the following:
+
+- data types to represent sparse, incomplete, structured and decomposed tensors
+  efficiently;
+- tools to generate and work with these data types effectively and efficiently;
+- algorithms for computing the canonical polyadic decomposition, the multilinear
+  singular value decomposition, the Tucker decomposition or low multilinear rank
+  approximation and the tensor-train decomposition;
+- tensorization techniques relying on statistics or Hankelization;
+- visualization routines;
+- preconditioned Gauss-Newton type optimization methods for complex variables;
+- fully typed code, which facilitates development.
+
+pyTensorlab is a reimplementation of the Matlab toolbox
+[Tensorlab](https://www.tensorlab.net). Currently, the feature set is not identical. The
+Matlab toolbox also supports block term decompositions and has a structured data fusion
+framework which relies on a domain specific language to easily model coupled matrix and
+tensor decompositions and prior knowledge. On the other hand, pyTensorlab provides basic
+support for the TT decomposition and a more complete set of complex Gauss-Newton type
+optimization algorithms.
+
+## Getting Started
+
+To install pyTensorlab, use:
+
+```console
+$ pip install pytensorlab
+```
+
+pyTensorlab requires Python 3.10 to take advantage of new typing features. NumPy, SciPy
+and Numba for underly the main computations. Pymanopt is used for manifold-based
+optimization for low multilinear rank approximation and Vedo for visualization.
+
+As an example, the canonical polyadic decomposition of a noisy rank-3 tensor can be
+computed as follows:
+
+```python
+>>> import pytensorlab as tl
+>>> import numpy as np
+>>> shape = (10, 11, 12)
+>>> Tpd = tl.PolyadicTensor.random(shape, 3)
+>>> Tn = tl.noisy(np.array(Tpd), snr=20)
+>>> Tres, info = tl.cpd(Tn, nterm=3)
+```
+## Citation
+
+If you are using pyTensorlab, please consider citing:
+
+N. Vervliet, S. Hendrickx, R. Widdershoven, N. Govindarajan, S. Sofi, L. De Lathauwer,
+_"pyTensorlab 2025.10,"_ Oct. 2025. Available online at
+[www.pytensorlab.net](https://www.pytensorlab.net).
+
+## Contributors
+
+We would like to thank all contributors:
+
+- Ayvaz, Muzaffer
+- Boussé, Martijn
+- De Lathauwer, Lieven
+- Devogel, Andreas
+- Govindarajan, Nithin
+- Hendrickx, Stijn
+- Iannacito, Martina
+- Seeuws, Nick
+- Sofi, Shakir
+- Vermeylen, Charlotte
+- Vervliet, Nico
+- Widdershoven, Raphaël
