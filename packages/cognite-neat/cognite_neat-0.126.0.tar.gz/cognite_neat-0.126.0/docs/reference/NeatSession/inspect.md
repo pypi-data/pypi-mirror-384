@@ -1,0 +1,1 @@
+::: cognite.neat.v0.session._inspect.InspectAPI
