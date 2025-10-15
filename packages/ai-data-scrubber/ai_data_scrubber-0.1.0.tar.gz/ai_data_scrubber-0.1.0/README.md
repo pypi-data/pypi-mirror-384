@@ -1,0 +1,91 @@
+# AI Data Scrubber
+
+The AI Data Scrubber is a lightweight privacy-focused tool designed to remove personal information from text documents before uploading them to Large Language Models (LLMs). You can use it to clean sensitive documents like resumes or contracts. It's not guaranteed to remove everything, so you should still check before you upload your file to a LLM.
+
+It uses a mixture of regular expressions and named entity recognition models from [spaCy](https://spacy.io/). It's less accurate than asking a LLM to remove PII - but then you don't need to either run a LLM on your own machine, or upload your document to a LLM.
+
+## What It Does
+
+Removes personal information like:
+- Names (via AI recognition)
+- Email addresses
+- Phone numbers
+- Street addresses & ZIP codes
+- URLs
+- License plates
+
+Currently supports US formats only.
+
+## Quick Start
+
+```bash
+# Install
+pip install ai-data-scrubber
+
+# Download required language model (560MB)
+python -m spacy download en_core_web_lg
+
+# Clean your file
+ai-data-scrubber your-file.txt
+```
+
+## Usage
+
+**Command Line:**
+```bash
+# Auto-generates output file with _scrubbed suffix
+ai-data-scrubber input.txt
+
+# Or specify output file
+ai-data-scrubber input.txt -o output.txt
+```
+
+**Python:**
+```python
+from ai_data_scrubber import scrub_text, scrub_file
+
+# Scrub text directly
+cleaned = scrub_text("John Smith lives at 123 Main St")
+
+# Or scrub a file
+scrub_file("input.txt", "output.txt")
+```
+
+## Example
+
+**Before:**
+```
+John Smith
+123 Main Street, Apt 4B
+New York, NY 10001
+Email: john.smith@example.com
+Phone: (555) 123-4567
+```
+
+**After:**
+```
+[NAME]
+[ADDRESS], [UNIT]
+New York, NY [ZIP_CODE]
+Email: [EMAIL]
+Phone: [PHONE]
+```
+
+## Documentation
+
+- [Installation Guide](docs/INSTALLATION.md) - Detailed installation including from source
+- [Performance Testing](docs/TESTING.md) - Test with 20 sample resumes
+
+## Requirements
+
+- Python 3.10 or higher
+- spaCy >= 3.5.0
+- spaCy model: `en_core_web_lg`
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions welcome! Feel free to submit a Pull Request.
