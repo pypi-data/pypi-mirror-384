@@ -1,0 +1,243 @@
+Metadata-Version: 2.4
+Name: fourierassets
+Version: 0.1.4
+Summary: A package for managing robot simulation assets
+Requires-Python: >=3.8
+Requires-Dist: argcomplete
+Requires-Dist: rclone-python==0.1.23
+Requires-Dist: tqdm
+Description-Content-Type: text/markdown
+
+# FourierAssets
+
+A powerful command-line tool and Python SDK for managing robot simulation assets stored in S3-compatible object storage.
+
+## Features
+
+- 🚀 **Easy S3 Integration**: Compatible with AWS S3, MinIO, Alibaba Cloud OSS, and other S3-compatible services
+- 📦 **Intelligent Caching**: Smart local caching with automatic path hierarchy management
+- 🔄 **Complete Asset Management**: Upload, download, list, and remove files and directories
+- 🌳 **Tree-style Browsing**: Recursive directory listing with detailed file information
+- ⚙️ **Configuration Management**: Built-in credential and endpoint management
+- 🎯 **Auto-completion**: Bash completion for all commands and options
+- 📚 **Dual Interface**: Both CLI and Python SDK available
+
+## Installation
+
+```bash
+# Production installation
+pip install fourierassets -i https://nexus.fftaicorp.com/repository/pypi/simple
+
+# Development installation
+git clone <repository>
+cd fourierassets
+make install-dev
+```
+
+## Quick Start
+
+1. **Test your connection** (optional for download-only usage):
+   ```bash
+   fourierassets test
+   ```
+
+2. **Download assets** (works without configuration):
+   ```bash
+   fourierassets download s3://bucket/path/to/asset
+   ```
+
+3. **Configure for upload/management** (required for upload, list, remove):
+   ```bash
+   fourierassets config set-credentials ACCESS_KEY SECRET_KEY --endpoint-url https://your-s3-endpoint.com
+   ```
+
+## CLI Usage
+
+### Basic Commands
+
+```bash
+# Download assets
+fourierassets download s3://bucket/models/robot.urdf
+fourierassets download s3://bucket/simulation/assets/ --recursive
+
+# Upload assets (requires configuration)
+fourierassets upload ./robot.urdf s3://bucket/models/robot.urdf
+fourierassets upload ./assets/ s3://bucket/simulation/assets/
+
+# List objects (requires configuration)
+fourierassets ls s3://bucket/
+fourierassets ls s3://bucket/path/ --recursive --details
+
+# Remove objects (requires configuration)
+fourierassets rm s3://bucket/old-file.txt
+fourierassets rm s3://bucket/old-directory/ --recursive --force
+```
+
+### Configuration
+
+```bash
+# Set credentials
+fourierassets config set-credentials ACCESS_KEY SECRET_KEY --endpoint-url https://s3.example.com
+
+# For Alibaba Cloud OSS
+fourierassets config set-credentials LTAI_KEY SECRET --endpoint-url https://oss-cn-region.aliyuncs.com
+
+# Show current configuration
+fourierassets config show
+
+# Test connection
+fourierassets test --bucket your-bucket-name
+```
+
+### Advanced Options
+
+```bash
+# Verbose output for debugging
+fourierassets download s3://bucket/path/ --verbose
+
+# Custom cache directory
+fourierassets download s3://bucket/path/ --cache-dir ~/custom-cache
+
+# Force operations without confirmation
+fourierassets rm s3://bucket/path/ --recursive --force
+
+# Clear cache
+fourierassets clear-cache
+```
+
+## Python SDK Usage
+
+### AssetDownloader
+
+```python
+from fourierassets.downloader import AssetDownloader
+
+# Download with default settings
+downloader = AssetDownloader()
+local_path = downloader.download("s3://bucket/models/robot.urdf")
+print(f"Downloaded to: {local_path}")
+
+# Download with custom cache and endpoint
+downloader = AssetDownloader(
+    cache_dir="~/custom-cache",
+    endpoint_url="https://s3.example.com",
+    verbose=True
+)
+local_path = downloader.download("s3://bucket/simulation/assets/")
+```
+
+### AssetUploader
+
+```python
+from fourierassets.uploader import AssetUploader
+
+# Upload single file
+uploader = AssetUploader(endpoint_url="https://s3.example.com", verbose=True)
+success = uploader.upload("./robot.urdf", "s3://bucket/models/robot.urdf")
+
+# Upload directory
+success = uploader.upload("./assets/", "s3://bucket/simulation/assets/")
+```
+
+### AssetLister
+
+```python
+from fourierassets.lister import AssetLister
+
+# List bucket contents
+lister = AssetLister(endpoint_url="https://s3.example.com")
+lister.ls("s3://bucket/", recursive=True, show_details=True)
+```
+
+### AssetRemover
+
+```python
+from fourierassets.remover import AssetRemover
+
+# Remove assets
+remover = AssetRemover(endpoint_url="https://s3.example.com", verbose=True)
+success = remover.rm(
+    ["s3://bucket/old-file.txt", "s3://bucket/old-directory/"],
+    recursive=True,
+    force=True
+)
+```
+
+## Supported Storage Services
+
+### Alibaba Cloud OSS
+```bash
+fourierassets config set-credentials LTAI_KEY SECRET --endpoint-url https://oss-cn-wulanchabu.aliyuncs.com
+```
+
+### AWS S3
+```bash
+fourierassets config set-credentials AKIA_KEY SECRET --endpoint-url https://s3.amazonaws.com
+# Or region-specific: https://s3.us-west-2.amazonaws.com
+```
+
+### MinIO
+```bash
+fourierassets config set-credentials minioadmin minioadmin --endpoint-url http://localhost:9000
+```
+
+## Development
+
+```bash
+# Setup development environment
+make install-dev
+make install-hooks
+
+# Code formatting and linting
+make format
+make lint
+
+# Run tests
+./tests/test_cli.sh
+```
+
+## Troubleshooting
+
+### Connection Issues
+```bash
+# Test your connection
+fourierassets test
+
+# Check configuration
+fourierassets config show
+
+# Verify permissions
+fourierassets check-permissions
+```
+
+### Common Issues
+
+- **Download doesn't work**: Check S3 URL format (`s3://bucket/path`)
+- **Upload/list fails**: Ensure credentials are configured with `fourierassets config set-credentials`
+- **Permission denied**: Verify your access key has required permissions
+- **Bucket not found**: Check bucket name and endpoint URL region
+
+### Error Messages
+
+- `"Invalid S3 URL"`: Use format `s3://bucket/path`
+- `"Access denied"`: Check credentials and bucket permissions
+- `"Bucket does not exist"`: Verify bucket name and endpoint region
+- `"API port error"`: Use API endpoint, not web console URL
+
+## Configuration File
+
+Configuration is stored in `~/.fourierassets/config.json`:
+
+```json
+{
+  "s3": {
+    "access_key": "your-access-key", 
+    "secret_key": "your-secret-key",
+    "endpoint_url": "https://your-s3-endpoint.com"
+  }
+}
+```
+
+## License
+
+Copyright (C) 2015-2025 Fourier Intelligence Group Limited. All rights reserved.
