@@ -1,0 +1,57 @@
+import pygame
+
+
+class Constants:
+    SCREEN: pygame.Surface = None
+    RESOLUTION: tuple[int, int] = (1280, 720)
+    WIDTH = 1280
+    HEIGHT = 720
+    VSYNC = 0
+    FLAGS: int = pygame.SCALED | pygame.RESIZABLE
+    FPS: int = 60
+    MUSIC_END_EVENT = pygame.event.custom_type()
+
+    DEFAULT_CURSOR = pygame.cursors.Cursor(pygame.SYSTEM_CURSOR_ARROW)
+    DEFAULT_HOVER_CURSOR = pygame.cursors.Cursor(pygame.SYSTEM_CURSOR_ARROW)
+    DEFAULT_CLICK_CURSOR = pygame.cursors.Cursor(pygame.SYSTEM_CURSOR_ARROW)
+
+    BF_INITIALIZED: bool = False
+    ALLOW_DEBUG : bool = True
+
+    WIDGET_KEY_REPEAT_DELAY = 200
+    WIDGET_KEY_REPEAT_INTERVAL = 50
+    GLOBAL_KEY_REPEAT_DELAY = 200
+    GLOBAL_KEY_REPEAT_INTERVAL = 50
+
+
+    @staticmethod
+    def set_allow_debug(allow_debug:bool):
+        Constants.ALLOW_DEBUG = allow_debug
+
+    @staticmethod
+    def set_resolution(resolution: tuple[int, int]):
+        Constants.RESOLUTION = resolution
+        Constants.WIDTH = resolution[0]
+        Constants.HEIGHT = resolution[1]
+        Constants.update_screen()
+
+    @staticmethod
+    def update_screen():
+        if Constants.BF_INITIALIZED:
+            Constants.SCREEN = pygame.display.set_mode(Constants.RESOLUTION,Constants.FLAGS,vsync=Constants.VSYNC)
+
+    @staticmethod
+    def set_default_cursor(cursor: pygame.Cursor):
+        Constants.DEFAULT_CURSOR = cursor
+
+    @staticmethod
+    def set_default_hover_cursor(cursor: pygame.Cursor):
+        Constants.DEFAULT_HOVER_CURSOR = cursor
+
+    @staticmethod
+    def set_default_click_cursor(cursor: pygame.Cursor):
+        Constants.DEFAULT_CLICK_CURSOR = cursor
+
+    @staticmethod
+    def set_fps_limit(value: int):
+        Constants.FPS = value
