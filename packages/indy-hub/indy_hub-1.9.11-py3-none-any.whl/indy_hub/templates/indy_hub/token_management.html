@@ -1,0 +1,218 @@
+{% extends "allianceauth/base-bs5.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block page_title %}{% trans "ESI Token Management" %}{% endblock page_title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'indy_hub/css/page_headers.css' %}">
+<link rel="stylesheet" href="{% static 'indy_hub/css/token_management.css' %}">
+{% endblock extra_css %}
+
+{% block content %}
+<div class="container-fluid my-4">
+    <!-- Header Section -->
+    <div class="page-header mb-4">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div>
+                <h1 class="h2 mb-1">
+                    <i class="fas fa-key me-2"></i>
+                    {% trans "ESI Token Management" %}
+                </h1>
+                <p class="description">{% trans "Manage your EVE Online ESI authorizations to access character data" %}</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'indy_hub:index' %}" class="btn btn-outline-light">
+                    <i class="fas fa-arrow-left me-1"></i>{% trans "Back to Dashboard" %}
+                </a>
+            </div>
+        </div>
+        <i class="fas fa-key header-bg"></i>
+    </div>
+
+    <!-- Authorization Actions Toolbar -->
+    <div class="mb-4 d-flex flex-wrap gap-2">
+        {% if blueprint_auth_url %}
+        <a href="{{ blueprint_auth_url }}" class="btn btn-warning">
+            <i class="fas fa-key me-1"></i>{% trans "Authorize Blueprint" %}
+        </a>
+        {% endif %}
+        {% if jobs_auth_url %}
+        <a href="{{ jobs_auth_url }}" class="btn btn-warning">
+            <i class="fas fa-industry me-1"></i>{% trans "Authorize Jobs" %}
+        </a>
+        {% endif %}
+        <a href="{% url 'indy_hub:authorize_all' %}" class="btn btn-success">
+            <i class="fas fa-key me-1"></i>{% trans "Authorize All Scopes" %}
+        </a>
+    </div>
+
+    <!-- Access Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card token-card {% if has_blueprint_tokens %}border-success{% else %}border-danger{% endif %} bg-body">
+                <div class="card-header d-flex align-items-center {% if has_blueprint_tokens %}bg-success text-white{% else %}bg-danger text-white{% endif %}">
+                    <i class="fas fa-scroll me-2"></i>
+                    <span class="me-auto">{% trans "Blueprint Access" %}</span>
+                    <span class="badge bg-light text-dark ms-2">{{ blueprint_token_count|default:0 }}</span>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-3">
+                        <li><i class="fas fa-check text-success me-2"></i>{% trans "View all character blueprints" %}</li>
+                        <li><i class="fas fa-check text-success me-2"></i>{% trans "Check material & time efficiency" %}</li>
+                        <li><i class="fas fa-check text-success me-2"></i>{% trans "Automatic synchronization" %}</li>
+                    </ul>
+                    <div class="d-grid">
+                        {% if has_blueprint_tokens %}
+                            <a href="{% url 'indy_hub:personnal_bp_list' %}" class="btn btn-success">{% trans "View My Blueprints" %}</a>
+                        {% else %}
+                            <a href="{{ blueprint_auth_url }}" class="btn btn-danger">{% trans "Authorize Blueprint" %}</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card token-card {% if has_jobs_tokens %}border-success{% else %}border-danger{% endif %} bg-body">
+                <div class="card-header d-flex align-items-center {% if has_jobs_tokens %}bg-success text-white{% else %}bg-danger text-white{% endif %}">
+                    <i class="fas fa-industry me-2"></i>
+                    <span class="me-auto">{% trans "Industry Jobs Access" %}</span>
+                    <span class="badge bg-light text-dark ms-2">{{ jobs_token_count|default:0 }}</span>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-3">
+                        <li><i class="fas fa-check text-success me-2"></i>{% trans "Monitor manufacturing & research jobs" %}</li>
+                        <li><i class="fas fa-check text-success me-2"></i>{% trans "View completion times & costs" %}</li>
+                        <li><i class="fas fa-check text-success me-2"></i>{% trans "Real-time status updates" %}</li>
+                    </ul>
+                    <div class="d-grid">
+                        {% if has_jobs_tokens %}
+                            <a href="{% url 'indy_hub:personnal_job_list' %}" class="btn btn-success">{% trans "View My Jobs" %}</a>
+                        {% else %}
+                            <a href="{{ jobs_auth_url }}" class="btn btn-danger">{% trans "Authorize Jobs" %}</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Character Sync Status -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h5 class="mb-3"><i class="fas fa-user-astronaut me-2"></i>{% trans "Character Sync Status" %}</h5>
+            <table class="table table-hover bg-body border rounded">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;"></th>
+                        <th>{% trans "Character" %}</th>
+                        <th class="text-center">{% trans "Blueprint Sync" %}</th>
+                        <th class="text-center">{% trans "Jobs Sync" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for char in characters %}
+                    <tr>
+                        <td>
+                            <img src="https://images.evetech.net/characters/{{ char.character_id }}/portrait?size=64"
+                                alt="{{ char.name }}"
+                                class="rounded-circle"
+                                style="width: 48px; height: 48px; object-fit: cover;"
+                                loading="lazy"
+                                onerror="this.style.display='none';">
+                        </td>
+                        <td class="align-middle">
+                            <span class="fw-semibold">{{ char.name }}</span>
+                        </td>
+                        <td class="text-center align-middle">
+                            <span class="badge rounded-pill {{ char.bp_enabled|yesno:'bg-success,bg-danger' }} text-white px-3 py-1">
+                                <i class="fas fa-{{ char.bp_enabled|yesno:'check,times' }}"></i>
+                            </span>
+                        </td>
+                        <td class="text-center align-middle">
+                            <span class="badge rounded-pill {{ char.jobs_enabled|yesno:'bg-success,bg-danger' }} text-white px-3 py-1">
+                                <i class="fas fa-{{ char.jobs_enabled|yesno:'check,times' }}"></i>
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center text-muted">{% trans "No characters found." %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-info bg-body">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-question-circle me-2"></i>{% trans "How ESI Authorization Works" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-4">
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="feature-icon d-inline-flex align-items-center justify-content-center mb-3 text-white" style="background: var(--bs-primary);">
+                                    <i class="fas fa-shield-alt fa-lg"></i>
+                                </div>
+                                <h6>{% trans "Secure Authorization" %}</h6>
+                                <p class="text-muted small">
+                                    {% trans "All authorization is handled securely through CCP's official ESI API using OAuth 2.0 standards." %}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="feature-icon d-inline-flex align-items-center justify-content-center mb-3 text-white" style="background: var(--bs-success);">
+                                    <i class="fas fa-sync fa-lg"></i>
+                                </div>
+                                <h6>{% trans "Automatic Updates" %}</h6>
+                                <p class="text-muted small">
+                                    {% trans "Your data is automatically synchronized with EVE Online, ensuring you always have the latest information." %}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="feature-icon d-inline-flex align-items-center justify-content-center mb-3 text-white" style="background: var(--bs-warning);">
+                                    <i class="fas fa-user-shield fa-lg"></i>
+                                </div>
+                                <h6>{% trans "Privacy Protected" %}</h6>
+                                <p class="text-muted small">
+                                    {% trans "Only the data you specifically authorize will be accessed. You can revoke access at any time." %}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="alert alert-light border-0">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-lightbulb text-warning me-2"></i>
+                            {% trans "Getting Started" %}
+                        </h6>
+                        <p class="mb-2">{% trans "To use Indy Hub effectively, you'll need to authorize both blueprint and industry jobs access:" %}</p>
+                        <ol class="mb-0">
+                            <li>{% trans "Click the authorization buttons above for each required scope" %}</li>
+                            <li>{% trans "You'll be redirected to EVE Online's secure login page" %}</li>
+                            <li>{% trans "Select the character(s) you want to authorize" %}</li>
+                            <li>{% trans "Return here to start managing your industrial data" %}</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_javascript %}
+<script src="{% static 'indy_hub/js/token_management.js' %}"></script>
+<script>
+// Configure text for the JavaScript module
+window.redirectingText = '{% trans "Redirecting..." %}';
+</script>
+{% endblock extra_javascript %}
+{% endblock content %}
