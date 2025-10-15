@@ -1,0 +1,49 @@
+Metadata-Version: 2.1
+Name: aikframe
+Version: 0.1.0
+Summary: Aikframe: 模块化云湖机器人开发框架
+Home-page: https://github.com/lilingyi-awa/aikframe
+Author: Project VsingerXiaoice Consensus
+Author-email: alan_sudo@yeah.net
+License: Public Domain Mark
+        
+        This software are released in Public Domain.
+Requires: aiohttp
+Requires: pydantic
+Description-Content-Type: text/markdown
+
+# Aikframe
+
+模块化、最小化的云湖机器人开发框架
+
+## 使用示例
+
+```python
+import aikframe as F
+import fastapi
+import uvicorn
+
+app = fastapi.FastAPI()
+aik = F.YunhuActivityManager()
+
+@app.post("/v1/yunhu-callback")
+async def callback(req: fastapi.Request):
+    await aik.receive_event(await req.json())
+
+@aik.register_user_joined()
+async def join_action(a: F.UserChangedModel):
+    F.send_message(("group", a.group), content=f"欢迎用户 {a.user} 进群！")
+
+@aik.register_user_followed()
+async def follow_action(a: F.UserChangedModel):
+    F.send_message(("user", a.user), content=f"欢迎用户 {a.user} 使用本机器人！")
+
+@aik.register_message()
+async def check_message(a: F.MessageModel):
+    if a.session.recvType == "group":
+        print(f"Accepted ({a.sender.senderId}@{a.session.recvId}): {a.content}")
+    else:
+        print(f"Accepted ({a.sender.senderId}): {a.content}")
+
+uvicorn.run(app, port=4491, host="0.0.0.0")
+```
