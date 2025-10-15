@@ -1,0 +1,187 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}{{ block.super }}
+<script type="text/javascript" src="{% url 'admin:jsi18n' %}"></script>
+{{ form.media }}
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" type="text/css" href="{% static "admin/css/forms.css" %}">{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-form{% endblock %}
+
+{% if not is_popup %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; {% if has_view_permission %}<a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>{% else %}{{ opts.verbose_name_plural|capfirst }}{% endif %}
+&rsaquo; {% if add %}{% blocktrans with name=opts.verbose_name %}Discover {{ name }}{% endblocktrans %}{% else %}{{ original|truncatewords:"18" }}{% endif %}
+</div>
+{% endblock %}
+{% endif %}
+
+{% block content %}<div id="content-main">
+{% block object-tools %}
+{% if change %}{% if not is_popup %}
+  <ul class="object-tools">
+    {% block object-tools-items %}
+      {% change_form_object_tools %}
+    {% endblock %}
+  </ul>
+{% endif %}{% endif %}
+{% endblock %}
+<form {% if has_file_field %}enctype="multipart/form-data" {% endif %}action="{{ form_url }}" method="post" id="{{ opts.model_name }}_form" novalidate>{% csrf_token %}{% block form_top %}{% endblock %}
+<div>
+{% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+{% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+{% if save_on_top %}{% block submit_buttons_top %}{% submit_row %}{% endblock %}{% endif %}
+{% if form.non_field_errors %}
+    <p class="errornote">
+    {% if form.non_field_errors|length == 1 %}{% trans "Please correct the error below." %}{% else %}{% trans "Please correct the errors below." %}{% endif %}
+    </p>
+    {{ form.non_field_errors }}
+{% endif %}
+
+{% block field_sets %}
+  <h3 style="margin-bottom: 20px; text-align: center">Step {{ current_step }} of {{ total_steps }}</h3>
+
+  <fieldset class="module aligned">
+    {% if selected_gateway %}
+      <div class="form-row ">
+        <label class="required"><label for="id_gateway">Gateway:</label></label>
+        <div class="readonly" style="font-weight:bold;">{{ selected_gateway }}</div>
+      </div>
+    {% endif %}
+    {% if selected_type %}
+      <div class="form-row ">
+        <label class="required"><label for="id_base_type">Base type:</label></label>
+        <div class="readonly" style="font-weight:bold;">{{ selected_type }}</div>
+      </div>
+    {% endif %}
+    
+    <div id="running-discovery">
+      <p style="margin: 30px 15px">
+        <i class="fas fa-spinner fa-spin fa-lg" style="margin-right: 10px"></i> DISCOVERY MODE ACTIVATED!
+      </p>
+      {% if discovery_msg %}
+        <p style="margin: 30px 15px">{{ discovery_msg }}</p>
+      {% endif %}
+    </div>
+    <div id="discovery-finished" style="display:none;">
+      <p style="margin: 30px 15px">Discovery process finished!</p>
+      <p style="margin: 30px 15px; font-weight: bold;">
+        <a href="#" id="retry-btn" style="padding: 10px 20px; border: 1px solid;">
+          <i class="fas fa-redo"></i> Retry!
+        </a>
+      </p>
+    </div>
+    
+    <style>
+      #components-discovered{
+        padding: 0 20px;
+      }
+      .discovered-component{
+        padding: 10px 30px;
+        margin-bottom: 30px;
+        font-weight: bold;
+      }
+      .discovered-component.error{
+        color: red;
+      }
+    </style>
+    <div id="components-discovered">
+    
+    </div>
+    
+
+  </fieldset>
+
+{% endblock %}
+
+
+
+{% block submit_buttons_bottom %}
+
+    <div class="submit-row" style="text-align: left;">
+
+    <a href="{{ finish_url }}" class="cancel-link" style="display: block; padding:9px 15px">
+      <i class="fa fa-check"></i> Finish
+    </a>
+
+    </div>
+
+{% endblock %}
+
+{% block admin_change_form_document_ready %}
+    <script type="text/javascript"
+            id="django-admin-form-add-constants"
+            src="{% static 'admin/js/change_form.js' %}"
+            {% if adminform and add %}
+                data-model-name="{{ opts.model_name }}"
+            {% endif %}>
+    </script>
+{% endblock %}
+
+{# JavaScript for prepopulated fields #}
+{% prepopulated_fields_js %}
+
+<script>
+  (function() {
+    var api_check_url = '{{ api_check_url }}';
+    var api_retry_url = '{{ api_retry_url }}';
+    var api_components_url = '{{ api_components_url }}';
+    console.log("API CHECK URL: ", api_check_url);
+    
+    function checkDiscoveryStatus(){
+      $.ajax({
+        url: api_check_url,
+        success: function(response){
+          for (var i=0; i<response.length; i++) {
+            var discovery = response[i];
+            if (discovery.finished > 0){
+              $('#running-discovery').hide();
+              $('#discovery-finished').show();
+            } else {
+              $('#running-discovery').show();
+              $('#discovery-finished').hide();
+            }
+            for (var j=0; j<discovery.result.length; j++){
+              if (discovery.result[j].error === undefined){
+                var comp_id = discovery.result[j];
+                if ($('#discovered-component-' + comp_id).length < 1){
+                  $.ajax({
+                    url: api_components_url + comp_id + '/',
+                    success: function(component){
+                      $('#components-discovered').append(
+                        '<p class="discovered-component" id="discovered-component-' + comp_id +'"><a href="/admin/core/component/' + comp_id + '">' +
+                        component.name + '</a></p>'
+                      );
+                    }
+                  })
+                }
+              } else{
+                if ($('#discovery-error-' + j).length < 1) {
+                  $('#components-discovered').append('<p class="discovered-component error" id="discovery-error-' + j + '">' + discovery.result[j].error + '</p>');
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    setInterval(checkDiscoveryStatus, 1000);
+    
+    $('#retry-btn').on('click', function(e){
+      e.preventDefault();
+      $.get(api_retry_url);
+    });
+  })();
+</script>
+
+</div>
+</form></div>
+
+{% endblock %}
