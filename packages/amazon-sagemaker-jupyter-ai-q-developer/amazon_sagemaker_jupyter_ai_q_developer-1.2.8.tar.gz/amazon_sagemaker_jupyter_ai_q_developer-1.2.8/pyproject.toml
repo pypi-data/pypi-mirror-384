@@ -1,0 +1,157 @@
+[build-system]
+requires = ["hatchling>=1.5.0", "jupyterlab~=4.0", "hatch-nodejs-version>=0.3.2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amazon_sagemaker_jupyter_ai_q_developer"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+    "Framework :: Jupyter",
+    "Framework :: Jupyter :: JupyterLab",
+    "Framework :: Jupyter :: JupyterLab :: 4",
+    "Framework :: Jupyter :: JupyterLab :: Extensions",
+    "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "jupyter_server>=2.0.1,<3",
+    "jupyter_ai>=2.31.1,<3",
+    "jupyter_ai_magics>=2.31.1,<3",
+    "boto3",
+    "botocore",
+    "ipython>=8.33.0,<9",
+    "langchain_core",
+    "aws_embedded_metrics",
+    "numpy<=2.0.1", # to avoid picking 2.1.0 with build issues, smd only has 1.26
+    "sagemaker-jupyterlab-extension-common>=0.2.1,<1",
+    "onnxruntime>=1.15.0,<2",
+    "pydantic>=2.10.0,<3",
+    "transformers>=4.30.0,<5"
+]
+dynamic = ["version", "description", "authors", "keywords"]
+
+[project.optional-dependencies]
+all = [
+    "amazon_sagemaker_jupyter_ai_q_developer[dev, test]"
+]
+dev = [
+    "ruff",
+    "build",
+    "twine"
+]
+
+test = [
+    "coverage",
+    "pytest",
+    "torch",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-jupyter[server]>=0.6.0",
+    "parameterized",
+    "pytest-timeout",
+]
+
+[project.entry-points."jupyter_ai.model_providers"]
+amazon-q = "amazon_sagemaker_jupyter_ai_q_developer.provider:AmazonQProvider"
+
+[project.entry-points."jupyter_ai.embeddings_model_providers"]
+codesage = "amazon_sagemaker_jupyter_ai_q_developer.embeddings.codesage_provider:CodeSageEmbeddingsProvider"
+
+[tool.hatch.version]
+source = "nodejs"
+
+[tool.hatch.metadata.hooks.nodejs]
+fields = ["description", "authors", "urls"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["amazon_sagemaker_jupyter_ai_q_developer/labextension"]
+include = [
+    "pyproject.toml",
+    "jupyter-config/**/*",
+    "package.json",
+    "install.json",
+    "amazon_sagemaker_jupyter_ai_q_developer/**/*",
+    "style/**/*",
+    "LICENSE",
+    "NOTICE",
+]
+exclude = [
+    ".github",
+    "binder",
+    "**/node_modules/**/*",
+    "*~",
+    "*.pyc",
+    "*.pyo",
+    ".git/**/*",
+    ".ipynb_checkpoints/**/*",
+    "**/tests/",
+    "**/__tests__/",
+    "ui-tests/**/*"
+]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"amazon_sagemaker_jupyter_ai_q_developer/labextension" = "share/jupyter/labextensions/@amzn/amazon_sagemaker_jupyter_ai_q_developer"
+"install.json" = "share/jupyter/labextensions/@amzn/amazon_sagemaker_jupyter_ai_q_developer/install.json"
+"jupyter-config/jupyter_server_config.d/amazon_sagemaker_jupyter_ai_q_developer.json" = "etc/jupyter/jupyter_server_config.d/amazon_sagemaker_jupyter_ai_q_developer.json"
+"jupyter-config/jupyter_amazon_sagemaker_jupyter_ai_q_developer_config.py" = "etc/jupyter/jupyter_amazon_sagemaker_jupyter_ai_q_developer_config.py"
+
+[tool.hatch.build.hooks.version]
+path = "amazon_sagemaker_jupyter_ai_q_developer/_version.py"
+
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.5"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "amazon_sagemaker_jupyter_ai_q_developer/labextension/static/style.js",
+    "amazon_sagemaker_jupyter_ai_q_developer/labextension/package.json",
+]
+skip-if-exists = ["amazon_sagemaker_jupyter_ai_q_developer/labextension/static/style.js"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["npm"]
+
+[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
+build_cmd = "install:extension"
+npm = ["npm"]
+source_dir = "src"
+build_dir = "amazon_sagemaker_jupyter_ai_q_developer/labextension"
+
+[tool.jupyter-releaser.options]
+version_cmd = "hatch version"
+
+[tool.jupyter-releaser.hooks]
+before-build-npm = [
+    "python -m pip install jupyterlab~=4.0",
+    "npm install",
+    "npm run build:prod"
+]
+before-build-python = ["npm run clean:all"]
+
+[tool.check-wheel-contents]
+ignore = ["W002"]
+
+[tool.ruff]
+line-length = 100
+src = ["amazon_sagemaker_jupyter_ai_q_developer"] # Add other source directories
+exclude = ["_version.py", ".venv", "node_modules"]
+
+[tool.ruff.lint]
+extend-select = [
+  "I001" # isort
+]
+
+[project.entry-points."jupyter_ai.chat_handlers"]
+explain = "amazon_sagemaker_jupyter_ai_q_developer.slash_commands.explain:ExplainSlashCommand"
+optimize = "amazon_sagemaker_jupyter_ai_q_developer.slash_commands.optimize:OptimizeSlashCommand"
+refactor = "amazon_sagemaker_jupyter_ai_q_developer.slash_commands.refactor:RefactorSlashCommand"
+ask = "amazon_sagemaker_jupyter_ai_q_developer.slash_commands.ask:CustomAskChatHandler"
