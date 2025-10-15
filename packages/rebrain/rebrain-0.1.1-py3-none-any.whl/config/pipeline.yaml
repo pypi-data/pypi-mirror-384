@@ -1,0 +1,105 @@
+# Rebrain Pipeline Configuration
+# All pipeline parameters organized by stage
+
+# Paths Configuration
+paths:
+  data_dir: "./data"  # Base data directory, overridable via CLI --data-path
+
+# Stage 1: Ingestion & Preprocessing
+ingestion:
+  date_cutoff_days: 180  # for testign and dev reduced to 60, for better results 180 suggested
+  remove_code_blocks: true
+  chunk_size_tokens: 2000
+  chunk_overlap_percent: 0.125
+
+# Stage 2: Observation Extraction
+observation_extraction:
+  # Model and temperature loaded from prompt template (observation_extraction.yaml)
+  prompt_template: "observation_extraction"
+  max_concurrent: 20
+  one_per_conversation: true  # Extract only the most dominant observation
+  enable_truncation: true
+  truncation_max_tokens: 5000
+  batch_size: 40
+  request_delay: 0.2  # Seconds between starting requests (rate limits increased)
+  max_retries: 3  # Maximum retry attempts on rate limit
+  retry_delays: [20, 40, 60]  # Retry delays in seconds (exponential backoff)
+
+# Stage 3: Observation Embedding
+observation_embedding:
+  # Model loaded from .env (GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIMENSION)
+  batch_size: 100
+  rate_delay: 2.5
+  retry_delays: [20, 40]
+  max_retries: 2
+
+# Stage 4: Observation Clustering
+observation_clustering:
+  algorithm: "kmeans"
+  by_category: true  # Cluster technical/professional separately
+  optimize: true  # Use tolerance-based optimization
+  tolerance: 0.2  # Try ±20% around target
+  test_points: 5  # Test 5 different k values
+  categories:
+    technical:
+      target_clusters: 60
+    professional:
+      target_clusters: 20
+    personal:
+      target_clusters: 20  # ~50% of personal observations (28 total)
+  normalize_embeddings: true
+  random_state: 42
+
+# Stage 5: Learning Synthesis
+learning_synthesis:
+  # Model and temperature loaded from prompt template (learning_synthesis.yaml)
+  prompt_template: "learning_synthesis"
+  confidence_thresholds:
+    high: 9    # 9+ observations = high confidence
+    medium: 4  # 4-8 observations = medium
+    low: 1     # 1-3 observations = low
+
+# Stage 6: Learning Embedding
+learning_embedding:
+  # Model loaded from .env (GEMINI_EMBEDDING_MODEL, GEMINI_EMBEDDING_DIMENSION)
+  batch_size: 20
+  rate_delay: 0.25
+  content_format: "content_only"  # Embed content field only
+
+# Stage 7: Learning Clustering
+learning_clustering:
+  algorithm: "kmeans"
+  target_clusters: 10
+  optimize: true
+  tolerance: 0.2
+  test_points: 5
+  normalize_embeddings: true
+  random_state: 42
+
+# Stage 8: Cognition Synthesis
+cognition_synthesis:
+  # Model and temperature loaded from prompt template (cognition_synthesis.yaml)
+  prompt_template: "cognition_synthesis"
+
+# Observation Exclusions (applied before embedding, after extraction)
+# Allows category-specific privacy filtering for fine-grained control
+observation_exclusions:
+  technical:
+    privacy_levels: ["high"]  # Technical conversations: exclude only high-privacy
+  professional:
+    privacy_levels: ["high"]  # Professional conversations: exclude only high-privacy
+  personal:
+    privacy_levels: ["medium", "high"]  # Personal conversations: exclude medium and high privacy
+  
+  # Strategy: 
+  # - All observations saved to observations.json (for eyeballing/analysis)
+  # - Filter applied before embedding (embeddings.json contains only IDs of allowed observations)
+  # - No filtering needed at learning/cognition level (filtered observations won't propagate)
+
+# Retrieval Settings (for future use)
+retrieval:
+  top_k: 10
+  similarity_threshold: 0.7
+  enable_graph_traversal: true
+  max_hops: 2
+
