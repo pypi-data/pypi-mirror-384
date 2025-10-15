@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Statistical Test Selector</title>
+    <style>
+        :root {
+            --transition: all 0.3s ease;
+        }
+        html {
+            background-color: #EDEFEF;
+        }
+        body {
+            font-family: Arial,Helvetica,sans-serif;
+            padding: 0;
+            margin: 0;
+        }
+        #content {
+            padding: 0px 18px;
+        }
+        #title {
+            display: block;
+            background-color: #333;
+            color: white;
+            padding: 4px 0px 2px 18px;
+            margin: 0;
+        }
+        .question {
+            margin: 20px;
+            width: 50%;
+        }
+        .disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        #answer {
+            margin: 20px;
+            padding: 10px;
+            color: black;
+        }
+        #recommendation {
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+        .info{
+            display: none;
+        }
+        .help {
+            display: inline-block;
+            background-color: #e1e1e1;
+            border: solid 1px #a1a1a1;
+            border-radius: 16px;
+            margin-left: 12px;
+            padding: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: var(--transition);
+        }
+        .help:hover ~ .info{
+            display: block;
+        }
+        #restart {
+            padding: 6px;
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="title"><h2>SOFA Stats - Which Statistical Test?</h2></div>
+    <div id="content">
+        <div class="question">
+            <h3>What type of analysis?</h3>
+            <input id='difference' type="radio" name="type" value="difference"> Difference
+            <input id='relationship' type="radio" name="type" value="relationship"> Relationship
+            <div class="help">&nbsp;?&nbsp;</div>
+            <div class="info">
+                <p>Are you looking at the difference between two groups or more?</p>
+                <p>Example with 2 groups: average vocabulary of Males vs Females.</p>
+                <p>Example with 3 or more groups: average sales figures for the North, South, East, and West regions</p>
+            </div>
+        </div>
+
+        <div class="question disabled" id="groupsQuestion">
+            <h3>Number of groups:</h3>
+            <input id='two' type="radio" name="groups" value="two"> 2 groups
+            <input id='three' type="radio" name="groups" value="three"> 3+ groups
+            <div class="help">&nbsp;?&nbsp;</div>
+            <div class="info">2 vs 3+</div>
+        </div>
+
+        <div class="question disabled" id="relationshipTypeQuestion">
+            <h3>Relationship type:</h3>
+            <input id='namesOnly' type="radio" name="relationType" value="namesOnly"> Names only
+            <input id='ordered' type="radio" name="relationType" value="ordered"> Ordered
+            <div class="help">&nbsp;?&nbsp;</div>
+            <div class="info">
+                <p>Names only data (Nominal) is just labels or names. Ordered data has a sense of order and includes Ordinal (order but no amount) and Quantitative (actual numbers).</p>
+                <p>Example of Names Only data: sports codes ('Soccer', 'Badminton', 'Skiing' etc)</p>
+                <p>Example of Ordered data: ratings of restaurant service standards (1 - Very Poor, 2 - Poor, 3 - Average etc).</p>
+            </div>
+        </div>
+
+        <div class="question disabled" id="normalityQuestion">
+            <h3>Distribution:</h3>
+            <input id="normal" type="radio" name="normality" value="normal"> Normal
+            <input id="nonNormal" type="radio" name="normality" value="nonNormal"> Non-normal
+            <div class="help">&nbsp;?&nbsp;</div>
+            <div class="info">
+                <p>Does the data distribution look like a bell curve?</p>
+                <p>Data which is ordered (ordinal) but not numerical is automatically not normal.</p>
+            </div>
+        </div>
+
+        <div class="question disabled" id="independenceQuestion">
+            <h3>Sample type:</h3>
+            <input id="independent" type="radio" name="independence" value="independent"> Independent
+            <input id="paired" type="radio" name="independence" value="paired"> Paired
+            <div class="help">&nbsp;?&nbsp;</div>
+            <div class="info">
+                <p>Is your data for each group recorded in different rows (independent) or together on same row (paired)?</p>
+                <p>Example of Independent data: if looking at Male vs Female vocabulary we do not have both male and female scores in the same rows.
+                    Male and Female data is independent.</p>
+                <p>Example of Paired data: if looking at mental ability in the Morning vs the Evening
+                    we might have one row per person with both time periods in the same row.
+                    Morning and Evening data is paired.</p>
+            </div>
+        </div>
+
+        <div id="answer"></div>
+
+        <button id='restart' onclick="restart()">Restart</button>
+    </div>
+
+    <script>
+        let state = {
+            type: null,
+            groups: null,
+            relationType: null,
+            normality: null,
+            independence: null
+        };
+        function updateUI() {
+
+            console.log("updateUI triggered *******************************************************************************>")
+
+            // Enable/disable questions based on type
+            const groupsQuestion = document.getElementById('groupsQuestion');
+            const relationshipTypeQuestion = document.getElementById('relationshipTypeQuestion');
+            const normalityQuestion = document.getElementById('normalityQuestion');
+            const independenceQuestion = document.getElementById('independenceQuestion');
+
+            if (state.type === 'difference') {
+                // show groups (2, 3+) and normality
+                groupsQuestion.classList.remove('disabled');
+                normalityQuestion.classList.remove('disabled');
+                // blank and disable relationship type (names only / ordered)
+                document.getElementById('namesOnly').checked = false;
+                document.getElementById('ordered').checked = false;
+                relationshipTypeQuestion.classList.add('disabled');
+                state.relationType = null;
+                if (state.groups === 'three') {
+                    // blank and disable independence (independent / paired)
+                    document.getElementById('independent').checked = false;
+                    document.getElementById('paired').checked = false;
+                    independenceQuestion.classList.add('disabled');
+                    state.independence = null;
+                } else {
+                    // enable independence
+                    independenceQuestion.classList.remove('disabled');
+                };
+            } else if (state.type === 'relationship') {
+                // show relationType (names only / ordered)
+                relationshipTypeQuestion.classList.remove('disabled')
+                // blank and disable groups (2, 3+)
+                document.getElementById('two').checked = false;
+                document.getElementById('three').checked = false;
+                groupsQuestion.classList.add('disabled');
+                state.groups = null
+                if (state.relationType === 'namesOnly') {
+                    // blank and disable normality
+                    document.getElementById('normal').checked = false;
+                    document.getElementById('nonNormal').checked = false;
+                    normalityQuestion.classList.add('disabled');
+                    state.normality = null;
+                } else {
+                    // enable normality
+                    normalityQuestion.classList.remove('disabled');
+                }
+            }
+            determineAnswer();
+        };
+
+        function determineAnswer() {
+            const answerDiv = document.getElementById('answer');
+
+            let innerHTML = "";  // blank unless overridden
+            if (state.type === 'difference') {
+                if (state.groups === 'two') {
+                    if (state.normality === 'normal') {
+                        if (state.independence === 'independent') {
+                            // independent t-test
+                            innerHTML = "<p id='recommendation'>Use the independent samples t-test</p> \
+                                <p>The independent samples t-test is probably a good choice. \
+                                It is good for seeing if there is a difference between two groups \
+                                when the data is numerical and adequately normal. \
+                                Generally the t-test is robust to non-normality.</p> \
+                                <p>The Mann-Whitney may be preferable in some cases \
+                                because of its resistance to extreme outliers \
+                                (isolated high or low values).</p> \
+                                <p>It also copes better with small sample sizes e.g. < 20.</p>";
+                        } else if (state.independence === 'paired') {
+                            // paired t-test
+                            innerHTML = "<p id='recommendation'>Use the paired samples t-test</p> \
+                                <p>The paired samples t-test is probably a good choice.</p> \
+                                <p>The Wilcoxon Signed Ranks test may still be preferable \
+                                because of its resistance to extreme outliers (isolated high or low values)</p>";
+                        }
+                    } else if (state.normality === 'nonNormal') {
+                        if (state.independence === 'independent') {
+                            // Mann-Whitney U
+                            innerHTML = "<p id='recommendation'>Use the Mann-Whitney U test</p> \
+                                <p>The Mann-Whitney is probably a good choice.</p> \
+                                <p>The Independent t-test may still be preferable if your data is numerical \
+                                and doesn't violate normality too much. Generally the t-test is robust to non-normality.</p>";
+                        } else if (state.independence === 'paired') {
+                            // Wilcoxon Signed Ranks
+                            innerHTML = "<p id='recommendation'>Use the Wilcoxon Signed-Ranks test</p> \
+                                <p>The Wilcoxon Signed Ranks is probably a good choice as long as your data \
+                                is measured at (approximately) an interval level.</p> \
+                                The paired t-test may be preferable if your data is numerical \
+                                and doesn't violate normality too much.</p>";
+                        }
+                    }
+                } else if (state.groups === 'three') {
+                    if (state.normality === 'normal') {
+                        // ANOVA (One-way)
+                        innerHTML = "<p id='recommendation'>Use the One-Way ANOVA test</p> \
+                            <p>The One-Way ANOVA (Analysis Of Variance) is probably a good choice. \
+                            The Kruskal-Wallis H may still be preferable if your data is not adequately normal.</p>";
+                    } else if (state.normality === 'nonNormal') {
+                        // Kruskal-Wallis H
+                        innerHTML = "<p id='recommendation'>Use the Kruskal-Wallis H test</p> \
+                            <p>The Kruskal-Wallis H is probably a good choice. \
+                            The One-Way ANOVA (Analysis Of Variance) may still be preferable \
+                            if your data is numerical and adequately normal.</p>";
+                    }
+                }
+            } else if (state.type === 'relationship') {
+                if (state.relationType === 'namesOnly') {
+                    // Chi Square
+                    innerHTML = "<p id='recommendation'>Use the Chi-square test</p> \
+                        <p>The Chi Square test is probably a good choice.</p> \
+                        <p>Chi Square is one of the most widely used tests in social science.</p> \
+                        <p>It is good for seeing if the results for two variables are independent or related.</p> \
+                        <p>Is there a relationship between gender and income group for example?</p>";
+                } else if (state.relationType === 'ordered') {
+                    if (state.normality === 'normal') {
+                        // Pearsons
+                        innerHTML = "<p id='recommendation'>Use the Pearson's R correlation</p> \
+                            <p>The Pearson's R Correlation test is probably a good choice \
+                            if you are testing linear correlation.</p> \
+                            <p>Always look at the scatterplot to decide if a linear relationship.</p> \
+                            <p>The Spearman's R Correlation test may be preferable in some cases \
+                            because of its resistance to extreme outliers (isolated high or low values).</p>";
+                    } else if (state.normality === 'nonNormal') {
+                        // Spearmans
+                        innerHTML = "<p id='recommendation'>Use the Spearman's R correlation test</p> \
+                            <p>The Spearman's R Correlation test is probably a good choice \
+                            if you are testing to see if two variables change together \
+                            e.g. if one increases, the other also increases (or at least stays the same).</p> \
+                            <p>Always look at the scatterplot to check the actual relationship \
+                            e.g. roughly linear.</p> \
+                            <p>The Pearson's R Correlation test may still be preferable \
+                            if your data is numerical and adequately normal.</p>";
+                    }
+                }
+            }
+            console.log("Setting innerHTML\nState is:" + JSON.stringify(state, null, 4) + "\ninnerHTML is: " + innerHTML);
+            answerDiv.innerHTML = innerHTML;
+        };
+
+        function restart() {
+            state = {
+                type: null,
+                groups: null,
+                relationType: null,
+                normality: null,
+                independence: null
+            };
+            const groupsQuestion = document.getElementById('groupsQuestion');
+            const relationshipTypeQuestion = document.getElementById('relationshipTypeQuestion');
+            const normalityQuestion = document.getElementById('normalityQuestion');
+            const independenceQuestion = document.getElementById('independenceQuestion');
+
+            document.querySelectorAll('input[type="radio"]').forEach(radio => {
+                radio.checked = false;
+            });
+
+            normalityQuestion.classList.add('disabled');
+            groupsQuestion.classList.add('disabled');
+            relationshipTypeQuestion.classList.add('disabled');
+            independenceQuestion.classList.add('disabled');
+
+            document.getElementById('answer').textContent = '';
+        }
+
+        // Add event listeners to all radio buttons
+        document.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                state[e.target.name] = e.target.value;
+                updateUI();
+            });
+        });
+    </script>
+</body>
+</html>
