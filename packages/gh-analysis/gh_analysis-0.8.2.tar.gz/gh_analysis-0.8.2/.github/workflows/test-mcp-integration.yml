@@ -1,0 +1,51 @@
+name: MCP Functional Tests
+
+on:
+  pull_request:
+    paths:
+      - 'Containerfile'
+      - 'gh_analysis/runners/adapters/mcp_adapter.py'
+      - 'gh_analysis/cli/process.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'tests/mcp_functional_check.py'
+      - 'scripts/test-container-functional.sh'
+      - '.github/workflows/test-mcp-integration.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Containerfile'
+      - 'gh_analysis/runners/adapters/mcp_adapter.py'
+      - 'gh_analysis/cli/process.py'
+      - 'pyproject.toml'  
+      - 'uv.lock'
+      - 'tests/mcp_functional_check.py'
+      - 'scripts/test-container-functional.sh'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/gh-analysis
+
+jobs:
+  test-mcp-functional:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Podman
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install podman
+
+    - name: Build container image with Podman
+      run: |
+        podman build -t gh-analysis:test -f ./Containerfile .
+
+    - name: Run Comprehensive Functional Tests  
+      run: |
+        # Run the complete functional test suite that focuses on end-to-end behavior
+        # Tests MCP server connectivity, CLI validation, data structure handling,
+        # and tool communication without requiring real bundle URLs or specific implementation details
+        SKIP_BUILD=1 ./scripts/test-container-functional.sh

@@ -1,0 +1,343 @@
+# AI Recommendation Management and Review System
+
+## Overview
+
+The Recommendation Management System provides a structured workflow for managing AI-generated product label recommendations. It enables you to track recommendation status, review them interactively, and control when issues are reprocessed by the AI system.
+
+### Key Benefits
+
+- **Visibility**: Dashboard view of all pending recommendations across your repositories
+- **Control**: Manual review and approval workflow prevents automatic application of uncertain recommendations  
+- **Efficiency**: Interactive review sessions guide you through recommendations one by one
+- **Cost Savings**: Automatic filtering prevents reprocessing of already-reviewed issues
+- **Persistence**: Review decisions are saved and sessions can be resumed anytime
+
+## Basic Workflow
+
+The typical workflow for using the recommendation system:
+
+1. **Collect Issues**: Gather GitHub issues using existing collection commands
+2. **AI Analysis**: Process issues through AI to generate label recommendations
+3. **Discover Recommendations**: Scan AI results and initialize tracking
+4. **Review Session**: Interactively review and approve/reject recommendations
+5. **Apply Labels**: Use existing update-labels command to apply approved changes (Phase 2)
+
+## Command Reference
+
+### Discover Recommendations
+
+Scan for new AI analysis results and create trackable recommendation metadata:
+
+```bash
+# Discover all new recommendations
+uv run gh-analysis recommendations discover
+
+# Force refresh existing recommendations
+uv run gh-analysis recommendations discover --force-refresh
+```
+
+This command:
+- Scans the `data/results/` directory for AI analysis files
+- Creates recommendation tracking metadata for each result
+- Stores status in `data/recommendation_status/`
+- Shows a summary of discovered recommendations
+
+### View Recommendation Summary
+
+Get a dashboard view of all recommendations:
+
+```bash
+uv run gh-analysis recommendations summary
+```
+
+Shows statistics including:
+- Total recommendation count
+- Breakdown by status (pending, approved, rejected, etc.)
+- Distribution by product label
+- Confidence tier distribution
+- Count of high-confidence pending items
+
+### List Recommendations
+
+View recommendations with detailed filtering:
+
+```bash
+# List all recommendations (default: table format)
+uv run gh-analysis recommendations list
+
+# Filter by organization
+uv run gh-analysis recommendations list --org myorg
+
+# Filter by repository
+uv run gh-analysis recommendations list --org myorg --repo myrepo
+
+# Filter by status
+uv run gh-analysis recommendations list --status pending --status approved
+
+# Filter by confidence level
+uv run gh-analysis recommendations list --min-confidence 0.8
+
+# Filter by confidence tier
+uv run gh-analysis recommendations list --confidence-tier high --confidence-tier medium
+
+# Filter by product
+uv run gh-analysis recommendations list --product kots --product vendor
+
+# Limit results
+uv run gh-analysis recommendations list --limit 10
+
+# Output as JSON
+uv run gh-analysis recommendations list --format json
+```
+
+### Interactive Review Session
+
+Start an interactive review session to process recommendations:
+
+```bash
+# Review all pending recommendations
+uv run gh-analysis recommendations review-session
+
+# Review with filters
+uv run gh-analysis recommendations review-session --org myorg --min-confidence 0.8
+
+# Review specific product recommendations
+uv run gh-analysis recommendations review-session --product kots
+```
+
+During the review session:
+1. Each recommendation is displayed with full context
+2. You see the AI's reasoning and confidence score
+3. Label changes are clearly shown (additions and removals)
+4. You can take the following actions:
+   - **Approve**: Accept the recommendation as-is
+   - **Reject**: Decline the recommendation
+   - **Needs Modification**: Mark for manual adjustment
+   - **Skip**: Review later
+   - **Quit**: Exit the session (progress is saved)
+
+Example session:
+```
+Review Session Overview
+Total recommendations: 15
+By Product:
+  product::kots: 8
+  product::vendor: 5
+  product::troubleshoot: 2
+By Confidence:
+  High (≥0.9): 3
+  Medium (0.7-0.9): 9
+  Low (<0.7): 3
+
+Start reviewing 15 recommendations? [y/N]: y
+
+--- Reviewing 1 of 15 ---
+
+Recommendation Details
+Issue: myorg/myrepo#123
+Confidence: 0.92 (high)
+Product: product::kots
+
+AI Reasoning:
+This issue describes KOTS admin console database migration failures...
+
+Label Changes:
+Action   Label                Current
+ADD      product::kots       No
+ADD      type::bug          No
+REMOVE   product::vendor    Yes
+
+Actions:
+  1. Approve
+  2. Reject
+  3. Needs Modification
+  4. Skip (review later)
+  5. Quit session
+
+Choose action (1/2/3/4/5) [4]: 1
+Review notes (optional): Correct analysis, KOTS issue confirmed
+✓ Recommendation approved
+```
+
+## Status Management
+
+### Understanding Recommendation Statuses
+
+- **pending**: Generated by AI, awaiting review
+- **approved**: Human-approved, ready for GitHub application
+- **rejected**: Human-rejected, will not be applied
+- **needs_modification**: Requires manual adjustment before approval
+- **applied**: Successfully applied to GitHub (Phase 2)
+- **failed**: GitHub application failed (Phase 2)
+- **archived**: Moved to historical archive (Phase 2)
+
+### Status Transitions
+
+```
+pending → approved → applied → archived
+   ↓         ↓         ↓
+rejected    failed   failed
+   ↓
+needs_modification → (reprocess) → pending
+```
+
+## Reprocessing Control
+
+The system automatically tracks which issues have been reviewed to prevent unnecessary reprocessing.
+
+### Default Behavior
+
+When running AI analysis, the system will skip issues that have recommendations in these states:
+- `pending` - Already analyzed, awaiting review
+- `approved` - Already reviewed and approved
+- `rejected` - Already reviewed and rejected
+
+Issues are reprocessed if:
+- No recommendation exists yet
+- Status is `needs_modification`
+
+### Force Reprocessing
+
+Use the `--reprocess` flag to override the default behavior:
+
+```bash
+# Individual processing with reprocess
+uv run gh-analysis process product-labeling --org myorg --repo myrepo --reprocess
+
+# Batch processing with reprocess
+uv run gh-analysis batch submit product-labeling --org myorg --reprocess
+```
+
+This will reprocess ALL issues regardless of their recommendation status.
+
+## Troubleshooting
+
+### Common Issues
+
+**No recommendations found after AI processing**
+- Ensure AI analysis completed successfully
+- Check that result files exist in `data/results/`
+- Verify result filenames match expected pattern: `{org}_{repo}_issue_{number}_product-labeling.json`
+
+**Review session shows no recommendations**
+- Check your filter criteria aren't too restrictive
+- Verify recommendations exist with `recommendations list`
+- Ensure recommendations have expected status (default filter is `pending`)
+
+**Changes not persisting between sessions**
+- Verify write permissions on `data/recommendation_status/` directory
+- Check for disk space issues
+- Look for error messages during save operations
+
+### File Locations
+
+- **AI Results**: `data/results/*_product-labeling.json`
+- **Recommendation Status**: `data/recommendation_status/*_status.json`
+- **Issue Data**: `data/issues/*_issue_*.json`
+
+### Debugging Commands
+
+```bash
+# Check recommendation file structure
+ls -la data/recommendation_status/
+
+# View raw recommendation data
+cat data/recommendation_status/myorg_myrepo_issue_123_status.json | jq
+
+# Count recommendations by status
+uv run gh-analysis recommendations list --format json | \
+  jq 'group_by(.status) | map({status: .[0].status, count: length})'
+```
+
+## Best Practices
+
+### Efficient Review Sessions
+
+1. **Start with high confidence**: Review high-confidence recommendations first
+   ```bash
+   uv run gh-analysis recommendations review-session --min-confidence 0.9
+   ```
+
+2. **Focus by product**: Review one product at a time for context
+   ```bash
+   uv run gh-analysis recommendations review-session --product kots
+   ```
+
+3. **Batch similar issues**: Review related repositories together
+   ```bash
+   uv run gh-analysis recommendations review-session --org myorg --repo myrepo
+   ```
+
+### Review Notes
+
+Add meaningful review notes to track decisions:
+- Document why recommendations were rejected
+- Note any manual corrections needed
+- Reference related issues or context
+
+### Regular Processing
+
+1. Run discovery after each AI batch:
+   ```bash
+   uv run gh-analysis batch collect <job-id>
+   uv run gh-analysis recommendations discover
+   ```
+
+2. Schedule regular review sessions
+3. Monitor pending high-confidence recommendations
+
+## Integration with Existing Workflow
+
+The recommendation system integrates seamlessly with existing commands:
+
+```bash
+# 1. Collect issues as normal
+uv run gh-analysis collect --org myorg --repo myrepo
+
+# 2. Process with AI (automatically respects review status)
+uv run gh-analysis batch submit product-labeling --org myorg --repo myrepo
+
+# 3. Discover and review recommendations
+uv run gh-analysis recommendations discover
+uv run gh-analysis recommendations review-session
+
+# 4. Apply approved changes (Phase 2 feature)
+# uv run gh-analysis update-labels --approved-only
+```
+
+## Advanced Usage
+
+### Filtering Examples
+
+Complex filtering for specific scenarios:
+
+```bash
+# High-confidence KOTS issues from last week
+uv run gh-analysis recommendations list \
+  --product kots \
+  --min-confidence 0.85 \
+  --status pending \
+  --format json | jq '.[] | select(.status_updated_at > "2024-01-15")'
+
+# Rejected recommendations needing re-evaluation
+uv run gh-analysis recommendations list \
+  --status rejected \
+  --search-text "database" \
+  --format table
+```
+
+### Bulk Operations (Phase 2 Preview)
+
+Future features will include:
+- Bulk approve all high-confidence recommendations
+- Export recommendations to CSV/JSON
+- Webhook integration for automated workflows
+- Direct GitHub label application from review session
+
+## Phase 2 Features (Coming Soon)
+
+- **Bulk Operations**: Approve/reject multiple recommendations at once
+- **GitHub Integration**: Apply labels directly from the review interface
+- **Archival System**: Automatic archival of old recommendations
+- **Advanced Analytics**: Trend analysis and accuracy metrics
+- **Team Features**: Multi-user review workflows with assignments
