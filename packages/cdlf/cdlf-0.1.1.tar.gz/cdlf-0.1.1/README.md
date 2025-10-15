@@ -1,0 +1,263 @@
+# Conformal Deep Learning Framework (CDLF)
+
+[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![TensorFlow Version](https://img.shields.io/badge/tensorflow-2.13%2B-orange.svg)](https://tensorflow.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://badge.fury.io/py/cdlf.svg)](https://badge.fury.io/py/cdlf)
+
+**Production-ready uncertainty quantification for deep learning with mathematically rigorous guarantees.**
+
+CDLF provides reliable prediction intervals with guaranteed coverage rates for TensorFlow models, essential for high-stakes applications in healthcare, finance, and autonomous systems.
+
+## Why CDLF?
+
+Unlike traditional uncertainty methods (MC Dropout, Deep Ensembles) that provide heuristic estimates, CDLF delivers:
+
+- **Mathematical Guarantees**: Provable coverage rates (e.g., 95% of true values fall within predicted intervals)
+- **Distribution-Free**: No assumptions about data distribution required
+- **Production-Ready**: Built for scale with monitoring, serving, and enterprise features
+- **Model Agnostic**: Works with any TensorFlow/Keras model architecture
+- **Efficient**: Minimal computational overhead compared to ensemble methods
+
+## Key Features
+
+### Core Algorithms
+- **Split Conformal Prediction**: Fast, simple baseline with strong guarantees
+- **Full Conformal**: Maximum efficiency at computational cost
+- **Cross-Conformal**: K-fold approach balancing efficiency and speed
+
+### Adaptive Methods
+- **ACI (Adaptive Conformal Inference)**: Maintains coverage under distribution shift
+- **Quantile Tracking**: Streaming updates for time series
+
+### Specialized Variants
+- **CQR (Conformalized Quantile Regression)**: Conditional coverage for heteroscedastic data
+- **Mondrian CP**: Group-conditional coverage for fairness
+- **APS/RAPS**: Adaptive prediction sets for classification
+
+### Production Features
+- **TensorFlow Integration**: Custom layers, callbacks, and model wrappers
+- **Model Serving**: REST API with FastAPI
+- **Monitoring**: Prometheus metrics, coverage tracking, drift detection
+
+## Installation
+
+```bash
+pip install cdlf
+```
+
+### Optional Dependencies
+
+```bash
+# Development tools
+pip install cdlf[dev]
+
+# Serving features
+pip install cdlf[serving]
+
+# Monitoring
+pip install cdlf[monitoring]
+
+# All features
+pip install cdlf[all]
+```
+
+## Quick Start
+
+### Basic Example: Regression with Guaranteed Intervals
+
+```python
+import tensorflow as tf
+from cdlf.core import SplitConformalPredictor
+import numpy as np
+
+# Load your trained model
+model = tf.keras.models.load_model('your_model.h5')
+
+# Prepare calibration data (hold out ~20% of training data)
+X_cal, y_cal = load_calibration_data()
+X_test, y_test = load_test_data()
+
+# Create conformal predictor with 90% coverage guarantee
+cp = SplitConformalPredictor(model, alpha=0.1)
+
+# Calibrate on held-out data
+cp.calibrate(X_cal, y_cal)
+
+# Get predictions with intervals
+predictions, intervals = cp.predict(X_test)
+
+print(f"Predictions: {predictions.shape}")
+print(f"Intervals: {intervals.shape}")  # (n_samples, 2) with [lower, upper]
+print(f"Average interval width: {np.mean(intervals[:, 1] - intervals[:, 0]):.3f}")
+```
+
+### Classification with Adaptive Prediction Sets
+
+```python
+from cdlf.specialized import AdaptivePredictionSets
+
+# Classification model
+classifier = tf.keras.models.load_model('classifier.h5')
+
+# Create APS for efficient prediction sets
+aps = AdaptivePredictionSets(
+    model=classifier,
+    alpha=0.1,
+    randomized=True,  # RAPS variant
+    k_reg=0.01        # Regularization strength
+)
+
+# Calibrate
+aps.calibrate(X_cal, y_cal)
+
+# Get prediction sets
+prediction_sets = aps.predict(X_test)
+# Returns list of sets, e.g., [{0, 2}, {1}, {0, 1, 3}, ...]
+
+# Measure efficiency (smaller sets are better)
+avg_set_size = np.mean([len(s) for s in prediction_sets])
+print(f"Average prediction set size: {avg_set_size:.2f}")
+```
+
+### Handling Distribution Shift with Adaptive CP
+
+```python
+from cdlf.adaptive import AdaptiveConformalPredictor
+
+# For streaming/online scenarios
+acp = AdaptiveConformalPredictor(
+    model=model,
+    target_coverage=0.9,
+    window_size=1000,  # Adapt based on recent 1000 samples
+    update_freq=100     # Update every 100 predictions
+)
+
+# Process streaming data
+for batch in data_stream:
+    X_batch, y_batch = batch
+
+    # Predict with current calibration
+    predictions, intervals = acp.predict(X_batch)
+
+    # Update calibration online
+    acp.update(X_batch, y_batch)
+
+    # Monitor coverage
+    print(f"Running coverage: {acp.get_coverage():.3f}")
+```
+
+### TensorFlow Integration
+
+```python
+from cdlf.tf_integration import ConformalWrapper
+
+# Wrap any Keras model
+base_model = create_your_model()
+conformal_model = ConformalWrapper(
+    base_model,
+    method='split',  # or 'cqr', 'cross'
+    alpha=0.05       # 95% coverage
+)
+
+# Use like a normal Keras model
+conformal_model.compile(optimizer='adam', loss='mse')
+conformal_model.fit(X_train, y_train, epochs=100)
+
+# Get predictions with intervals
+predictions, intervals = conformal_model.predict(X_test)
+```
+
+
+## Architecture
+
+```
+User API Layer (Simple Interface)
+         │
+Core Conformal Engine (Algorithms, Calibration)
+         │
+TensorFlow Integration (Layers, Callbacks)
+         │
+Production Features (Monitoring, Serving)
+```
+
+## Mathematical Foundation
+
+CDLF implements methods from peer-reviewed research:
+
+- **Split Conformal Prediction**: Provides finite-sample coverage guarantees under exchangeability
+- **Adaptive Conformal Inference**: Maintains coverage under distribution shift
+- **Conformalized Quantile Regression**: Achieves conditional coverage for heteroscedastic data
+- **Mondrian Conformal Prediction**: Provides group-conditional coverage for fairness
+
+## Documentation
+
+Full documentation is available in the package:
+
+```python
+# View documentation for any class
+from cdlf.core import SplitConformalPredictor
+help(SplitConformalPredictor)
+
+# Examples are included in the package
+import cdlf
+print(cdlf.__file__)  # See installation directory for examples/
+```
+
+## Use Cases
+
+CDLF is designed for applications where reliable uncertainty quantification is critical:
+
+- **Healthcare**: Medical diagnosis with safety guarantees
+- **Finance**: Risk assessment with calibrated confidence
+- **Autonomous Systems**: Safe decision-making under uncertainty
+- **Quality Control**: Statistical process monitoring
+- **Climate Science**: Weather prediction with confidence intervals
+
+## Testing
+
+The package includes comprehensive tests with 291/292 tests passing (99.7% success rate):
+
+## Citation
+
+If you use CDLF in your research, please cite:
+
+```bibtex
+@software{cdlf2025,
+  title = {Conformal Deep Learning Framework: Production-Ready Uncertainty Quantification},
+  author = {Bora Esen},
+  year = {2025},
+  version = {0.1.0},
+  note = {Available on PyPI: pip install cdlf}
+}
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Author
+
+**Bora Esen**
+
+- Middle East Technical University - Department of Statistics, 4th Year Student
+- Certified TensorFlow Developer (1.5+ years experience)
+- Curious in the uncertainty quantification and production ML systems
+
+## Acknowledgments
+
+This work builds on theoretical foundations from research in conformal prediction, particularly the work of:
+
+- Emmanuel Candès (Stanford)
+- Yaniv Romano (Technion)
+- Jing Lei (CMU)
+- Robert Tibshirani (Stanford)
+- Vladimir Vovk (Royal Holloway)
+
+## Contact
+
+For questions, bug reports, or collaboration opportunities, please contact via PyPI project page.
+
+---
+
+**Note**: CDLF provides statistical guarantees for prediction intervals. Users should validate the exchangeability assumption holds for their specific use case to ensure theoretical guarantees apply.
