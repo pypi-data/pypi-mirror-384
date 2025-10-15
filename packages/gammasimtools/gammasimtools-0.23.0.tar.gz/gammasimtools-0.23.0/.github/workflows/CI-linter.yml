@@ -1,0 +1,99 @@
+---
+name: CI-linting
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize]
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+
+  linting:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -leo pipefail {0}
+
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check for non-ASCII characters
+        run: |
+          found=0
+          while IFS= read -r file; do
+            matches=$(perl -ne 'print if /[^[:ascii:]]/ && !/latin/i' "$file")
+            if [ -n "$matches" ]; then
+              echo "File: $file"
+              echo "$matches"
+              found=1
+            fi
+          done < <(find . -type f \( -name "*.py" -o -name "*.rst" -o -name "*.yml" -o -name "*.toml" \))
+          if [ "$found" -eq 1 ]; then
+            echo "Non-ASCII characters found in documentation."
+            exit 1
+          fi
+
+      - name: Lint Docker files
+        run: |
+          find ./docker -name "Dockerfile-*" -print0 | while IFS= read -r -d '' dockerfile; do
+            echo "HADOLINT: $dockerfile"
+            docker run --rm -i ghcr.io/hadolint/hadolint < "$dockerfile"
+          done
+
+      - name: Install and validate pyproject.toml
+        run: |
+          pip install validate-pyproject
+          validate-pyproject pyproject.toml
+
+      - name: Check CITATION.cff metadata
+        uses: citation-file-format/cffconvert-github-action@2.0.0
+        with:
+          args: "--validate"
+
+      - name: Install mamba dependencies
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          init-shell: bash
+
+      - name: Python dependencies
+        run: |
+          pip install -e '.[tests,dev,doc]'
+
+      - name: Install and run dotenv-linter
+        run: |
+          curl -sSfL https://git.io/JLbXn | sh -s
+          ./bin/dotenv-linter --skip UnorderedKey
+
+      - name: Restore pre-commit cache
+        uses: actions/cache@v4
+        id: precommit-cache
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pre-commit-
+
+      - name: Pre-commit
+        run: |
+          SKIP=no-commit-to-branch pre-commit run --all-files
+
+      - name: Save pre-commit cache
+        if: success()  # only save if previous steps succeeded
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
