@@ -1,0 +1,273 @@
+2025 Releases
+=============
+
+2025 brought breaking changes to across the LensKit APIs to improve ergonomics,
+correctness-by-default, and flexibility.  It also adopts SPEC0_, a standard for
+supported versions of scientific Python libraries, and changes the LensKit
+version number scheme to “:ref:`SemCalver`”.  See :ref:`migrating` for
+information on how to upgrade your code.
+
+.. _SPEC0: https://scientific-python.org/specs/spec-0000/
+
+.. _2025.3.2:
+
+2025.3.2
+~~~~~~~~
+
+This is a small bug fix and minor improvement release.
+
+- Improve ``__repr__`` for :class:`~lenskit.data.Dataset` and :class:`~lenskit.data.ItemList`.
+- Fix rate limit in Jupyter progress bar (:pr:`876`).
+- Modify the :meth:`~lenskit.data.MatrixRelationshipSet.scipy` and
+  :meth:`~lenskit.data.MatrixRelationshipSet.torch` methods of
+  :class:`lenskit.data.MatrixRelationshipSet` to filter out missing values of
+  the selected attribute.
+- Fixed :class:`~lenskit.config.common.EmbeddingSizeMixin`'s support for
+  ``embedding_size_exp`` to correctly override ``embedding_size``.
+- Added LIP and RBO functions.
+- Bug fixes and refactors for FA*IR reranker.
+- :ref:`FlexMF <flexmf>`: Fall back to uncompiled models when Dynamo fails (:pr:`883`).
+- Internal refactors of some testing code.
+- Update ``repr`` for :class:`~lenskit.dataset.Dataset` and
+  :class:`~lenskit.dataset.ItemList` (:pr:`877`).
+- Exclude missing attribute values from SciPy and PyTorch sparse matrix
+  representations of matrix relationship attributes (:pr:`884`).  This fixes
+  breakage in Biased MF and Bias in the face of incomplete attribute data.
+
+.. _2025.3.1:
+
+2025.3.1
+~~~~~~~~
+
+LensKit 2025.3.1 is a significant feature and bugfix upgrade to the LensKit 2025
+series.  It maintains backwards compatibility with 2025.2 for stable interfaces
+(see :ref:`stability-levels`), except as noted below.  See the `GitHub
+milestone <https://github.com/lenskit/lkpy/milestone/18>`_ for a full list of
+changes in this release; key changes are noted below.
+
+Highlights
+----------
+
+-   Added Rust acceleration for several data processing operations and kNN
+    models.
+-   Added a new, experimental PyTorch matrix factorization model (see
+    :ref:`flexmf`).
+-   :mod:`lenskit.basic` now exports the configuration classes for basic algorithms (:pr:`672`).
+-   The pipeline runner now supports :ref:`pipeline-hooks` to inspect or modify
+    pipeline operations.
+-   The pipeline runner type checking logic has been refactored and simplified.
+    As a consequence, when ``None`` is provided to a component input that does
+    not accept ``None``, the runner now raises :class:`TypeError` instead of
+    :class:`PipelineError`, as this is a type error.  Details on a type error's
+    input wiring are now provided as a note on the exception, instead of in the
+    main exception message.
+-   Pipelines can now be specified in configuration files, and used from the
+    command line.
+-   Datasets can now have repeated or duplicate interactions (although such
+    data sets are typically slow, see :issue:`869`).
+-   **Experimental** and mostly undocumented hyperparameter tuning support.
+-   Added a configuration facility in :mod:`lenskit.config` to configure random
+    numbers, power measurement, etc.  Scripts using LensKit should call
+    :func:`lenskit.configure`.
+-   Added support for querying power consumption from Prometheus.  Documentation
+    on how to set this up to be useful is TBD.
+
+Compatibility Changes
+---------------------
+
+.. important::
+    These changes should not break most programs, but do introduce and document
+    stricter requirements on certain names.
+
+-   Pipeline component input names are not allowed to be prefixed with ``_``, as
+    such names are reserved for LensKit internal operation.  This is not yet
+    enforced, but will be enforced beginning in LensKit 2026.
+-   Entity and attribute names are not allowed to be prefixed with ``_``, and
+    attribute names cannot end with ``_id`` or ``_num``.
+
+Component Changes
+-----------------
+
+-   :class:`~lenskit.knn.ItemKNNScorer` and :class:`~lenskit.knn.UserKNNScorer`
+    are rewritten to use Rust acceleration, along with changes to its internal
+    data representation to use Arrow instead of SciPy.  This also fixes a
+    segfault with very large similarity matrices.
+
+    .. note::
+
+        The model parameters of the KNN scorers have changed.  They are no
+        longer suffixed with ``_``, and the similarity matrix is a PyArrow list
+        array.  Code that was directly examining internal elements will need to
+        change.
+
+-   The :mod:`lenskit.als` scorers have been similarly refactored, and had their
+    learned parameters renamed for better consistency.
+
+-   Replaced the broken :class:`~lenskit.basic.SoftmaxRanker` with a proper
+    stochastic sampler (:pr:`667`,
+    :class:`~lenskit.stochastic.StochasticTopNRanker`).  The old ranker will be
+    removed in LensKit 2026.
+
+-   Added :class:`lenskit.training.UsesTrainer` for more sophisticated iterative
+    training support.
+
+-   Added :meth:`lenskit.data.ItemList.top_n` to get the top-*N* values of an
+    item list efficiently.
+
+-   :class:`lenskit.data.Vocabulary` is now backed by a Rust hashtable instead of a
+    Pandas ``Index``.  An index view is still available.
+
+Data Handling
+-------------
+
+-   Added versioning to the native data format, documented data format
+    compatibility, and added compatibility tests.
+-   Added compressed sparse row extension types for Arrow, and use them in the
+    LensKit native format (as well as Python/Rust data interchange) to more
+    reliably handle CSR matrix data in Arrow (previously, we had to carry the
+    matrix width or row dimension in side information; it is now embedded into
+    the Arrow metadata).
+-   Fix MovieLens import to detect movies without genres (:issue:`727`, :pr:`738`).
+-   :ref:`parallelism` now supports comma-separated lists for configuring
+    parallelism within worker processes, and :envvar:`LK_NUM_CHILD_THREADS` is
+    now deprecated.
+-   Added importers for UCSD Amazon data sets.
+
+Evaluation
+----------
+
+-   Reworked the design of the :class:`~lenskit.metrics.Metric` interface, along
+    with metric accumulation for run measurement, to facilitate more types of
+    metrics and more flexible use of the evaluation facilities.  More breaking
+    changes will come in LensKit 2026.
+
+CLI
+---
+
+-   Added several new capabilities to the :ref:`LensKit CLI <cli>`.
+
+Other Changes
+-------------
+
+-   :meth:`~lenskit.data.MatrixRelationshipSet.sample_negatives` now accepts
+    ``"popular"`` as an alias for ``"popularity"``.
+-   Several bug fixes for logging in niche setups (including ray clusters) (:pr:`673`).
+
+.. _2025.2.0:
+
+2025.2.0
+~~~~~~~~
+
+LensKit 2025.2.0 was released March 12, 2025.
+
+Some small quality-of-life improvements (and removing invalid API compat).
+
+-   Add :class:`lenskit.pipeline.PipelineCache` to share components between pipelines (:pr:`605`).
+
+-   Only warn once for users without test data in bulk analysis (:pr:`664`, :issue:`663`).
+
+-   Allow a Pandas data frame to be passed as the test data to the batch recommender (:pr:`660`).
+
+    .. note::
+
+        This removes extra keyword arguments from the convenience
+        ``batch.recommend``, etc. functions that were leftovers from LensKit
+        0.14 and no longder did anything.
+
+-   Support auto-detecting keys in :meth:`lenskit.data.ItemListCollection.from_df` (:pr:`659`).
+
+
+.. _2025.1:
+
+2025.1.1
+~~~~~~~~
+
+LensKit 2025.1.1 was released March 7, 2025.
+
+The changes in this release are too numerous and fundamental to fully document
+in traditional release notes.  See the following for release update documentation:
+
+- :ref:`migrating` for conceptual changes and how to upgrade your code.
+- The notes below for *behavior* changes (e.g. new defaults, new metric
+  capabilities), and small bits not covered in the migration guide.
+- The full changelog in the `Git history
+  <https://github.com/lenskit/lkpy/compare/0.14.4...main>`_ and `issue/PR
+  milestone <https://github.com/lenskit/lkpy/milestone/14>`_.
+
+Breaking Changes
+----------------
+
+LensKit 2025 has many breaking changes, with the migration guide
+(:ref:`migrating`) documenting the major ones.  Below are some smaller ones not
+covered by that document:
+
+*   Where Pandas data frames are still used, the standard user and item columns
+    have been renamed to ``user_id`` and ``item_id`` respectively, with
+    ``user_num`` and ``item_num`` for 0-based user and item numbers.  This is to
+    remove ambiguity about how users and items are being referenced.
+
+*   The ``Popular`` recommender has been removed in favor of :class:`~lenskit.basic.PopScore`.
+
+*   The DCG metric has been removed, as it is basically never used and was not
+    useful as a part of the NDCG implementation.
+
+New Features (incremental)
+--------------------------
+
+*   Many LensKit components (batch running, model training, etc.) now report
+    progress the progress API in :mod:`lenskit.logging.progress`, and can be
+    connected to Jupyter or Rich.
+*   Added RBP top-N metric (:pr:`334`).
+*   Added command-line tool to fetch datasets (:pr:`347`).
+
+Metric Behavior Changes
+-----------------------
+
+.. important::
+
+    Some LensKit metric default has been changed; this results in values
+    different from those computed by previous versions, either more correct or
+    more consistent with common practice.
+
+*   The :class:`~lenskit.metrics.NDCG` metric now defaults to *ignore* rating
+    values.
+
+Model Behavior Changes
+----------------------
+
+Most models will exhibit some changes, hopefully mostly in performance, due to
+moving to PyTorch.  There are some deliberate behavior changes in this new version,
+however, documented here.
+
+* ALS models only use Cholesky decomposition (previously selected with the
+  erroneously-named ``method="lu"`` option); conjugate gradient and coordinate
+  descent are no longer available.  Cholesky decomposition is faster on PyTorch
+  than it was with Numba, and is easier to maintain.
+* The default minimum similarity for :class:`~lenskit.algorithms.knn.UserUser`
+  is now :math:`10^{-6}`.
+* k-NN algorithms no longer support negative similarities; ``min_sim`` is
+  clamped to be at least the smallest normal in 32-bit floating point
+  (:math:`1.75 \times 10^{-38}`).
+* The :mod:`implicit` bridge algorithms no longer look at rating values when
+  they are present.
+* Bias is no longer optional for :class:`~lenksit.als.BiasedMFScorer` and
+  :class:`~lenskit.funksvd.FunkSVD`; both are inherently biased models, and
+  FunkSVD is not commonly used.
+* :class:`lenskit.hpf.HPF` no longer uses ratings as synthetic counts by
+  default.
+
+Bug Fixes
+---------
+
+* Fixed bug in NDCG list truncation (:issue:`309`, :pr:`312`).
+* Corrected documentation errors for :py:func:`~lenskit.metrics.recall` and :py:func:`~lenskit.metrics.hit` (:pr:`369` by :user:`lukas-wegmeth`).
+
+Dependencies and Maintenance
+----------------------------
+
+* Bumped minimum supported dependencies as per SPEC0_ (Python 3.11, NumPy 1.24, Pandas 2.0, SciPy 1.10).
+* Added support for Pandas 2 (:pr:`364`) and Python 3.12.
+* Improved Apple testing to include vanilla Python and Apple Silicon (:pr:`366`).
+* Updated build environment, dependency setup, taskrunning, and CI to more consistent and maintainable.
+* Removed legacy random code and SeedBank usage in favor of SPEC 7 (see :ref:`rng`).
+* Code is now auto-formatted with Ruff.
