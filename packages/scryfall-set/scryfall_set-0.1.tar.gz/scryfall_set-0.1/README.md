@@ -1,0 +1,51 @@
+# scryfall-set
+
+## _"scry a card, planeswalker..."_ 🔮🃏
+
+Overview stats for MTG sets and searches using the [Scryfall](https://scryfall.com/docs/api) API
+
+<p align="center">
+  <img src="./img/scry-screenshot.png" alt="example screenshot" width="50%">
+</p>
+
+## install
+
+Install via PyPi with `pip install scry-set`
+
+### locally
+
+Clone and install with `pipx install .` or `pip install .`
+
+## use
+
+- Request a reference list of set releases with: `scry setlist`
+  - to see a _full_ list of all releases including bonus boxes and memorabilia: `scry setlist --all`
+- Get stats for a specific set:
+  - `scry set BLB` returns all cards from the _Bloomburrow_ set
+  - `scry set latest` finds the most recent release.
+- Get stats for cards based on a scryfall [search query](https://scryfall.com/docs/syntax):
+  - `scry search id:orzhov type:land legal:modern` returns all unique Orzhov Land cards that are legal in Modern format, and shows stats for that list.
+- Get help with `scry --help`
+
+### local database
+
+Scry creates a local sqlite database and adds your queried cards to it. This means you can build a larger collection of cards by executing multiple searches, and then view stats for the entire database with `scry stats`
+
+This also may lead to large database files with a lot of sets. To clear your database (for instance, to start a fresh collection to view stats on), run `scry clear` and confirm at the prompt.
+
+## about
+
+Made with python and sqlite, and requests to the [scryfall](https://scryfall.com/docs/api) API.
+This is a personal project to learn more about python packaging, sqlite, pytest, and MTG sets.
+
+## testing
+
+Run tests with `pytest`
+
+## licence
+
+This project is distributed with the [MIT licence](./LICENCE)
+
+## disclaimer
+
+This project is not linked, authorized, endorsed by, or in any way officially connected with Wizards of the Coast.
