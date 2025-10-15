@@ -1,0 +1,811 @@
+# AWS::AmazonMQ L2+ Construct Library
+
+<!--BEGIN STABILITY BANNER-->---
+
+
+Features                                     | Stability
+---------------------------------------------|--------------------------------------------------------
+Higher level constructs for ActiveMQ Brokers | ![Experimental](https://img.shields.io/badge/experimental-important.svg?style=for-the-badge)
+Higher level constructs for RabbitMQ Bokers  | ![Experimental](https://img.shields.io/badge/experimental-important.svg?style=for-the-badge)
+
+> **Experimental:** Higher level constructs in this module are experimental and
+> under active development. They are subject to non-backward compatible changes or removal in any
+> future version. These are not subject to the [Semantic Versioning](https://semver.org/) model and
+> breaking changes will be announced in the release notes. This means that while you may use them,
+> you may need to update your source code when upgrading to a newer version of this package.
+
+---
+<!--END STABILITY BANNER-->
+
+## Table of Contents
+
+* [Introduction](#introduction)
+
+  * [Security](#security)
+* [ActiveMQ Brokers](#activemq-brokers)
+
+  * [ActiveMQ Broker Deployments](#activemq-broker-deployments)
+  * [ActiveMQ Broker Endpoints](#activemq-broker-endpoints)
+  * [Allowing Connections to ActiveMQ Brokers](#allowing-connections-to-activemq-brokers)
+  * [Importing Existing ActiveMq Brokers](#importing-exisitng-activemq-brokers)
+  * [ActiveMQ Broker Configurations](#activemq-broker-configurations)
+  * [ActiveMQ Broker User Management](#activemq-broker-user-management)
+
+    * [ActiveMQ Broker Simple Authentication](#activemq-broker-simple-authentication)
+    * [ActiveMQ Broker LDAP Integration](#activemq-broker-ldap-integration)
+  * [Monitoring ActiveMQ Brokers](#monitoring-activemq-brokers)
+  * [ActiveMQ Broker Integration with AWS Lambda](#activemq-broker-integration-with-aws-lambda)
+* [RabbitMQ Brokers](#rabbitmq-brokers)
+
+  * [RabbitMQ Broker Deployments](#rabbitmq-broker-deployments)
+  * [RabbitMQ Broker Endpoints](#rabbitmq-broker-endpoints)
+  * [Importing Existing RabbitMq Brokers](#importing-exisitng-rabbitmq-brokers)
+
+    * [Importing Dual-Stack RabbitMQ Brokers](#importing-dual-stack-rabbitmq-brokers)
+  * [Allowing Connections to a RabbitMQ Broker](#allowing-connections-to-a-rabbitmq-broker)
+  * [RabbitMQ Broker User Management](#rabbitmq-broker-user-management)
+
+    * [RabbitMQ Broker Simple Authentication](#rabbitmq-broker-simple-authentication)
+    * [RabbitMQ Broker Config-Managed Authentication](#rabbitmq-broker-config-managed-authentication)
+  * [RabbitMQ Broker Configurations](#rabbitmq-broker-configurations)
+  * [Monitoring RabbitMQ Brokers](#monitoring-rabbitmq-brokers)
+  * [RabbitMQ Broker Integration with AWS Lambda](#rabbitmq-broker-integration-with-aws-lambda)
+  * [Using RabbitMQ Management HTTP API](#using-rabbitmq-management-http-api)
+  * [External Examples](#external-examples)
+
+## Introduction
+
+Amazon MQ is a managed service that makes it easy to create and run Apache ActiveMQ and RabbitMQ message brokers at scale. This library brings L2 AWS CDK constructs for Amazon MQ and introduces a notion of *broker deployment* and distincts between *a broker* and *a broker deployment*.
+
+* *broker deployment* represents the configuration that defines how the broker (or a set of brokers in a particular configuration) will be deployed. Effectively, this is the representation of the `AWS::AmazonMQ::Broker` resource type, and will expose the relevant attributes of the resource type (such as ARN, Id).
+* *broker* represents the means for accessing the broker, that is its endpoints and (in the case of ActiveMQ) IPv4 address(es).
+
+This stems from the fact that when creating the `AWS::AmazonMQ::Broker` resource for ActiveMQ in the `ACTIVE_STANDBY_MULTI_AZ` deployment mode, the resulting AWS resource will in fact contain a set of two, distinct brokers.
+
+The separation allows for expressing the resources as types in two ways:
+
+* *is*, where a *broker deployment* implements the *broker* behavioral interface
+* *has*, where a *broker deployment* contains (a set of) *brokers*.
+
+### Security
+
+In order to build secure solutions follow the guidelines and recommendations in the *[Security](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/using-amazon-mq-securely.html)* section of the AWS documentation for the Amazon MQ.
+
+## ActiveMQ Brokers
+
+Amazon MQ allows for creating AWS-managed ActiveMQ brokers. The brokers enable exchanging messages over [a number of protocols](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/broker.html#broker-protocols), e.g. AMQP 1.0, OpenWire, STOMP, MQTT.
+
+### ActiveMQ Broker Deployments
+
+The following example creates a minimal, [single-instance ActiveMQ Broker deployment](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/single-broker-deployment.html):
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import ActiveMqBrokerEngineVersion, ActiveMqBrokerInstance, ActiveMqBrokerUserManagement
+
+# stack: Stack
+# broker_user: ISecret
+
+
+broker = ActiveMqBrokerInstance(stack, "ActiveMqBroker",
+    publicly_accessible=False,
+    version=ActiveMqBrokerEngineVersion.V5_18,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=ActiveMqBrokerUserManagement.simple(
+        users=[ActiveMqUser(
+            username=broker_user.secret_value_from_json("username").unsafe_unwrap(),
+            password=broker_user.secret_value_from_json("password")
+        )]
+    )
+)
+```
+
+The example below shows how to instantiate an active-standby redundant pair. `ActiveMqBrokerRedundantPair` doesn't implement `IActiveMqBroker`, but has two properties: `first`, and `second` that do. This stems from the fact that [ActiveMq redundant-pair deployment](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/active-standby-broker-deployment.html) exposes two, separate brokers that work in an active-standby configuration. The names are `first` (instead of `active`) and `second` (instead of `standby`) as there cannot be a guarantee which broker will be the `active` and which - the `standby`.
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType, IVpc, SubnetSelection
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import ActiveMqBrokerEngineVersion, ActiveMqBrokerRedundantPair, ActiveMqBrokerUserManagement
+
+# stack: Stack
+# broker_user: ISecret
+# vpc: IVpc
+# vpc_subnets: SubnetSelection
+
+
+broker_pair = ActiveMqBrokerRedundantPair(stack, "ActiveMqBrokerPair",
+    publicly_accessible=False,
+    version=ActiveMqBrokerEngineVersion.V5_18,
+    instance_type=InstanceType.of(InstanceClass.M5, InstanceSize.LARGE),
+    user_management=ActiveMqBrokerUserManagement.simple(
+        users=[ActiveMqUser(
+            username=broker_user.secret_value_from_json("username").unsafe_unwrap(),
+            password=broker_user.secret_value_from_json("password")
+        )]
+    ),
+    vpc=vpc,
+    vpc_subnets=vpc_subnets
+)
+```
+
+### ActiveMQ Broker Endpoints
+
+Each created broker instance implements `IActiveMqBroker` and has `endpoints` property representing each allowed transport with url and port.
+
+One can use the endpoints as in the example below
+
+```python
+from aws_cdk import CfnOutput
+from cdklabs.cdk_amazonmq import IActiveMqBroker
+
+# broker: IActiveMqBroker
+
+
+CfnOutput(self, "AmqpEndpointUrl", value=broker.endpoints.amqp.url)
+CfnOutput(self, "AmqpEndpointPort", value=broker.endpoints.amqp.port.to_string())
+
+CfnOutput(self, "StompEndpointUrl", value=broker.endpoints.stomp.url)
+CfnOutput(self, "StompEndpointPort", value=broker.endpoints.stomp.port.to_string())
+
+CfnOutput(self, "OpenWireEndpointUrl", value=broker.endpoints.open_wire.url)
+CfnOutput(self, "OpenWireEndpointPort", value=broker.endpoints.open_wire.port.to_string())
+
+CfnOutput(self, "MqttEndpointUrl", value=broker.endpoints.mqtt.url)
+CfnOutput(self, "MqttEndpointPort", value=broker.endpoints.mqtt.port.to_string())
+
+CfnOutput(self, "WssEndpointUrl", value=broker.endpoints.wss.url)
+CfnOutput(self, "WssEndpointPort", value=broker.endpoints.wss.port.to_string())
+
+CfnOutput(self, "WebConsoleUrl", value=broker.endpoints.console.url)
+CfnOutput(self, "WebConsolePort", value=broker.endpoints.console.port.to_string())
+
+CfnOutput(self, "IpAddress", value=broker.ip_address)
+```
+
+For the redundant pair deployments one can access all the endpoints under properties `first` and `second`, as each implements `IActiveMqBroker`.
+
+### Allowing Connections to ActiveMQ Brokers
+
+For ActiveMQ broker deployments that are not publically accessible and with specified VPC and subnets you can control who can access the Broker using `connections` attribute. By default no connection is allowed and it has to be explicitly allowed.
+
+```python
+from aws_cdk.aws_ec2 import Peer, Port
+from cdklabs.cdk_amazonmq import IActiveMqBroker, IActiveMqBrokerDeployment
+
+# deployment: IActiveMqBrokerDeployment
+# broker: IActiveMqBroker
+
+
+# for the applications to interact over the STOMP protocol
+deployment.connections.allow_from(Peer.ipv4("1.2.3.4/8"), Port.tcp(broker.endpoints.stomp.port))
+
+# for the applications to interact over the OpenWire protocol
+deployment.connections.allow_from(Peer.ipv4("1.2.3.4/8"), Port.tcp(broker.endpoints.open_wire.port))
+
+# for the Web Console access
+deployment.connections.allow_from(Peer.ipv4("1.2.3.4/8"), Port.tcp(broker.endpoints.console.port))
+```
+
+Mind that `connections` will be defined only if VPC and subnets are specified. For an instance of `ActiveMqBrokerRedundantPair` one would access the broker endpoints under either `first` or `second` property.
+
+***Security:*** It is a security best practice *[to block unnecessary protocols with VPC security groups](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/using-amazon-mq-securely.html#amazon-mq-vpc-security-groups)*.
+
+### Importing exisitng ActiveMQ Brokers
+
+To import an existing `ActiveMqBrokerInstance` use `.fromActiveMqBrokerInstanceArn()` or `.fromActiveMqBrokerInstanceNameAndId()` methods.
+
+```python
+from cdklabs.cdk_amazonmq import ActiveMqBrokerInstance
+
+
+broker = ActiveMqBrokerInstance.from_active_mq_broker_instance_arn(self, "Imported", "arn:aws:mq:us-east-2:123456789012:broker:TestBroker:b-123456789012-123456789012")
+```
+
+If you want to use `.connections` you can additionally pass `securityGroups`:
+
+```python
+from aws_cdk.aws_ec2 import SecurityGroup
+from cdklabs.cdk_amazonmq import ActiveMqBrokerInstance
+
+
+sgs = [
+    SecurityGroup.from_security_group_id(self, "ImportedSG", "sg-123123123123")
+]
+
+broker = ActiveMqBrokerInstance.from_active_mq_broker_instance_name_and_id(self, "Imported", "TestBroker", "b-123456789012-123456789012", sgs)
+```
+
+Similarly, `ActiveMqBrokerRedundantPair` can be imported using `.fromActiveMqRedundantPairArn()` and `.fromActiveMqRedundantPairNameAndId()` methods.
+
+### ActiveMQ Broker Configurations
+
+By default Amazon MQ will create a default configuration for the broker(s) on your deployment. You can introduce custom configurations by explicitly creating one as in the example below:
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import ActiveMqBrokerConfiguration, ActiveMqBrokerConfigurationDefinition, ActiveMqAuthenticationStrategy, ActiveMqBrokerEngineVersion, ActiveMqBrokerInstance, ActiveMqBrokerUserManagement
+
+# stack: Stack
+# broker_user: ISecret
+# configuration_data: str
+
+
+custom_configuration = ActiveMqBrokerConfiguration(stack, "CustomConfiguration",
+    configuration_name="ConfigurationName",
+    description="ConfigurationDescription",
+    engine_version=ActiveMqBrokerEngineVersion.V5_18,
+    authentication_strategy=ActiveMqAuthenticationStrategy.SIMPLE,
+    definition=ActiveMqBrokerConfigurationDefinition.data(configuration_data)
+)
+
+broker = ActiveMqBrokerInstance(stack, "Broker",
+    publicly_accessible=False,
+    version=ActiveMqBrokerEngineVersion.V5_18,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=ActiveMqBrokerUserManagement.simple(
+        users=[ActiveMqUser(
+            username=broker_user.secret_value_from_json("username").unsafe_unwrap(),
+            password=broker_user.secret_value_from_json("password")
+        )]
+    ),
+    configuration=custom_configuration
+)
+```
+
+A configuration can be associated with a specific broker also after the broker creation. Then, it is required to be explicitly associated with the broker.
+
+```python
+from cdklabs.cdk_amazonmq import IActiveMqBrokerConfiguration, IActiveMqBrokerDeployment
+
+# configuration: IActiveMqBrokerConfiguration
+# deployment: IActiveMqBrokerDeployment
+
+
+configuration.associate_with(deployment)
+```
+
+This library also allows to modify an existing configuration. Such update of a particular configuration is [creating a new configuration *revision*](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/amazon-mq-creating-applying-configurations.html#creating-new-configuration-revision-console) so that a history of revisions can be viewed in the AWS Console. The new revision can be then associated with the broker so it uses it as a working configuration.
+
+```python
+from cdklabs.cdk_amazonmq import ActiveMqBrokerConfigurationDefinition, IActiveMqBrokerConfiguration, IActiveMqBrokerDeployment
+
+# configuration: IActiveMqBrokerConfiguration
+# deployment: IActiveMqBrokerDeployment
+# new_data: str
+
+
+new_revision = configuration.create_revision(
+    description="We need to modify an AuthorizationEntry",
+    definition=ActiveMqBrokerConfigurationDefinition.data(new_data)
+)
+
+new_revision.associate_with(deployment)
+```
+
+### ActiveMQ Broker User Management
+
+#### ActiveMQ Broker Simple Authentication
+
+Using ActiveMQ built-in [Simple Authentication](http://activemq.apache.org/security.html#Security-SimpleAuthenticationPlugin) users need to be provided during the broker deployment definition.
+
+***Security:*** In the Simple Authentication User Management authorization is managed in the configuration. It is a security best practice to *[always configure an authorization map](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/using-amazon-mq-securely.html#always-configure-authorization-map)*.
+
+#### ActiveMQ Broker LDAP Integration
+
+Amazon MQ for ActiveMQ enables LDAP integration. An example below shows a minimal setup to configure an Amazon MQ for ActiveMQ broker.
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import ActiveMqBrokerEngineVersion, ActiveMqBrokerInstance, ActiveMqBrokerUserManagement
+
+# stack: Stack
+# service_account_secret: ISecret
+
+
+broker = ActiveMqBrokerInstance(stack, "ActiveMqBrokerInstance",
+    publicly_accessible=False,
+    version=ActiveMqBrokerEngineVersion.V5_18,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=ActiveMqBrokerUserManagement.ldap(
+        hosts=["ldap.example.com"],
+        user_search_matching="uid={0}",
+        user_role_name="amq",
+        user_base="ou=users,dc=example,dc=com",
+        role_base="ou=roles,dc=example,dc=com",
+        role_search_matching="cn={0}",
+        role_name="amq",
+        service_account_password=service_account_secret.secret_value_from_json("password"),
+        service_account_username=service_account_secret.secret_value_from_json("username")
+    )
+)
+```
+
+### Monitoring ActiveMQ Brokers
+
+This library introduces [a set of metrics](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/security-logging-monitoring-cloudwatch.html#activemq-logging-monitoring) that we can use for the `IActiveMqBrokerDeployment` monitoring. Each can be accessed as a method on the `IActiveMqBrokerDeployment` with the convention `metric[MetricName]`. An example below shows how one can use that:
+
+```python
+from cdklabs.cdk_amazonmq import IActiveMqBrokerDeployment
+
+# stack: Stack
+# deployment: IActiveMqBrokerDeployment
+
+
+consumer_count_metric = deployment.metric_consumer_count()
+consumer_count_metric.create_alarm(stack, "ConsumerCountAlarm",
+    threshold=100,
+    evaluation_periods=3,
+    datapoints_to_alarm=2
+)
+```
+
+### ActiveMQ Broker Integration with AWS Lambda
+
+Amazon MQ for ActiveMQ broker queues can be used as event sources for AWS Lambda functions. For authentication only the ActiveMQ SimpleAuthenticationPlugin is supported. Lambda consumes messages using the OpenWire/Java Message Service (JMS) protocol. No other protocols are supported for consuming messages. Within the JMS protocol, only TextMessage and BytesMessage are supported. Lambda also supports JMS custom properties. For more details on the requirements of the integration read [the documentation](https://docs.aws.amazon.com/lambda/latest/dg/with-mq.html).
+
+The example below presents an example of creating such an event source mapping:
+
+```python
+from aws_cdk.aws_lambda import IFunction
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import ActiveMqEventSource, IActiveMqBrokerDeployment
+
+# target: IFunction
+# creds: ISecret # with username and password fields
+# broker: IActiveMqBrokerDeployment
+# queue_name: str
+
+
+target.add_event_source(ActiveMqEventSource(
+    broker=broker,
+    credentials=creds,
+    queue_name=queue_name
+))
+```
+
+***Security:*** When adding an Amazon MQ for ActiveMQ as an AWS Lambda function's event source the library updates the execution role's permissions to satisfy [Amazon MQ requirements for provisioning the event source mapping](https://docs.aws.amazon.com/lambda/latest/dg/with-mq.html#events-mq-permissions).
+
+In the case of a private deployment the defined event source mapping will create a set of Elastic Network Interfaces (ENIs) in the subnets in which the broker deployment created communication endpoints. Thus, in order to allow the event source mapping to communicate with the broker one needs to additionally allow inbound traffic from the ENIs on the OpenWire port. As ENIs will use the same security group that governs the access to the broker endpoints you can simply allow communication from the broker's security group to itself on the OpenWire port as in the example below:
+
+```python
+from aws_cdk.aws_ec2 import Port
+from cdklabs.cdk_amazonmq import IActiveMqBroker, IActiveMqBrokerDeployment
+
+# deployment: IActiveMqBrokerDeployment
+# broker: IActiveMqBroker
+
+
+deployment.connections.allow_internally(Port.tcp(broker.endpoints.open_wire.port), "Allowing for the ESM")
+```
+
+## RabbitMQ Brokers
+
+Amazon MQ allows for creating AWS-managed RabbitMQ brokers. The brokers enable exchanging messages over AMQP 0-9-1 protocol.
+
+### RabbitMQ Broker Deployments
+
+The following example creates a minimal, single-instance RabbitMQ broker deployment:
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import RabbitMqBrokerEngineVersion, RabbitMqBrokerInstance, RabbitMqBrokerUserManagement
+
+# stack: Stack
+# admin_secret: ISecret
+
+
+broker = RabbitMqBrokerInstance(stack, "RabbitMqBroker",
+    publicly_accessible=False,
+    version=RabbitMqBrokerEngineVersion.V3_13,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=RabbitMqBrokerUserManagement.simple(
+        admin=Admin(
+            username=admin_secret.secret_value_from_json("username").unsafe_unwrap(),
+            password=admin_secret.secret_value_from_json("password")
+        )
+    )
+)
+```
+
+The next example creates a minimal RabbitMQ broker cluster:
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import RabbitMqBrokerCluster, RabbitMqBrokerEngineVersion, RabbitMqBrokerUserManagement
+
+# stack: Stack
+# admin_secret: ISecret
+
+
+broker = RabbitMqBrokerCluster(stack, "RabbitMqBroker",
+    publicly_accessible=False,
+    version=RabbitMqBrokerEngineVersion.V3_13,
+    instance_type=InstanceType.of(InstanceClass.M5, InstanceSize.LARGE),
+    user_management=RabbitMqBrokerUserManagement.simple(
+        admin=Admin(
+            username=admin_secret.secret_value_from_json("username").unsafe_unwrap(),
+            password=admin_secret.secret_value_from_json("password")
+        )
+    )
+)
+```
+
+### RabbitMQ Broker Endpoints
+
+Each created broker has `endpoints` property with the AMQP endpoint url and port.
+
+```python
+from aws_cdk import CfnOutput
+from cdklabs.cdk_amazonmq import IRabbitMqBroker
+
+# broker: IRabbitMqBroker
+
+
+CfnOutput(self, "AmqpEndpointUrl", value=broker.endpoints.amqp.url)
+CfnOutput(self, "AmqpEndpointPort", value=broker.endpoints.amqp.port.to_string())
+CfnOutput(self, "WebConsoleUrl", value=broker.endpoints.console.url)
+CfnOutput(self, "WebConsolePort", value=broker.endpoints.console.port.to_string())
+```
+
+### Allowing Connections to a RabbitMQ Broker
+
+For the RabbitMQ broker deployments that are not publically accessible and with specified VPC and subnets you can control who can access the broker using `connections` attribute.
+
+```python
+from aws_cdk.aws_ec2 import Peer, Port
+from cdklabs.cdk_amazonmq import IRabbitMqBroker, IRabbitMqBrokerDeployment
+
+# deployment: IRabbitMqBrokerDeployment
+# broker: IRabbitMqBroker
+
+
+# for the applications to interact over the AMQP protocol
+deployment.connections.allow_from(Peer.ipv4("1.2.3.4/8"), Port.tcp(broker.endpoints.amqp.port))
+
+# for the Web Console access
+deployment.connections.allow_from(Peer.ipv4("1.2.3.4/8"), Port.tcp(broker.endpoints.console.port))
+```
+
+Mind that `connections` will be defined only if VPC and subnets are specified.
+
+### Importing exisitng RabbitMQ Brokers
+
+To import an existing `RabbitMqBrokerInstance` use `.fromRabbitMqBrokerInstanceArn()` or `.fromRabbitMqBrokerInstanceNameAndId()` methods.
+
+```python
+from cdklabs.cdk_amazonmq import RabbitMqBrokerInstance
+
+
+broker = RabbitMqBrokerInstance.from_rabbit_mq_broker_instance_arn(self, "Imported", "arn:aws:mq:us-east-2:123456789012:broker:TestBroker:b-123456789012-123456789012")
+```
+
+If you want to use `.connections` you can additionally pass `securityGroups`:
+
+```python
+from aws_cdk.aws_ec2 import SecurityGroup
+from cdklabs.cdk_amazonmq import RabbitMqBrokerInstance
+
+
+sgs = [
+    SecurityGroup.from_security_group_id(self, "ImportedSG", "sg-123123123123")
+]
+
+broker = RabbitMqBrokerInstance.from_rabbit_mq_broker_instance_name_and_id(self, "Imported", "TestBroker", "b-123456789012-123456789012", sgs)
+```
+
+Similarly, `RabbitMqBrokerCluster` can be imported using `.fromRabbitMqClusterArn()` and `.fromRabbitMqClusterNameAndId()` methods.
+
+#### Importing dual-stack RabbitMQ Brokers
+
+From April 2025 Amazon MQ for RabbitMQ supports [using dual-stack endpoints for brokers](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/amazon-mq-release-notes.html). With this change the URL domain suffixes are changed and the use of the [`AWS::URLSuffix` pseudo-parameter](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/pseudo-parameter-reference.html#cfn-pseudo-param-urlsuffix) works correctly only for the IPv4 brokers. That is why the `.fromXXX` methods contain additional `urlSuffix` method parameter that can be used to specify the URL domain suffix. If the parameter is not provided - the usage of `endpoints.amqp.url` and `endpoints.console.url` will throw an error.
+
+The example below presents a situation in which accessing the AMQPS URL will throw an error.
+
+```python
+from aws_cdk import CfnOutput
+from aws_cdk.aws_ec2 import SecurityGroup
+from cdklabs.cdk_amazonmq import RabbitMqBrokerInstance
+
+
+sgs = [
+    SecurityGroup.from_security_group_id(self, "ImportedSG", "sg-123123123123")
+]
+
+broker = RabbitMqBrokerInstance.from_rabbit_mq_broker_instance_name_and_id(self, "Imported", "TestBroker", "b-123456789012-123456789012", sgs)
+
+CfnOutput(self, "AmqpUrl",
+    value=broker.endpoints.amqp.url
+)
+```
+
+In the below example, as the `urlSuffix` parameter is passed - the `url` property is accessible.
+
+```python
+from aws_cdk import CfnOutput
+from aws_cdk.aws_ec2 import SecurityGroup
+from cdklabs.cdk_amazonmq import RabbitMqBrokerInstance
+
+# url_suffix: str
+
+
+sgs = [
+    SecurityGroup.from_security_group_id(self, "ImportedSG", "sg-123123123123")
+]
+
+broker = RabbitMqBrokerInstance.from_rabbit_mq_broker_instance_name_and_id(self, "Imported", "TestBroker", "b-123456789012-123456789012", sgs, url_suffix)
+
+CfnOutput(self, "AmqpUrl",
+    value=broker.endpoints.amqp.url
+)
+```
+
+### RabbitMQ Broker User Management
+
+#### RabbitMQ Broker Simple Authentication
+
+RabbitMQ brokers support simple authentication using the RabbitMQ Management plugin. With this approach, users are managed directly through the RabbitMQ Management plugin and credentials are specified during broker deployment.
+
+***Note:*** While the `admin` property is still supported for backward compatibility, it is deprecated and discouraged. Use the `userManagement` property with `RabbitMqBrokerUserManagement.simple()` instead.
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import RabbitMqBrokerEngineVersion, RabbitMqBrokerInstance, RabbitMqBrokerUserManagement
+
+# stack: Stack
+# admin_secret: ISecret
+
+
+broker = RabbitMqBrokerInstance(stack, "RabbitMqBroker",
+    publicly_accessible=False,
+    version=RabbitMqBrokerEngineVersion.V3_13,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=RabbitMqBrokerUserManagement.simple(
+        admin=Admin(
+            username=admin_secret.secret_value_from_json("username").unsafe_unwrap(),
+            password=admin_secret.secret_value_from_json("password")
+        )
+    )
+)
+```
+
+#### RabbitMQ Broker Config-Managed Authentication
+
+Amazon MQ for RabbitMQ also supports config-managed authentication, which allows for external user management systems to handle authentication instead of using RabbitMQ's Management plugin. This approach provides more flexibility for integrating with existing authentication infrastructure.
+
+```python
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from cdklabs.cdk_amazonmq import RabbitMqBrokerEngineVersion, RabbitMqBrokerInstance, RabbitMqBrokerUserManagement
+
+# stack: Stack
+
+
+broker = RabbitMqBrokerInstance(stack, "RabbitMqBroker",
+    publicly_accessible=False,
+    version=RabbitMqBrokerEngineVersion.V3_13,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=RabbitMqBrokerUserManagement.config_managed()
+)
+```
+
+With config-managed authentication:
+
+* No users are created in the broker's Management plugin database
+* Authentication is handled through external configuration mechanisms
+* Currently supports OAuth authentication and authorization
+* Requires additional configuration outside of the broker deployment
+
+### RabbitMQ Broker Configurations
+
+If you do not specify a custom RabbitMQ Broker configuration, Amazon MQ for RabbitMQ will create a default configuration for the broker on your behalf. You can introduce custom configurations by explicitly creating one as in the example below:
+
+```python
+from aws_cdk import Duration
+from aws_cdk.aws_ec2 import InstanceClass, InstanceSize, InstanceType
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import RabbitMqBrokerConfiguration, RabbitMqBrokerConfigurationDefinition, RabbitMqBrokerEngineVersion, RabbitMqBrokerInstance, RabbitMqBrokerUserManagement
+
+# stack: Stack
+# admin_secret: ISecret
+
+
+custom_configuration = RabbitMqBrokerConfiguration(stack, "CustomConfiguration",
+    configuration_name="ConfigurationName",
+    description="ConfigurationDescription",
+    engine_version=RabbitMqBrokerEngineVersion.V3_13,
+    definition=RabbitMqBrokerConfigurationDefinition.parameters(
+        consumer_timeout=Duration.minutes(20)
+    )
+)
+
+broker = RabbitMqBrokerInstance(stack, "Broker",
+    publicly_accessible=False,
+    version=RabbitMqBrokerEngineVersion.V3_13,
+    instance_type=InstanceType.of(InstanceClass.T3, InstanceSize.MICRO),
+    user_management=RabbitMqBrokerUserManagement.simple(
+        admin=Admin(
+            username=admin_secret.secret_value_from_json("username").unsafe_unwrap(),
+            password=admin_secret.secret_value_from_json("password")
+        )
+    ),
+    configuration=custom_configuration
+)
+```
+
+A configuration can be associated with a specific broker also after the deployment. Then, it is required to be explicitly associated with the broker.
+
+```python
+from cdklabs.cdk_amazonmq import IRabbitMqBrokerConfiguration, IRabbitMqBrokerDeployment
+
+# configuration: IRabbitMqBrokerConfiguration
+# deployment: IRabbitMqBrokerDeployment
+
+
+configuration.associate_with(deployment)
+```
+
+This library also allows to modify an existing configuration. Such update of a particular configuration is [creating a new configuration *revision*](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/rabbitmq-creating-applying-configurations.html#creating-new-rabbitmq-configuration-revision-console) so that a history of revisions can be viewed in the AWS Console. The new revision can be then associated with the broker so it uses it as a working configuration.
+
+```python
+from aws_cdk import Duration
+from cdklabs.cdk_amazonmq import IRabbitMqBrokerConfiguration, IRabbitMqBrokerDeployment, RabbitMqBrokerConfigurationDefinition
+
+# configuration: IRabbitMqBrokerConfiguration
+# deployment: IRabbitMqBrokerDeployment
+# new_consumer_timeout: Duration
+
+
+new_revision = configuration.create_revision(
+    description="We need to modify the consumer timeout",
+    definition=RabbitMqBrokerConfigurationDefinition.parameters(
+        consumer_timeout=new_consumer_timeout
+    )
+)
+
+new_revision.associate_with(deployment)
+```
+
+### Monitoring RabbitMQ Brokers
+
+This library introduces [a set of metrics](https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/security-logging-monitoring-cloudwatch.html#rabbitmq-logging-monitoring) that we can use for the `IRabbitMqBrokerDeployment` monitoring. Each can be accessed as a method on the `IRabbitMqBrokerDeployment` with the convention `metric[MetricName]`. An example below shows how one can use that:
+
+```python
+from cdklabs.cdk_amazonmq import IRabbitMqBrokerDeployment
+
+# stack: Stack
+# deployment: IRabbitMqBrokerDeployment
+
+
+consumer_count_metric = deployment.metric_consumer_count()
+consumer_count_metric.create_alarm(stack, "ConsumerCountAlarm",
+    threshold=100,
+    evaluation_periods=3,
+    datapoints_to_alarm=2
+)
+```
+
+### RabbitMQ Broker Integration with AWS Lambda
+
+Amazon MQ for RabbitMQ broker queues can be used as event sources for AWS Lambda functions. For authentication only the PLAIN authentication mechanism is supported. Lambda consumes messages using the AMQP 0-9-1 protocol. No other protocols are supported for consuming messages. For more details on the requirements of the integration read [the documentation](https://docs.aws.amazon.com/lambda/latest/dg/with-mq.html).
+
+The example below presents an example of creating such an event source mapping:
+
+```python
+from aws_cdk.aws_lambda import IFunction
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import IRabbitMqBrokerDeployment, RabbitMqEventSource
+
+# target: IFunction
+# creds: ISecret # with username and password fields
+# broker: IRabbitMqBrokerDeployment
+# queue_name: str
+
+
+target.add_event_source(RabbitMqEventSource(
+    broker=broker,
+    credentials=creds,
+    queue_name=queue_name
+))
+```
+
+***Security:*** When adding an Amazon MQ for RabbitMQ as an AWS Lambda function's event source the library updates the execution role's permissions to satisfy [Amazon MQ requirements for provisioning the event source mapping](https://docs.aws.amazon.com/lambda/latest/dg/with-mq.html#events-mq-permissions).
+
+In the case of a private deployment the defined event source mapping will create a set of Elastic Network Interfaces (ENIs) in the subnets in which the broker deployment created communication VPC Endpoints. Thus, in order to allow the event source mapping to communicate with the broekr one needs to additionally allow inbound traffic from the ENIs. As ENIs will use the same security group that governs the access to the VPC Endpoints you can simply allow communication from the broker's security group to itself on the AMQP port as in the example below:
+
+```python
+from cdklabs.cdk_amazonmq import IRabbitMqBrokerDeployment
+
+# deployment: IRabbitMqBrokerDeployment
+
+
+deployment.connections.allow_default_port_internally()
+```
+
+### Using RabbitMQ Management HTTP API
+
+This library allows for interacting with Amazon MQ for RabbitMQ brokers with the use of RabbitMQ Management HTTP API through the use of `RabbitMqCustomResource`. This resource follows the user experience of [`AwsCustomResource`](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.custom_resources.AwsCustomResource.html) and is underpinned by a [`SingletonFunction`](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_lambda.SingletonFunction.html). The custom resource creates such singleton function per a combination of `broker`, `credentials`, `vpc`, `vpcSubnets`, and `securityGroups`. This allows for limiting the number of resources, but limits the scope per permissions (through taking into consideration `broker` and `credentials`) and connectivity (through `vpc`, `vpcSubnets`, and `securityGroups`).
+
+An example use of the `RabbitMqCustomResource` is presented below:
+
+```python
+from aws_cdk.aws_iam import PolicyStatement
+from aws_cdk.aws_logs import LogGroup, RetentionDays
+from aws_cdk.aws_secretsmanager import ISecret
+from aws_cdk.custom_resources import PhysicalResourceId
+from cdklabs.cdk_amazonmq import HttpMethods, IRabbitMqBroker, RabbitMqCustomResource, RabbitMqCustomResourcePolicy
+
+# stack: Stack
+# username: str
+# user_creds: ISecret # with username/password fields
+# broker: IRabbitMqBroker
+# broker_admin_creds: ISecret
+# with username/password fields of the broker admin
+
+user = RabbitMqCustomResource(stack, "CreateUser",
+    broker=broker,
+    credentials=broker_admin_creds,
+    log_group=LogGroup(stack, "RmqCustomResourceLogGroup",
+        retention=RetentionDays.ONE_DAY
+    ),
+    on_update=RabbitMqApiCall(
+        path=f"/api/users/{userCreds.secretValueFromJson('username')}",
+        method=HttpMethods.PUT,
+        payload={
+            "password": user_creds.secret_value_from_json("password"),
+            "tags": ""
+        },
+        physical_resource_id=PhysicalResourceId.of(f"{username}-create")
+    ),
+    on_delete=RabbitMqApiCall(
+        path=f"/api/users/{userCreds.secretValueFromJson('username')}",
+        method=HttpMethods.DELETE
+    ),
+    policy=RabbitMqCustomResourcePolicy.from_statements([
+        PolicyStatement(
+            actions=["secretsmanager:GetSecretValue"],
+            resources=[user_creds.secret_arn]
+        )
+    ])
+)
+```
+
+The above example binds the creation, updating and deletion of a RabbitMQ user. The behavior of `onCreate` and `onUpdate` of the `RabbitMqCustomResource` follows the behavior of the `AwsCustomResource` in that if there is no `onCreate`, and only `onUpdate` - this will be used for both: `onCreate` and `onUpdate`.
+
+Additionally, `RabbitMqCustomResource` can read information from the SecretManager Secrets which allows to set the password of the user without exposing it. As this requires read permissions on the secret itself - it is allowed with the use of `RabbitMqCustomResourcePolicy`.
+
+`RabbitMqCustomResource` also replicates the formatting of the output from the commands replicating the behavior of `AwsCustomResource`. It means that the output is flattened and to retrieve any field form the `RabbitMqCustomResource` instance the flattened path needs to be applied. The example below shows how to retrieve the name of the broker node of a `RabbitMqBrokerInstance`:
+
+```python
+from aws_cdk.aws_secretsmanager import ISecret
+from cdklabs.cdk_amazonmq import RabbitMqBrokerInstance, RabbitMqCustomResource
+
+# stack: Stack
+# broker: RabbitMqBrokerInstance
+# credentials: ISecret
+
+
+get_nodes_name = RabbitMqCustomResource(self, "GetNodes",
+    broker=broker,
+    credentials=credentials,
+    on_create=RabbitMqApiCall(
+        path="/api/nodes"
+    )
+)
+
+# accessing the field returned by the call
+get_nodes_name.get_response_field("0.name")
+```
+
+In the example presented the response of the call to `/api/nodes` endpoint is an JSON array of objects. For the `RabbitMqBrokerInstance` there will be a single object, whereas for the `RabbitMqBrokerCluster` there will be three objects presenting information for each node. Arrays are flattened by using the index for a position of the object and that is why the name of the first (and in the example only) node will is retrieved by specifying the response field name `0.name`.
+
+### External Examples
+
+This section includes additional examples and use cases for working with RabbitMQ Brokers using the AWS::AmazonMQ L2+ Construct Library.
+
+* **[AWS CDK Example for RabbitMQ Lambda Integration](https://github.com/aws-samples/aws-cdk-examples/tree/main/typescript/amazon-mq-rabbitmq-lambda)**:
+  A practical example from the **aws-samples/aws-cdk-examples** repository, demonstrating how to integrate RabbitMQ Brokers with AWS Lambda using this library. This example also integrates with AWS Secrets Manager for secure credential management and sets up a CloudWatch Log Group for logging.
