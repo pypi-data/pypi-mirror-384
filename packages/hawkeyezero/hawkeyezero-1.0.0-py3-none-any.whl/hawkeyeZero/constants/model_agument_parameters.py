@@ -1,0 +1,11 @@
+fliplr=0.5
+flipud=0.0
+hsv_h=0.0
+hsv_s=0.0
+hsv_v=0.0
+translate=0.05
+scale=0.1
+shear=0.0
+perspective=0.0
+mosaic=0.3
+mixup=0.0
