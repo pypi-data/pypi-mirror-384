@@ -1,0 +1,134 @@
+ {% extends "territories_dashboard_lib/website/layout/base.html" %}
+
+{% load static %}
+{% load other_filters %}
+
+{% block page_title %}{{indicator.title}}{% endblock %}
+
+{% block extra_head%}
+    <script defer src="{% static 'territories_dashboard_lib/website/js/react18.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/js/reactdom18.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/js/html2canvas.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/js/chart.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/js/chartjs-plugin-datalabels.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/js/patternomaly.js' %}"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script defer src="https://unpkg.com/deck.gl@9.0.38/dist.min.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.1/mapbox-gl.css" rel="stylesheet">
+    <script defer src="https://api.mapbox.com/mapbox-gl-js/v3.9.1/mapbox-gl.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script src=" https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js "></script>
+    
+    {{ params|json_script:"params-js" }}
+    {{ indicator|json_script:"indicator-js" }}
+    {% with indicator.id|stringformat:"i"|add:"-api-urls" as script_name %}
+        {{ indicator|indicator_api_urls|json_script:script_name }}
+    {% endwith %}
+    
+    <script defer src="{% static 'territories_dashboard_lib/website/react/vendors.bundle.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/react/indicatorMap.bundle.js' %}"></script>
+    <script defer src="{% static 'territories_dashboard_lib/website/react/sankeyGraph.bundle.js' %}"></script>
+    <script defer type="module" src="{% static 'territories_dashboard_lib/website/js/pages/indicators/details/page.mjs' %}"></script>
+{% endblock %}
+
+
+{% block css %}
+    {% include "territories_dashboard_lib/website/pages/indicators/details/page.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/details/map.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/geo_params.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/themes-list.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/side_panel_geo.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/side_panel.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/side_panel_methodo.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/details/components/filters-reminder.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/chart-buttons.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/details/components/table.css" %}
+    {% include "territories_dashboard_lib/website/pages/indicators/components/title.css" %}
+{% endblock %}
+
+
+{% block main %}
+<div class="tdbmd-thematics">
+    <div class="fr-grid-row">
+        <aside id="left-menu" class="fr-col-md-3 fr-col-12 fr-pt-md-5w fr-pt-0">
+            {% include "territories_dashboard_lib/website/pages/indicators/components/themes-nav.html" %}
+        </aside>
+        <main role="main" class="tdbmd-thematics__content tdbmd-content fr-col-12 fr-col-md-9" id="contenu" tabindex="-1">
+            {% include "territories_dashboard_lib/website/pages/indicators/components/geo_params.html" %}
+            {% include "territories_dashboard_lib/website/pages/indicators/components/themes-list.html" %}
+            <div class="fr-mt-8w">
+                <div class="fr-px-md-4w fr-px-2w fr-mb-6w">
+                    <nav role="navigation" class="fr-breadcrumb" aria-label="vous êtes ici :">
+                        <button class="fr-breadcrumb__button" aria-expanded="false" aria-controls="breadcrumb-1">Voir le fil d’Ariane</button>
+                        <div class="fr-collapse" id="breadcrumb-1">
+                            <ol class="fr-breadcrumb__list">
+                                <li>
+                                    <a class="fr-breadcrumb__link" href="/">Accueil</a>
+                                </li>
+                                <li>
+                                    <a class="fr-breadcrumb__link" href="{% url 'website:theme' theme_name=theme.name %}">{{theme.title}}</a>
+                                </li>
+                                <li>
+                                    <a class="fr-breadcrumb__link" href="{% url 'website:theme' theme_name=theme.name %}#{{subtheme.name}}">{{subtheme.title}}</a>
+                                </li>
+                                <li>
+                                    <a class="fr-breadcrumb__link" aria-current="page">{{indicator.title}}</a>
+                                </li>
+                            </ol>
+                        </div>
+                    </nav>
+                    <h1>{{ indicator.title }}</h1>
+                    {% if indicator.source %}
+                        <p class="tdbmd-indicator-source">
+                            <span class="tdbmd-indicator-source__title">Source</span>
+                            <span>:</span>
+                            {{indicator.source}}
+                        </p>
+                    {% endif %}
+                    <button
+                    class="fr-btn fr-btn--secondary fr-btn--sm fr-icon-file-line fr-btn--icon-right"
+                    aria-label="Afficher la fiche méthodologique dans la barre latérale"
+                    aria-controls="slide-panel-methodo"
+                    >
+                        Fiche méthodologique
+                    </button>
+                </div>
+                <div class="fr-px-md-4w fr-px-2w">
+                    <div id="filtres" class="fr-tag-list fr-mt-4w" role="group" aria-label="Filtres disponibles">
+                            {% for dimension_filters in filters %}
+                                <div class="filters-dimension" data-dimension="{{ dimension_filters.0.db_name }}" data-breakdown="{{ dimension_filters.0.is_breakdown|yesno:'true,false' }}">
+                                    {% if filters|length > 1 %}
+                                        <label>{{ dimension_filters.0.title }}</label>
+                                    {% endif %}
+                                    <div >
+                                        {% for filter in dimension_filters.1 %}
+                                            <button
+                                                class="fr-tag filter-tag"
+                                                data-indicator="{{ indicator.id }}"
+                                                data-dimension="{{ dimension_filters.0.db_name }}"
+                                                data-default="{{ filter.default|yesno:'true,false' }}"
+                                                data-setfromurl="{{ filter.set_from_url|yesno:'true,false' }}"
+                                                aria-pressed="{% if filter.current %}true{% endif %}"
+                                            >
+                                                {{filter.db_name}}
+                                            </button>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                    </div>
+                </div>
+                {% include "./components/map.html" %}
+                {% include "./components/sankey.html" %}
+                {% include "./components/proportions.html" %}
+                {% include "./components/top10.html" %}
+                {% include "./components/histogram.html" %}
+                {% include "./components/table-values.html" %}
+                {% include "./components/table-flows.html" %}
+            </div>
+            {% include "territories_dashboard_lib/website/pages/indicators/components/side_panel_geo.html" %}
+            {% include "territories_dashboard_lib/website/pages/indicators/components/side_panel_methodo.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}
