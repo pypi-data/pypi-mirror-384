@@ -1,0 +1,742 @@
+Index: isubrip/__main__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport atexit\r\nimport logging\r\nfrom pathlib import Path\r\nimport shutil\r\nimport sys\r\nfrom typing import List\r\n\r\nimport requests\r\nfrom requests.utils import default_user_agent\r\n\r\nfrom isubrip.config import Config, ConfigError, ConfigSetting, SpecialConfigType\r\nfrom isubrip.constants import (\r\n    ARCHIVE_FORMAT,\r\n    DATA_FOLDER_PATH,\r\n    DEFAULT_CONFIG_PATH,\r\n    LOG_FILE_NAME,\r\n    LOG_FILES_PATH,\r\n    PACKAGE_NAME,\r\n    PACKAGE_VERSION,\r\n    PREORDER_MESSAGE,\r\n    TEMP_FOLDER_PATH,\r\n    USER_CONFIG_FILE,\r\n)\r\nfrom isubrip.data_structures import (\r\n    Episode,\r\n    MediaBase,\r\n    MediaData,\r\n    Movie,\r\n    ScrapedMediaResponse,\r\n    Season,\r\n    Series,\r\n    SubtitlesData,\r\n    SubtitlesDownloadResults,\r\n)\r\nfrom isubrip.logger import CustomLogFileFormatter, CustomStdoutFormatter, logger\r\nfrom isubrip.scrapers.scraper import PlaylistLoadError, Scraper, ScraperError, ScraperFactory\r\nfrom isubrip.subtitle_formats.webvtt import Caption as WebVTTCaption\r\nfrom isubrip.utils import (\r\n    download_subtitles_to_file,\r\n    generate_media_description,\r\n    generate_non_conflicting_path,\r\n    generate_release_name,\r\n    raise_for_status,\r\n    single_to_list,\r\n)\r\n\r\nLOG_ROTATION_SIZE: int | None = None\r\n\r\nBASE_CONFIG_SETTINGS = [\r\n    ConfigSetting(\r\n        key=\"check-for-updates\",\r\n        type=bool,\r\n        category=\"general\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"log_rotation_size\",\r\n        type=str,\r\n        category=\"general\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"add-release-year-to-series\",\r\n        type=bool,\r\n        category=\"downloads\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"folder\",\r\n        type=str,\r\n        category=\"downloads\",\r\n        required=True,\r\n        special_type=SpecialConfigType.EXISTING_FOLDER_PATH,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"languages\",\r\n        type=List[str],\r\n        category=\"downloads\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"overwrite-existing\",\r\n        type=bool,\r\n        category=\"downloads\",\r\n        required=True,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"zip\",\r\n        type=bool,\r\n        category=\"downloads\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"fix-rtl\",\r\n        type=bool,\r\n        category=\"subtitles\",\r\n        required=True,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"rtl-languages\",\r\n        type=List[str],\r\n        category=\"subtitles\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"remove-duplicates\",\r\n        type=bool,\r\n        category=\"subtitles\",\r\n        required=True,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"convert-to-srt\",\r\n        type=bool,\r\n        category=\"subtitles\",\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"subrip-alignment-conversion\",\r\n        type=bool,\r\n        category=(\"subtitles\", \"webvtt\"),\r\n        required=False,\r\n    ),\r\n    ConfigSetting(\r\n        key=\"user-agent\",\r\n        type=str,\r\n        category=\"scrapers\",\r\n        required=True,\r\n    ),\r\n]\r\n\r\n\r\ndef main() -> None:\r\n    try:\r\n        # Assure at least one argument was passed\r\n        if len(sys.argv) < 2:\r\n            print_usage()\r\n            exit(0)\r\n\r\n        create_required_folders()\r\n        setup_loggers(stdout_loglevel=logging.INFO,\r\n                      file_loglevel=logging.DEBUG)\r\n\r\n        cli_args = \" \".join(sys.argv[1:])\r\n        logger.debug(f\"Used CLI Command: {PACKAGE_NAME} {cli_args}\")\r\n        logger.debug(f\"Python version: {sys.version}\")\r\n        logger.debug(f\"Package version: {PACKAGE_VERSION}\")\r\n        logger.debug(f\"OS: {sys.platform}\")\r\n\r\n        config = generate_config()\r\n        update_settings(config)\r\n\r\n        if config.general.get(\"check-for-updates\", True):\r\n            check_for_updates(current_package_version=PACKAGE_VERSION)\r\n\r\n        urls = single_to_list(sys.argv[1:])\r\n        download(urls=urls, config=config)\r\n\r\n    except Exception as ex:\r\n        logger.error(f\"Error: {ex}\")\r\n        logger.debug(f\"Stack trace: {ex}\", exc_info=True)\r\n        exit(1)\r\n\r\n    finally:\r\n        if log_rotation_size := LOG_ROTATION_SIZE:\r\n            handle_log_rotation(log_rotation_size=log_rotation_size)\r\n\r\n        scraper_factory = ScraperFactory()\r\n\r\n        # NOTE: This will only close scrapers that were initialized using the ScraperFactory.\r\n        for scraper in scraper_factory.get_initialized_scrapers():\r\n            scraper.close()\r\n\r\n\r\ndef download(urls: list[str], config: Config) -> None:\r\n    \"\"\"\r\n    Download subtitles from a given URL.\r\n\r\n    Args:\r\n        urls (list[str]): A list of URLs to download subtitles from.\r\n        config (Config): A config to use for downloading subtitles.\r\n    \"\"\"\r\n    scraper_factory = ScraperFactory()\r\n\r\n    for url in urls:\r\n        try:\r\n            logger.info(f\"Scraping '{url}'...\")\r\n\r\n            scraper = scraper_factory.get_scraper_instance(url=url, config_data=config.data.get(\"scrapers\"))\r\n            atexit.register(scraper.close)\r\n            scraper.config.check()  # Recheck config after scraper settings were loaded\r\n\r\n            try:\r\n                scraper_response: ScrapedMediaResponse = scraper.get_data(url=url)\r\n\r\n            except ScraperError as e:\r\n                logger.error(f\"Error: {e}\")\r\n                logger.debug(\"Debug information:\", exc_info=True)\r\n                continue\r\n\r\n            media_data: List[MediaBase] = single_to_list(scraper_response.media_data)\r\n            playlist_scraper = scraper_factory.get_scraper_instance(scraper_id=scraper_response.playlist_scraper,\r\n                                                                    config_data=config.data.get(\"scrapers\"))\r\n\r\n            if not media_data:\r\n                logger.error(f\"Error: No supported media was found for {url}.\")\r\n                continue\r\n\r\n            for media_item in media_data:\r\n                try:\r\n                    object_type_str = media_item.__class__.__name__.lower()\r\n\r\n                    logger.info(f\"Found {object_type_str}: {generate_media_description(media_data=media_item)}\")\r\n                    download_media(scraper=playlist_scraper, media_item=media_item, config=config)\r\n\r\n                except Exception as e:\r\n                    if len(media_data) > 1:\r\n                        logger.warning(f\"Error scraping media item \"\r\n                                       f\"'{generate_media_description(media_data=media_item)}': {e}\\n\"\r\n                                       f\"Skipping to next media item...\")\r\n                        logger.debug(\"Debug information:\", exc_info=True)\r\n                        continue\r\n\r\n                    raise\r\n\r\n        except Exception as e:\r\n            logger.error(f\"Error while scraping '{url}': {e}\")\r\n            logger.debug(\"Debug information:\", exc_info=True)\r\n            continue\r\n\r\n\r\ndef download_media(scraper: Scraper, media_item: MediaData, config: Config) -> None:\r\n    \"\"\"\r\n    Download a media item.\r\n\r\n    Args:\r\n        scraper (Scraper): A Scraper object to use for downloading subtitles.\r\n        media_item (MediaData): A media data item to download subtitles for.\r\n        config (Config): A config to use for downloading subtitles.\r\n    \"\"\"\r\n    if isinstance(media_item, Series):\r\n        for season in media_item.seasons:\r\n            download_media(scraper=scraper, media_item=season, config=config)\r\n            return\r\n\r\n    if isinstance(media_item, Season):\r\n        for episode in media_item.episodes:\r\n            logger.info(f\"{generate_media_description(media_data=episode)}:\")\r\n            download_media(scraper=scraper, media_item=episode, config=config)\r\n            return\r\n\r\n    if media_item.playlist:\r\n        download_subtitles_kwargs = {\r\n            \"download_path\": Path(config.downloads[\"folder\"]),\r\n            \"language_filter\": config.downloads.get(\"languages\"),\r\n            \"convert_to_srt\": config.subtitles.get(\"convert-to-srt\", False),\r\n            \"overwrite_existing\": config.downloads.get(\"overwrite-existing\", False),\r\n            \"zip_files\": config.downloads.get(\"zip\", False),\r\n        }\r\n\r\n        try:\r\n            results = download_subtitles(scraper=scraper,\r\n                                         media_data=media_item,\r\n                                         **download_subtitles_kwargs)\r\n\r\n            success_count = len(results.successful_subtitles)\r\n            failed_count = len(results.failed_subtitles)\r\n\r\n            if success_count:\r\n                logger.info(f\"{success_count}/{success_count + failed_count} matching subtitles \"\r\n                            f\"have been successfully downloaded.\")\r\n\r\n            elif failed_count:\r\n                logger.info(f\"{failed_count} subtitles were matched, but failed to download.\")\r\n\r\n            else:\r\n                logger.info(\"No matching subtitles were found.\")\r\n\r\n            return  # noqa: TRY300\r\n\r\n        except PlaylistLoadError:\r\n            pass\r\n\r\n    # We get here if there is no playlist, or there is one, but it failed to load\r\n    if isinstance(media_item, Movie) and media_item.preorder_availability_date:\r\n        preorder_date_str = media_item.preorder_availability_date.strftime(\"%Y-%m-%d\")\r\n        logger.info(PREORDER_MESSAGE.format(movie_name=media_item.name, scraper_name=scraper.name,\r\n                                            preorder_date=preorder_date_str))\r\n\r\n    else:\r\n        logger.error(\"No valid playlist was found.\")\r\n\r\n\r\ndef check_for_updates(current_package_version: str) -> None:\r\n    \"\"\"\r\n    Check and print if a newer version of the package is available, and log accordingly.\r\n\r\n    Args:\r\n        current_package_version (str): The current version of the package.\r\n    \"\"\"\r\n    api_url = f\"https://pypi.org/pypi/{PACKAGE_NAME}/json\"\r\n    logger.debug(\"Checking for package updates on PyPI...\")\r\n    try:\r\n        response = requests.get(\r\n            url=api_url,\r\n            headers={\"Accept\": \"application/json\"},\r\n            timeout=5,\r\n        )\r\n        raise_for_status(response)\r\n        response_data = response.json()\r\n\r\n        pypi_latest_version = response_data[\"info\"][\"version\"]\r\n\r\n        if pypi_latest_version != current_package_version:\r\n            logger.warning(f\"You are currently using version '{current_package_version}' of '{PACKAGE_NAME}', \"\r\n                           f\"however version '{pypi_latest_version}' is available.\"\r\n                           f'\\nConsider upgrading by running \"python3 -m pip install --upgrade {PACKAGE_NAME}\"\\n')\r\n\r\n        else:\r\n            logger.debug(f\"Latest version of '{PACKAGE_NAME}' ({current_package_version}) is currently installed.\")\r\n\r\n    except Exception as e:\r\n        logger.warning(f\"Update check failed: {e}\")\r\n        logger.debug(f\"Stack trace: {e}\", exc_info=True)\r\n        return\r\n\r\n\r\ndef create_required_folders() -> None:\r\n    if not DATA_FOLDER_PATH.is_dir():\r\n        logger.debug(f\"'{DATA_FOLDER_PATH}' directory could not be found and will be created.\")\r\n        LOG_FILES_PATH.mkdir(parents=True, exist_ok=True)\r\n\r\n    else:\r\n        if not LOG_FILES_PATH.is_dir():\r\n            logger.debug(f\"'{LOG_FILES_PATH}' directory could not be found and will be created.\")\r\n            LOG_FILES_PATH.mkdir()\r\n\r\n\r\ndef download_subtitles(scraper: Scraper, media_data: Movie | Episode, download_path: Path,\r\n                       language_filter: list[str] | None = None, convert_to_srt: bool = False,\r\n                       overwrite_existing: bool = True, zip_files: bool = False) -> SubtitlesDownloadResults:\r\n    \"\"\"\r\n    Download subtitles for the given media data.\r\n\r\n    Args:\r\n        scraper (Scraper): A Scraper object to use for downloading subtitles.\r\n        media_data (Movie | Episode): A movie or episode data object.\r\n        download_path (Path): Path to a folder where the subtitles will be downloaded to.\r\n        language_filter (list[str] | None): List of specific languages to download subtitles for.\r\n            None for all languages (no filter). Defaults to None.\r\n        convert_to_srt (bool, optional): Whether to convert the subtitles to SRT format. Defaults to False.\r\n        overwrite_existing (bool, optional): Whether to overwrite existing subtitles. Defaults to True.\r\n        zip_files (bool, optional): Whether to unite the subtitles into a single zip file\r\n            (only if there are multiple subtitles).\r\n\r\n    Returns:\r\n        SubtitlesDownloadResults: A SubtitlesDownloadResults object containing the results of the download.\r\n    \"\"\"\r\n    temp_download_path = generate_media_path(base_path=TEMP_FOLDER_PATH,\r\n                                             media_data=media_data,\r\n                                             source=scraper.abbreviation)\r\n    atexit.register(shutil.rmtree, TEMP_FOLDER_PATH, ignore_errors=False, onerror=None)\r\n\r\n    successful_downloads: list[SubtitlesData] = []\r\n    failed_downloads: list[SubtitlesData] = []\r\n    temp_downloads: list[Path] = []\r\n\r\n    for subtitles_data in scraper.get_subtitles(main_playlist=media_data.playlist,  # type: ignore[arg-type]\r\n                                                language_filter=language_filter,\r\n                                                subrip_conversion=convert_to_srt):\r\n        language_data = f\"{subtitles_data.language_name} ({subtitles_data.language_code})\"\r\n\r\n        if subtitles_type := subtitles_data.special_type:\r\n            language_data += f\" [{subtitles_type.value}]\"\r\n\r\n        try:\r\n            temp_downloads.append(download_subtitles_to_file(\r\n                media_data=media_data,\r\n                subtitles_data=subtitles_data,\r\n                output_path=temp_download_path,\r\n                source_abbreviation=scraper.abbreviation,\r\n                overwrite=overwrite_existing,\r\n            ))\r\n\r\n            logger.info(f\"{language_data} subtitles were successfully downloaded.\")\r\n            successful_downloads.append(subtitles_data)\r\n\r\n        except Exception as e:\r\n            logger.error(f\"Error: Failed to download '{language_data}' subtitles: {e}\")\r\n            logger.debug(\"Stack trace:\", exc_info=True)\r\n            failed_downloads.append(subtitles_data)\r\n            continue\r\n\r\n    if not zip_files or len(temp_downloads) == 1:\r\n        for file_path in temp_downloads:\r\n            if overwrite_existing:\r\n                new_path = download_path / file_path.name\r\n\r\n            else:\r\n                new_path = generate_non_conflicting_path(download_path / file_path.name)\r\n\r\n            # str conversion needed only for Python <= 3.8 - https://github.com/python/cpython/issues/76870\r\n            shutil.move(src=str(file_path), dst=new_path)\r\n\r\n    elif len(temp_downloads) > 0:\r\n        archive_path = Path(shutil.make_archive(\r\n            base_name=str(temp_download_path.parent / temp_download_path.name),\r\n            format=ARCHIVE_FORMAT,\r\n            root_dir=temp_download_path,\r\n        ))\r\n\r\n        file_name = generate_media_folder_name(media_data=media_data,\r\n                                               source=scraper.abbreviation) + f\".{ARCHIVE_FORMAT}\"\r\n\r\n        if overwrite_existing:\r\n            destination_path = download_path / file_name\r\n\r\n        else:\r\n            destination_path = generate_non_conflicting_path(download_path / file_name)\r\n\r\n        shutil.move(src=str(archive_path), dst=destination_path)\r\n\r\n    shutil.rmtree(temp_download_path)\r\n    atexit.unregister(shutil.rmtree)\r\n\r\n    return SubtitlesDownloadResults(\r\n        movie_data=media_data,\r\n        successful_subtitles=successful_downloads,\r\n        failed_subtitles=failed_downloads,\r\n        is_zip=zip_files,\r\n    )\r\n\r\n\r\ndef handle_log_rotation(log_rotation_size: int) -> None:\r\n    \"\"\"\r\n    Handle log rotation and remove old log files if needed.\r\n\r\n    Args:\r\n        log_rotation_size (int): Maximum amount of log files to keep.\r\n    \"\"\"\r\n    sorted_log_files = sorted(LOG_FILES_PATH.glob(\"*.log\"), key=lambda file: file.stat().st_mtime, reverse=True)\r\n\r\n    if len(sorted_log_files) > log_rotation_size:\r\n        for log_file in sorted_log_files[log_rotation_size:]:\r\n            log_file.unlink()\r\n\r\n\r\ndef generate_config() -> Config:\r\n    \"\"\"\r\n    Generate a config object using config files, and validate it.\r\n\r\n    Returns:\r\n        Config: A config object.\r\n\r\n    Raises:\r\n        ConfigException: If there is a general config error.\r\n        MissingConfigValue: If a required config value is missing.\r\n        InvalidConfigValue: If a config value is invalid.\r\n    \"\"\"\r\n    if not DEFAULT_CONFIG_PATH.is_file():\r\n        raise ConfigError(\"Default config file could not be found.\")\r\n\r\n    config = Config(config_settings=BASE_CONFIG_SETTINGS)\r\n\r\n    logger.debug(\"Loading default config data...\")\r\n\r\n    with DEFAULT_CONFIG_PATH.open('r') as data:\r\n        config.loads(config_data=data.read(), check_config=True)\r\n\r\n    logger.debug(\"Default config data loaded and validated successfully.\")\r\n\r\n    # If logs folder doesn't exist, create it (also handles data folder)\r\n    if not DATA_FOLDER_PATH.is_dir():\r\n        logger.debug(f\"'{DATA_FOLDER_PATH}' directory could not be found and will be created.\")\r\n        DATA_FOLDER_PATH.mkdir(parents=True, exist_ok=True)\r\n        LOG_FILES_PATH.mkdir()\r\n\r\n    else:\r\n        if not LOG_FILES_PATH.is_dir():\r\n            logger.debug(f\"'{LOG_FILES_PATH}' directory could not be found and will be created.\")\r\n            LOG_FILES_PATH.mkdir()\r\n\r\n        # If a user config file exists, add it to config_files\r\n        if USER_CONFIG_FILE.is_file():\r\n            logger.info(f\"User config file detected at '{USER_CONFIG_FILE}' and will be used.\")\r\n\r\n            with USER_CONFIG_FILE.open('r') as data:\r\n                config.loads(config_data=data.read(), check_config=True)\r\n\r\n            logger.debug(\"User config file loaded and validated successfully.\")\r\n\r\n    return config\r\n\r\n\r\ndef generate_media_folder_name(media_data: Movie | Episode, source: str | None = None) -> str:\r\n    \"\"\"\r\n    Generate a folder name for media data.\r\n\r\n    Args:\r\n        media_data (Movie | Episode): A movie or episode data object.\r\n        source (str | None, optional): Abbreviation of the source to use for file names. Defaults to None.\r\n\r\n    Returns:\r\n        str: A folder name for the media data.\r\n    \"\"\"\r\n    if isinstance(media_data, Movie):\r\n        return generate_release_name(\r\n            title=media_data.name,\r\n            release_date=media_data.release_date,\r\n            media_source=source,\r\n        )\r\n\r\n    # elif isinstance(media_data, Episode):\r\n    return generate_release_name(\r\n        title=media_data.series_name,\r\n        season_number=media_data.season_number,\r\n        media_source=source,\r\n    )\r\n\r\n\r\ndef generate_media_path(base_path: Path, media_data: Movie | Episode, source: str | None = None) -> Path:\r\n    \"\"\"\r\n    Generate a temporary folder for downloading media data.\r\n\r\n    Args:\r\n        base_path (Path): A base path to generate the folder in.\r\n        media_data (Movie | Episode): A movie or episode data object.\r\n        source (str | None, optional): Abbreviation of the source to use for file names. Defaults to None.\r\n\r\n    Returns:\r\n        Path: A path to the temporary folder.\r\n    \"\"\"\r\n    temp_folder_name = generate_media_folder_name(media_data=media_data, source=source)\r\n    path = generate_non_conflicting_path(base_path / temp_folder_name, has_extension=False)\r\n    path.mkdir(parents=True, exist_ok=True)\r\n\r\n    return path\r\n\r\n\r\ndef update_settings(config: Config) -> None:\r\n    \"\"\"\r\n    Update settings according to config.\r\n\r\n    Args:\r\n        config (Config): An instance of a config to set settings according to.\r\n    \"\"\"\r\n    Scraper.subtitles_fix_rtl = config.subtitles[\"fix-rtl\"]\r\n    Scraper.subtitles_fix_rtl_languages = config.subtitles.get(\"rtl-languages\")\r\n    Scraper.subtitles_remove_duplicates = config.subtitles[\"remove-duplicates\"]\r\n    Scraper.default_user_agent = config.scrapers.get(\"user-agent\", default_user_agent())\r\n    WebVTTCaption.subrip_alignment_conversion = (\r\n        config.subtitles.get(\"webvtt\", {}).get(\"subrip-alignment-conversion\", False)\r\n    )\r\n\r\n    if log_rotation := config.general.get(\"log-rotation-size\"):\r\n        global LOG_ROTATION_SIZE\r\n        LOG_ROTATION_SIZE = log_rotation\r\n\r\n\r\ndef print_usage() -> None:\r\n    \"\"\"Print usage information.\"\"\"\r\n    logger.info(f\"Usage: {PACKAGE_NAME} <iTunes movie URL> [iTunes movie URL...]\")\r\n\r\n\r\ndef setup_loggers(stdout_loglevel: int, file_loglevel: int) -> None:\r\n    \"\"\"\r\n    Configure loggers.\r\n\r\n    Args:\r\n        stdout_loglevel (int): Log level for STDOUT logger.\r\n        file_loglevel (int): Log level for logfile logger.\r\n    \"\"\"\r\n    logger.setLevel(logging.DEBUG)\r\n\r\n    # Setup STDOUT logger\r\n    stdout_handler = logging.StreamHandler(sys.stdout)\r\n    stdout_handler.setLevel(stdout_loglevel)\r\n    stdout_handler.setFormatter(CustomStdoutFormatter())\r\n    logger.addHandler(stdout_handler)\r\n\r\n    # Setup logfile logger\r\n    logfile_path = generate_non_conflicting_path(LOG_FILES_PATH / LOG_FILE_NAME)\r\n    logfile_handler = logging.FileHandler(filename=logfile_path, encoding=\"utf-8\")\r\n    logfile_handler.setLevel(file_loglevel)\r\n    logfile_handler.setFormatter(CustomLogFileFormatter())\r\n    logger.addHandler(logfile_handler)\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/__main__.py b/isubrip/__main__.py
+--- a/isubrip/__main__.py	(revision 24f7a5335ae74530671de4e8d6aaa8ef20cb960f)
++++ b/isubrip/__main__.py	(date 1705785982551)
+@@ -43,7 +43,7 @@
+     generate_non_conflicting_path,
+     generate_release_name,
+     raise_for_status,
+-    single_to_list,
++    single_to_list, TempDirectoryGenerator,
+ )
+ 
+ LOG_ROTATION_SIZE: int | None = None
+@@ -139,7 +139,7 @@
+             exit(0)
+ 
+         create_required_folders()
+-        setup_loggers(stdout_loglevel=logging.INFO,
++        setup_loggers(stdout_loglevel=logging.DEBUG,
+                       file_loglevel=logging.DEBUG)
+ 
+         cli_args = " ".join(sys.argv[1:])
+@@ -172,6 +172,8 @@
+         for scraper in scraper_factory.get_initialized_scrapers():
+             scraper.close()
+ 
++        TempDirectoryGenerator.cleanup()
++
+ 
+ def download(urls: list[str], config: Config) -> None:
+     """
+@@ -192,6 +194,7 @@
+             scraper.config.check()  # Recheck config after scraper settings were loaded
+ 
+             try:
++                logger.debug(f"Fetching '{url}'...")
+                 scraper_response: ScrapedMediaResponse = scraper.get_data(url=url)
+ 
+             except ScraperError as e:
+@@ -242,13 +245,13 @@
+     if isinstance(media_item, Series):
+         for season in media_item.seasons:
+             download_media(scraper=scraper, media_item=season, config=config)
+-            return
++        return
+ 
+     if isinstance(media_item, Season):
+         for episode in media_item.episodes:
+-            logger.info(f"{generate_media_description(media_data=episode)}:")
++            logger.info(f"{generate_media_description(media_data=episode, shortened=True)}:")
+             download_media(scraper=scraper, media_item=episode, config=config)
+-            return
++        return
+ 
+     if media_item.playlist:
+         download_subtitles_kwargs = {
+@@ -357,10 +360,8 @@
+     Returns:
+         SubtitlesDownloadResults: A SubtitlesDownloadResults object containing the results of the download.
+     """
+-    temp_download_path = generate_media_path(base_path=TEMP_FOLDER_PATH,
+-                                             media_data=media_data,
+-                                             source=scraper.abbreviation)
+-    atexit.register(shutil.rmtree, TEMP_FOLDER_PATH, ignore_errors=False, onerror=None)
++    temp_dir_name = generate_media_folder_name(media_data=media_data, source=scraper.abbreviation)
++    temp_download_path = TempDirectoryGenerator.generate(directory_name=temp_dir_name)
+ 
+     successful_downloads: list[SubtitlesData] = []
+     failed_downloads: list[SubtitlesData] = []
+@@ -398,7 +399,7 @@
+                 new_path = download_path / file_path.name
+ 
+             else:
+-                new_path = generate_non_conflicting_path(download_path / file_path.name)
++                new_path = generate_non_conflicting_path(file_path=download_path / file_path.name)
+ 
+             # str conversion needed only for Python <= 3.8 - https://github.com/python/cpython/issues/76870
+             shutil.move(src=str(file_path), dst=new_path)
+@@ -417,13 +418,10 @@
+             destination_path = download_path / file_name
+ 
+         else:
+-            destination_path = generate_non_conflicting_path(download_path / file_name)
++            destination_path = generate_non_conflicting_path(file_path=download_path / file_name)
+ 
+         shutil.move(src=str(archive_path), dst=destination_path)
+ 
+-    shutil.rmtree(temp_download_path)
+-    atexit.unregister(shutil.rmtree)
+-
+     return SubtitlesDownloadResults(
+         movie_data=media_data,
+         successful_subtitles=successful_downloads,
+@@ -519,12 +517,11 @@
+     )
+ 
+ 
+-def generate_media_path(base_path: Path, media_data: Movie | Episode, source: str | None = None) -> Path:
++def generate_temp_media_path(media_data: Movie | Episode, source: str | None = None) -> Path:
+     """
+-    Generate a temporary folder for downloading media data.
++    Generate a temporary directory for downloading media data.
+ 
+     Args:
+-        base_path (Path): A base path to generate the folder in.
+         media_data (Movie | Episode): A movie or episode data object.
+         source (str | None, optional): Abbreviation of the source to use for file names. Defaults to None.
+ 
+@@ -532,10 +529,9 @@
+         Path: A path to the temporary folder.
+     """
+     temp_folder_name = generate_media_folder_name(media_data=media_data, source=source)
+-    path = generate_non_conflicting_path(base_path / temp_folder_name, has_extension=False)
+-    path.mkdir(parents=True, exist_ok=True)
++    path = generate_non_conflicting_path(file_path=TEMP_FOLDER_PATH / temp_folder_name, has_extension=False)
+ 
+-    return path
++    return TempDirectoryGenerator.generate(directory_name=path.name)
+ 
+ 
+ def update_settings(config: Config) -> None:
+@@ -580,7 +576,7 @@
+     logger.addHandler(stdout_handler)
+ 
+     # Setup logfile logger
+-    logfile_path = generate_non_conflicting_path(LOG_FILES_PATH / LOG_FILE_NAME)
++    logfile_path = generate_non_conflicting_path(file_path=LOG_FILES_PATH / LOG_FILE_NAME)
+     logfile_handler = logging.FileHandler(filename=logfile_path, encoding="utf-8")
+     logfile_handler.setLevel(file_loglevel)
+     logfile_handler.setFormatter(CustomLogFileFormatter())
+Index: isubrip/data_structures.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABC\r\nimport datetime as dt  # noqa: TCH003\r\nfrom enum import Enum\r\nfrom typing import Generic, List, NamedTuple, Optional, TypeVar, Union\r\n\r\nfrom pydantic import BaseModel\r\n\r\nMediaData = TypeVar(\"MediaData\", bound=\"MediaBase\")\r\n\r\n\r\nclass SubtitlesDownloadResults(NamedTuple):\r\n    \"\"\"\r\n    A named tuple containing download results.\r\n\r\n    Attributes:\r\n        movie_data (Movie): Movie data object.\r\n        successful_subtitles (list[SubtitlesData]): List of subtitles that were successfully downloaded.\r\n        failed_subtitles (list[SubtitlesData]): List of subtitles that failed to download.\r\n        is_zip (bool): Whether the subtitles were saved in a zip file.\r\n    \"\"\"\r\n    movie_data: Movie\r\n    successful_subtitles: list[SubtitlesData]\r\n    failed_subtitles: list[SubtitlesData]\r\n    is_zip: bool\r\n\r\n\r\nclass SubtitlesFormat(BaseModel):\r\n    \"\"\"\r\n    An object containing subtitles format data.\r\n\r\n    Attributes:\r\n        name (str): Name of the format.\r\n        file_extension (str): File extension of the format.\r\n    \"\"\"\r\n    name: str\r\n    file_extension: str\r\n\r\n\r\nclass SubtitlesFormatType(Enum):\r\n    \"\"\"\r\n    An Enum representing subtitles formats.\r\n\r\n    Attributes:\r\n        SUBRIP (SubtitlesFormat): SubRip format.\r\n        WEBVTT (SubtitlesFormat): WebVTT format.\r\n    \"\"\"\r\n    SUBRIP = SubtitlesFormat(name=\"SubRip\", file_extension=\"srt\")\r\n    WEBVTT = SubtitlesFormat(name=\"WebVTT\", file_extension=\"vtt\")\r\n\r\n\r\nclass SubtitlesType(Enum):\r\n    \"\"\"\r\n    Subtitles special type.\r\n\r\n    Attributes:\r\n        CC (SubtitlesType): Closed captions.\r\n        FORCED (SubtitlesType): Forced subtitles.\r\n    \"\"\"\r\n    CC = \"CC\"\r\n    FORCED = \"Forced\"\r\n\r\n\r\n# TODO: Use `kw_only` on dataclasses, and set default values of None for optional arguments once min version => 3.10\r\n\r\nclass SubtitlesData(BaseModel):\r\n    \"\"\"\r\n    An object containing subtitles data and metadata.\r\n\r\n    Attributes:\r\n        language_code (str): Language code of the language the subtitles are in.\r\n        language_name (str): Name of the language the subtitles are in.\r\n        subtitles_format (SubtitlesFormatType): Format of the subtitles.\r\n        content (bytes): Content of the subtitles in binary format.\r\n        special_type (SubtitlesType | None): Type of the subtitles, if they're not regular. Defaults to None.\r\n    \"\"\"\r\n    language_code: str\r\n    language_name: str\r\n    subtitles_format: SubtitlesFormatType\r\n    content: bytes\r\n    special_type: Union[SubtitlesType, None] = None\r\n\r\n    class ConfigDict:\r\n        str_strip_whitespace = True\r\n\r\n\r\nclass MediaBase(BaseModel, ABC):\r\n    \"\"\"A base class for media objects.\"\"\"\r\n\r\n\r\nclass Movie(MediaBase):\r\n    \"\"\"\r\n    An object containing movie metadata.\r\n\r\n    Attributes:\r\n        id (str | None, optional): ID of the movie on the service it was scraped from. Defaults to None.\r\n        referer_id (str | None, optional): ID of the movie on the original referring service. Defaults to None.\r\n        name (str): Title of the movie.\r\n        release_date (datetime | int | None, optional): Release date (datetime), or year (int) of the movie.\r\n            Defaults to None.\r\n        duration (timedelta | None, optional): Duration of the movie. Defaults to None.\r\n        preorder_availability_date (datetime | None, optional):\r\n            Date when the movie will be available for pre-order on the service it was scraped from.\r\n            None if not a pre-order. Defaults to None.\r\n        playlist (str | None, optional): Main playlist URL(s).\r\n    \"\"\"\r\n    name: str\r\n    release_date: Union[dt.datetime, int]\r\n    id: Optional[str] = None\r\n    referer_id: Optional[str] = None\r\n    duration: Optional[dt.timedelta] = None\r\n    preorder_availability_date: Optional[dt.datetime] = None\r\n    playlist: Union[str, List[str], None] = None\r\n\r\n\r\nclass Episode(MediaBase):\r\n    \"\"\"\r\n    An object containing episode metadata.\r\n\r\n    Attributes:\r\n        id (str | None, optional): ID of the episode on the service it was scraped from. Defaults to None.\r\n        referer_id (str | None, optional): ID of the episode on the original referring service. Defaults to None.\r\n        series_name (str): Name of the series the episode is from.\r\n        series_release_date (datetime | int | None, optional): Release date (datetime), or year (int) of the series.\r\n            Defaults to None.\r\n        season_number (int): Season number.\r\n        season_name (str | None, optional): Season name. Defaults to None.\r\n        episode_number (int): Episode number.\r\n        episode_name (str | None, optional): Episode name. Defaults to None.\r\n        episode_release_date (datetime | None): Release date of the episode. Defaults to None.\r\n        episode_duration (timedelta | None, optional): Duration of the episode. Defaults to None.\r\n        playlist (str | None, optional): Main playlist URL(s).\r\n    \"\"\"\r\n    series_name: str\r\n    season_number: int\r\n    episode_number: int\r\n    id: Optional[str] = None\r\n    referer_id: Optional[str] = None\r\n    series_release_date: Union[dt.datetime, int, None] = None\r\n    season_name: Optional[str] = None\r\n    release_date: Optional[dt.datetime] = None\r\n    duration: Optional[dt.timedelta] = None\r\n    episode_name: Optional[str] = None\r\n    episode_release_date: Optional[dt.datetime] = None\r\n    episode_duration: Optional[dt.timedelta] = None\r\n    playlist: Union[str, List[str], None] = None\r\n\r\n\r\nclass Season(MediaBase):\r\n    \"\"\"\r\n    An object containing season metadata.\r\n\r\n    Attributes:\r\n        id (str | None, optional): ID of the season on the service it was scraped from. Defaults to None.\r\n        referer_id (str | None, optional): ID of the season on the original referring service. Defaults to None.\r\n        series_name (str): Name of the series the season is from.\r\n        series_release_date (datetime | int | None, optional): Release date (datetime), or year (int) of the series.\r\n            Defaults to None.\r\n        season_name (str | None, optional): Season name. Defaults to None.\r\n        season_release_date (datetime | None, optional): Release date of the season, or release year. Defaults to None.\r\n        episodes (list[Episode]): A list of episode objects containing metadata about episodes of the season.\r\n    \"\"\"\r\n    series_name: str\r\n    season_number: int\r\n    id: Optional[str] = None\r\n    referer_id: Optional[str] = None\r\n    series_release_date: Union[dt.datetime, int, None] = None\r\n    season_name: Optional[str] = None\r\n    season_release_date: Union[dt.datetime, int, None] = None\r\n    episodes: List[Episode] = []\r\n\r\n\r\nclass Series(MediaBase):\r\n    \"\"\"\r\n    An object containing series metadata.\r\n\r\n    Attributes:\r\n        id (str | None, optional): ID of the series on the service it was scraped from. Defaults to None.\r\n        series_name (str): Series name.\r\n        referer_id (str | None, optional): ID of the series on the original referring service. Defaults to None.\r\n        series_release_date (datetime | int | None, optional): Release date (datetime), or year (int) of the series.\r\n            Defaults to None.\r\n        seasons (list[Season]): A list of season objects containing metadata about seasons of the series.\r\n    \"\"\"\r\n    series_name: str\r\n    seasons: List[Season] = []\r\n    id: Optional[str] = None\r\n    referer_id: Optional[str] = None\r\n    series_release_date: Union[dt.datetime, int, None] = None\r\n\r\n\r\nclass ScrapedMediaResponse(BaseModel, Generic[MediaData]):\r\n    \"\"\"\r\n    An object containing scraped media data and metadata.\r\n\r\n    Attributes:\r\n        media_data (Movie | list[Movie] | Episode | list[Episode] | Season | list[Season] | Series | list[Series]):\r\n            An object containing the scraped media data.\r\n        metadata_scraper (str): ID of the scraper that was used to scrape metadata.\r\n        playlist_scraper (str): ID of the scraper that should be used to parse and scrape the playlist.\r\n        original_data (dict): Original raw data from the API that was used to extract media's data.\r\n    \"\"\"\r\n    media_data: Union[MediaData, List[MediaData]]\r\n    metadata_scraper: str\r\n    playlist_scraper: str\r\n    original_data: dict\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/data_structures.py b/isubrip/data_structures.py
+--- a/isubrip/data_structures.py	(revision 24f7a5335ae74530671de4e8d6aaa8ef20cb960f)
++++ b/isubrip/data_structures.py	(date 1705785982551)
+@@ -82,7 +82,7 @@
+     special_type: Union[SubtitlesType, None] = None
+ 
+     class ConfigDict:
+-        str_strip_whitespace = True
++        str_strip_whitespace = True  # TODO: What is this? Remove?
+ 
+ 
+ class MediaBase(BaseModel, ABC):
+Index: isubrip/scrapers/scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABC, abstractmethod\r\nimport asyncio\r\nfrom enum import Enum\r\nimport importlib\r\nimport inspect\r\nfrom pathlib import Path\r\nimport re\r\nimport sys\r\nfrom typing import TYPE_CHECKING, ClassVar, Iterator, List, Literal, Type, TypeVar, Union, overload\r\n\r\nimport aiohttp\r\nfrom lxml import etree as ET\r\nimport m3u8\r\nfrom m3u8 import M3U8, Media, Segment, SegmentList\r\nimport requests\r\nimport requests.utils\r\n\r\nfrom isubrip.config import Config, ConfigSetting\r\nfrom isubrip.constants import PACKAGE_NAME, SCRAPER_MODULES_SUFFIX\r\nfrom isubrip.data_structures import ScrapedMediaResponse, SubtitlesData, SubtitlesType\r\nfrom isubrip.logger import logger\r\nfrom isubrip.utils import SingletonMeta, merge_dict_values, single_to_list\r\n\r\nif TYPE_CHECKING:\r\n    from types import TracebackType\r\n\r\n    from isubrip.subtitle_formats.subtitles import Subtitles\r\n\r\nScraperT = TypeVar(\"ScraperT\", bound=\"Scraper\")\r\n\r\n\r\nclass Scraper(ABC, metaclass=SingletonMeta):\r\n    \"\"\"\r\n    A base class for scrapers.\r\n\r\n    Attributes:\r\n        default_user_agent (str): [Class Attribute]\r\n            Default user agent to use if no other user agent is specified when making requests.\r\n        subtitles_fix_rtl (bool): [Class Attribute] Whether to fix RTL from downloaded subtitles.\r\n        subtitles_fix_rtl_languages (list[str] | None): [Class Attribute]\r\n            A list of languages to fix RTL on. If None, a default list will be used.\r\n        subtitles_remove_duplicates (bool): [Class Attribute]\r\n            Whether to remove duplicate lines from downloaded subtitles.\r\n\r\n        id (str): [Class Attribute] ID of the scraper.\r\n        name (str): [Class Attribute] Name of the scraper.\r\n        abbreviation (str): [Class Attribute] Abbreviation of the scraper.\r\n        url_regex (re.Pattern | list[re.Pattern]): [Class Attribute] A RegEx pattern to find URLs matching the service.\r\n        subtitles_class (type[Subtitles]): [Class Attribute] Class of the subtitles format returned by the scraper.\r\n        is_movie_scraper (bool): [Class Attribute] Whether the scraper is for movies.\r\n        is_series_scraper (bool): [Class Attribute] Whether the scraper is for series.\r\n        uses_scrapers (list[str]): [Class Attribute] A list of IDs for other scraper classes that this scraper uses.\r\n            This assures that the config data for the other scrapers is passed as well.\r\n        _session (requests.Session): A requests session to use for making requests.\r\n        config (Config): A Config object containing the scraper's configuration.\r\n    \"\"\"\r\n    default_user_agent: ClassVar[str] = requests.utils.default_user_agent()\r\n    subtitles_fix_rtl: ClassVar[bool] = False\r\n    subtitles_fix_rtl_languages: ClassVar[list | None] = [\"ar\", \"he\"]\r\n    subtitles_remove_duplicates: ClassVar[bool] = True\r\n\r\n    id: ClassVar[str]\r\n    name: ClassVar[str]\r\n    abbreviation: ClassVar[str]\r\n    url_regex: ClassVar[re.Pattern | list[re.Pattern]]\r\n    subtitles_class: ClassVar[type[Subtitles]]\r\n    is_movie_scraper: ClassVar[bool] = False\r\n    is_series_scraper: ClassVar[bool] = False\r\n    uses_scrapers: ClassVar[list[str]] = []\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        \"\"\"\r\n        Initialize a Scraper object.\r\n\r\n        Args:\r\n            config_data (dict | None, optional): A dictionary containing scraper's configuration data. Defaults to None.\r\n        \"\"\"\r\n        self._session = requests.Session()\r\n        self._config_data = config_data\r\n        self.config = Config(config_data=config_data.get(self.id) if config_data else None)\r\n\r\n        self.config.add_settings([\r\n            ConfigSetting(\r\n                key=\"user-agent\",\r\n                type=str,\r\n                required=False,\r\n            )],\r\n            check_config=False)\r\n\r\n        self._session.headers.update({\"User-Agent\": self.config.get(\"user-agent\") or self.default_user_agent})\r\n\r\n    @classmethod\r\n    @overload\r\n    def match_url(cls, url: str, raise_error: Literal[True] = ...) -> re.Match:\r\n        ...\r\n\r\n    @classmethod\r\n    @overload\r\n    def match_url(cls, url: str, raise_error: Literal[False] = ...) -> re.Match | None:\r\n        ...\r\n\r\n    @classmethod\r\n    def match_url(cls, url: str, raise_error: bool = False) -> re.Match | None:\r\n        \"\"\"\r\n        Checks if a URL matches scraper's url regex.\r\n\r\n        Args:\r\n            url (str): A URL to check against the regex.\r\n            raise_error (bool, optional): Whether to raise an error instead of returning None if the URL doesn't match.\r\n\r\n        Returns:\r\n            re.Match | None: A Match object if the URL matches the regex, None otherwise (if raise_error is False).\r\n\r\n        Raises:\r\n            ValueError: If the URL doesn't match the regex and raise_error is True.\r\n        \"\"\"\r\n        if isinstance(cls.url_regex, re.Pattern):\r\n            return re.fullmatch(pattern=cls.url_regex, string=url)\r\n\r\n        # isinstance(cls.url_regex, list):\r\n        for url_regex_item in cls.url_regex:\r\n            if result := re.fullmatch(pattern=url_regex_item, string=url):\r\n                return result\r\n\r\n        if raise_error:\r\n            raise ValueError(f\"URL '{url}' doesn't match the URL regex of {cls.name}.\")\r\n\r\n        return None\r\n\r\n    def __enter__(self) -> Scraper:\r\n        return self\r\n\r\n    def __exit__(self, exc_type: Type[BaseException] | None,\r\n                 exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:\r\n        self.close()\r\n\r\n    def close(self) -> None:\r\n        self._session.close()\r\n\r\n    @abstractmethod\r\n    def get_data(self, url: str) -> ScrapedMediaResponse:\r\n        \"\"\"\r\n        Scrape media information about the media on a URL.\r\n\r\n        Args:\r\n            url (str): A URL to get media information about.\r\n\r\n        Returns:\r\n            ScrapedMediaResponse: A ScrapedMediaResponse object containing scraped media information.\r\n        \"\"\"\r\n\r\n    @abstractmethod\r\n    def get_subtitles(self, main_playlist: str | list[str], language_filter: list[str] | None = None,\r\n                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:\r\n        \"\"\"\r\n        Find and yield subtitles data from a main_playlist.\r\n\r\n        Args:\r\n            main_playlist(str | list[str]): A URL or a list of URLs (for redundancy) of the main playlist.\r\n            language_filter (list[str] | str | None, optional):\r\n                A language or a list of languages to filter for. Defaults to None.\r\n            subrip_conversion (bool, optional): Whether to convert the subtitles to SubRip format. Defaults to False.\r\n\r\n        Yields:\r\n            SubtitlesData: A SubtitlesData object for each subtitle found\r\n                in the main playlist (matching the filters, if given).\r\n        \"\"\"\r\n\r\n\r\nclass AsyncScraper(Scraper, ABC):\r\n    \"\"\"A base class for scrapers that utilize async requests.\"\"\"\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n        self.async_session = aiohttp.ClientSession()\r\n        self.async_session.headers.update(self._session.headers)\r\n\r\n    def close(self) -> None:\r\n        asyncio.get_event_loop().run_until_complete(self._async_close())\r\n        super().close()\r\n\r\n    async def _async_close(self) -> None:\r\n        await self.async_session.close()\r\n\r\n\r\nclass HLSScraper(AsyncScraper, ABC):\r\n    \"\"\"A base class for HLS (m3u8) scrapers.\"\"\"\r\n    playlist_filters_config_category = \"playlist-filters\"\r\n\r\n    class M3U8Attribute(Enum):\r\n        \"\"\"\r\n        An enum representing all possible M3U8 attributes.\r\n        Names / Keys represent M3U8 Media object attributes (should be converted to lowercase),\r\n        and values represent the name of the key for config usage.\r\n        \"\"\"\r\n        ASSOC_LANGUAGE = \"assoc-language\"\r\n        AUTOSELECT = \"autoselect\"\r\n        CHARACTERISTICS = \"characteristics\"\r\n        CHANNELS = \"channels\"\r\n        DEFAULT = \"default\"\r\n        FORCED = \"forced\"\r\n        GROUP_ID = \"group-id\"\r\n        INSTREAM_ID = \"instream-id\"\r\n        LANGUAGE = \"language\"\r\n        NAME = \"name\"\r\n        STABLE_RENDITION_ID = \"stable-rendition-id\"\r\n        TYPE = \"type\"\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n\r\n        if self.config is None:\r\n            self.config = Config()\r\n\r\n        # Add M3U8 filters settings\r\n        self.config.add_settings([\r\n            ConfigSetting(\r\n                category=self.playlist_filters_config_category,\r\n                key=m3u8_attribute.value,\r\n                type=Union[str, List[str]],\r\n                required=False,\r\n            ) for m3u8_attribute in self.M3U8Attribute],\r\n            check_config=False)\r\n\r\n    def _download_segments_async(self, segments: SegmentList[Segment]) -> list[bytes]:\r\n        \"\"\"\r\n        Download M3U8 segments asynchronously.\r\n\r\n        Args:\r\n            segments (m3u8.SegmentList[m3u8.Segment]): List of segments to download.\r\n\r\n        Returns:\r\n            list[bytes]: List of downloaded segments.\r\n        \"\"\"\r\n        loop = asyncio.get_event_loop()\r\n        async_tasks = [loop.create_task(self._download_segment_async(segment.absolute_uri)) for segment in segments]\r\n        segments_bytes = loop.run_until_complete(asyncio.gather(*async_tasks))\r\n\r\n        return list(segments_bytes)\r\n\r\n    async def _download_segment_async(self, url: str) -> bytes:\r\n        \"\"\"\r\n        Download an M3U8 segment asynchronously.\r\n\r\n        Args:\r\n            url (str): URL of the segment to download.\r\n\r\n        Returns:\r\n            bytes: Downloaded segment.\r\n        \"\"\"\r\n        async with self.async_session.get(url) as response:\r\n            segment: bytes = await response.read()\r\n\r\n        return segment\r\n\r\n    def load_m3u8(self, url: str | list[str]) -> M3U8 | None:\r\n        \"\"\"\r\n        Load an M3U8 playlist from a URL to an M3U8 object.\r\n        Multiple URLs can be given, in which case the first one that loads successfully will be returned.\r\n        The method uses caching to avoid loading the same playlist multiple times.\r\n\r\n        Args:\r\n            url (str | list[str]): URL of the M3U8 playlist to load. Can also be a list of URLs (for redundancy).\r\n\r\n        Returns:\r\n            m3u8.M3U8: An M3U8 object representing the playlist.\r\n        \"\"\"\r\n        for url_item in single_to_list(url):\r\n            try:\r\n                m3u8_data = self._session.get(url_item).text\r\n                return m3u8.loads(content=m3u8_data, uri=url_item)\r\n\r\n            except Exception as e:\r\n                logger.debug(f\"Failed to load M3U8 playlist '{url_item}': {e}\")\r\n                continue\r\n\r\n        return None\r\n\r\n    @staticmethod\r\n    def detect_subtitles_type(subtitles_media: Media) -> SubtitlesType | None:\r\n        \"\"\"\r\n        Detect the subtitles type (Closed Captions, Forced, etc.) from an M3U8 Media object.\r\n\r\n        Args:\r\n            subtitles_media (m3u8.Media): Subtitles Media object to detect the type of.\r\n\r\n        Returns:\r\n            SubtitlesType | None: The type of the subtitles, None for regular subtitles.\r\n        \"\"\"\r\n        if subtitles_media.forced == \"YES\":\r\n            return SubtitlesType.FORCED\r\n\r\n        if subtitles_media.characteristics is not None and \"public.accessibility\" in subtitles_media.characteristics:\r\n            return SubtitlesType.CC\r\n\r\n        return None\r\n\r\n    def get_media_playlists(self, main_playlist: M3U8,\r\n                            playlist_filters: dict[str, str | list[str]] | None = None,\r\n                            include_default_filters: bool = True) -> list[Media]:\r\n        \"\"\"\r\n        Find and yield playlists of media within an M3U8 main_playlist using optional filters.\r\n\r\n        Args:\r\n            main_playlist (m3u8.M3U8): An M3U8 object of the main main_playlist.\r\n            playlist_filters (dict[str, str | list[str], optional):\r\n                A dictionary of filters to use when searching for subtitles.\r\n                Will be added to filters set by the config (unless `include_default_filters` is set to false).\r\n                Defaults to None.\r\n            include_default_filters (bool, optional): Whether to include the default filters set by the config or not.\r\n                Defaults to True.\r\n\r\n        Returns:\r\n            list[Media]: A list of  matching Media objects.\r\n        \"\"\"\r\n        results = []\r\n        default_filters: dict | None = self.config.get(HLSScraper.playlist_filters_config_category)\r\n\r\n        if include_default_filters and default_filters:\r\n            if not playlist_filters:\r\n                playlist_filters = default_filters\r\n\r\n            else:\r\n                playlist_filters = merge_dict_values(default_filters, playlist_filters)\r\n\r\n        for media in main_playlist.media:\r\n            if not playlist_filters:\r\n                results.append(media)\r\n                continue\r\n\r\n            is_valid = True\r\n\r\n            for filter_name, filter_value in playlist_filters.items():\r\n                try:\r\n                    filter_name_enum = HLSScraper.M3U8Attribute(filter_name)\r\n                    attribute_value = getattr(media, filter_name_enum.name.lower(), None)\r\n\r\n                    if (attribute_value is None) or (\r\n                            isinstance(filter_value, list) and\r\n                            attribute_value.casefold() not in (x.casefold() for x in filter_value)\r\n                    ) or (\r\n                            isinstance(filter_value, str) and filter_value.casefold() != attribute_value.casefold()\r\n                    ):\r\n                        is_valid = False\r\n                        break\r\n\r\n                except Exception:\r\n                    is_valid = False\r\n\r\n            if is_valid:\r\n                results.append(media)\r\n\r\n        return results\r\n\r\n\r\nclass DASHScraper(Scraper, ABC):\r\n    \"\"\"A base class for DASH (mpd) scrapers.\"\"\"\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n\r\n    def load_mpd(self, url: str, headers: dict | None = None) -> ET.Element | None:\r\n        \"\"\"\r\n        Load an MPD file from a URL to a string.\r\n        The method uses caching to avoid loading the same MPD file multiple times.\r\n\r\n        Args:\r\n        url (str): URL of the MPD playlist to load.\r\n        headers (dict | None, optional): A dictionary of headers to use when making the request.\r\n            Defaults to None (results in using session's configured headers).\r\n        \"\"\"\r\n        _headers = headers or self._session.headers\r\n\r\n        try:\r\n            response = self._session.get(url=url, headers=_headers)\r\n            response.raise_for_status()\r\n\r\n            return ET.fromstring(response.text.encode(\"utf-8\"))\r\n\r\n        except Exception as e:\r\n            logger.debug(f\"Failed to load MPD playlist '{url}': {e}\")\r\n\r\n        return None\r\n\r\n\r\nclass ScraperFactory(metaclass=SingletonMeta):\r\n    def __init__(self) -> None:\r\n        self._scraper_classes_cache: list[type[Scraper]] | None = None\r\n        self._scraper_instances_cache: dict[type[Scraper], Scraper] = {}\r\n        self._currently_initializing: list[type[Scraper]] = []  # Used to prevent infinite recursion\r\n\r\n    def get_initialized_scrapers(self) -> list[Scraper]:\r\n        \"\"\"\r\n        Get a list of all previously initialized scrapers.\r\n\r\n        Returns:\r\n            list[Scraper]: A list of initialized scrapers.\r\n        \"\"\"\r\n        return list(self._scraper_instances_cache.values())\r\n\r\n    def get_scraper_classes(self) -> list[type[Scraper]]:\r\n        \"\"\"\r\n        Find all scraper classes in the scrapers directory.\r\n\r\n        Returns:\r\n            list[Scraper]: A Scraper subclass.\r\n        \"\"\"\r\n        if self._scraper_classes_cache is not None:\r\n            return self._scraper_classes_cache\r\n\r\n        self._scraper_classes_cache = []\r\n        scraper_modules_paths = Path(__file__).parent.glob(f\"*{SCRAPER_MODULES_SUFFIX}.py\")\r\n\r\n        for scraper_module_path in scraper_modules_paths:\r\n            sys.path.append(str(scraper_module_path))\r\n\r\n            module = importlib.import_module(f\"{PACKAGE_NAME}.scrapers.{scraper_module_path.stem}\")\r\n\r\n            # Find all 'Scraper' subclasses\r\n            for _, obj in inspect.getmembers(module,\r\n                                             predicate=lambda x: inspect.isclass(x) and issubclass(x, Scraper)):\r\n                # Skip object if it's an abstract or imported from another module\r\n                if not inspect.isabstract(obj) and obj.__module__ == module.__name__:\r\n                    self._scraper_classes_cache.append(obj)\r\n\r\n        return self._scraper_classes_cache\r\n\r\n    def _get_scraper_instance(self, scraper_class: type[ScraperT],\r\n                              scrapers_config_data: dict | None = None) -> ScraperT:\r\n        \"\"\"\r\n        Initialize and return a scraper instance.\r\n\r\n        Args:\r\n            scraper_class (type[ScraperT]): A scraper class to initialize.\r\n            scrapers_config_data (dict, optional): A dictionary containing scrapers config data to use\r\n                when creating a new scraper. Defaults to None.\r\n\r\n        Returns:\r\n            Scraper: An instance of the given scraper class.\r\n        \"\"\"\r\n        logger.debug(f\"Initializing '{scraper_class.name}' scraper...\")\r\n\r\n        if scraper_class not in self._scraper_instances_cache:\r\n            logger.debug(f\"'{scraper_class.name}' scraper not found in cache, creating a new instance...\")\r\n\r\n            if scraper_class in self._currently_initializing:\r\n                raise ScraperError(f\"'{scraper_class.name}' scraper is already being initialized.\\n\"\r\n                                   f\"Make sure there are no circular dependencies between scrapers.\")\r\n\r\n            self._currently_initializing.append(scraper_class)\r\n\r\n            # Set config data for the scraper and its dependencies, if any\r\n            if not scrapers_config_data:\r\n                config_data = None\r\n\r\n            else:\r\n                required_scrapers_ids = [scraper_class.id, *scraper_class.uses_scrapers]\r\n                config_data = \\\r\n                    {scraper_id: scrapers_config_data[scraper_id] for scraper_id in required_scrapers_ids\r\n                     if scrapers_config_data.get(scraper_id)}\r\n\r\n            self._scraper_instances_cache[scraper_class] = scraper_class(config_data=config_data)\r\n            self._currently_initializing.remove(scraper_class)\r\n\r\n        else:\r\n            logger.debug(f\"Cached '{scraper_class.name}' scraper instance found and will be used.\")\r\n\r\n        return self._scraper_instances_cache[scraper_class]  # type: ignore[return-value]\r\n\r\n    @overload\r\n    def get_scraper_instance(self, scraper_class: type[ScraperT], scraper_id: str | None = ...,\r\n                             url: str | None = ..., config_data: dict | None = ...,\r\n                             raise_error: Literal[True] = ...) -> ScraperT:\r\n        ...\r\n\r\n    @overload\r\n    def get_scraper_instance(self, scraper_class: type[ScraperT], scraper_id: str | None = ...,\r\n                             url: str | None = ..., config_data: dict | None = ...,\r\n                             raise_error: Literal[False] = ...) -> ScraperT | None:\r\n        ...\r\n\r\n    @overload\r\n    def get_scraper_instance(self, scraper_class: None = ..., scraper_id: str | None = ...,\r\n                             url: str | None = ..., config_data: dict | None = ...,\r\n                             raise_error: Literal[True] = ...) -> Scraper:\r\n        ...\r\n\r\n    @overload\r\n    def get_scraper_instance(self, scraper_class: None = ..., scraper_id: str | None = ...,\r\n                             url: str | None = ..., config_data: dict | None = ...,\r\n                             raise_error: Literal[False] = ...) -> Scraper | None:\r\n        ...\r\n\r\n    def get_scraper_instance(self, scraper_class: type[Scraper] | None = None, scraper_id: str | None = None,\r\n                             url: str | None = None, config_data: dict | None = None,\r\n                             raise_error: bool = True) -> Scraper | None:\r\n        \"\"\"\r\n        Find, initialize and return a scraper that matches the given URL or ID.\r\n\r\n        Args:\r\n            scraper_class (type[ScraperT] | None, optional): A scraper class to initialize. Defaults to None.\r\n            scraper_id (str | None, optional): ID of a scraper to initialize. Defaults to None.\r\n            url (str | None, optional): A URL to match a scraper for to initialize. Defaults to None.\r\n            config_data (dict, optional): A dictionary containing scrapers config data to use\r\n                when creating a new scraper. Defaults to None.\r\n            raise_error (bool, optional): Whether to raise an error if no scraper was found. Defaults to False.\r\n\r\n        Returns:\r\n            ScraperT | Scraper | None: An instance of a scraper that matches the given URL or ID,\r\n                None otherwise (if raise_error is False).\r\n\r\n        Raises:\r\n            ValueError: If no scraper was found and raise_error is True.\r\n        \"\"\"\r\n        if scraper_class:\r\n            return self._get_scraper_instance(scraper_class=scraper_class,\r\n                                              scrapers_config_data=config_data)\r\n\r\n        if not (scraper_id or url):\r\n            raise ValueError(\"At least one of: 'scraper_class', 'scraper_id', or 'url' must be provided.\")\r\n\r\n        if scraper_id:\r\n            logger.debug(f\"Searching for a scraper object with ID '{scraper_id}'...\")\r\n            for scraper in self.get_scraper_classes():\r\n                if scraper.id == scraper_id:\r\n                    return self._get_scraper_instance(scraper_class=scraper, scrapers_config_data=config_data)\r\n\r\n        elif url:\r\n            logger.debug(f\"Searching for a scraper object that matches URL '{url}'...\")\r\n            for scraper in self.get_scraper_classes():\r\n                if scraper.match_url(url) is not None:\r\n                    return self._get_scraper_instance(scraper_class=scraper, scrapers_config_data=config_data)\r\n\r\n        if raise_error:\r\n            raise ValueError(f\"No matching scraper was found for URL '{url}'\")\r\n\r\n        logger.debug(\"No matching scraper was found.\")\r\n        return None\r\n\r\n\r\nclass ScraperError(Exception):\r\n    pass\r\n\r\n\r\nclass PlaylistLoadError(ScraperError):\r\n    pass\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/scraper.py b/isubrip/scrapers/scraper.py
+--- a/isubrip/scrapers/scraper.py	(revision 24f7a5335ae74530671de4e8d6aaa8ef20cb960f)
++++ b/isubrip/scrapers/scraper.py	(date 1705785982554)
+@@ -11,7 +11,6 @@
+ from typing import TYPE_CHECKING, ClassVar, Iterator, List, Literal, Type, TypeVar, Union, overload
+ 
+ import aiohttp
+-from lxml import etree as ET
+ import m3u8
+ from m3u8 import M3U8, Media, Segment, SegmentList
+ import requests
+@@ -21,6 +20,7 @@
+ from isubrip.constants import PACKAGE_NAME, SCRAPER_MODULES_SUFFIX
+ from isubrip.data_structures import ScrapedMediaResponse, SubtitlesData, SubtitlesType
+ from isubrip.logger import logger
++from isubrip.parsers.mpeg_dash import MPD
+ from isubrip.utils import SingletonMeta, merge_dict_values, single_to_list
+ 
+ if TYPE_CHECKING:
+@@ -254,7 +254,7 @@
+ 
+         return segment
+ 
+-    def load_m3u8(self, url: str | list[str]) -> M3U8 | None:
++    def load_m3u8(self, url: str | list[str], headers: dict | None = None) -> M3U8 | None:
+         """
+         Load an M3U8 playlist from a URL to an M3U8 object.
+         Multiple URLs can be given, in which case the first one that loads successfully will be returned.
+@@ -262,13 +262,18 @@
+ 
+         Args:
+             url (str | list[str]): URL of the M3U8 playlist to load. Can also be a list of URLs (for redundancy).
++            headers (dict | None, optional): A dictionary of headers to use when making the request.
++                Defaults to None (results in using session's configured headers).
++
+ 
+         Returns:
+             m3u8.M3U8: An M3U8 object representing the playlist.
+         """
++        _headers = headers or self._session.headers
++
+         for url_item in single_to_list(url):
+             try:
+-                m3u8_data = self._session.get(url_item).text
++                m3u8_data = self._session.get(url=url_item, headers=_headers).text
+                 return m3u8.loads(content=m3u8_data, uri=url_item)
+ 
+             except Exception as e:
+@@ -359,26 +364,31 @@
+     def __init__(self, config_data: dict | None = None):
+         super().__init__(config_data)
+ 
+-    def load_mpd(self, url: str, headers: dict | None = None) -> ET.Element | None:
++    def load_mpd(self, url: str | list[str], headers: dict | None = None) -> MPD | None:
+         """
+         Load an MPD file from a URL to a string.
+         The method uses caching to avoid loading the same MPD file multiple times.
+ 
+         Args:
+-        url (str): URL of the MPD playlist to load.
+-        headers (dict | None, optional): A dictionary of headers to use when making the request.
+-            Defaults to None (results in using session's configured headers).
++            url (str): URL of the MPD playlist to load. Can also be a list of URLs (for redundancy).
++            headers (dict | None, optional): A dictionary of headers to use when making the request.
++                Defaults to None (results in using session's configured headers).
++
++        Returns:
++            MPD | None: An MPD object representing the playlist, or None if no valid playlist was found.
+         """
+         _headers = headers or self._session.headers
+ 
+-        try:
+-            response = self._session.get(url=url, headers=_headers)
+-            response.raise_for_status()
++        for url_item in single_to_list(url):
++            try:
++                response = self._session.get(url=url_item, headers=_headers)
++                response.raise_for_status()
+ 
+-            return ET.fromstring(response.text.encode("utf-8"))
++                return MPD(playlist_data=response.text, uri=url_item)
+ 
+-        except Exception as e:
+-            logger.debug(f"Failed to load MPD playlist '{url}': {e}")
++            except Exception as e:
++                logger.debug(f"Failed to load MPD playlist '{url_item}': {e}")
++                continue
+ 
+         return None
+ 
+Index: isubrip/scrapers/disneyplus_hotstar_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport datetime as dt\r\nimport hashlib\r\nimport hmac\r\nimport re\r\nfrom time import time\r\nfrom typing import TYPE_CHECKING, Iterator\r\n\r\nfrom lxml import etree as ET\r\n\r\nfrom isubrip.config import Config, ConfigSetting\r\nfrom isubrip.data_structures import Episode, Movie, ScrapedMediaResponse, Season, Series, SubtitlesData\r\nfrom isubrip.scrapers.scraper import DASHScraper, PlaylistLoadError, ScraperError\r\nfrom isubrip.subtitle_formats.webvtt import WebVTTSubtitles\r\nfrom isubrip.utils import (\r\n    extract_host_from_url,\r\n    generate_random_hex_string,\r\n    generate_url_params,\r\n    parse_duration,\r\n    parse_season_and_episode_tag,\r\n    parse_url_params,\r\n    raise_for_status,\r\n    single_to_list,\r\n)\r\n\r\nif TYPE_CHECKING:\r\n    from requests import Response\r\n\r\n\r\nclass DisneyPlusHotstarScraper(DASHScraper):\r\n    \"\"\"\r\n    A Disney+ Hotstar scraper\r\n\r\n    Attributes:\r\n        api_url (str): Disney+ Hotstar's base API URL.\r\n        player_params (dict): Parameters to send to the API to get the player config.\r\n        jwt_token (str): JWT token used to authenticate with the API.\r\n    \"\"\"\r\n    id = \"dsnphs\"\r\n    name = \"Disney+ (Hotstar)\"\r\n    abbreviation = \"DSNP\"\r\n    url_regex = re.compile(r\"(?P<base_url>https?://(?:www\\.)?apps\\.disneyplus\\.com/(?P<slug>(?:(?P<country_code>[a-z]{2})/)?(?:(?P<media_type>movies|shows)/)?(?:(?P<media_name>[\\w\\-%]+)/)?(?P<media_id>(?:\\d{4,10}))))(?:\\?(?P<url_params>.*))?\", flags=re.IGNORECASE)  # noqa: E501\r\n    # TODO: Update regex - slug can have episode data. Ex: il/shows/mshpkht-sympsvn/1260023404/some-enchanted-evening/1260023628\r\n    subtitles_class = WebVTTSubtitles\r\n    is_movie_scraper = True\r\n    is_series_scraper = True\r\n\r\n    _AKAMAI_ENCRYPTION_KEY = b'\\x05\\xfc\\x1a\\x01\\xca\\xc9\\x4b\\xc4\\x12\\xfc\\x53\\x12\\x07\\x75\\xf9\\xee'\r\n\r\n    _api_url = \"https://www.apps.disneyplus.com/api/internal/bff\"\r\n    _player_params = {\r\n        \"client_capabilities\":\r\n            {\r\n                \"audio_channel\": [\"stereo\"],\r\n                \"container\": [\"fmp4\", \"ts\"],\r\n                \"dvr\": [\"short\"],\r\n                \"dynamic_range\": [\"sdr\"],\r\n                \"encryption\": [\"widevine\", \"plain\"],\r\n                \"ladder\": [\"tv\", \"phone\"],\r\n                \"package\": [\"dash\", \"hls\"],\r\n                \"resolution\": [\"sd\", \"hd\", \"fhd\"],\r\n                \"video_codec\": [\"h264\"],\r\n            },\r\n        \"drm_parameters\":\r\n            {\r\n                \"hdcp_version\": [\"HDCP_V2_2\"],\r\n                \"widevine_security_level\": [\"SW_SECURE_DECODE\"],\r\n                \"playready_security_level\": [],\r\n            },\r\n    }\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n\r\n        if self.config is None:\r\n            self.config = Config()\r\n\r\n        # Add \"token\" setting to config\r\n        self.config.add_settings(\r\n            ConfigSetting(\r\n                key=\"token\",\r\n                type=str,\r\n                required=True,\r\n            ),\r\n            check_config=True)\r\n\r\n        self._session.headers.update({\r\n            \"Accept\": \"application/json\",  # TODO: Remove?\r\n            \"X-Hs-Usertoken\": self.config[\"token\"],\r\n            \"X-Hs-Platform\": \"web\",\r\n            \"X-Hs-Client\": \"platform:web;app_version:23.05.29.0;browser:Chrome;schema_version:0.0.854\",\r\n        })\r\n\r\n        self._session.proxies = {\r\n            \"http\": \"127.0.0.1:8085\",\r\n            \"https\": \"127.0.0.1:8085\",\r\n        }\r\n        self._session.verify = False\r\n        # Disable SSL verification warning\r\n        import urllib3\r\n        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\r\n\r\n    def get(self, url: str,\r\n            additional_headers: dict | None = None,\r\n            include_hotstarauth: bool = False, **kwargs) -> Response:\r\n        response = self._session.get(url=url,\r\n                                     headers=self._generate_headers(url=url,\r\n                                                                    additional_headers=additional_headers,\r\n                                                                    include_hotstarauth=include_hotstarauth),\r\n                                     **kwargs)\r\n        raise_for_status(response)\r\n        return response\r\n\r\n    def _generate_headers(self, url: str, additional_headers: dict | None = None,\r\n                          include_hotstarauth: bool = False) -> dict:\r\n        \"\"\"\r\n        Generate headers for a Disney+ Hotstar's API request.\r\n\r\n        Args:\r\n            url (str): URL to generate headers for.\r\n            additional_headers (dict, optional): Additional headers to add to the generated headers. Defaults to None.\r\n            include_hotstarauth (bool, optional): Whether to include the `hotstarauth` header. Defaults to False.\r\n\r\n        Returns:\r\n            dict: Generated headers for the request.\r\n        \"\"\"\r\n        request_id = self._generate_request_id()\r\n\r\n        headers = {\r\n            **self._session.headers,\r\n            \"Host\": extract_host_from_url(url),\r\n            \"X-Request-Id\": request_id,\r\n            \"X-Hs-Request-Id\": request_id,\r\n            \"Origin\": \"https://www.apps.disneyplus.com\",\r\n            \"Referer\": \"https://www.apps.disneyplus.com/\",\r\n        }\r\n\r\n        if additional_headers:\r\n            headers.update(additional_headers)\r\n\r\n        if include_hotstarauth:\r\n            headers[\"hotstarauth\"] = self._generate_hotstarauth_token()\r\n\r\n        return headers\r\n\r\n    def _generate_hotstarauth_token(self) -> str:\r\n        st = int(time())  # TODO: Check if possible to get time from server\r\n        exp = st + 6000\r\n        hotstarauth = f\"st={st}~exp={exp}~acl=/*\"\r\n        hotstarauth += \"~hmac=\" + hmac.new(key=self._AKAMAI_ENCRYPTION_KEY,\r\n                                           msg=hotstarauth.encode(),\r\n                                           digestmod=hashlib.sha256).hexdigest()\r\n\r\n        return hotstarauth\r\n\r\n    @staticmethod\r\n    def _generate_request_id() -> str:\r\n        request_id = generate_random_hex_string(8) + '-'\r\n\r\n        for _ in range(3):\r\n            request_id += generate_random_hex_string(4) + '-'\r\n\r\n        return request_id + generate_random_hex_string(12)\r\n\r\n    def _get_api_data(self, endpoint: str) -> dict:\r\n        \"\"\"\r\n        Retrieve data from the Disney+ Hotstar's API.\r\n\r\n        Args:\r\n            endpoint (str): API endpoint.\r\n\r\n        Returns:\r\n            dict: Data returned by the API for the given endpoint.\r\n        \"\"\"\r\n        response = self.get(f\"{self._api_url}/{endpoint}\")\r\n        raise_for_status(response)\r\n        return response.json()\r\n\r\n    def _get_episode_playlists(self, episode_slug: str) -> list[str]:\r\n        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)\r\n        api_data = self._get_api_data(endpoint=f\"v2/slugs/{episode_slug}?{player_params}\")\r\n\r\n        player_config = (\r\n            api_data[\"success\"][\"page\"][\"spaces\"][\"player\"][\"widget_wrappers\"][0][\"widget\"][\"data\"][\"player_config\"]\r\n        )\r\n\r\n        return_data = [\r\n            player_config.get(\"media_asset_v2\", {}).get(\"primary\", {}).get(\"content_url\"),\r\n            player_config.get(\"media_asset_v2\", {}).get(\"fallback\", {}).get(\"content_url\"),\r\n        ]\r\n\r\n        return [playlist_url for playlist_url in return_data if playlist_url]\r\n\r\n    def _get_season_data(self, show_id: str, season_id: str) -> dict[int, dict]:\r\n        endpoint = f\"v2/pages/841/spaces/803/widgets/1196/widgets/168?content_id={show_id}&season_id={season_id}\"\r\n        paginated_data = []\r\n\r\n        # Get all paginated episodes data for the season\r\n        while endpoint:  # TODO: Increase page size\r\n            api_data = self._get_api_data(endpoint)\r\n            episodes_paginated_data = api_data[\"success\"][\"widget_wrapper\"][\"widget\"][\"data\"]\r\n            paginated_data.extend(episodes_paginated_data[\"items\"])\r\n            endpoint = episodes_paginated_data.get(\"next_tray_url\")\r\n\r\n        api_episodes_data = [episode_data[\"playable_content\"][\"data\"] for episode_data in paginated_data]\r\n        result_data: dict[int, dict] = {}\r\n\r\n        for episode_data in api_episodes_data:\r\n            page_slug = episode_data[\"actions\"][\"on_click\"][1][\"page_navigation\"][\"page_slug\"].split(\"?\")[0]\r\n            episode_data[\"playlists\"] = self._get_episode_playlists(episode_slug=page_slug.lstrip(\"/\"))\r\n            episode_number = parse_season_and_episode_tag(episode_data[\"tags\"][0][\"value\"])[1]\r\n            # Remove unnecessary data\r\n            if 'actions' in episode_data:\r\n                episode_data.pop('actions')\r\n\r\n            if 'download_options' in episode_data:\r\n                episode_data.pop('download_options')\r\n\r\n            result_data[episode_number] = episode_data\r\n\r\n        return result_data\r\n\r\n    def get_movie_data(self, movie_id: str) -> ScrapedMediaResponse[Movie]:\r\n        raise NotImplementedError  # TODO\r\n\r\n    def get_series_data(self, show_slug: str) -> ScrapedMediaResponse[Series]:\r\n        api_data = self._get_api_data(endpoint=\"v2/slugs/\" + show_slug)\r\n        media_data = api_data[\"success\"][\"page\"][\"spaces\"][\"hero\"][\"widget_wrappers\"][0][\"widget\"][\"data\"]\r\n        seasons_data = api_data[\"success\"][\"page\"][\"spaces\"][\"tray\"][\"widget_wrappers\"][0][\"widget\"][\"data\"] \\\r\n            [\"category_picker\"][\"data\"][\"tabs\"]\r\n\r\n        series_name = media_data[\"content_info\"][\"title\"]\r\n        series_id = media_data[\"content_actions_row\"][\"content_action_buttons\"][0][\"watchlist_content_action_button\"] \\\r\n            [\"info\"][\"content_id\"]\r\n        series_seasons: list[Season] = []\r\n        result_seasons_data: dict[int, dict[int, dict]] = {}\r\n\r\n        for season_data in [season_data[\"tab\"][\"data\"] for season_data in seasons_data]:\r\n            url_params = parse_url_params(season_data[\"tray_widget_url\"])  # TODO: Use the URL instead of parsing it and recreating it\r\n            season_episodes_data = self._get_season_data(show_id=url_params[\"content_id\"],\r\n                                                         season_id=url_params[\"season_id\"])\r\n            season_number = int(season_data[\"title\"].split(\" \")[1])\r\n            result_seasons_data[season_number] = season_episodes_data\r\n\r\n            season_episodes: list[Episode] = []\r\n\r\n            for episode_number, episode_data in season_episodes_data.items():\r\n                season_episodes.append(\r\n                    Episode(\r\n                        id=episode_data[\"cw_info\"][\"content_id\"],\r\n                        series_name=series_name,\r\n                        season_number=season_number,\r\n                        episode_number=episode_number,\r\n                        episode_name=episode_data[\"title\"],\r\n                        episode_release_date=dt.datetime.strptime(episode_data[\"tags\"][1][\"value\"], \"%d %b %Y\"),\r\n                        episode_duration=parse_duration(episode_data[\"tags\"][2][\"value\"]),\r\n                        playlist=episode_data[\"playlists\"].copy(),\r\n                    ),\r\n                )\r\n\r\n            series_seasons.append(\r\n                Season(\r\n                    id=series_id,\r\n                    series_name=series_name,\r\n                    season_number=season_number,\r\n                    release_date=None,\r\n                    episodes=season_episodes,\r\n                ))\r\n\r\n        series_data = Series(\r\n            id=series_id,\r\n            series_name=series_name,\r\n            seasons=series_seasons,\r\n        )\r\n\r\n        return ScrapedMediaResponse(\r\n            media_data=series_data,\r\n            metadata_scraper=self.id,\r\n            playlist_scraper=self.id,\r\n            original_data={\r\n                \"series_data\": api_data,\r\n                \"seasons_data\": result_seasons_data,\r\n            },\r\n        )\r\n\r\n    def get_data(self, url: str) -> ScrapedMediaResponse[Movie] | ScrapedMediaResponse[Series]:\r\n        regex_match = self.match_url(url, raise_error=True)\r\n        url_data = regex_match.groupdict()\r\n\r\n        if not all(url_data.get(key) for key in (\"country_code\", \"media_type\", \"media_name\", \"media_id\")):\r\n            raise ScraperError(f\"Full URL containing the slug is required for scraping from '{self.name}'.\")\r\n            # TODO: Find a way to get the full URL with the complete slug from the given URL\r\n\r\n        if url_data[\"media_type\"] == \"movies\":\r\n            return self.get_movie_data(url_data[\"media_id\"])\r\n\r\n        elif url_data[\"media_type\"] == \"shows\":\r\n            return self.get_series_data(url_data[\"slug\"])\r\n\r\n        else:\r\n            raise ScraperError(f\"Unexpected media type URL '{url_data['media_type']}' for '{self.name}'.\")\r\n\r\n    def get_subtitles(self, main_playlist: str | list[str], language_filter: list[str] | str | None = None,\r\n                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:\r\n        playlist_data: ET.Element | None = None\r\n        for url in single_to_list(main_playlist):\r\n            if playlist_data := self.load_mpd(url=url,\r\n                                              headers=self._generate_headers(\r\n                                                  url=url,\r\n                                                  additional_headers={\"Accept\": \"application/dash+xml\"},\r\n                                                  include_hotstarauth=True,\r\n                                              )):\r\n                break\r\n\r\n        if playlist_data:\r\n            pass\r\n\r\n        else:\r\n            raise PlaylistLoadError(\"Could not load MPD playlist.\")\r\n\r\n        ET.tostring(playlist_data, encoding=\"unicode\")\r\n        raise NotImplementedError\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/disneyplus_hotstar_scraper.py b/isubrip/scrapers/disneyplus_hotstar_scraper.py
+--- a/isubrip/scrapers/disneyplus_hotstar_scraper.py	(revision 24f7a5335ae74530671de4e8d6aaa8ef20cb960f)
++++ b/isubrip/scrapers/disneyplus_hotstar_scraper.py	(date 1705785982553)
+@@ -11,7 +11,10 @@
+ 
+ from isubrip.config import Config, ConfigSetting
+ from isubrip.data_structures import Episode, Movie, ScrapedMediaResponse, Season, Series, SubtitlesData
++from isubrip.logger import logger
++from isubrip.parsers.mpeg_dash import MPD
+ from isubrip.scrapers.scraper import DASHScraper, PlaylistLoadError, ScraperError
++from isubrip.subtitle_formats.subtitles import Subtitles
+ from isubrip.subtitle_formats.webvtt import WebVTTSubtitles
+ from isubrip.utils import (
+     extract_host_from_url,
+@@ -48,8 +51,8 @@
+ 
+     _AKAMAI_ENCRYPTION_KEY = b'\x05\xfc\x1a\x01\xca\xc9\x4b\xc4\x12\xfc\x53\x12\x07\x75\xf9\xee'
+ 
+-    _api_url = "https://www.apps.disneyplus.com/api/internal/bff"
+-    _player_params = {
++    api_url = "https://www.apps.disneyplus.com/api/internal/bff"
++    player_params = {
+         "client_capabilities":
+             {
+                 "audio_channel": ["stereo"],
+@@ -85,30 +88,23 @@
+             ),
+             check_config=True)
+ 
++        self.jwt_token: str = self.config["token"]
++        # test = self._authenticated_get(url="https://apix.hotstar.com/gringotts/v2/web/payment/history",
++        #                                include_hotstarauth=True)
+         self._session.headers.update({
+             "Accept": "application/json",  # TODO: Remove?
+             "X-Hs-Usertoken": self.config["token"],
+             "X-Hs-Platform": "web",
+-            "X-Hs-Client": "platform:web;app_version:23.05.29.0;browser:Chrome;schema_version:0.0.854",
++            "X-Hs-Client": "platform:web;app_version:23.12.30.0;browser:Chrome;schema_version:0.0.1106",
+         })
+ 
+-        self._session.proxies = {
+-            "http": "127.0.0.1:8085",
+-            "https": "127.0.0.1:8085",
+-        }
+-        self._session.verify = False
+-        # Disable SSL verification warning
+-        import urllib3
+-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+-
+-    def get(self, url: str,
+-            additional_headers: dict | None = None,
+-            include_hotstarauth: bool = False, **kwargs) -> Response:
+-        response = self._session.get(url=url,
+-                                     headers=self._generate_headers(url=url,
+-                                                                    additional_headers=additional_headers,
+-                                                                    include_hotstarauth=include_hotstarauth),
+-                                     **kwargs)
++    def _authenticated_get(self, url: str, additional_headers: dict | None = None,
++                           include_hotstarauth: bool = False, **kwargs) -> Response:
++        headers = self._generate_headers(url=url,
++                                         additional_headers=additional_headers,
++                                         include_hotstarauth=include_hotstarauth)
++
++        response = self._session.get(url=url, headers=headers, **kwargs)
+         raise_for_status(response)
+         return response
+ 
+@@ -173,12 +169,11 @@
+         Returns:
+             dict: Data returned by the API for the given endpoint.
+         """
+-        response = self.get(f"{self._api_url}/{endpoint}")
+-        raise_for_status(response)
++        response = self._authenticated_get(f"{self.api_url}/{endpoint}")
+         return response.json()
+ 
+     def _get_episode_playlists(self, episode_slug: str) -> list[str]:
+-        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)
++        player_params = generate_url_params(data=self.player_params, remove_dict_spaces=True)
+         api_data = self._get_api_data(endpoint=f"v2/slugs/{episode_slug}?{player_params}")
+ 
+         player_config = (
+@@ -221,6 +216,23 @@
+ 
+         return result_data
+ 
++    def load_mpd(self, url: str | list[str], headers: dict | None = None) -> MPD | None:
++        # We need to override this method since each playlist URL requires different headers
++        for url in single_to_list(url):
++            headers = headers or {}
++            headers.update(
++                self._generate_headers(
++                    url=url,
++                    additional_headers={"Accept": "application/dash+xml"},
++                    include_hotstarauth=True,
++                )
++            )
++
++            if loaded_playlist := super().load_mpd(url=url,
++                                                   headers=headers):
++                return loaded_playlist
++        return None
++
+     def get_movie_data(self, movie_id: str) -> ScrapedMediaResponse[Movie]:
+         raise NotImplementedError  # TODO
+ 
+@@ -303,21 +315,24 @@
+ 
+     def get_subtitles(self, main_playlist: str | list[str], language_filter: list[str] | str | None = None,
+                       subrip_conversion: bool = False) -> Iterator[SubtitlesData]:
+-        playlist_data: ET.Element | None = None
+-        for url in single_to_list(main_playlist):
+-            if playlist_data := self.load_mpd(url=url,
+-                                              headers=self._generate_headers(
+-                                                  url=url,
+-                                                  additional_headers={"Accept": "application/dash+xml"},
+-                                                  include_hotstarauth=True,
+-                                              )):
+-                break
++        playlist_data = self.load_mpd(url=main_playlist)
++
++        if not playlist_data:  # No valid playlist found
++            raise PlaylistLoadError("Could not find a valid MPD playlist.")
+ 
+-        if playlist_data:
+-            pass
++        for period in playlist_data.get_periods():
++            if period.id == "seq:0_0":
++                for subtitles_adaptation_set in period.get_adaptation_sets(content_type='text', mime_type='text/vtt'):
++                    if language_filter and subtitles_adaptation_set.lang not in language_filter:
++                        continue
+ 
+-        else:
+-            raise PlaylistLoadError("Could not load MPD playlist.")
++                    for subtitles_representation in subtitles_adaptation_set.get_representations():
++                        # Seems like the "real" subtitles are always under the "seq:0_0" period
++                        # (and other periods have "dummy" subtitles), but this is a check just in case.
++                        if subtitles_representation.id == "subtitle/dummy":
++                            logger.warning("Dummy subtitles found. Skipping...")
++                            continue
+ 
+-        ET.tostring(playlist_data, encoding="unicode")
+-        raise NotImplementedError
++                        subtitles_url = subtitles_representation.url
++                        subtitles_data = self.subtitles_class.loads(self._session.get(url=subtitles_url).text)
++
+Index: isubrip/utils.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABCMeta\r\nimport datetime as dt\r\nimport json\r\nfrom pathlib import Path\r\nimport random\r\nimport re\r\nimport sys\r\nfrom typing import TYPE_CHECKING, Any, Union, get_args, get_origin\r\n\r\nfrom isubrip.data_structures import (\r\n    Episode,\r\n    MediaBase,\r\n    Movie,\r\n    Season,\r\n    Series,\r\n    SubtitlesData,\r\n    SubtitlesFormatType,\r\n    SubtitlesType,\r\n)\r\nfrom isubrip.logger import logger\r\n\r\nif TYPE_CHECKING:\r\n    from os import PathLike\r\n\r\n    import requests\r\n\r\n\r\nHOST_REGEX = re.compile(r\"^(?:https?://)?(?P<host>[^/:?]+)\", flags=re.IGNORECASE)\r\n\r\n\r\nclass SingletonMeta(ABCMeta):\r\n    \"\"\"\r\n    A metaclass that implements the Singleton pattern.\r\n    When a class using this metaclass is initialized, it will return the same instance every time.\r\n    \"\"\"\r\n    _instances: dict[object, object] = {}\r\n\r\n    def __call__(cls, *args: Any, **kwargs: Any) -> object:\r\n        if cls._instances.get(cls) is None:\r\n            cls._instances[cls] = super().__call__(*args, **kwargs)\r\n\r\n        return cls._instances[cls]\r\n\r\n\r\ndef check_type(value: Any, type_) -> bool:  # type: ignore[no-untyped-def]\r\n    \"\"\"\r\n    Check if a value is of a certain type.\r\n    Works with parameterized generics.\r\n\r\n    Args:\r\n        value (Any): Value to check.\r\n        type_: Type to check against.\r\n\r\n    Returns:\r\n        bool: True if the value is of the specified type, False otherwise.\r\n    \"\"\"\r\n    origin = get_origin(type_)\r\n    args = get_args(type_)\r\n\r\n    if origin is Union:\r\n        return any(check_type(value, union_sub_type) for union_sub_type in args)\r\n\r\n    if origin is tuple:\r\n        if args[-1] is Ellipsis:\r\n            # Example: (int, str, ...)\r\n            args_len = len(args)\r\n\r\n            return check_type(value[:args_len - 1], tuple(args[:-1])) and \\\r\n                all(check_type(item, args[-2]) for item in value[args_len - 1:])\r\n\r\n        return isinstance(value, tuple) and \\\r\n            len(value) == len(args) and \\\r\n            all(check_type(item, item_type) for item, item_type in zip(value, args))\r\n\r\n    if origin is list:\r\n        return isinstance(value, list) and \\\r\n            all(check_type(item, args[0]) for item in value)\r\n\r\n    if origin is dict:\r\n        return isinstance(value, dict) and \\\r\n            all(check_type(k, args[0]) and check_type(v, args[1]) for k, v in value.items())\r\n\r\n    return isinstance(value, type_)\r\n\r\n\r\ndef convert_epoch_to_datetime(epoch_timestamp: int) -> dt.datetime:\r\n    \"\"\"\r\n    Convert an epoch timestamp to a datetime object.\r\n\r\n    Args:\r\n        epoch_timestamp (int): Epoch timestamp.\r\n\r\n    Returns:\r\n        datetime: A datetime object representing the timestamp.\r\n    \"\"\"\r\n    if epoch_timestamp >= 0:\r\n        return dt.datetime.fromtimestamp(epoch_timestamp)\r\n\r\n    return dt.datetime(1970, 1, 1) + dt.timedelta(seconds=epoch_timestamp)\r\n\r\n\r\ndef download_subtitles_to_file(media_data: Movie | Episode, subtitles_data: SubtitlesData, output_path: str | PathLike,\r\n                               source_abbreviation: str | None = None, overwrite: bool = False) -> Path:\r\n    \"\"\"\r\n    Download subtitles to a file.\r\n\r\n    Args:\r\n        media_data (Movie | Episode): An object containing media data.\r\n        subtitles_data (SubtitlesData): A SubtitlesData object containing subtitles data.\r\n        output_path (str | PathLike): Path to the output folder.\r\n        source_abbreviation (str | None, optional): Abbreviation of the source the subtitles are downloaded from.\r\n            Defaults to None.\r\n        overwrite (bool, optional): Whether to overwrite files if they already exist. Defaults to True.\r\n\r\n    Returns:\r\n        Path: Path to the downloaded subtitles file.\r\n\r\n    Raises:\r\n        ValueError: If the path in `output_path` does not exist.\r\n    \"\"\"\r\n    output_path = Path(output_path)\r\n\r\n    if not output_path.is_dir():\r\n        raise ValueError(f\"Invalid path: {output_path}\")\r\n\r\n    if isinstance(media_data, Movie):\r\n        file_name = generate_release_name(title=media_data.name,\r\n                                          release_date=media_data.release_date,\r\n                                          media_source=source_abbreviation,\r\n                                          language_code=subtitles_data.language_code,\r\n                                          subtitles_type=subtitles_data.special_type,\r\n                                          file_format=subtitles_data.subtitles_format)\r\n    else:  # isinstance(media_data, Episode):\r\n        file_name = generate_release_name(title=media_data.name,\r\n                                          release_date=media_data.release_date,\r\n                                          season_number=media_data.season_number,\r\n                                          episode_number=media_data.episode_number,\r\n                                          episode_name=media_data.episode_name,\r\n                                          media_source=source_abbreviation,\r\n                                          language_code=subtitles_data.language_code,\r\n                                          subtitles_type=subtitles_data.special_type,\r\n                                          file_format=subtitles_data.subtitles_format)\r\n\r\n    file_path = output_path / file_name\r\n\r\n    if file_path.exists() and not overwrite:\r\n        file_path = generate_non_conflicting_path(file_path)\r\n\r\n    with file_path.open('wb') as f:\r\n        f.write(subtitles_data.content)\r\n\r\n    return file_path\r\n\r\n\r\ndef generate_media_description(media_data: MediaBase) -> str:\r\n    \"\"\"\r\n    Generate a short description string of a media object.\r\n\r\n    Args:\r\n        media_data (MediaBase): An object containing media data.\r\n\r\n    Returns:\r\n        str: A short description string of the media object.\r\n    \"\"\"\r\n    if isinstance(media_data, Movie):\r\n        release_year = (\r\n            media_data.release_date.year\r\n            if isinstance(media_data.release_date, dt.datetime)\r\n            else media_data.release_date\r\n        )\r\n        description_str = f\"{media_data.name} [{release_year}]\"\r\n\r\n        if media_data.id:\r\n            description_str += f\" (ID: {media_data.id})\"\r\n\r\n        return description_str\r\n\r\n    if isinstance(media_data, Series):\r\n        description_str = f\"{media_data.series_name}\"\r\n\r\n        if media_data.series_release_date:\r\n            if isinstance(media_data.series_release_date, dt.datetime):\r\n                description_str += f\" [{media_data.series_release_date.year}]\"\r\n\r\n            else:\r\n                description_str += f\" [{media_data.series_release_date}]\"\r\n\r\n        if media_data.id:\r\n            description_str += f\" (ID: {media_data.id})\"\r\n\r\n        return description_str\r\n\r\n    if isinstance(media_data, Season):\r\n        description_str = f\"{media_data.series_name} - Season {media_data.season_number:02d}\"\r\n\r\n        if media_data.season_name:\r\n            description_str += f\" - {media_data.season_name}\"\r\n\r\n        if media_data.id:\r\n            description_str += f\" (ID: {media_data.id})\"\r\n\r\n        return description_str\r\n\r\n    if isinstance(media_data, Episode):\r\n        description_str = f\"{media_data.series_name} - S{media_data.season_number:02d}E{media_data.episode_number:02d}\"\r\n\r\n        if media_data.episode_name:\r\n            description_str += f\" - {media_data.episode_name}\"\r\n\r\n        if media_data.id:\r\n            description_str += f\" (ID: {media_data.id})\"\r\n\r\n        return description_str\r\n\r\n    raise ValueError(f\"Unsupported media type: '{type(media_data)}'\")\r\n\r\n\r\ndef extract_host_from_url(url: str) -> str:\r\n    \"\"\"\r\n    Extract the host from a URL.\r\n\r\n    Args:\r\n        url (str): A URL.\r\n\r\n    Returns:\r\n        str: The host of the URL.\r\n    \"\"\"\r\n    return re.match(HOST_REGEX, url).group('host')\r\n\r\n\r\ndef generate_non_conflicting_path(file_path: str | Path, has_extension: bool = True) -> Path:\r\n    \"\"\"\r\n    Generate a non-conflicting path for a file.\r\n    If the file already exists, a number will be added to the end of the file name.\r\n\r\n    Args:\r\n        file_path (str | Path): Path to a file.\r\n        has_extension (bool, optional): Whether the name of the file includes file extension. Defaults to True.\r\n\r\n    Returns:\r\n        Path: A non-conflicting file path.\r\n    \"\"\"\r\n    if isinstance(file_path, str):\r\n        file_path = Path(file_path)\r\n\r\n    if not file_path.exists():\r\n        return file_path\r\n\r\n    i = 1\r\n    while True:\r\n        if has_extension:\r\n            new_file_path = file_path.parent / f\"{file_path.stem}-{i}{file_path.suffix}\"\r\n\r\n        else:\r\n            new_file_path = file_path.parent / f\"{file_path}-{i}\"\r\n\r\n        if not new_file_path.exists():\r\n            return new_file_path\r\n\r\n        i += 1\r\n\r\n\r\ndef generate_random_hex_string(length: int) -> str:\r\n    \"\"\"\r\n    Generate a random hexadecimal string.\r\n\r\n    Args:\r\n        length (int): Length of the string to generate.\r\n\r\n    Returns:\r\n        str: A random hexadecimal string.\r\n    \"\"\"\r\n    return ''.join(random.choice(\"0123456789abcdef\") for _ in range(length))\r\n\r\n\r\ndef generate_release_name(title: str,\r\n                          release_date: dt.datetime | int | None = None,\r\n                          season_number: int | None = None,\r\n                          episode_number: int | None = None,\r\n                          episode_name: str | None = None,\r\n                          media_source: str | None = None,\r\n                          source_type: str | None = \"WEB\",\r\n                          additional_info: str | list[str] | None = None,\r\n                          language_code: str | None = None,\r\n                          subtitles_type: SubtitlesType | None = None,\r\n                          file_format: str | SubtitlesFormatType | None = None) -> str:\r\n    \"\"\"\r\n    Generate a release name.\r\n\r\n    Args:\r\n        title (str): Media title.\r\n        release_date (int | None, optional): Release date (datetime), or year (int) of the media. Defaults to None.\r\n        season_number (int | None, optional): Season number. Defaults to None.\r\n        episode_number (int | None, optional): Episode number. Defaults to None.\r\n        episode_name (str | None, optional): Episode name. Defaults to None.\r\n        media_source (str | None, optional): Media source name (full or abbreviation). Defaults to None.\r\n        source_type(str | None, optional): General source type (WEB, BluRay, etc.). Defaults to None.\r\n        additional_info (list[str] | str | None, optional): Additional info to add to the file name. Defaults to None.\r\n        language_code (str | None, optional): Language code. Defaults to None.\r\n        subtitles_type (SubtitlesType | None, optional): Subtitles type. Defaults to None.\r\n        file_format (SubtitlesFormat | str | None, optional): File format to use.  Defaults to None.\r\n\r\n    Returns:\r\n        str: Generated file name.\r\n    \"\"\"\r\n    file_name = standardize_title(title)\r\n\r\n    if release_date is not None:\r\n        if isinstance(release_date, dt.datetime):\r\n            release_year = release_date.year\r\n\r\n        else:\r\n            release_year = release_date\r\n\r\n        file_name += f\".{release_year}\"\r\n\r\n    if season_number is not None:\r\n        file_name += f\".S{season_number:02}\"\r\n\r\n    if episode_number is not None:\r\n        file_name += f\".E{episode_number:02}\"\r\n\r\n    if episode_name is not None:\r\n        file_name += f\".{standardize_title(episode_name)}\"\r\n\r\n    if media_source is not None:\r\n        file_name += f\".{media_source}\"\r\n\r\n    if source_type is not None:\r\n        file_name += f\".{source_type}\"\r\n\r\n    if additional_info is not None:\r\n        if isinstance(additional_info, (list, tuple)):\r\n            additional_info = '.'.join(additional_info)\r\n\r\n        file_name += f\".{additional_info}\"\r\n\r\n    if language_code is not None:\r\n        file_name += f\".{language_code}\"\r\n\r\n    if subtitles_type is not None:\r\n        file_name += f\".{subtitles_type.value.lower()}\"\r\n\r\n    if file_format is not None:\r\n        if isinstance(file_format, SubtitlesFormatType):\r\n            file_format = file_format.value.file_extension\r\n\r\n        file_name += f\".{file_format}\"\r\n\r\n    return file_name\r\n\r\n\r\ndef generate_url_params(data: dict[str, Any], remove_dict_spaces: bool = False) -> str:\r\n    \"\"\"\r\n    Generate a URL query string from a dictionary.\r\n\r\n    Args:\r\n        data (dict[str, Any]): Dictionary to generate a URL query string from.\r\n        remove_dict_spaces (bool, optional): Whether to remove spaces from stringified dictionary values.\r\n            Defaults to False.\r\n\r\n    Returns:\r\n        str: Generated URL query string.\r\n    \"\"\"\r\n    stringified_data = {}\r\n    json_dumps_separators = (',', ':') if remove_dict_spaces else None\r\n\r\n    for key, value in data.items():\r\n        if isinstance(value, (list, tuple, dict)):\r\n            stringified_data[key] = json.dumps(value, separators=json_dumps_separators)\r\n\r\n        elif isinstance(value, bool):\r\n            stringified_data[key] = str(value).lower()\r\n\r\n        else:\r\n            stringified_data[key] = str(value)\r\n\r\n    return '&'.join([f\"{key}={value}\" for key, value in stringified_data.items() if value is not None])\r\n\r\n\r\ndef merge_dict_values(*dictionaries: dict) -> dict:\r\n    \"\"\"\r\n    A function for merging the values of multiple dictionaries using the same keys.\r\n    If a key already exists, the value will be added to a list of values mapped to that key.\r\n\r\n    Args:\r\n        *dictionaries (dict): Dictionaries to merge.\r\n\r\n    Returns:\r\n        dict: A merged dictionary.\r\n    \"\"\"\r\n    result: dict = {}\r\n\r\n    for dict_ in dictionaries:\r\n        for key, value in dict_.items():\r\n            if key in result:\r\n                if isinstance(result[key], list) and value not in result[key]:\r\n                    result[key].append(value)\r\n\r\n                elif isinstance(result[key], tuple) and value not in result[key]:\r\n                    result[key] = result[key] + (value,)\r\n\r\n                elif value != result[key]:\r\n                    result[key] = [result[key], value]\r\n            else:\r\n                result[key] = value\r\n\r\n    return result\r\n\r\n\r\ndef raise_for_status(response: requests.Response) -> None:\r\n    \"\"\"\r\n    Raise an exception if the response status code is invalid.\r\n    Uses 'response.raise_for_status()' internally, with additional logging.\r\n\r\n    Args:\r\n        response (requests.Response): A response object.\r\n    \"\"\"\r\n    truncation_threshold = 1500\r\n\r\n    if response.ok:\r\n        return\r\n\r\n    if len(response.text) > truncation_threshold:\r\n        # Truncate the response as in some cases there could be an unexpected long HTML response\r\n        response_text = response.text[:truncation_threshold].rstrip() + \" <TRUNCATED...>\"\r\n\r\n    else:\r\n        response_text = response.text\r\n\r\n    logger.debug(f\"Response status code: {response.status_code}\")\r\n\r\n    if response.headers.get('Content-Type'):\r\n        logger.debug(f\"Response type: {response.headers['Content-Type']}\")\r\n\r\n    logger.debug(f\"Response text: {response_text}\")\r\n\r\n    response.raise_for_status()\r\n\r\n\r\ndef parse_duration(duration_string: str) -> dt.timedelta:\r\n    \"\"\"\r\n    Parse a duration ISO 8601 string (e.g. PT1H30M15S), or a duration tag (e.g. '1h 30m', '30m') to a timedelta object.\r\n\r\n    Args:\r\n        duration_string (str): Duration tag to parse.\r\n\r\n    Returns:\r\n        dt.timedelta: A timedelta object representing the duration.\r\n    \"\"\"\r\n    iso8601_duration_regex = re.compile(\r\n        r\"(?i)^PT(?:(?P<hours>\\d{1,2})H)?(?:(?P<minutes>\\d{1,2})M)?(?:(?P<seconds>\\d{1,2})(?:\\.(?P<milliseconds>\\d{1,3}))?S)?\",  # noqa: E501\r\n    )\r\n\r\n    duration_tag_regex = re.compile(\r\n        r\"(?i)^(?:(?P<hours>\\d{1,2})H)?\\s?(?:(?P<minutes>\\d{1,2})M)?\\s?(?:(?P<seconds>\\d{1,2})S)?$\",\r\n    )\r\n\r\n    if regex_match := re.match(iso8601_duration_regex, duration_string):\r\n        data = regex_match.groupdict()\r\n\r\n    elif regex_match := re.match(duration_tag_regex, duration_string):\r\n        data = regex_match.groupdict()\r\n\r\n    else:\r\n        raise ValueError(f\"Invalid / unsupported duration string: '{duration_string}'\")\r\n\r\n    hours = int(data[\"hours\"]) if data.get(\"hours\") else 0\r\n    minutes = int(data[\"minutes\"]) if data.get(\"minutes\") else 0\r\n    seconds = int(data[\"seconds\"]) if data.get(\"seconds\") else 0\r\n    milliseconds = int(data[\"milliseconds\"]) if data.get(\"milliseconds\") else 0\r\n\r\n    return dt.timedelta(hours=hours, minutes=minutes, seconds=seconds, milliseconds=milliseconds)\r\n\r\n\r\ndef parse_season_and_episode_tag(tag: str) -> tuple[int, int]:\r\n    \"\"\"\r\n    Parse a season and episode tag (e.g. 'S01E01') to a tuple containing the season number and episode number.\r\n\r\n    Args:\r\n        tag (str): Season and episode tag. (e.g. 'S01E02')\r\n\r\n    Returns:\r\n        tuple[int, int]: A tuple containing the season number (first item) and episode number (second item).\r\n    \"\"\"\r\n    regex_pattern = re.compile(r\"(?i)^S(?P<season>\\d{1,2})[\\s.]?E(?P<episode>\\d{1,3})$\")\r\n\r\n    if regex_match := re.match(regex_pattern, tag):\r\n        return int(regex_match.group('season')), int(regex_match.group('episode'))\r\n\r\n    raise ValueError(f\"Invalid season and episode tag: '{tag}'\")\r\n\r\n\r\ndef parse_url_params(url_params: str) -> dict:\r\n    \"\"\"\r\n    Parse GET parameters from a URL to a dictionary.\r\n\r\n    Args:\r\n        url_params (str): URL parameters. (e.g. 'param1=value1&param2=value2')\r\n\r\n    Returns:\r\n        dict: A dictionary containing the URL parameters.\r\n    \"\"\"\r\n    url_params = url_params.split('?')[-1].rstrip('&')\r\n    params_list = url_params.split('&')\r\n\r\n    if len(params_list) == 0 or \\\r\n            (len(params_list) == 1 and '=' not in params_list[0]):\r\n        return {}\r\n\r\n    return {key: value for key, value in (param.split('=') for param in params_list)}\r\n\r\n\r\ndef single_to_list(obj: Any) -> list:\r\n    \"\"\"\r\n    Convert a single non-iterable object to a list.\r\n    If None is passed, an empty list will be returned.\r\n\r\n    Args:\r\n        obj: Object to convert.\r\n\r\n    Returns:\r\n        list: A list containing the object.\r\n            If the object is already an iterable, it will be converted to a list.\r\n    \"\"\"\r\n    if isinstance(obj, list):\r\n        return obj\r\n\r\n    if obj is None:\r\n        return []\r\n\r\n    # tuple (not a namedtuple) or a set\r\n    if (isinstance(obj, tuple) and not hasattr(obj, '_fields')) or isinstance(obj, set):\r\n        return list(obj)\r\n\r\n    return [obj]\r\n\r\n\r\ndef split_subtitles_timestamp(timestamp: str) -> tuple[dt.time, dt.time]:\r\n    \"\"\"\r\n    Split a subtitles timestamp into start and end.\r\n\r\n    Args:\r\n        timestamp (str): A subtitles timestamp. For example: \"00:00:00.000 --> 00:00:00.000\"\r\n\r\n    Returns:\r\n        tuple(time, time): A tuple containing start and end times as a datetime object.\r\n    \"\"\"\r\n    # Support ',' character in timestamp's milliseconds (used in SubRip format).\r\n    timestamp = timestamp.replace(',', '.')\r\n\r\n    start_time, end_time = timestamp.split(\" --> \")\r\n    return dt.time.fromisoformat(start_time), dt.time.fromisoformat(end_time)\r\n\r\n\r\ndef standardize_title(title: str) -> str:\r\n    \"\"\"\r\n    Format movie title to a standardized title that can be used as a file name.\r\n\r\n    Args:\r\n        title (str): A movie title.\r\n\r\n    Returns:\r\n        str: The movie title, in a file-name-friendly format.\r\n    \"\"\"\r\n    windows_reserved_file_names = (\"CON\", \"PRN\", \"AUX\", \"NUL\", \"COM1\", \"COM2\", \"COM3\", \"COM4\",\r\n                                   \"COM5\", \"COM6\", \"COM7\", \"COM8\", \"COM9\", \"LPT1\", \"LPT2\",\r\n                                   \"LPT3\", \"LPT4\", \"LPT5\", \"LPT6\", \"LPT7\", \"LPT8\", \"LPT9\")\r\n\r\n    title = title.strip()\r\n\r\n    # Replacements will be done in the same order of this list\r\n    replacement_pairs = [\r\n        (': ', '.'),\r\n        (':', '.'),\r\n        (' - ', '-'),\r\n        (', ', '.'),\r\n        ('. ', '.'),\r\n        (' ', '.'),\r\n        ('|', '.'),\r\n        ('/', '.'),\r\n        ('<', ''),\r\n        ('>', ''),\r\n        ('(', ''),\r\n        (')', ''),\r\n        ('\"', ''),\r\n        ('?', ''),\r\n        ('*', ''),\r\n    ]\r\n\r\n    for pair in replacement_pairs:\r\n        title = title.replace(pair[0], pair[1])\r\n\r\n    title = re.sub(r\"\\.+\", \".\", title)  # Replace multiple dots with a single dot\r\n\r\n    # If running on Windows, rename Windows reserved names to allow file creation\r\n    if sys.platform == 'win32':\r\n        split_title = title.split('.')\r\n\r\n        if split_title[0].upper() in windows_reserved_file_names:\r\n            if len(split_title) > 1:\r\n                return split_title[0] + split_title[1] + '.'.join(split_title[2:])\r\n\r\n            if len(split_title) == 1:\r\n                return \"_\" + title\r\n\r\n    return title\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/utils.py b/isubrip/utils.py
+--- a/isubrip/utils.py	(revision 24f7a5335ae74530671de4e8d6aaa8ef20cb960f)
++++ b/isubrip/utils.py	(date 1705785982555)
+@@ -7,8 +7,10 @@
+ import random
+ import re
+ import sys
+-from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
++from types import TracebackType
++from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, Type
+ 
++from isubrip.constants import TEMP_FOLDER_PATH
+ from isubrip.data_structures import (
+     Episode,
+     MediaBase,
+@@ -44,6 +46,49 @@
+         return cls._instances[cls]
+ 
+ 
++class TempDirectoryGenerator(metaclass=SingletonMeta):
++    """A class for generating temporary directories, and disposing them once the object is destroyed."""
++    _generated_temp_directories: list[Path] = []
++
++    def __exit__(self, exc_type: Type[BaseException] | None,
++                 exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
++        self.cleanup()
++
++    @classmethod
++    def generate(cls, directory_name: str | None = None) -> Path:
++        """
++        Generate a temporary directory within 'TEMP_FOLDER_PATH'.
++
++        Args:
++            directory_name (str | None, optional): Name of the directory to generate.
++                If not specified, a random string will be generated. Defaults to None.
++
++        Returns:
++            Path: Path to the generated directory.
++        """
++        directory_name = directory_name or generate_random_hex_string(10)
++        full_path = TEMP_FOLDER_PATH / directory_name
++
++        if not full_path.is_dir():
++            full_path.mkdir(parents=True)
++            logger.debug(f"Temporary directory has been generated: '{full_path}'")
++            cls._generated_temp_directories.append(full_path)
++
++        else:
++            logger.debug(f"Using existing temporary directory: '{full_path}'.")
++
++        return full_path
++
++    @classmethod
++    def cleanup(cls) -> None:
++        """Remove all temporary directories generated by this object."""
++        for temp_directory in cls._generated_temp_directories:
++            logger.debug(f"Removing temporary directory: '{temp_directory}'")
++            temp_directory.rmdir()
++
++        cls._generated_temp_directories = []
++
++
+ def check_type(value: Any, type_) -> bool:  # type: ignore[no-untyped-def]
+     """
+     Check if a value is of a certain type.
+@@ -146,7 +191,7 @@
+     file_path = output_path / file_name
+ 
+     if file_path.exists() and not overwrite:
+-        file_path = generate_non_conflicting_path(file_path)
++        file_path = generate_non_conflicting_path(file_path=file_path)
+ 
+     with file_path.open('wb') as f:
+         f.write(subtitles_data.content)
+@@ -154,12 +199,13 @@
+     return file_path
+ 
+ 
+-def generate_media_description(media_data: MediaBase) -> str:
++def generate_media_description(media_data: MediaBase, shortened: bool = False) -> str:
+     """
+     Generate a short description string of a media object.
+ 
+     Args:
+         media_data (MediaBase): An object containing media data.
++        shortened (bool, optional): Whether to generate a shortened description. Defaults to False.
+ 
+     Returns:
+         str: A short description string of the media object.
+@@ -193,7 +239,11 @@
+         return description_str
+ 
+     if isinstance(media_data, Season):
+-        description_str = f"{media_data.series_name} - Season {media_data.season_number:02d}"
++        if shortened:
++            description_str = f"Season {media_data.season_number:02d}"
++
++        else:
++            description_str = f"{media_data.series_name} - Season {media_data.season_number:02d}"
+ 
+         if media_data.season_name:
+             description_str += f" - {media_data.season_name}"
+@@ -204,7 +254,12 @@
+         return description_str
+ 
+     if isinstance(media_data, Episode):
+-        description_str = f"{media_data.series_name} - S{media_data.season_number:02d}E{media_data.episode_number:02d}"
++        if shortened:
++            description_str = f"S{media_data.season_number:02d}E{media_data.episode_number:02d}"
++
++        else:
++            description_str = (f"{media_data.series_name} - "
++                               f"S{media_data.season_number:02d}E{media_data.episode_number:02d}")
+ 
+         if media_data.episode_name:
+             description_str += f" - {media_data.episode_name}"
+@@ -230,21 +285,18 @@
+     return re.match(HOST_REGEX, url).group('host')
+ 
+ 
+-def generate_non_conflicting_path(file_path: str | Path, has_extension: bool = True) -> Path:
++def generate_non_conflicting_path(file_path: Path, has_extension: bool = True) -> Path:
+     """
+     Generate a non-conflicting path for a file.
+     If the file already exists, a number will be added to the end of the file name.
+ 
+     Args:
+-        file_path (str | Path): Path to a file.
++        file_path (Path): Path to a file.
+         has_extension (bool, optional): Whether the name of the file includes file extension. Defaults to True.
+ 
+     Returns:
+         Path: A non-conflicting file path.
+     """
+-    if isinstance(file_path, str):
+-        file_path = Path(file_path)
+-
+     if not file_path.exists():
+         return file_path
+ 
+Index: pyproject.toml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># --- Poetry ---\r\n[tool.poetry]\r\nname = \"isubrip\"\r\nversion = \"2.5.2\"\r\ndescription = \"A Python package for scraping and downloading subtitles from AppleTV / iTunes movie pages.\"\r\nlicense = \"MIT\"\r\nauthors = [\"Michael Yochpaz\"]\r\nreadme = \"README.md\"\r\nhomepage = \"https://github.com/MichaelYochpaz/iSubRip\"\r\nrepository = \"https://github.com/MichaelYochpaz/iSubRip\"\r\nkeywords = [\r\n    \"iTunes\",\r\n    \"AppleTV\",\r\n    \"movies\",\r\n    \"subtitles\",\r\n    \"scrape\",\r\n    \"scraper\",\r\n    \"download\",\r\n    \"m3u8\"\r\n]\r\nclassifiers = [\r\n    \"Development Status :: 5 - Production/Stable\",\r\n    \"Intended Audience :: End Users/Desktop\",\r\n    \"Intended Audience :: Developers\",\r\n    \"Operating System :: Microsoft :: Windows\",\r\n    \"Operating System :: MacOS\",\r\n    \"Operating System :: POSIX :: Linux\",\r\n    \"Topic :: Utilities\",\r\n    \"License :: OSI Approved :: MIT License\",\r\n    \"Programming Language :: Python :: 3.8\",\r\n    \"Programming Language :: Python :: 3.9\",\r\n    \"Programming Language :: Python :: 3.10\",\r\n    \"Programming Language :: Python :: 3.11\",\r\n]\r\npackages = [\r\n    { include = \"isubrip\" },\r\n]\r\ninclude = [\r\n    \"isubrip/resources\", \"README.md\", \"LICENSE\"\r\n]\r\n\r\n[tool.mypy]\r\ndisallow_untyped_defs = true\r\nexplicit_package_bases = true\r\nignore_missing_imports = true\r\npython_version = \"3.8\"\r\nwarn_return_any = true\r\n\r\n[tool.poetry.scripts]\r\nisubrip = \"isubrip.__main__:main\"\r\n\r\n[tool.poetry.urls]\r\n\"Bug Reports\" = \"https://github.com/MichaelYochpaz/iSubRip/issues\"\r\n\r\n[tool.poetry.dependencies]\r\npython = \"^3.8\"\r\nrequests = \"^2.31.0\"\r\naiohttp = \"^3.9.1\"\r\nm3u8 = \"^4.0.0\"\r\nmergedeep = \"^1.3.4\"\r\npydantic = \"^2.5.2\"\r\ntomli = \"^2.0.1\"\r\nlxml = \"^5.1.0\"\r\n\r\n[build-system]\r\nrequires = [\"poetry-core\"]\r\nbuild-backend = \"poetry.core.masonry.api\"\r\n\r\n[tool.poetry_bumpversion.file.\"isubrip/constants.py\"]\r\nsearch = 'PACKAGE_VERSION = \"{current_version}\"'\r\nreplace = 'PACKAGE_VERSION = \"{new_version}\"'\r\n\r\n[tool.poetry_bumpversion.file.\"README.md\"]\r\nsearch = 'Latest version: {current_version}'\r\nreplace = 'Latest version: {new_version}'\r\n\r\n# --- Ruff ---\r\n[tool.ruff]\r\nline-length = 120\r\ntarget-version = \"py38\"\r\nselect = [\r\n    \"ARG\",\r\n    \"ASYNC\",\r\n    \"B\",\r\n    \"C4\",\r\n    \"COM\",\r\n    \"E\",\r\n    \"F\",\r\n    \"FA\",\r\n    \"I\",\r\n    \"INP\",\r\n    \"ISC\",\r\n    \"N\",\r\n    \"PIE\",\r\n    \"PGH\",\r\n    \"PT\",\r\n    \"PTH\",\r\n    \"Q002\",\r\n    \"Q003\",\r\n    \"RSE\",\r\n    \"RET\",\r\n    \"RUF\",\r\n    \"S\",\r\n    \"SIM\",\r\n    \"SLF\",\r\n    \"T20\",\r\n    \"TCH\",\r\n    \"TID\",\r\n    \"TRY\",\r\n#    \"UP\",\r\n]\r\nignore = [\r\n    \"C416\",\r\n    \"RUF010\",\r\n    \"RUF012\",\r\n    \"SIM108\",\r\n    \"TD002\",\r\n    \"TD003\",\r\n    \"TRY003\",\r\n#    \"UP015\",\r\n]\r\nunfixable = [\"ARG\"]\r\n\r\n[tool.ruff.flake8-tidy-imports]\r\nban-relative-imports = \"all\"\r\n\r\n[tool.ruff.flake8-quotes]\r\ndocstring-quotes = \"double\"\r\n\r\n[tool.ruff.isort]\r\nforce-sort-within-sections = true\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pyproject.toml b/pyproject.toml
+--- a/pyproject.toml	(revision 24f7a5335ae74530671de4e8d6aaa8ef20cb960f)
++++ b/pyproject.toml	(date 1705785982555)
+@@ -61,6 +61,7 @@
+ pydantic = "^2.5.2"
+ tomli = "^2.0.1"
+ lxml = "^5.1.0"
++pyjwt = "^2.8.0"
+ 
+ [build-system]
+ requires = ["poetry-core"]
+Index: isubrip/parsers/mpeg_dash.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/parsers/mpeg_dash.py b/isubrip/parsers/mpeg_dash.py
+new file mode 100644
+--- /dev/null	(date 1705785982552)
++++ b/isubrip/parsers/mpeg_dash.py	(date 1705785982552)
+@@ -0,0 +1,162 @@
++from typing import Iterator
++from urllib.parse import urljoin
++
++from lxml import etree as ET
++
++
++DEFAULT_NAMESPACE = {None: "urn:mpeg:dash:schema:mpd:2011"}
++
++
++class MPD:
++    """
++    A class representing an MPD (MPEG-Dash) playlist.
++
++    Attributes:
++        uri (str): URI of the playlist.
++        _mpd_str_data (str): String representation of the playlist.
++        _mpd_data (ET.Element): Parsed XML data of the playlist.
++    """
++    def __init__(self, playlist_data: str, uri: str):
++        self.uri = urljoin(uri, ".")
++        self._mpd_str_data = playlist_data
++        self._mpd_data = ET.fromstring(self._mpd_str_data.encode("utf-8"))
++
++    def find(self, path: str) -> ET.Element:
++        """Find the first element matching the given XPath expression."""
++        return self._mpd_data.find(path=path, namespaces=DEFAULT_NAMESPACE)
++
++    def findall(self, path: str) -> list[ET.Element]:
++        """Find all elements matching the given XPath expression."""
++        return self._mpd_data.findall(path=path, namespaces=DEFAULT_NAMESPACE)
++
++    def get_periods(self) -> Iterator["Period"]:
++        """
++        Get all periods in the MPD playlist.
++
++        Yields:
++            Period: A period object.
++        """
++        for period in self.findall(path="./Period"):
++            yield Period(period=period, mpd=self)
++
++        return
++
++
++class Period:
++    """
++    A class representing a period in an MPD playlist.
++
++    Attributes:
++        _period_data (ET._Element): The period.
++        _mpd (MPD): The MPD playlist the period is in.
++    """
++    def __init__(self, period: ET._Element, mpd: MPD):
++        self._period_data = period
++        self._mpd = mpd
++        self.id = self._period_data.get("id")
++        self.duration = self._period_data.get("duration")
++
++    def find(self, path: str) -> ET.Element:
++        """Find the first element matching the given XPath expression."""
++        return self._period_data.find(path=path, namespaces=DEFAULT_NAMESPACE)
++
++    def findall(self, path: str) -> list[ET.Element]:
++        """Find all elements matching the given XPath expression."""
++        return self._period_data.findall(path=path, namespaces=DEFAULT_NAMESPACE)
++
++    def get_adaptation_sets(self, content_type: str | None = None,
++                            mime_type: str | None = None) -> Iterator["AdaptationSet"]:
++        """
++        Get all adaptation sets (matching the filters, if provided) in the period.
++
++        Args:
++            content_type (str | None, optional): Content type to filter by. Defaults to None.
++            mime_type (str | None, optional): MIME type to filter by. Defaults to None.
++
++        Yields:
++            AdaptationSet: An adaptation set object.
++        """
++        xpath = "./AdaptationSet"
++
++        if content_type:
++            xpath += f"[@contentType='{content_type}']"
++
++        if mime_type:
++            xpath += f"[@mimeType='{mime_type}']"
++
++        adaptation_sets = self.findall(path=xpath)
++
++        for adaptation_set in adaptation_sets:
++            yield AdaptationSet(adaptation_set=adaptation_set, period=self)
++
++        return
++
++
++class AdaptationSet:
++    """
++    A class representing an adaptation set in an MPD playlist.
++
++    Attributes:
++        _adaptation_set_data (ET._Element): The adaptation set.
++        _period (Period): The period the adaptation set is in.
++        content_type (str): Content type of the adaptation set.
++        mime_type (str): MIME type of the adaptation set.
++        lang (str): Language of the adaptation set.
++    """
++    def __init__(self, adaptation_set: ET._Element, period: Period):
++        self._adaptation_set_data = adaptation_set
++        self._period = period
++
++        self.content_type = self._adaptation_set_data.get("contentType")
++        self.mime_type = self._adaptation_set_data.get("mimeType")
++        self.lang = self._adaptation_set_data.get("lang")
++
++    def find(self, path: str) -> ET.Element:
++        """Find the first element matching the given XPath expression."""
++        return self._adaptation_set_data.find(path=path, namespaces=DEFAULT_NAMESPACE)
++
++    def findall(self, path: str) -> list[ET.Element]:
++        """Find all elements matching the given XPath expression."""
++        return self._adaptation_set_data.findall(path=path, namespaces=DEFAULT_NAMESPACE)
++
++    def get_representations(self) -> Iterator["Representation"]:
++        """
++        Get all representations in the adaptation set.
++
++        Yields:
++            Representation: A representation object.
++        """
++        for representation in self.findall(path="./Representation"):
++            yield Representation(representation=representation, adaptation_set=self)
++
++
++class Representation:
++    """
++    A class representing a representation in an adaptation set in an MPD playlist.
++
++    Attributes:
++        _representation_data (ET._Element): The representation.
++        _adaptation_set (AdaptationSet): The adaptation set the representation is in.
++    """
++    def __init__(self, representation: ET._Element, adaptation_set: AdaptationSet):
++        self._representation_data = representation
++        self._adaptation_set = adaptation_set
++        self.id = self._representation_data.get("id")
++        self.codecs = self._representation_data.get("codecs")
++        self.width = self._representation_data.get("width")
++        self.height = self._representation_data.get("height")
++        self.scan_type = self._representation_data.get("scanType")
++        self.frame_rate = self._representation_data.get("frameRate")
++        self.bandwidth = self._representation_data.get("bandwidth")
++        self.audio_sampling_rate = self._representation_data.get("audioSamplingRate")
++
++        self._base_url = None
++        self.url = None
++
++        if self.find(path="./BaseURL") is not None:
++            self._base_url = self.find(path="./BaseURL").text
++            self.url = urljoin(self._adaptation_set._period._mpd.uri, self._base_url)
++
++    def find(self, path: str) -> ET._Element:
++        """Find the first element matching the given XPath expression."""
++        return self._representation_data.find(path=path, namespaces=DEFAULT_NAMESPACE)

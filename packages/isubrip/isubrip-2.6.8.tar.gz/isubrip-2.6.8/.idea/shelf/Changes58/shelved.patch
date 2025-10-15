@@ -1,0 +1,284 @@
+Index: isubrip/scrapers/stingplus_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/stingplus_scraper.py b/isubrip/scrapers/stingplus_scraper.py
+new file mode 100644
+--- /dev/null	(date 1705092066529)
++++ b/isubrip/scrapers/stingplus_scraper.py	(date 1705092066529)
+@@ -0,0 +1,274 @@
++from __future__ import annotations
++
++import datetime as dt
++import hashlib
++import hmac
++import json
++import re
++from time import time
++from typing import TYPE_CHECKING, Iterator
++
++from lxml import etree as ET
++import jwt
++
++from isubrip.config import Config, ConfigSetting
++from isubrip.data_structures import Episode, Movie, ScrapedMediaResponse, Season, Series, SubtitlesData
++from isubrip.scrapers.scraper import DASHScraper, PlaylistLoadError, ScraperError
++from isubrip.subtitle_formats.webvtt import WebVTTSubtitles
++from isubrip.utils import (
++    extract_host_from_url,
++    generate_random_hex_string,
++    generate_url_params,
++    parse_duration,
++    parse_season_and_episode_tag,
++    parse_url_params,
++    raise_for_status,
++    single_to_list,
++)
++
++if TYPE_CHECKING:
++    from requests import Response
++
++
++class DisneyPlusHotstarScraper(DASHScraper):
++    """
++    A Sting+ scraper
++
++    Attributes:
++        api_url (str): Sting+ base API URL.
++        player_params (dict): Parameters to send to the API to get the player config.
++        jwt_token (str): JWT token used to authenticate with the API.
++    """
++    id = "stingplus"
++    name = "Sting+"
++    abbreviation = "STP"
++    url_regex = re.compile(r"(?P<base_url>https?://(?:www\.)?apps\.disneyplus\.com/(?P<slug>(?:(?P<country_code>[a-z]{2})/)?(?:(?P<media_type>movies|shows)/)?(?:(?P<media_name>[\w\-%]+)/)?(?P<media_id>(?:\d{4,10}))))(?:\?(?P<url_params>.*))?", flags=re.IGNORECASE)  # noqa: E501
++    subtitles_class = WebVTTSubtitles
++    is_movie_scraper = True
++    is_series_scraper = True
++
++    api_url = "https://cgw.stingtv.co.il:9443/ctap/r1.6.0"
++
++    def __init__(self, config_data: dict | None = None):
++        super().__init__(config_data)
++
++        if self.config is None:
++            self.config = Config()
++
++        # Add "token" setting to config
++        self.config.add_settings(
++            ConfigSetting(
++                key="token",
++                type=str,
++                required=True,
++            ),
++            check_config=True)
++
++        self.jwt_token: str = self.config["token"]
++        self.jwt_token_data = self._parse_jwt_token(token=self.jwt_token)
++
++        self._session.headers.update({
++            "Accept": "application/json",  # TODO: Remove?
++            "X-Hs-Usertoken": self.config["token"],
++            "X-Hs-Platform": "web",
++            "X-Hs-Client": "platform:web;app_version:23.05.29.0;browser:Chrome;schema_version:0.0.854",
++        })
++
++    def _get_api_data(self, endpoint: str, params: dict) -> dict:
++        """
++        Retrieve data from the Disney+ Hotstar's API.
++
++        Args:
++            endpoint (str): API endpoint.
++            params (dict): Parameters to send to the API.
++
++        Returns:
++            dict: Data returned by the API for the given endpoint.
++        """
++        response = self._session.get(f"{self.api_url}/{endpoint}", params=params)
++        raise_for_status(response)
++        return response.json()
++
++    def _get_episode_playlists(self, episode_slug: str) -> list[str]:
++        player_params = generate_url_params(data=self.player_params, remove_dict_spaces=True)
++        api_data = self._get_api_data(endpoint=f"v2/slugs/{episode_slug}?{player_params}")
++
++        player_config = (
++            api_data["success"]["page"]["spaces"]["player"]["widget_wrappers"][0]["widget"]["data"]["player_config"]
++        )
++
++        return_data = [
++            player_config.get("media_asset_v2", {}).get("primary", {}).get("content_url"),
++            player_config.get("media_asset_v2", {}).get("fallback", {}).get("content_url"),
++        ]
++
++        return [playlist_url for playlist_url in return_data if playlist_url]
++
++    def _get_season_data(self, show_id: str, season_id: str) -> dict[int, dict]:
++        endpoint = f"v2/pages/841/spaces/803/widgets/1196/widgets/168?content_id={show_id}&season_id={season_id}"
++        paginated_data = []
++
++        # Get all paginated episodes data for the season
++        while endpoint:  # TODO: Increase page size
++            api_data = self._get_api_data(endpoint)
++            episodes_paginated_data = api_data["success"]["widget_wrapper"]["widget"]["data"]
++            paginated_data.extend(episodes_paginated_data["items"])
++            endpoint = episodes_paginated_data.get("next_tray_url")
++
++        api_episodes_data = [episode_data["playable_content"]["data"] for episode_data in paginated_data]
++        result_data: dict[int, dict] = {}
++
++        for episode_data in api_episodes_data:
++            page_slug = episode_data["actions"]["on_click"][1]["page_navigation"]["page_slug"].split("?")[0]
++            episode_data["playlists"] = self._get_episode_playlists(episode_slug=page_slug.lstrip("/"))
++            episode_number = parse_season_and_episode_tag(episode_data["tags"][0]["value"])[1]
++            # Remove unnecessary data
++            if 'actions' in episode_data:
++                episode_data.pop('actions')
++
++            if 'download_options' in episode_data:
++                episode_data.pop('download_options')
++
++            result_data[episode_number] = episode_data
++
++        return result_data
++
++    def _parse_jwt_token(self, token: str) -> dict:
++        """
++        Parse a JWT token into a dictionary.
++
++        Args:
++            token (str): JWT token to parse.
++
++        Returns:
++            dict: Parsed JWT token.
++        """
++        data = jwt.decode(token, options={"verify_signature": False})
++        data["sub"] = json.loads(data["sub"])
++        return data
++
++    def get_media_data(self, media_id: str) -> dict:
++        """
++        Get media data from the API.
++        This call also sets the 'WsbSession' cookie required for
++
++        Args:
++            media_id (str): Media ID.
++
++        Returns:
++            dict: Media data.
++        """
++        return self._get_api_data(endpoint=f"contentInstances/{media_id}")
++
++    def generate_play_session(self, media_id: str) -> dict:
++        """
++        Generate a play session for the given media ID.
++
++        Args:
++            media_id (str): Media ID.
++
++        Returns:
++            str: Play session.
++        """
++        return self._get_api_data(endpoint="devices/me/playsessions", params={"instanceId": media_id})
++
++    def get_movie_data(self, movie_id: str) -> ScrapedMediaResponse[Movie]:
++        raise NotImplementedError  # TODO
++
++    def get_series_data(self, show_slug: str) -> ScrapedMediaResponse[Series]:
++        api_data = self._get_api_data(endpoint="v2/slugs/" + show_slug)
++        media_data = api_data["success"]["page"]["spaces"]["hero"]["widget_wrappers"][0]["widget"]["data"]
++        seasons_data = api_data["success"]["page"]["spaces"]["tray"]["widget_wrappers"][0]["widget"]["data"] \
++            ["category_picker"]["data"]["tabs"]
++
++        series_name = media_data["content_info"]["title"]
++        series_id = media_data["content_actions_row"]["content_action_buttons"][0]["watchlist_content_action_button"] \
++            ["info"]["content_id"]
++        series_seasons: list[Season] = []
++        result_seasons_data: dict[int, dict[int, dict]] = {}
++
++        for season_data in [season_data["tab"]["data"] for season_data in seasons_data]:
++            url_params = parse_url_params(season_data["tray_widget_url"])  # TODO: Use the URL instead of parsing it and recreating it
++            season_episodes_data = self._get_season_data(show_id=url_params["content_id"],
++                                                         season_id=url_params["season_id"])
++            season_number = int(season_data["title"].split(" ")[1])
++            result_seasons_data[season_number] = season_episodes_data
++
++            season_episodes: list[Episode] = []
++
++            for episode_number, episode_data in season_episodes_data.items():
++                season_episodes.append(
++                    Episode(
++                        id=episode_data["cw_info"]["content_id"],
++                        series_name=series_name,
++                        season_number=season_number,
++                        episode_number=episode_number,
++                        episode_name=episode_data["title"],
++                        episode_release_date=dt.datetime.strptime(episode_data["tags"][1]["value"], "%d %b %Y"),
++                        episode_duration=parse_duration(episode_data["tags"][2]["value"]),
++                        playlist=episode_data["playlists"].copy(),
++                    ),
++                )
++
++            series_seasons.append(
++                Season(
++                    id=series_id,
++                    series_name=series_name,
++                    season_number=season_number,
++                    release_date=None,
++                    episodes=season_episodes,
++                ))
++
++        series_data = Series(
++            id=series_id,
++            series_name=series_name,
++            seasons=series_seasons,
++        )
++
++        return ScrapedMediaResponse(
++            media_data=series_data,
++            metadata_scraper=self.id,
++            playlist_scraper=self.id,
++            original_data={
++                "series_data": api_data,
++                "seasons_data": result_seasons_data,
++            },
++        )
++
++    def get_data(self, url: str) -> ScrapedMediaResponse[Movie] | ScrapedMediaResponse[Series]:
++        regex_match = self.match_url(url, raise_error=True)
++        url_data = regex_match.groupdict()
++
++        if not all(url_data.get(key) for key in ("country_code", "media_type", "media_name", "media_id")):
++            raise ScraperError(f"Full URL containing the slug is required for scraping from '{self.name}'.")
++            # TODO: Find a way to get the full URL with the complete slug from the given URL
++
++        if url_data["media_type"] == "movies":
++            return self.get_movie_data(url_data["media_id"])
++
++        elif url_data["media_type"] == "shows":
++            return self.get_series_data(url_data["slug"])
++
++        else:
++            raise ScraperError(f"Unexpected media type URL '{url_data['media_type']}' for '{self.name}'.")
++
++    def get_subtitles(self, main_playlist: str | list[str], language_filter: list[str] | str | None = None,
++                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:
++        playlist_data: ET.Element | None = None
++        for url in single_to_list(main_playlist):
++            if playlist_data := self.load_mpd(url=url,
++                                              headers=self._generate_headers(
++                                                  url=url,
++                                                  additional_headers={"Accept": "application/dash+xml"},
++                                                  include_hotstarauth=True,
++                                              )):
++                break
++
++        if playlist_data:
++            pass
++
++        else:
++            raise PlaylistLoadError("Could not load MPD playlist.")
++
++        ET.tostring(playlist_data, encoding="unicode")
++        raise NotImplementedError

@@ -1,0 +1,375 @@
+Index: isubrip/__main__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport asyncio\r\nimport logging\r\nimport sys\r\nfrom typing import ClassVar\r\n\r\nimport httpx\r\nfrom pydantic import ValidationError\r\n\r\nfrom isubrip.commands.download import download\r\nfrom isubrip.config import Config\r\nfrom isubrip.constants import (\r\n    DATA_FOLDER_PATH,\r\n    EVENT_LOOP,\r\n    LOG_FILES_PATH,\r\n    PACKAGE_NAME,\r\n    PACKAGE_VERSION,\r\n)\r\nfrom isubrip.logger import logger, setup_loggers\r\nfrom isubrip.scrapers.scraper import Scraper, ScraperFactory\r\nfrom isubrip.subtitle_formats.webvtt import WebVTTCaptionBlock\r\nfrom isubrip.utils import (\r\n    TempDirGenerator,\r\n    format_config_validation_error,\r\n    raise_for_status,\r\n    single_string_to_list,\r\n)\r\n\r\n\r\nclass AppSettings:\r\n    log_rotation_size: ClassVar[int | None] = None\r\n    stdout_loglevel: ClassVar[int] = logging.INFO\r\n    file_loglevel: ClassVar[int] = logging.DEBUG\r\n\r\n\r\ndef main() -> None:\r\n    try:\r\n        # Assure at least one argument was passed\r\n        if len(sys.argv) < 2:\r\n            print_usage()\r\n            exit(0)\r\n\r\n        if not DATA_FOLDER_PATH.is_dir():\r\n            DATA_FOLDER_PATH.mkdir(parents=True)\r\n\r\n        setup_loggers(stdout_loglevel=AppSettings.stdout_loglevel,\r\n                      file_loglevel=AppSettings.file_loglevel)\r\n\r\n        cli_args = \" \".join(sys.argv[1:])\r\n        logger.debug(f\"CLI Command: {PACKAGE_NAME} {cli_args}\")\r\n        logger.debug(f\"Python version: {sys.version}\")\r\n        logger.debug(f\"Package version: {PACKAGE_VERSION}\")\r\n        logger.debug(f\"OS: {sys.platform}\")\r\n\r\n        try:\r\n            config = Config()\r\n\r\n        except ValidationError as e:\r\n            logger.error(\"Invalid configuration - the following errors were found in the configuration file:\\n\"\r\n                         \"---\\n\" +\r\n                         format_config_validation_error(exc=e) +\r\n                         \"---\\n\"\r\n                         \"Please update your configuration to resolve the issue.\")\r\n            logger.debug(\"Debug information:\", exc_info=True)\r\n            exit(1)\r\n\r\n        update_settings(config=config)\r\n\r\n        if config.general.check_for_updates:\r\n            check_for_updates(current_package_version=PACKAGE_VERSION)\r\n\r\n        EVENT_LOOP.run_until_complete(download(urls=single_string_to_list(item=sys.argv[1:]),\r\n                                               config=config))\r\n\r\n    except Exception as ex:\r\n        logger.error(f\"Error: {ex}\")\r\n        logger.debug(\"Debug information:\", exc_info=True)\r\n        exit(1)\r\n\r\n    finally:\r\n        if AppSettings.log_rotation_size:\r\n            handle_log_rotation(log_rotation_size=AppSettings.log_rotation_size)\r\n\r\n        # NOTE: This will only close scrapers that were initialized using the ScraperFactory.\r\n        async_cleanup_coroutines = []\r\n        for scraper in ScraperFactory.get_initialized_scrapers():\r\n            logger.debug(f\"Requests count for '{scraper.name}' scraper: {scraper.requests_count}\")\r\n            scraper.close()\r\n            async_cleanup_coroutines.append(scraper.async_close())\r\n\r\n        EVENT_LOOP.run_until_complete(asyncio.gather(*async_cleanup_coroutines))\r\n        TempDirGenerator.cleanup()\r\n\r\n\r\ndef check_for_updates(current_package_version: str) -> None:\r\n    \"\"\"\r\n    Check and print if a newer version of the package is available, and log accordingly.\r\n\r\n    Args:\r\n        current_package_version (str): The current version of the package.\r\n    \"\"\"\r\n    api_url = f\"https://pypi.org/pypi/{PACKAGE_NAME}/json\"\r\n    logger.debug(\"Checking for package updates on PyPI...\")\r\n    try:\r\n        response = httpx.get(\r\n            url=api_url,\r\n            headers={\"Accept\": \"application/json\"},\r\n            timeout=5,\r\n        )\r\n        raise_for_status(response)\r\n        response_data = response.json()\r\n\r\n        pypi_latest_version = response_data[\"info\"][\"version\"]\r\n\r\n        if pypi_latest_version != current_package_version:\r\n            logger.warning(f\"You are currently using version '{current_package_version}' of '{PACKAGE_NAME}', \"\r\n                           f\"however version '{pypi_latest_version}' is available.\"\r\n                           f'\\nConsider upgrading by running \"pip install --upgrade {PACKAGE_NAME}\"\\n')\r\n\r\n        else:\r\n            logger.debug(f\"Latest version of '{PACKAGE_NAME}' ({current_package_version}) is currently installed.\")\r\n\r\n    except Exception as e:\r\n        logger.warning(f\"Update check failed: {e}\")\r\n        logger.debug(\"Debug information:\", exc_info=True)\r\n        return\r\n\r\n\r\ndef handle_log_rotation(log_rotation_size: int) -> None:\r\n    \"\"\"\r\n    Handle log rotation and remove old log files if needed.\r\n\r\n    Args:\r\n        log_rotation_size (int): Maximum amount of log files to keep.\r\n    \"\"\"\r\n    sorted_log_files = sorted(LOG_FILES_PATH.glob(\"*.log\"), key=lambda file: file.stat().st_mtime, reverse=True)\r\n\r\n    if len(sorted_log_files) > log_rotation_size:\r\n        for log_file in sorted_log_files[log_rotation_size:]:\r\n            log_file.unlink()\r\n\r\n\r\ndef update_settings(config: Config) -> None:\r\n    \"\"\"\r\n    Update settings according to config.\r\n\r\n    Args:\r\n        config (Config): An instance of a config to set settings according to.\r\n    \"\"\"\r\n    Scraper.subtitles_fix_rtl = config.subtitles.fix_rtl\r\n    Scraper.subtitles_remove_duplicates = config.subtitles.remove_duplicates\r\n    Scraper.default_timeout = config.scrapers.default.timeout\r\n    Scraper.default_user_agent = config.scrapers.default.user_agent\r\n    Scraper.default_proxy = config.scrapers.default.proxy\r\n    Scraper.default_verify_ssl = config.scrapers.default.verify_ssl\r\n\r\n    WebVTTCaptionBlock.subrip_alignment_conversion = (\r\n        config.subtitles.webvtt.subrip_alignment_conversion\r\n    )\r\n\r\n    if log_rotation := config.general.log_rotation_size:\r\n        AppSettings.log_rotation_size = log_rotation\r\n\r\n\r\ndef print_usage() -> None:\r\n    \"\"\"Print usage information.\"\"\"\r\n    logger.info(f\"Usage: {PACKAGE_NAME} <iTunes movie URL> [iTunes movie URL...]\")\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/__main__.py b/isubrip/__main__.py
+--- a/isubrip/__main__.py	(revision 91cd3d701a0c020012c43f6b46f0bc239b4afdf6)
++++ b/isubrip/__main__.py	(date 1725613789023)
+@@ -7,6 +7,7 @@
+ 
+ import httpx
+ from pydantic import ValidationError
++import typer
+ 
+ from isubrip.commands.download import download
+ from isubrip.config import Config
+@@ -24,54 +25,26 @@
+     TempDirGenerator,
+     format_config_validation_error,
+     raise_for_status,
+-    single_string_to_list,
+ )
+ 
+-
+-class AppSettings:
+-    log_rotation_size: ClassVar[int | None] = None
+-    stdout_loglevel: ClassVar[int] = logging.INFO
+-    file_loglevel: ClassVar[int] = logging.DEBUG
+-
+-
+-def main() -> None:
+-    try:
+-        # Assure at least one argument was passed
+-        if len(sys.argv) < 2:
+-            print_usage()
+-            exit(0)
+-
+-        if not DATA_FOLDER_PATH.is_dir():
+-            DATA_FOLDER_PATH.mkdir(parents=True)
++app = typer.Typer()
+ 
+-        setup_loggers(stdout_loglevel=AppSettings.stdout_loglevel,
+-                      file_loglevel=AppSettings.file_loglevel)
+-
+-        cli_args = " ".join(sys.argv[1:])
+-        logger.debug(f"CLI Command: {PACKAGE_NAME} {cli_args}")
+-        logger.debug(f"Python version: {sys.version}")
+-        logger.debug(f"Package version: {PACKAGE_VERSION}")
+-        logger.debug(f"OS: {sys.platform}")
+-
+-        try:
+-            config = Config()
++@app.callback()
++def main(verbose: bool = False, check_for_updates: bool = True, log_rotation_size: int = 15) -> None:
++    try:
++        config = Config()
+ 
+-        except ValidationError as e:
+-            logger.error("Invalid configuration - the following errors were found in the configuration file:\n"
+-                         "---\n" +
+-                         format_config_validation_error(exc=e) +
+-                         "---\n"
+-                         "Please update your configuration to resolve the issue.")
+-            logger.debug("Debug information:", exc_info=True)
+-            exit(1)
++    except ValidationError as e:
++        logger.error("Invalid configuration - the following errors were found in the configuration file:\n"
++                     "---\n" +
++                     format_config_validation_error(exc=e) +
++                     "---\n"
++                     "Please update your configuration to resolve the issue.")
++        logger.debug("Debug information:", exc_info=True)
++        exit(1)
+ 
+-        update_settings(config=config)
+-
+-        if config.general.check_for_updates:
+-            check_for_updates(current_package_version=PACKAGE_VERSION)
+-
+-        EVENT_LOOP.run_until_complete(download(urls=single_string_to_list(item=sys.argv[1:]),
+-                                               config=config))
++    try:
++        _main()
+ 
+     except Exception as ex:
+         logger.error(f"Error: {ex}")
+@@ -92,8 +65,35 @@
+         EVENT_LOOP.run_until_complete(asyncio.gather(*async_cleanup_coroutines))
+         TempDirGenerator.cleanup()
+ 
++@app.command(name="download")
++def download_command(urls: list[str]) -> None:
++    EVENT_LOOP.run_until_complete(
++        download(
++            urls=urls,
++            config=config,
++        )
++    )
++
++def _main(config: Config) -> None:
++    update_settings(config=config)
+ 
+-def check_for_updates(current_package_version: str) -> None:
++    if not DATA_FOLDER_PATH.is_dir():
++        DATA_FOLDER_PATH.mkdir(parents=True)
++
++    stdout_loglevel = logging.DEBUG if verbose else AppSettings.stdout_loglevel
++    setup_loggers(stdout_loglevel=stdout_loglevel,
++                  file_loglevel=logging.DEBUG)
++
++    cli_args = " ".join(sys.argv[1:])
++    logger.debug(f"CLI Command: {PACKAGE_NAME} {cli_args}")
++    logger.debug(f"Python version: {sys.version}")
++    logger.debug(f"Package version: {PACKAGE_VERSION}")
++    logger.debug(f"OS: {sys.platform}")
++
++    if config.general.check_for_updates:
++        _check_for_updates(current_package_version=PACKAGE_VERSION)
++
++def _check_for_updates(current_package_version: str) -> None:
+     """
+     Check and print if a newer version of the package is available, and log accordingly.
+ 
+@@ -160,13 +160,8 @@
+     )
+ 
+     if log_rotation := config.general.log_rotation_size:
+-        AppSettings.log_rotation_size = log_rotation
+-
+-
+-def print_usage() -> None:
+-    """Print usage information."""
+-    logger.info(f"Usage: {PACKAGE_NAME} <iTunes movie URL> [iTunes movie URL...]")
++        log_rotation_size = log_rotation
+ 
+ 
+ if __name__ == "__main__":
+-    main()
++    app()
+Index: isubrip/config.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABC\r\nfrom pathlib import Path\r\nfrom typing import TYPE_CHECKING\r\n\r\nfrom pydantic import BaseModel, ConfigDict, Field, create_model, field_validator\r\nfrom pydantic_core import PydanticCustomError\r\nfrom pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, TomlConfigSettingsSource\r\n\r\nfrom isubrip.constants import USER_CONFIG_FILE_PATH\r\nfrom isubrip.scrapers.scraper import DefaultScraperConfig, ScraperFactory\r\nfrom isubrip.utils import normalize_config_name\r\n\r\n\r\nclass ConfigCategory(BaseModel, ABC):\r\n    \"\"\"A base class for settings categories.\"\"\"\r\n    model_config = ConfigDict(\r\n        extra='allow',\r\n        alias_generator=normalize_config_name,\r\n    )\r\n\r\n\r\nclass GeneralCategory(ConfigCategory):\r\n    check_for_updates: bool = Field(default=True)\r\n    log_rotation_size: int = Field(default=15)\r\n\r\n\r\nclass DownloadsCategory(ConfigCategory):\r\n    folder: Path = Field(default=Path.cwd().resolve())\r\n    languages: list[str] = Field(default=[])\r\n    overwrite_existing: bool = Field(default=False)\r\n    zip: bool = Field(default=False)\r\n\r\n    @field_validator('folder')\r\n    @classmethod\r\n    def assure_path_exists(cls, value: Path) -> Path:\r\n        if value.exists():\r\n            if not value.is_dir():\r\n                raise PydanticCustomError(\r\n                    \"invalid_path\",\r\n                    \"Path is not a directory.\",\r\n                )\r\n\r\n        else:\r\n            raise PydanticCustomError(\r\n                \"invalid_path\",\r\n                \"Path does not exist.\")\r\n\r\n        return value\r\n\r\n\r\nclass WebVTTSubcategory(ConfigCategory):\r\n    subrip_alignment_conversion: bool = Field(default=False)\r\n\r\n\r\nclass SubtitlesCategory(ConfigCategory):\r\n    fix_rtl: bool = Field(default=False)\r\n    remove_duplicates: bool = Field(default=True)\r\n    convert_to_srt: bool = Field(default=False)\r\n    webvtt: WebVTTSubcategory = WebVTTSubcategory()\r\n\r\n\r\nclass ScrapersCategory(ConfigCategory):\r\n    default: DefaultScraperConfig = Field(default_factory=DefaultScraperConfig)\r\n\r\n\r\n# Resolve mypy errors as mypy doesn't support dynamic models.\r\nif TYPE_CHECKING:\r\n    DynamicScrapersCategory = ScrapersCategory\r\n\r\nelse:\r\n    # A config model that's dynamically created based on the available scrapers and their configurations.\r\n    DynamicScrapersCategory = create_model(\r\n        'DynamicScrapersCategory',\r\n        __base__=ScrapersCategory,\r\n        **{\r\n            scraper.id: (scraper.ScraperConfig, Field(default_factory=scraper.ScraperConfig))\r\n            for scraper in ScraperFactory.get_scraper_classes()\r\n        },  # type: ignore[call-overload]\r\n    )\r\n\r\n\r\nclass Config(BaseSettings):\r\n    model_config = SettingsConfigDict(\r\n        extra='forbid',\r\n        alias_generator=normalize_config_name,\r\n        toml_file=USER_CONFIG_FILE_PATH,\r\n    )\r\n\r\n    general: GeneralCategory = Field(default_factory=GeneralCategory)\r\n    downloads: DownloadsCategory = Field(default_factory=DownloadsCategory)\r\n    subtitles: SubtitlesCategory = Field(default_factory=SubtitlesCategory)\r\n    scrapers: DynamicScrapersCategory = Field(default_factory=DynamicScrapersCategory)\r\n\r\n    @classmethod\r\n    def settings_customise_sources(\r\n        cls,\r\n        settings_cls: type[BaseSettings],\r\n        init_settings: PydanticBaseSettingsSource,\r\n        env_settings: PydanticBaseSettingsSource,\r\n        dotenv_settings: PydanticBaseSettingsSource,\r\n        file_secret_settings: PydanticBaseSettingsSource,\r\n    ) -> tuple[PydanticBaseSettingsSource, ...]:\r\n        return (\r\n            init_settings,\r\n            TomlConfigSettingsSource(settings_cls),\r\n            env_settings,\r\n            dotenv_settings,\r\n            file_secret_settings,\r\n        )\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/config.py b/isubrip/config.py
+--- a/isubrip/config.py	(revision 91cd3d701a0c020012c43f6b46f0bc239b4afdf6)
++++ b/isubrip/config.py	(date 1725613377261)
+@@ -24,11 +24,12 @@
+ class GeneralCategory(ConfigCategory):
+     check_for_updates: bool = Field(default=True)
+     log_rotation_size: int = Field(default=15)
++    verbose: bool = Field(default=False)
+ 
+ 
+ class DownloadsCategory(ConfigCategory):
+     folder: Path = Field(default=Path.cwd().resolve())
+-    languages: list[str] = Field(default=[])
++    languages: list[str] = Field(default=[])    # TODO: Use Pydantic's Language type.
+     overwrite_existing: bool = Field(default=False)
+     zip: bool = Field(default=False)
+ 
+Index: config.toml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># ---------------- ⚠\uFE0F IMPORTANT - READ BEFORE USING ⚠\uFE0F ----------------\r\n# This is an example config file with all available settings and their default values (if they have one).\r\n# All settings are optional, and setting them in the config file will override their default values.\r\n#\r\n# In your config file, set only settings you wish to change from their default values.\r\n# Do NOT copy this file and use it as your config, as it will override ALL settings with the values specified here.\r\n# Use this file only as a reference to understand what different settings do,\r\n# and to decide which settings you should use in your config.\r\n#\r\n# Your config file should be saved in the following path (according to OS):\r\n#   - Windows: %USERPROFILE%\\.isubrip\\config.toml\r\n#   - Linux / macOS: $HOME/.isubrip/config.toml\r\n# ---------------------------------------------------------------------\r\n\r\n[general]\r\n# Check for updates before running, and show a note if a new version exists.\r\n# Value can be either 'true' or 'false'.\r\ncheck-for-updates = true\r\n\r\n# Maximum number of log files to keep in the logs folder.\r\n# Once the maximum number is reached, the oldest logs files will be deleted in rotation\r\n# until the number of files equals the maximum.\r\nlog-rotation-size = 15\r\n\r\n\r\n[downloads]\r\n# Folder to downloads files to.\r\n# The default \".\" value means it will download to the same folder the script ran from.\r\n# Use double backslashes in path to avoid escaping characters. Example: \"C:\\\\Users\\\\<username>\\\\Downloads\\\\\"\r\nfolder = \".\"\r\n\r\n# A list of iTunes language codes to download.\r\n# An empty array (like the one currently being used) will result in downloading all of the available subtitles.\r\n# Example: [\"en-US\", \"fr-FR\", \"he\"]\r\nlanguages = []\r\n\r\n# Whether to overwrite existing subtitles files.\r\n# If set to false, names of existing subtitles will have a number appended to them to avoid overwriting.\r\n# Value can be either 'true' or 'false'.\r\noverwrite-existing = false\r\n\r\n# Save files into a zip archive if there is more than one matching subtitles.\r\n# Value can be either 'true' or 'false'.\r\nzip = false\r\n\r\n\r\n[subtitles]\r\n# Fix RTL for RTL languages (Arabic & Hebrew).\r\n# Value can be either 'true' or 'false'.\r\n#\r\n# NOTE: This is off by default as some subtitles use other methods to fix RTL (like writing punctuations backwards).\r\n#       Using this option on these type of subtitles can break the already-fixed RTL issues.\r\nfix-rtl = false\r\n\r\n# Remove duplicate paragraphs (same text and timestamps).\r\n# Value can be either 'true' or 'false'.\r\nremove-duplicates = true\r\n\r\n# Whether to convert subtitles to SRT format.\r\n# NOTE: This can cause loss of subtitles metadata that is not supported by SRT format.\r\nconvert-to-srt = false\r\n\r\n[subtitles.webvtt]\r\n# Whether to add a '{\\an8}' tag to lines that are aligned at the top when converting format from WebVTT to SubRip.\r\n# Relevant only if 'subtitles.convert-to-srt' is set to 'true'.\r\n# Value can be either 'true' or 'false'.\r\nsubrip-alignment-conversion = false\r\n\r\n\r\n[scrapers]\r\n# Timeout in seconds for requests sent by all scrapers.\r\n# Will be overridden by scraper-specific timeout configuration, if set.\r\ntimeout = 10\r\n\r\n# User-Agent to use by default for requests sent by all scrapers.\r\n# Will be overridden by scraper-specific user-agent configuration, if set.\r\nuser-agent = \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\"\r\n\r\n# Proxy to use by default for requests sent by all scrapers.\r\n# Will be overridden by scraper-specific proxy configuration, if set.\r\nproxy = \"http://127.0.0.1:8080\"\r\n\r\n\r\n# Whether to verify SSL certificates when making requests for all scrapers.\r\n# Value can be either 'true' or 'false'.\r\n# Will be overridden by scraper-specific verify-ssl configuration, if set.\r\nverify-ssl = true\r\n\r\n\r\n# The following are scraper-specific settings (can be set for each scraper separately).\r\n# Replace 'enter-scraper-name-here' with the name of the scraper you want to configure.\r\n# Available scrapers: itunes, appletv\r\n[scrapers.enter-scraper-name-here]\r\n# Timeout in seconds for requests sent by the scraper.\r\ntimeout = 10\r\n\r\n# User-Agent to use for requests sent by the scraper.\r\nuser-agent = \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\"\r\n\r\n# Proxy to use for requests sent by the scraper.\r\nproxy = \"http://127.0.0.1:8080\"\r\n\r\n# Whether to verify SSL certificates when making requests for the scraper.\r\n# Value can be either 'true' or 'false'.\r\nverify-ssl = true\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/config.toml b/config.toml
+--- a/config.toml	(revision 91cd3d701a0c020012c43f6b46f0bc239b4afdf6)
++++ b/config.toml	(date 1725613377282)
+@@ -22,6 +22,10 @@
+ # until the number of files equals the maximum.
+ log-rotation-size = 15
+ 
++# Whether to show verbose output (more detailed information) in the console.
++# Value can be either 'true' or 'false'.
++verbose = false
++
+ 
+ [downloads]
+ # Folder to downloads files to.
+Index: poetry.lock
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># This file is automatically @generated by Poetry 1.7.1 and should not be changed by hand.\r\n\r\n[[package]]\r\nname = \"annotated-types\"\r\nversion = \"0.7.0\"\r\ndescription = \"Reusable constraint types to use with typing.Annotated\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"annotated_types-0.7.0-py3-none-any.whl\", hash = \"sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53\"},\r\n    {file = \"annotated_types-0.7.0.tar.gz\", hash = \"sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89\"},\r\n]\r\n\r\n[[package]]\r\nname = \"anyio\"\r\nversion = \"4.4.0\"\r\ndescription = \"High level compatibility layer for multiple asynchronous event loop implementations\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"anyio-4.4.0-py3-none-any.whl\", hash = \"sha256:c1b2d8f46a8a812513012e1107cb0e68c17159a7a594208005a57dc776e1bdc7\"},\r\n    {file = \"anyio-4.4.0.tar.gz\", hash = \"sha256:5aadc6a1bbb7cdb0bede386cac5e2940f5e2ff3aa20277e991cf028e0585ce94\"},\r\n]\r\n\r\n[package.dependencies]\r\nexceptiongroup = {version = \">=1.0.2\", markers = \"python_version < \\\"3.11\\\"\"}\r\nidna = \">=2.8\"\r\nsniffio = \">=1.1\"\r\ntyping-extensions = {version = \">=4.1\", markers = \"python_version < \\\"3.11\\\"\"}\r\n\r\n[package.extras]\r\ndoc = [\"Sphinx (>=7)\", \"packaging\", \"sphinx-autodoc-typehints (>=1.2.0)\", \"sphinx-rtd-theme\"]\r\ntest = [\"anyio[trio]\", \"coverage[toml] (>=7)\", \"exceptiongroup (>=1.2.0)\", \"hypothesis (>=4.0)\", \"psutil (>=5.9)\", \"pytest (>=7.0)\", \"pytest-mock (>=3.6.1)\", \"trustme\", \"uvloop (>=0.17)\"]\r\ntrio = [\"trio (>=0.23)\"]\r\n\r\n[[package]]\r\nname = \"backports-datetime-fromisoformat\"\r\nversion = \"2.0.1\"\r\ndescription = \"Backport of Python 3.11's datetime.fromisoformat\"\r\noptional = false\r\npython-versions = \">3\"\r\nfiles = [\r\n    {file = \"backports-datetime-fromisoformat-2.0.1.tar.gz\", hash = \"sha256:1b6afca7f47019c22df43062cde73c1af65fbdebc66520f352c690d52fd27127\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-macosx_10_9_universal2.whl\", hash = \"sha256:b739ccd3f36244f618f1fbc21d89894d9dc9d1d75a68762fcf917d433df38ae3\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-macosx_10_9_x86_64.whl\", hash = \"sha256:afd072ca32f2ca4e838e0f7b61a56168d98837ee9a182c567a49a834e07c2b98\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:1a136d85f8b1db4747aa9e56a8caa0ba77c5c25b761b18e2169ea7b1b516f012\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:5d3a0579958ade7db62c8238163e05d46a4de61c99cebb40031ed7409a44d5f6\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-musllinux_1_1_i686.whl\", hash = \"sha256:199df62af8feff5da0f4953fdc4a6994bcd7dbfe1db95901d8b93d05feda2ab5\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-musllinux_1_1_x86_64.whl\", hash = \"sha256:afe32e60a471831058ede14fc226d9f14120e6dc67d66fbbd36e1724826ad70b\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp310-cp310-win_amd64.whl\", hash = \"sha256:a1ba7e226a9694b20b713867f71b5ed2f662603c39875f14f968608d331fc96a\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp37-cp37m-macosx_10_9_x86_64.whl\", hash = \"sha256:403f155deecbe94d43d0679a74abb5c9ac441422a9ececcfde030fb133865659\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp37-cp37m-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:b4d2ee049997d3aa2e714489cb3c34864fb0f25786e7a4ff04ac9d82af58b453\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp37-cp37m-musllinux_1_1_i686.whl\", hash = \"sha256:20aa422769af9f72ca41d83238d4a3a008d6cd74bcff0a08befb11b0018d6aa5\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp37-cp37m-musllinux_1_1_x86_64.whl\", hash = \"sha256:8ea8d85c3c9afa4ad51b6644d26516d43493f44c2131c12a2ba959433f4417f6\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp37-cp37m-win_amd64.whl\", hash = \"sha256:812b8c34e88a7d9615c604f1a0473a4e6d664aba94086bffb0c55627f9e3fb68\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-macosx_10_9_universal2.whl\", hash = \"sha256:df5365930320b7a9d404cd6f7bc13988e28355e812aa42e21aa5c93443dcdd2e\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-macosx_10_9_x86_64.whl\", hash = \"sha256:fe3e3968c8dce4a44da2da81a6031e992a4ee62d130c2536696d215a4db2ce3c\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:36a4abb678ab0d6a1965d70e21e424bcf7a52086a7afb1c5f13243a3d44fa2dd\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:96b7e806ade09a91d8ce195c197fc799d8fbe6b8ea9cde21f8a01f1090e51e33\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-musllinux_1_1_i686.whl\", hash = \"sha256:002a77bd4f549ff5e80f1ef4a9b69982746dd6190786b90abe3d9c69c9883ce4\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-musllinux_1_1_x86_64.whl\", hash = \"sha256:7b4ad0013a96b656ebf85079921ffb211623a1e28ff4981b3927690a2ed6df54\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp38-cp38-win_amd64.whl\", hash = \"sha256:065421723e735ce8f68dbb4486f07562ce8556ed543ceaa012189b9aa209f303\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-macosx_10_9_universal2.whl\", hash = \"sha256:a4bf1bec08bc84095ee379202466c948fe12cff1442f58ee1a91fac4c5164c97\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-macosx_10_9_x86_64.whl\", hash = \"sha256:1836aff09b8317e179cc7288856b61a450515d4b411f0ab723dc9692dfa5362e\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-macosx_11_0_arm64.whl\", hash = \"sha256:815f85a581b142bcf34632c3ce26f7e21003f101ce88b5649631330e334bbe35\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:6a6986cfd3bc40b41465a6c54c18a30ca8110333d0b71f6062af136db11c8ff0\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-musllinux_1_1_i686.whl\", hash = \"sha256:82741e732d71f78b44a8c3b95f33b3630e7bfbdb02e3fede3938cdf15d5b6a83\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-musllinux_1_1_x86_64.whl\", hash = \"sha256:4eac27abb51ee84e08d1dd1e908c16cae2078c217ff5b54092e6cb92107b4c6c\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-cp39-cp39-win_amd64.whl\", hash = \"sha256:3b730d72061523be9600bcd281ef353f7f73b1df095adbbdc364aac8f430c44c\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-pp310-pypy310_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:f6e8f28f4a68539192473f427ed86794931502d186e2fffa1926250550c1335a\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-pp37-pypy37_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:0cef151f1df77e413dc179607edb5bee11949ca5890e81c0bb742d96fec753fe\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-pp38-pypy38_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:c28c95d6df2a44fa3540e18e484596c03e8ff7112e2f93b664f482fe3a88720b\"},\r\n    {file = \"backports_datetime_fromisoformat-2.0.1-pp39-pypy39_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:91042b53de903e3725209ad6d69b6994ae4819614c0decd62d05dfea23f35e2b\"},\r\n]\r\n\r\n[[package]]\r\nname = \"certifi\"\r\nversion = \"2024.8.30\"\r\ndescription = \"Python package for providing Mozilla's CA Bundle.\"\r\noptional = false\r\npython-versions = \">=3.6\"\r\nfiles = [\r\n    {file = \"certifi-2024.8.30-py3-none-any.whl\", hash = \"sha256:922820b53db7a7257ffbda3f597266d435245903d80737e34f8a45ff3e3230d8\"},\r\n    {file = \"certifi-2024.8.30.tar.gz\", hash = \"sha256:bec941d2aa8195e248a60b31ff9f0558284cf01a52591ceda73ea9afffd69fd9\"},\r\n]\r\n\r\n[[package]]\r\nname = \"exceptiongroup\"\r\nversion = \"1.2.2\"\r\ndescription = \"Backport of PEP 654 (exception groups)\"\r\noptional = false\r\npython-versions = \">=3.7\"\r\nfiles = [\r\n    {file = \"exceptiongroup-1.2.2-py3-none-any.whl\", hash = \"sha256:3111b9d131c238bec2f8f516e123e14ba243563fb135d3fe885990585aa7795b\"},\r\n    {file = \"exceptiongroup-1.2.2.tar.gz\", hash = \"sha256:47c2edf7c6738fafb49fd34290706d1a1a2f4d1c6df275526b62cbb4aa5393cc\"},\r\n]\r\n\r\n[package.extras]\r\ntest = [\"pytest (>=6)\"]\r\n\r\n[[package]]\r\nname = \"h11\"\r\nversion = \"0.14.0\"\r\ndescription = \"A pure-Python, bring-your-own-I/O implementation of HTTP/1.1\"\r\noptional = false\r\npython-versions = \">=3.7\"\r\nfiles = [\r\n    {file = \"h11-0.14.0-py3-none-any.whl\", hash = \"sha256:e3fe4ac4b851c468cc8363d500db52c2ead036020723024a109d37346efaa761\"},\r\n    {file = \"h11-0.14.0.tar.gz\", hash = \"sha256:8f19fbbe99e72420ff35c00b27a34cb9937e902a8b810e2c88300c6f0a3b699d\"},\r\n]\r\n\r\n[[package]]\r\nname = \"h2\"\r\nversion = \"4.1.0\"\r\ndescription = \"HTTP/2 State-Machine based protocol implementation\"\r\noptional = false\r\npython-versions = \">=3.6.1\"\r\nfiles = [\r\n    {file = \"h2-4.1.0-py3-none-any.whl\", hash = \"sha256:03a46bcf682256c95b5fd9e9a99c1323584c3eec6440d379b9903d709476bc6d\"},\r\n    {file = \"h2-4.1.0.tar.gz\", hash = \"sha256:a83aca08fbe7aacb79fec788c9c0bac936343560ed9ec18b82a13a12c28d2abb\"},\r\n]\r\n\r\n[package.dependencies]\r\nhpack = \">=4.0,<5\"\r\nhyperframe = \">=6.0,<7\"\r\n\r\n[[package]]\r\nname = \"hpack\"\r\nversion = \"4.0.0\"\r\ndescription = \"Pure-Python HPACK header compression\"\r\noptional = false\r\npython-versions = \">=3.6.1\"\r\nfiles = [\r\n    {file = \"hpack-4.0.0-py3-none-any.whl\", hash = \"sha256:84a076fad3dc9a9f8063ccb8041ef100867b1878b25ef0ee63847a5d53818a6c\"},\r\n    {file = \"hpack-4.0.0.tar.gz\", hash = \"sha256:fc41de0c63e687ebffde81187a948221294896f6bdc0ae2312708df339430095\"},\r\n]\r\n\r\n[[package]]\r\nname = \"httpcore\"\r\nversion = \"1.0.5\"\r\ndescription = \"A minimal low-level HTTP client.\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"httpcore-1.0.5-py3-none-any.whl\", hash = \"sha256:421f18bac248b25d310f3cacd198d55b8e6125c107797b609ff9b7a6ba7991b5\"},\r\n    {file = \"httpcore-1.0.5.tar.gz\", hash = \"sha256:34a38e2f9291467ee3b44e89dd52615370e152954ba21721378a87b2960f7a61\"},\r\n]\r\n\r\n[package.dependencies]\r\ncertifi = \"*\"\r\nh11 = \">=0.13,<0.15\"\r\n\r\n[package.extras]\r\nasyncio = [\"anyio (>=4.0,<5.0)\"]\r\nhttp2 = [\"h2 (>=3,<5)\"]\r\nsocks = [\"socksio (==1.*)\"]\r\ntrio = [\"trio (>=0.22.0,<0.26.0)\"]\r\n\r\n[[package]]\r\nname = \"httpx\"\r\nversion = \"0.27.2\"\r\ndescription = \"The next generation HTTP client.\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"httpx-0.27.2-py3-none-any.whl\", hash = \"sha256:7bb2708e112d8fdd7829cd4243970f0c223274051cb35ee80c03301ee29a3df0\"},\r\n    {file = \"httpx-0.27.2.tar.gz\", hash = \"sha256:f7c2be1d2f3c3c3160d441802406b206c2b76f5947b11115e6df10c6c65e66c2\"},\r\n]\r\n\r\n[package.dependencies]\r\nanyio = \"*\"\r\ncertifi = \"*\"\r\nh2 = {version = \">=3,<5\", optional = true, markers = \"extra == \\\"http2\\\"\"}\r\nhttpcore = \"==1.*\"\r\nidna = \"*\"\r\nsniffio = \"*\"\r\n\r\n[package.extras]\r\nbrotli = [\"brotli\", \"brotlicffi\"]\r\ncli = [\"click (==8.*)\", \"pygments (==2.*)\", \"rich (>=10,<14)\"]\r\nhttp2 = [\"h2 (>=3,<5)\"]\r\nsocks = [\"socksio (==1.*)\"]\r\nzstd = [\"zstandard (>=0.18.0)\"]\r\n\r\n[[package]]\r\nname = \"hyperframe\"\r\nversion = \"6.0.1\"\r\ndescription = \"HTTP/2 framing layer for Python\"\r\noptional = false\r\npython-versions = \">=3.6.1\"\r\nfiles = [\r\n    {file = \"hyperframe-6.0.1-py3-none-any.whl\", hash = \"sha256:0ec6bafd80d8ad2195c4f03aacba3a8265e57bc4cff261e802bf39970ed02a15\"},\r\n    {file = \"hyperframe-6.0.1.tar.gz\", hash = \"sha256:ae510046231dc8e9ecb1a6586f63d2347bf4c8905914aa84ba585ae85f28a914\"},\r\n]\r\n\r\n[[package]]\r\nname = \"idna\"\r\nversion = \"3.8\"\r\ndescription = \"Internationalized Domain Names in Applications (IDNA)\"\r\noptional = false\r\npython-versions = \">=3.6\"\r\nfiles = [\r\n    {file = \"idna-3.8-py3-none-any.whl\", hash = \"sha256:050b4e5baadcd44d760cedbd2b8e639f2ff89bbc7a5730fcc662954303377aac\"},\r\n    {file = \"idna-3.8.tar.gz\", hash = \"sha256:d838c2c0ed6fced7693d5e8ab8e734d5f8fda53a039c0164afb0b82e771e3603\"},\r\n]\r\n\r\n[[package]]\r\nname = \"m3u8\"\r\nversion = \"4.1.0\"\r\ndescription = \"Python m3u8 parser\"\r\noptional = false\r\npython-versions = \">=3.7\"\r\nfiles = [\r\n    {file = \"m3u8-4.1.0-py3-none-any.whl\", hash = \"sha256:981daed09f57b7590721b6437278e49f2c36c1bceaa8fbe48f585e1745571d17\"},\r\n    {file = \"m3u8-4.1.0.tar.gz\", hash = \"sha256:3b9d7e5bafbaae89f2464cb16f397887d8decf6b1b48d8de58711414dc1c7b45\"},\r\n]\r\n\r\n[package.dependencies]\r\nbackports-datetime-fromisoformat = {version = \"*\", markers = \"python_version < \\\"3.11\\\"\"}\r\n\r\n[[package]]\r\nname = \"mypy\"\r\nversion = \"1.11.2\"\r\ndescription = \"Optional static typing for Python\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"mypy-1.11.2-cp310-cp310-macosx_10_9_x86_64.whl\", hash = \"sha256:d42a6dd818ffce7be66cce644f1dff482f1d97c53ca70908dff0b9ddc120b77a\"},\r\n    {file = \"mypy-1.11.2-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:801780c56d1cdb896eacd5619a83e427ce436d86a3bdf9112527f24a66618fef\"},\r\n    {file = \"mypy-1.11.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl\", hash = \"sha256:41ea707d036a5307ac674ea172875f40c9d55c5394f888b168033177fce47383\"},\r\n    {file = \"mypy-1.11.2-cp310-cp310-musllinux_1_1_x86_64.whl\", hash = \"sha256:6e658bd2d20565ea86da7d91331b0eed6d2eee22dc031579e6297f3e12c758c8\"},\r\n    {file = \"mypy-1.11.2-cp310-cp310-win_amd64.whl\", hash = \"sha256:478db5f5036817fe45adb7332d927daa62417159d49783041338921dcf646fc7\"},\r\n    {file = \"mypy-1.11.2-cp311-cp311-macosx_10_9_x86_64.whl\", hash = \"sha256:75746e06d5fa1e91bfd5432448d00d34593b52e7e91a187d981d08d1f33d4385\"},\r\n    {file = \"mypy-1.11.2-cp311-cp311-macosx_11_0_arm64.whl\", hash = \"sha256:a976775ab2256aadc6add633d44f100a2517d2388906ec4f13231fafbb0eccca\"},\r\n    {file = \"mypy-1.11.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl\", hash = \"sha256:cd953f221ac1379050a8a646585a29574488974f79d8082cedef62744f0a0104\"},\r\n    {file = \"mypy-1.11.2-cp311-cp311-musllinux_1_1_x86_64.whl\", hash = \"sha256:57555a7715c0a34421013144a33d280e73c08df70f3a18a552938587ce9274f4\"},\r\n    {file = \"mypy-1.11.2-cp311-cp311-win_amd64.whl\", hash = \"sha256:36383a4fcbad95f2657642a07ba22ff797de26277158f1cc7bd234821468b1b6\"},\r\n    {file = \"mypy-1.11.2-cp312-cp312-macosx_10_9_x86_64.whl\", hash = \"sha256:e8960dbbbf36906c5c0b7f4fbf2f0c7ffb20f4898e6a879fcf56a41a08b0d318\"},\r\n    {file = \"mypy-1.11.2-cp312-cp312-macosx_11_0_arm64.whl\", hash = \"sha256:06d26c277962f3fb50e13044674aa10553981ae514288cb7d0a738f495550b36\"},\r\n    {file = \"mypy-1.11.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl\", hash = \"sha256:6e7184632d89d677973a14d00ae4d03214c8bc301ceefcdaf5c474866814c987\"},\r\n    {file = \"mypy-1.11.2-cp312-cp312-musllinux_1_1_x86_64.whl\", hash = \"sha256:3a66169b92452f72117e2da3a576087025449018afc2d8e9bfe5ffab865709ca\"},\r\n    {file = \"mypy-1.11.2-cp312-cp312-win_amd64.whl\", hash = \"sha256:969ea3ef09617aff826885a22ece0ddef69d95852cdad2f60c8bb06bf1f71f70\"},\r\n    {file = \"mypy-1.11.2-cp38-cp38-macosx_10_9_x86_64.whl\", hash = \"sha256:37c7fa6121c1cdfcaac97ce3d3b5588e847aa79b580c1e922bb5d5d2902df19b\"},\r\n    {file = \"mypy-1.11.2-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:4a8a53bc3ffbd161b5b2a4fff2f0f1e23a33b0168f1c0778ec70e1a3d66deb86\"},\r\n    {file = \"mypy-1.11.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl\", hash = \"sha256:2ff93107f01968ed834f4256bc1fc4475e2fecf6c661260066a985b52741ddce\"},\r\n    {file = \"mypy-1.11.2-cp38-cp38-musllinux_1_1_x86_64.whl\", hash = \"sha256:edb91dded4df17eae4537668b23f0ff6baf3707683734b6a818d5b9d0c0c31a1\"},\r\n    {file = \"mypy-1.11.2-cp38-cp38-win_amd64.whl\", hash = \"sha256:ee23de8530d99b6db0573c4ef4bd8f39a2a6f9b60655bf7a1357e585a3486f2b\"},\r\n    {file = \"mypy-1.11.2-cp39-cp39-macosx_10_9_x86_64.whl\", hash = \"sha256:801ca29f43d5acce85f8e999b1e431fb479cb02d0e11deb7d2abb56bdaf24fd6\"},\r\n    {file = \"mypy-1.11.2-cp39-cp39-macosx_11_0_arm64.whl\", hash = \"sha256:af8d155170fcf87a2afb55b35dc1a0ac21df4431e7d96717621962e4b9192e70\"},\r\n    {file = \"mypy-1.11.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl\", hash = \"sha256:f7821776e5c4286b6a13138cc935e2e9b6fde05e081bdebf5cdb2bb97c9df81d\"},\r\n    {file = \"mypy-1.11.2-cp39-cp39-musllinux_1_1_x86_64.whl\", hash = \"sha256:539c570477a96a4e6fb718b8d5c3e0c0eba1f485df13f86d2970c91f0673148d\"},\r\n    {file = \"mypy-1.11.2-cp39-cp39-win_amd64.whl\", hash = \"sha256:3f14cd3d386ac4d05c5a39a51b84387403dadbd936e17cb35882134d4f8f0d24\"},\r\n    {file = \"mypy-1.11.2-py3-none-any.whl\", hash = \"sha256:b499bc07dbdcd3de92b0a8b29fdf592c111276f6a12fe29c30f6c417dd546d12\"},\r\n    {file = \"mypy-1.11.2.tar.gz\", hash = \"sha256:7f9993ad3e0ffdc95c2a14b66dee63729f021968bff8ad911867579c65d13a79\"},\r\n]\r\n\r\n[package.dependencies]\r\nmypy-extensions = \">=1.0.0\"\r\ntomli = {version = \">=1.1.0\", markers = \"python_version < \\\"3.11\\\"\"}\r\ntyping-extensions = \">=4.6.0\"\r\n\r\n[package.extras]\r\ndmypy = [\"psutil (>=4.0)\"]\r\ninstall-types = [\"pip\"]\r\nmypyc = [\"setuptools (>=50)\"]\r\nreports = [\"lxml\"]\r\n\r\n[[package]]\r\nname = \"mypy-extensions\"\r\nversion = \"1.0.0\"\r\ndescription = \"Type system extensions for programs checked with the mypy type checker.\"\r\noptional = false\r\npython-versions = \">=3.5\"\r\nfiles = [\r\n    {file = \"mypy_extensions-1.0.0-py3-none-any.whl\", hash = \"sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d\"},\r\n    {file = \"mypy_extensions-1.0.0.tar.gz\", hash = \"sha256:75dbf8955dc00442a438fc4d0666508a9a97b6bd41aa2f0ffe9d2f2725af0782\"},\r\n]\r\n\r\n[[package]]\r\nname = \"pydantic\"\r\nversion = \"2.9.0\"\r\ndescription = \"Data validation using Python type hints\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"pydantic-2.9.0-py3-none-any.whl\", hash = \"sha256:f66a7073abd93214a20c5f7b32d56843137a7a2e70d02111f3be287035c45370\"},\r\n    {file = \"pydantic-2.9.0.tar.gz\", hash = \"sha256:c7a8a9fdf7d100afa49647eae340e2d23efa382466a8d177efcd1381e9be5598\"},\r\n]\r\n\r\n[package.dependencies]\r\nannotated-types = \">=0.4.0\"\r\npydantic-core = \"2.23.2\"\r\ntyping-extensions = [\r\n    {version = \">=4.12.2\", markers = \"python_version >= \\\"3.13\\\"\"},\r\n    {version = \">=4.6.1\", markers = \"python_version < \\\"3.13\\\"\"},\r\n]\r\ntzdata = {version = \"*\", markers = \"python_version >= \\\"3.9\\\"\"}\r\n\r\n[package.extras]\r\nemail = [\"email-validator (>=2.0.0)\"]\r\n\r\n[[package]]\r\nname = \"pydantic-core\"\r\nversion = \"2.23.2\"\r\ndescription = \"Core functionality for Pydantic validation and serialization\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-macosx_10_12_x86_64.whl\", hash = \"sha256:7d0324a35ab436c9d768753cbc3c47a865a2cbc0757066cb864747baa61f6ece\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-macosx_11_0_arm64.whl\", hash = \"sha256:276ae78153a94b664e700ac362587c73b84399bd1145e135287513442e7dfbc7\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:964c7aa318da542cdcc60d4a648377ffe1a2ef0eb1e996026c7f74507b720a78\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:1cf842265a3a820ebc6388b963ead065f5ce8f2068ac4e1c713ef77a67b71f7c\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:ae90b9e50fe1bd115b24785e962b51130340408156d34d67b5f8f3fa6540938e\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:8ae65fdfb8a841556b52935dfd4c3f79132dc5253b12c0061b96415208f4d622\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:5c8aa40f6ca803f95b1c1c5aeaee6237b9e879e4dfb46ad713229a63651a95fb\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:c53100c8ee5a1e102766abde2158077d8c374bee0639201f11d3032e3555dfbc\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-musllinux_1_1_aarch64.whl\", hash = \"sha256:d6b9dd6aa03c812017411734e496c44fef29b43dba1e3dd1fa7361bbacfc1354\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-cp310-musllinux_1_1_x86_64.whl\", hash = \"sha256:b18cf68255a476b927910c6873d9ed00da692bb293c5b10b282bd48a0afe3ae2\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-none-win32.whl\", hash = \"sha256:e460475719721d59cd54a350c1f71c797c763212c836bf48585478c5514d2854\"},\r\n    {file = \"pydantic_core-2.23.2-cp310-none-win_amd64.whl\", hash = \"sha256:5f3cf3721eaf8741cffaf092487f1ca80831202ce91672776b02b875580e174a\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-macosx_10_12_x86_64.whl\", hash = \"sha256:7ce8e26b86a91e305858e018afc7a6e932f17428b1eaa60154bd1f7ee888b5f8\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-macosx_11_0_arm64.whl\", hash = \"sha256:7e9b24cca4037a561422bf5dc52b38d390fb61f7bfff64053ce1b72f6938e6b2\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:753294d42fb072aa1775bfe1a2ba1012427376718fa4c72de52005a3d2a22178\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:257d6a410a0d8aeb50b4283dea39bb79b14303e0fab0f2b9d617701331ed1515\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:c8319e0bd6a7b45ad76166cc3d5d6a36c97d0c82a196f478c3ee5346566eebfd\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:7a05c0240f6c711eb381ac392de987ee974fa9336071fb697768dfdb151345ce\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:8d5b0ff3218858859910295df6953d7bafac3a48d5cd18f4e3ed9999efd2245f\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:96ef39add33ff58cd4c112cbac076726b96b98bb8f1e7f7595288dcfb2f10b57\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-musllinux_1_1_aarch64.whl\", hash = \"sha256:0102e49ac7d2df3379ef8d658d3bc59d3d769b0bdb17da189b75efa861fc07b4\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-cp311-musllinux_1_1_x86_64.whl\", hash = \"sha256:a6612c2a844043e4d10a8324c54cdff0042c558eef30bd705770793d70b224aa\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-none-win32.whl\", hash = \"sha256:caffda619099cfd4f63d48462f6aadbecee3ad9603b4b88b60cb821c1b258576\"},\r\n    {file = \"pydantic_core-2.23.2-cp311-none-win_amd64.whl\", hash = \"sha256:6f80fba4af0cb1d2344869d56430e304a51396b70d46b91a55ed4959993c0589\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-macosx_10_12_x86_64.whl\", hash = \"sha256:4c83c64d05ffbbe12d4e8498ab72bdb05bcc1026340a4a597dc647a13c1605ec\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-macosx_11_0_arm64.whl\", hash = \"sha256:6294907eaaccf71c076abdd1c7954e272efa39bb043161b4b8aa1cd76a16ce43\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:4a801c5e1e13272e0909c520708122496647d1279d252c9e6e07dac216accc41\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:cc0c316fba3ce72ac3ab7902a888b9dc4979162d320823679da270c2d9ad0cad\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:6b06c5d4e8701ac2ba99a2ef835e4e1b187d41095a9c619c5b185c9068ed2a49\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:82764c0bd697159fe9947ad59b6db6d7329e88505c8f98990eb07e84cc0a5d81\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:2b1a195efd347ede8bcf723e932300292eb13a9d2a3c1f84eb8f37cbbc905b7f\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:b7efb12e5071ad8d5b547487bdad489fbd4a5a35a0fc36a1941517a6ad7f23e0\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-musllinux_1_1_aarch64.whl\", hash = \"sha256:5dd0ec5f514ed40e49bf961d49cf1bc2c72e9b50f29a163b2cc9030c6742aa73\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-cp312-musllinux_1_1_x86_64.whl\", hash = \"sha256:820f6ee5c06bc868335e3b6e42d7ef41f50dfb3ea32fbd523ab679d10d8741c0\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-none-win32.whl\", hash = \"sha256:3713dc093d5048bfaedbba7a8dbc53e74c44a140d45ede020dc347dda18daf3f\"},\r\n    {file = \"pydantic_core-2.23.2-cp312-none-win_amd64.whl\", hash = \"sha256:e1895e949f8849bc2757c0dbac28422a04be031204df46a56ab34bcf98507342\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-macosx_10_12_x86_64.whl\", hash = \"sha256:da43cbe593e3c87d07108d0ebd73771dc414488f1f91ed2e204b0370b94b37ac\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-macosx_11_0_arm64.whl\", hash = \"sha256:64d094ea1aa97c6ded4748d40886076a931a8bf6f61b6e43e4a1041769c39dd2\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:084414ffe9a85a52940b49631321d636dadf3576c30259607b75516d131fecd0\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:043ef8469f72609c4c3a5e06a07a1f713d53df4d53112c6d49207c0bd3c3bd9b\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:3649bd3ae6a8ebea7dc381afb7f3c6db237fc7cebd05c8ac36ca8a4187b03b30\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:6db09153d8438425e98cdc9a289c5fade04a5d2128faff8f227c459da21b9703\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:5668b3173bb0b2e65020b60d83f5910a7224027232c9f5dc05a71a1deac9f960\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:1c7b81beaf7c7ebde978377dc53679c6cba0e946426fc7ade54251dfe24a7604\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-musllinux_1_1_aarch64.whl\", hash = \"sha256:ae579143826c6f05a361d9546446c432a165ecf1c0b720bbfd81152645cb897d\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-cp313-musllinux_1_1_x86_64.whl\", hash = \"sha256:19f1352fe4b248cae22a89268720fc74e83f008057a652894f08fa931e77dced\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-none-win32.whl\", hash = \"sha256:e1a79ad49f346aa1a2921f31e8dbbab4d64484823e813a002679eaa46cba39e1\"},\r\n    {file = \"pydantic_core-2.23.2-cp313-none-win_amd64.whl\", hash = \"sha256:582871902e1902b3c8e9b2c347f32a792a07094110c1bca6c2ea89b90150caac\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-macosx_10_12_x86_64.whl\", hash = \"sha256:743e5811b0c377eb830150d675b0847a74a44d4ad5ab8845923d5b3a756d8100\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-macosx_11_0_arm64.whl\", hash = \"sha256:6650a7bbe17a2717167e3e23c186849bae5cef35d38949549f1c116031b2b3aa\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:56e6a12ec8d7679f41b3750ffa426d22b44ef97be226a9bab00a03365f217b2b\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:810ca06cca91de9107718dc83d9ac4d2e86efd6c02cba49a190abcaf33fb0472\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:785e7f517ebb9890813d31cb5d328fa5eda825bb205065cde760b3150e4de1f7\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:3ef71ec876fcc4d3bbf2ae81961959e8d62f8d74a83d116668409c224012e3af\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:d50ac34835c6a4a0d456b5db559b82047403c4317b3bc73b3455fefdbdc54b0a\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:16b25a4a120a2bb7dab51b81e3d9f3cde4f9a4456566c403ed29ac81bf49744f\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-musllinux_1_1_aarch64.whl\", hash = \"sha256:41ae8537ad371ec018e3c5da0eb3f3e40ee1011eb9be1da7f965357c4623c501\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-cp38-musllinux_1_1_x86_64.whl\", hash = \"sha256:07049ec9306ec64e955b2e7c40c8d77dd78ea89adb97a2013d0b6e055c5ee4c5\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-none-win32.whl\", hash = \"sha256:086c5db95157dc84c63ff9d96ebb8856f47ce113c86b61065a066f8efbe80acf\"},\r\n    {file = \"pydantic_core-2.23.2-cp38-none-win_amd64.whl\", hash = \"sha256:67b6655311b00581914aba481729971b88bb8bc7996206590700a3ac85e457b8\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-macosx_10_12_x86_64.whl\", hash = \"sha256:358331e21a897151e54d58e08d0219acf98ebb14c567267a87e971f3d2a3be59\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-macosx_11_0_arm64.whl\", hash = \"sha256:c4d9f15ffe68bcd3898b0ad7233af01b15c57d91cd1667f8d868e0eacbfe3f87\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:0123655fedacf035ab10c23450163c2f65a4174f2bb034b188240a6cf06bb123\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:e6e3ccebdbd6e53474b0bb7ab8b88e83c0cfe91484b25e058e581348ee5a01a5\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:fc535cb898ef88333cf317777ecdfe0faac1c2a3187ef7eb061b6f7ecf7e6bae\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:aab9e522efff3993a9e98ab14263d4e20211e62da088298089a03056980a3e69\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:05b366fb8fe3d8683b11ac35fa08947d7b92be78ec64e3277d03bd7f9b7cda79\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:7568f682c06f10f30ef643a1e8eec4afeecdafde5c4af1b574c6df079e96f96c\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-musllinux_1_1_aarch64.whl\", hash = \"sha256:cdd02a08205dc90238669f082747612cb3c82bd2c717adc60f9b9ecadb540f80\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-cp39-musllinux_1_1_x86_64.whl\", hash = \"sha256:1a2ab4f410f4b886de53b6bddf5dd6f337915a29dd9f22f20f3099659536b2f6\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-none-win32.whl\", hash = \"sha256:0448b81c3dfcde439551bb04a9f41d7627f676b12701865c8a2574bcea034437\"},\r\n    {file = \"pydantic_core-2.23.2-cp39-none-win_amd64.whl\", hash = \"sha256:4cebb9794f67266d65e7e4cbe5dcf063e29fc7b81c79dc9475bd476d9534150e\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-macosx_10_12_x86_64.whl\", hash = \"sha256:e758d271ed0286d146cf7c04c539a5169a888dd0b57026be621547e756af55bc\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-macosx_11_0_arm64.whl\", hash = \"sha256:f477d26183e94eaafc60b983ab25af2a809a1b48ce4debb57b343f671b7a90b6\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:da3131ef2b940b99106f29dfbc30d9505643f766704e14c5d5e504e6a480c35e\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:329a721253c7e4cbd7aad4a377745fbcc0607f9d72a3cc2102dd40519be75ed2\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:7706e15cdbf42f8fab1e6425247dfa98f4a6f8c63746c995d6a2017f78e619ae\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-musllinux_1_1_aarch64.whl\", hash = \"sha256:e64ffaf8f6e17ca15eb48344d86a7a741454526f3a3fa56bc493ad9d7ec63936\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-musllinux_1_1_x86_64.whl\", hash = \"sha256:dd59638025160056687d598b054b64a79183f8065eae0d3f5ca523cde9943940\"},\r\n    {file = \"pydantic_core-2.23.2-pp310-pypy310_pp73-win_amd64.whl\", hash = \"sha256:12625e69b1199e94b0ae1c9a95d000484ce9f0182f9965a26572f054b1537e44\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-macosx_10_12_x86_64.whl\", hash = \"sha256:5d813fd871b3d5c3005157622ee102e8908ad6011ec915a18bd8fde673c4360e\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-macosx_11_0_arm64.whl\", hash = \"sha256:1eb37f7d6a8001c0f86dc8ff2ee8d08291a536d76e49e78cda8587bb54d8b329\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:7ce7eaf9a98680b4312b7cebcdd9352531c43db00fca586115845df388f3c465\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:f087879f1ffde024dd2788a30d55acd67959dcf6c431e9d3682d1c491a0eb474\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-manylinux_2_5_i686.manylinux1_i686.whl\", hash = \"sha256:6ce883906810b4c3bd90e0ada1f9e808d9ecf1c5f0b60c6b8831d6100bcc7dd6\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-musllinux_1_1_aarch64.whl\", hash = \"sha256:a8031074a397a5925d06b590121f8339d34a5a74cfe6970f8a1124eb8b83f4ac\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-musllinux_1_1_x86_64.whl\", hash = \"sha256:23af245b8f2f4ee9e2c99cb3f93d0e22fb5c16df3f2f643f5a8da5caff12a653\"},\r\n    {file = \"pydantic_core-2.23.2-pp39-pypy39_pp73-win_amd64.whl\", hash = \"sha256:c57e493a0faea1e4c38f860d6862ba6832723396c884fbf938ff5e9b224200e2\"},\r\n    {file = \"pydantic_core-2.23.2.tar.gz\", hash = \"sha256:95d6bf449a1ac81de562d65d180af5d8c19672793c81877a2eda8fde5d08f2fd\"},\r\n]\r\n\r\n[package.dependencies]\r\ntyping-extensions = \">=4.6.0,<4.7.0 || >4.7.0\"\r\n\r\n[[package]]\r\nname = \"ruff\"\r\nversion = \"0.4.10\"\r\ndescription = \"An extremely fast Python linter and code formatter, written in Rust.\"\r\noptional = false\r\npython-versions = \">=3.7\"\r\nfiles = [\r\n    {file = \"ruff-0.4.10-py3-none-macosx_10_12_x86_64.whl\", hash = \"sha256:5c2c4d0859305ac5a16310eec40e4e9a9dec5dcdfbe92697acd99624e8638dac\"},\r\n    {file = \"ruff-0.4.10-py3-none-macosx_11_0_arm64.whl\", hash = \"sha256:a79489607d1495685cdd911a323a35871abfb7a95d4f98fc6f85e799227ac46e\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\", hash = \"sha256:b1dd1681dfa90a41b8376a61af05cc4dc5ff32c8f14f5fe20dba9ff5deb80cd6\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\", hash = \"sha256:c75c53bb79d71310dc79fb69eb4902fba804a81f374bc86a9b117a8d077a1784\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl\", hash = \"sha256:18238c80ee3d9100d3535d8eb15a59c4a0753b45cc55f8bf38f38d6a597b9739\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl\", hash = \"sha256:d8f71885bce242da344989cae08e263de29752f094233f932d4f5cfb4ef36a81\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\", hash = \"sha256:330421543bd3222cdfec481e8ff3460e8702ed1e58b494cf9d9e4bf90db52b9d\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl\", hash = \"sha256:9e9b6fb3a37b772628415b00c4fc892f97954275394ed611056a4b8a2631365e\"},\r\n    {file = \"ruff-0.4.10-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\", hash = \"sha256:0f54c481b39a762d48f64d97351048e842861c6662d63ec599f67d515cb417f6\"},\r\n    {file = \"ruff-0.4.10-py3-none-musllinux_1_2_aarch64.whl\", hash = \"sha256:67fe086b433b965c22de0b4259ddfe6fa541c95bf418499bedb9ad5fb8d1c631\"},\r\n    {file = \"ruff-0.4.10-py3-none-musllinux_1_2_armv7l.whl\", hash = \"sha256:acfaaab59543382085f9eb51f8e87bac26bf96b164839955f244d07125a982ef\"},\r\n    {file = \"ruff-0.4.10-py3-none-musllinux_1_2_i686.whl\", hash = \"sha256:3cea07079962b2941244191569cf3a05541477286f5cafea638cd3aa94b56815\"},\r\n    {file = \"ruff-0.4.10-py3-none-musllinux_1_2_x86_64.whl\", hash = \"sha256:338a64ef0748f8c3a80d7f05785930f7965d71ca260904a9321d13be24b79695\"},\r\n    {file = \"ruff-0.4.10-py3-none-win32.whl\", hash = \"sha256:ffe3cd2f89cb54561c62e5fa20e8f182c0a444934bf430515a4b422f1ab7b7ca\"},\r\n    {file = \"ruff-0.4.10-py3-none-win_amd64.whl\", hash = \"sha256:67f67cef43c55ffc8cc59e8e0b97e9e60b4837c8f21e8ab5ffd5d66e196e25f7\"},\r\n    {file = \"ruff-0.4.10-py3-none-win_arm64.whl\", hash = \"sha256:dd1fcee327c20addac7916ca4e2653fbbf2e8388d8a6477ce5b4e986b68ae6c0\"},\r\n    {file = \"ruff-0.4.10.tar.gz\", hash = \"sha256:3aa4f2bc388a30d346c56524f7cacca85945ba124945fe489952aadb6b5cd804\"},\r\n]\r\n\r\n[[package]]\r\nname = \"sniffio\"\r\nversion = \"1.3.1\"\r\ndescription = \"Sniff out which async library your code is running under\"\r\noptional = false\r\npython-versions = \">=3.7\"\r\nfiles = [\r\n    {file = \"sniffio-1.3.1-py3-none-any.whl\", hash = \"sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2\"},\r\n    {file = \"sniffio-1.3.1.tar.gz\", hash = \"sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc\"},\r\n]\r\n\r\n[[package]]\r\nname = \"tomli\"\r\nversion = \"2.0.1\"\r\ndescription = \"A lil' TOML parser\"\r\noptional = false\r\npython-versions = \">=3.7\"\r\nfiles = [\r\n    {file = \"tomli-2.0.1-py3-none-any.whl\", hash = \"sha256:939de3e7a6161af0c887ef91b7d41a53e7c5a1ca976325f429cb46ea9bc30ecc\"},\r\n    {file = \"tomli-2.0.1.tar.gz\", hash = \"sha256:de526c12914f0c550d15924c62d72abc48d6fe7364aa87328337a31007fe8a4f\"},\r\n]\r\n\r\n[[package]]\r\nname = \"typing-extensions\"\r\nversion = \"4.12.2\"\r\ndescription = \"Backported and Experimental Type Hints for Python 3.8+\"\r\noptional = false\r\npython-versions = \">=3.8\"\r\nfiles = [\r\n    {file = \"typing_extensions-4.12.2-py3-none-any.whl\", hash = \"sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d\"},\r\n    {file = \"typing_extensions-4.12.2.tar.gz\", hash = \"sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8\"},\r\n]\r\n\r\n[[package]]\r\nname = \"tzdata\"\r\nversion = \"2024.1\"\r\ndescription = \"Provider of IANA time zone data\"\r\noptional = false\r\npython-versions = \">=2\"\r\nfiles = [\r\n    {file = \"tzdata-2024.1-py2.py3-none-any.whl\", hash = \"sha256:9068bc196136463f5245e51efda838afa15aaeca9903f49050dfa2679db4d252\"},\r\n    {file = \"tzdata-2024.1.tar.gz\", hash = \"sha256:2674120f8d891909751c38abcdfd386ac0a5a1127954fbc332af6b5ceae07efd\"},\r\n]\r\n\r\n[metadata]\r\nlock-version = \"2.0\"\r\npython-versions = \"^3.9\"\r\ncontent-hash = \"0315a43e799fc70f8ec809f541855d568ab5c2fa4d1a8b99bcda70f406f7d2c1\"\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/poetry.lock b/poetry.lock
+--- a/poetry.lock	(revision 91cd3d701a0c020012c43f6b46f0bc239b4afdf6)
++++ b/poetry.lock	(date 1725611747291)
+@@ -84,6 +84,31 @@
+     {file = "certifi-2024.8.30.tar.gz", hash = "sha256:bec941d2aa8195e248a60b31ff9f0558284cf01a52591ceda73ea9afffd69fd9"},
+ ]
+ 
++[[package]]
++name = "click"
++version = "8.1.7"
++description = "Composable command line interface toolkit"
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "click-8.1.7-py3-none-any.whl", hash = "sha256:ae74fb96c20a0277a1d615f1e4d73c8414f5a98db8b799a7931d1582f3390c28"},
++    {file = "click-8.1.7.tar.gz", hash = "sha256:ca9853ad459e787e2192211578cc907e7594e294c7ccc834310722b41b9ca6de"},
++]
++
++[package.dependencies]
++colorama = {version = "*", markers = "platform_system == \"Windows\""}
++
++[[package]]
++name = "colorama"
++version = "0.4.6"
++description = "Cross-platform colored terminal text."
++optional = false
++python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
++files = [
++    {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
++    {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
++]
++
+ [[package]]
+ name = "exceptiongroup"
+ version = "1.2.2"
+@@ -218,6 +243,41 @@
+ [package.dependencies]
+ backports-datetime-fromisoformat = {version = "*", markers = "python_version < \"3.11\""}
+ 
++[[package]]
++name = "markdown-it-py"
++version = "3.0.0"
++description = "Python port of markdown-it. Markdown parsing, done right!"
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "markdown-it-py-3.0.0.tar.gz", hash = "sha256:e3f60a94fa066dc52ec76661e37c851cb232d92f9886b15cb560aaada2df8feb"},
++    {file = "markdown_it_py-3.0.0-py3-none-any.whl", hash = "sha256:355216845c60bd96232cd8d8c40e8f9765cc86f46880e43a8fd22dc1a1a8cab1"},
++]
++
++[package.dependencies]
++mdurl = ">=0.1,<1.0"
++
++[package.extras]
++benchmarking = ["psutil", "pytest", "pytest-benchmark"]
++code-style = ["pre-commit (>=3.0,<4.0)"]
++compare = ["commonmark (>=0.9,<1.0)", "markdown (>=3.4,<4.0)", "mistletoe (>=1.0,<2.0)", "mistune (>=2.0,<3.0)", "panflute (>=2.3,<3.0)"]
++linkify = ["linkify-it-py (>=1,<3)"]
++plugins = ["mdit-py-plugins"]
++profiling = ["gprof2dot"]
++rtd = ["jupyter_sphinx", "mdit-py-plugins", "myst-parser", "pyyaml", "sphinx", "sphinx-copybutton", "sphinx-design", "sphinx_book_theme"]
++testing = ["coverage", "pytest", "pytest-cov", "pytest-regressions"]
++
++[[package]]
++name = "mdurl"
++version = "0.1.2"
++description = "Markdown URL utilities"
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"},
++    {file = "mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba"},
++]
++
+ [[package]]
+ name = "mypy"
+ version = "1.11.2"
+@@ -400,6 +460,38 @@
+ [package.dependencies]
+ typing-extensions = ">=4.6.0,<4.7.0 || >4.7.0"
+ 
++[[package]]
++name = "pygments"
++version = "2.18.0"
++description = "Pygments is a syntax highlighting package written in Python."
++optional = false
++python-versions = ">=3.8"
++files = [
++    {file = "pygments-2.18.0-py3-none-any.whl", hash = "sha256:b8e6aca0523f3ab76fee51799c488e38782ac06eafcf95e7ba832985c8e7b13a"},
++    {file = "pygments-2.18.0.tar.gz", hash = "sha256:786ff802f32e91311bff3889f6e9a86e81505fe99f2735bb6d60ae0c5004f199"},
++]
++
++[package.extras]
++windows-terminal = ["colorama (>=0.4.6)"]
++
++[[package]]
++name = "rich"
++version = "13.8.0"
++description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
++optional = false
++python-versions = ">=3.7.0"
++files = [
++    {file = "rich-13.8.0-py3-none-any.whl", hash = "sha256:2e85306a063b9492dffc86278197a60cbece75bcb766022f3436f567cae11bdc"},
++    {file = "rich-13.8.0.tar.gz", hash = "sha256:a5ac1f1cd448ade0d59cc3356f7db7a7ccda2c8cbae9c7a90c28ff463d3e91f4"},
++]
++
++[package.dependencies]
++markdown-it-py = ">=2.2.0"
++pygments = ">=2.13.0,<3.0.0"
++
++[package.extras]
++jupyter = ["ipywidgets (>=7.5.1,<9)"]
++
+ [[package]]
+ name = "ruff"
+ version = "0.4.10"
+@@ -426,6 +518,17 @@
+     {file = "ruff-0.4.10.tar.gz", hash = "sha256:3aa4f2bc388a30d346c56524f7cacca85945ba124945fe489952aadb6b5cd804"},
+ ]
+ 
++[[package]]
++name = "shellingham"
++version = "1.5.4"
++description = "Tool to Detect Surrounding Shell"
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686"},
++    {file = "shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de"},
++]
++
+ [[package]]
+ name = "sniffio"
+ version = "1.3.1"
+@@ -448,6 +551,23 @@
+     {file = "tomli-2.0.1.tar.gz", hash = "sha256:de526c12914f0c550d15924c62d72abc48d6fe7364aa87328337a31007fe8a4f"},
+ ]
+ 
++[[package]]
++name = "typer"
++version = "0.12.5"
++description = "Typer, build great CLIs. Easy to code. Based on Python type hints."
++optional = false
++python-versions = ">=3.7"
++files = [
++    {file = "typer-0.12.5-py3-none-any.whl", hash = "sha256:62fe4e471711b147e3365034133904df3e235698399bc4de2b36c8579298d52b"},
++    {file = "typer-0.12.5.tar.gz", hash = "sha256:f592f089bedcc8ec1b974125d64851029c3b1af145f04aca64d69410f0c9b722"},
++]
++
++[package.dependencies]
++click = ">=8.0.0"
++rich = ">=10.11.0"
++shellingham = ">=1.3.0"
++typing-extensions = ">=3.7.4.3"
++
+ [[package]]
+ name = "typing-extensions"
+ version = "4.12.2"
+@@ -473,4 +593,4 @@
+ [metadata]
+ lock-version = "2.0"
+ python-versions = "^3.9"
+-content-hash = "0315a43e799fc70f8ec809f541855d568ab5c2fa4d1a8b99bcda70f406f7d2c1"
++content-hash = "9df77e7bdc9010e57f70f528067050c01e7dd5a5eeeb20e1b9d2b08bc48cc07f"
+Index: pyproject.toml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>[tool.poetry]\r\nname = \"isubrip\"\r\nversion = \"2.5.6\"\r\ndescription = \"A Python package for scraping and downloading subtitles from AppleTV / iTunes movie pages.\"\r\nlicense = \"MIT\"\r\nauthors = [\"Michael Yochpaz\"]\r\nreadme = \"README.md\"\r\nhomepage = \"https://github.com/MichaelYochpaz/iSubRip\"\r\nrepository = \"https://github.com/MichaelYochpaz/iSubRip\"\r\nkeywords = [\r\n    \"iTunes\",\r\n    \"AppleTV\",\r\n    \"movies\",\r\n    \"subtitles\",\r\n    \"scrape\",\r\n    \"scraper\",\r\n    \"download\",\r\n    \"m3u8\"\r\n]\r\nclassifiers = [\r\n    \"Development Status :: 5 - Production/Stable\",\r\n    \"Intended Audience :: End Users/Desktop\",\r\n    \"Intended Audience :: Developers\",\r\n    \"Operating System :: Microsoft :: Windows\",\r\n    \"Operating System :: MacOS\",\r\n    \"Operating System :: POSIX :: Linux\",\r\n    \"Topic :: Utilities\",\r\n    \"License :: OSI Approved :: MIT License\",\r\n    \"Programming Language :: Python :: 3.9\",\r\n    \"Programming Language :: Python :: 3.10\",\r\n    \"Programming Language :: Python :: 3.11\",\r\n    \"Programming Language :: Python :: 3.12\",\r\n]\r\npackages = [\r\n    { include = \"isubrip\" },\r\n]\r\ninclude = [\r\n    \"isubrip/resources\", \"README.md\", \"LICENSE\"\r\n]\r\n\r\n[tool.mypy]\r\ncheck_untyped_defs = true\r\ndisallow_untyped_defs = true\r\nexplicit_package_bases = true\r\nignore_missing_imports = true\r\npython_version = \"3.9\"\r\nwarn_return_any = true\r\nplugins = [\r\n    \"pydantic.mypy\"\r\n]\r\n\r\n[tool.poetry.scripts]\r\nisubrip = \"isubrip.__main__:main\"\r\n\r\n[tool.poetry.urls]\r\n\"Bug Reports\" = \"https://github.com/MichaelYochpaz/iSubRip/issues\"\r\n\r\n[tool.poetry.dependencies]\r\npython = \"^3.9\"\r\nhttpx = {extras = [\"http2\"], version = \"^0.27.0\"}\r\nm3u8 = \"^4.1.0\"\r\npydantic = \"^2.9.0\"\r\ntomli = \"^2.0.1\"\r\n\r\n\r\n[tool.poetry.group.dev.dependencies]\r\nmypy = \"^1.11.0\"\r\nruff = \"^0.4.2\"\r\n\r\n[build-system]\r\nrequires = [\"poetry-core\"]\r\nbuild-backend = \"poetry.core.masonry.api\"\r\n\r\n[tool.poetry_bumpversion.file.\"isubrip/constants.py\"]\r\nsearch = 'PACKAGE_VERSION = \"{current_version}\"'\r\nreplace = 'PACKAGE_VERSION = \"{new_version}\"'\r\n\r\n\r\n[tool.ruff]\r\nline-length = 120\r\ntarget-version = \"py39\"\r\n\r\n[tool.ruff.lint]\r\nselect = [\r\n    \"ARG\",\r\n    \"ASYNC\",\r\n    \"B\",\r\n    \"C4\",\r\n    \"COM\",\r\n    \"E\",\r\n    \"F\",\r\n    \"FA\",\r\n    \"I\",\r\n    \"INP\",\r\n    \"ISC\",\r\n    \"N\",\r\n    \"PIE\",\r\n    \"PGH\",\r\n    \"PT\",\r\n    \"PTH\",\r\n    \"Q\",\r\n    \"RSE\",\r\n    \"RET\",\r\n    \"RUF\",\r\n    \"S\",\r\n    \"SIM\",\r\n    \"SLF\",\r\n    \"T20\",\r\n    \"TCH\",\r\n    \"TID\",\r\n    \"TRY\",\r\n    \"UP\",\r\n]\r\nignore = [\r\n    \"C416\",\r\n    \"Q000\",\r\n    \"RUF010\",\r\n    \"RUF012\",\r\n    \"SIM108\",\r\n    \"TD002\",\r\n    \"TD003\",\r\n    \"TRY003\",\r\n]\r\nunfixable = [\"ARG\"]\r\n\r\n[tool.ruff.lint.flake8-tidy-imports]\r\nban-relative-imports = \"all\"\r\n\r\n[tool.ruff.lint.flake8-quotes]\r\ndocstring-quotes = \"double\"\r\n\r\n[tool.ruff.lint.isort]\r\nforce-sort-within-sections = true\r\n\r\n[tool.ruff.lint.pyupgrade]\r\nkeep-runtime-typing = true
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pyproject.toml b/pyproject.toml
+--- a/pyproject.toml	(revision 91cd3d701a0c020012c43f6b46f0bc239b4afdf6)
++++ b/pyproject.toml	(date 1725611747299)
+@@ -61,6 +61,7 @@
+ m3u8 = "^4.1.0"
+ pydantic = "^2.9.0"
+ tomli = "^2.0.1"
++typer = "^0.12.5"
+ 
+ 
+ [tool.poetry.group.dev.dependencies]

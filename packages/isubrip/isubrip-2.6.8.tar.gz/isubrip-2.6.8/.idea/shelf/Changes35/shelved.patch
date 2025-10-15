@@ -1,0 +1,116 @@
+Index: isubrip/scrapers/disneyplus_hotstar_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport json\r\nfrom datetime import timedelta\r\nfrom typing import Iterator\r\n\r\nfrom isubrip.config import Config, ConfigSetting\r\nfrom isubrip.data_structures import EpisodeData, MovieData, SeasonData, SeriesData, SubtitlesData\r\nfrom isubrip.scrapers.scraper import MovieScraper, ScraperException, SeriesScraper\r\nfrom isubrip.subtitle_formats.webvtt import WebVTTSubtitles\r\nfrom isubrip.utils import generate_url_params, parse_url_params\r\n\r\n\r\nclass DisneyPlusHotstarScraper(MovieScraper, SeriesScraper):\r\n    \"\"\"An Apple TV scraper.\"\"\"\r\n    id = \"dsnphs\"\r\n    name = \"Disney+ (Hotstar)\"\r\n    abbreviation = \"DSNP\"\r\n    url_regex = r\"(?P<base_url>https?://(?:www\\.)?apps\\.disneyplus\\.com/(?P<slug>(?:(?P<country_code>[a-z]{2})/)?(?:(?P<media_type>movies|shows)/)?(?:(?P<media_name>[\\w\\-%]+)/)?(?P<media_id>(?:\\d{4,10}))))(?:\\?(?P<url_params>(?:).*))?\"  # noqa: E501\r\n    # TODO: Update regex - slug can have episode data. Ex: il/shows/mshpkht-sympsvn/1260023404/some-enchanted-evening/1260023628\r\n    subtitles_class = WebVTTSubtitles\r\n    is_movie_scraper = True\r\n    is_series_scraper = True\r\n\r\n    _api_url = \"https://www.apps.disneyplus.com/api/internal/bff\"\r\n    _player_params = {\r\n        \"client_capabilities\":\r\n            {\r\n                \"audio_channel\": [\"stereo\"],\r\n                \"container\": [\"fmp4\", \"ts\"],\r\n                \"dvr\": [\"short\"],\r\n                \"dynamic_range\": [\"sdr\"],\r\n                \"encryption\": [\"widevine\", \"plain\"],\r\n                \"ladder\": [\"tv\", \"phone\"],\r\n                \"package\": [\"dash\", \"hls\"],\r\n                \"resolution\": [\"sd\", \"hd\", \"fhd\"],\r\n                \"video_codec\": [\"h264\"],\r\n            },\r\n        \"drm_parameters\":\r\n            {\r\n                \"hdcp_version\": [\"HDCP_V2_2\"],\r\n                \"widevine_security_level\": [\"SW_SECURE_DECODE\"],\r\n                \"playready_security_level\": [],\r\n            }\r\n    }\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n\r\n        if self.config is None:\r\n            self.config = Config()\r\n\r\n        # Add \"token\" setting to config\r\n        self.config.add_settings(\r\n            ConfigSetting(\r\n                key=\"token\",\r\n                type=str,\r\n                required=True,\r\n            ),\r\n            check_config=True)\r\n\r\n        self._session.headers.update({\r\n            \"Accept\": \"application/json\",\r\n            \"X-Hs-Usertoken\": self.config[\"token\"],\r\n            \"X-Hs-Platform\": \"web\",\r\n            \"X-Hs-Client\": \"platform:web;app_version:23.05.29.0;browser:Chrome;schema_version:0.0.854\"\r\n        })\r\n\r\n    def _get_api_data(self, endpoint: str) -> dict:\r\n        \"\"\"\r\n        Retrieve data from the Disney+ Hotstar's API.\r\n\r\n        Args:\r\n            endpoint (str): API endpoint.\r\n\r\n        Returns:\r\n            dict: Data returned by the API for the given endpoint.\r\n        \"\"\"\r\n        response = self._session.get(f\"{self._api_url}/{endpoint}\")\r\n        response.raise_for_status()\r\n        return response.json()\r\n\r\n    def _get_episodes_data(self, show_id: str, season_id: str) -> list[dict]:\r\n        \"\"\"\r\n        Retrieve paginated season episodes data from the API.\r\n\r\n        Args:\r\n            show_id (str): Show ID.\r\n            season_id (str): Season ID.\r\n\r\n        Returns:\r\n            list[dict]: List of paginated episodes data as returned by the API.\r\n        \"\"\"\r\n        endpoint = f\"v2/pages/841/spaces/803/widgets/1196/widgets/168?content_id={show_id}&season_id={season_id}\"\r\n        paginated_data = []\r\n\r\n        while endpoint:\r\n            api_data = self._get_api_data(endpoint)\r\n            episodes_paginated_data = api_data[\"success\"][\"widget_wrapper\"][\"widget\"][\"data\"]\r\n            paginated_data.extend(episodes_paginated_data[\"items\"])\r\n            endpoint = episodes_paginated_data.get(\"next_tray_url\")\r\n\r\n        return [episode_data[\"playable_content\"][\"data\"] for episode_data in paginated_data]\r\n\r\n    def get_movie_data(self, movie_id: str) -> MovieData:\r\n        pass\r\n\r\n    def get_episode_data(self, show_name: str, episode_slug: str) -> EpisodeData:\r\n        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)\r\n        api_data = self._get_api_data(endpoint=f\"v2/slugs/{episode_slug}?{player_params}\")\r\n\r\n        media_data = api_data[\"success\"][\"page\"][\"spaces\"][\"adaptive_tray\"][\"widget_wrappers\"][1][\"widget\"][\"data\"] \\\r\n            [\"tray_items\"][\"data\"][\"items\"][0][\"playable_content\"][\"data\"]\r\n\r\n        player_config = api_data[\"success\"][\"page\"][\"spaces\"][\"player\"][\"widget_wrappers\"][0][\"widget\"][\"data\"] \\\r\n            [\"player_config\"]\r\n\r\n        playlists = [\r\n            player_config[\"media_asset_v2\"][\"primary\"][\"content_url\"],\r\n            player_config[\"media_asset_v2\"][\"fallback\"][\"content_url\"]\r\n        ]\r\n\r\n        return EpisodeData(\r\n            id=media_data[\"cw_info\"][\"content_id\"],\r\n            name=show_name,\r\n            playlist=playlists,\r\n            scraper=self,\r\n            original_scraper=self,\r\n            original_data=api_data[\"success\"][\"page\"][\"spaces\"],\r\n            episode_name=media_data[\"title\"],\r\n            duration=timedelta(seconds=media_data[\"cw_info\"][\"duration\"]),\r\n        )\r\n\r\n    def get_season_data(self, show_id: str, season_id: str) -> SeasonData:\r\n        api_data = self._get_episodes_data(show_id, season_id)\r\n        episodes = []\r\n\r\n        for episode_data in api_data:\r\n            page_slug = episode_data[\"actions\"][\"on_click\"][1][\"page_navigation\"][\"page_slug\"].split(\"?\")[0]\r\n            episodes.append(\r\n                self.get_episode_data(\r\n                    episode_slug=page_slug,\r\n                ))\r\n\r\n    def get_show_data(self, show_slug: str) -> SeriesData:\r\n        api_data = self._get_api_data(endpoint=\"v2/slugs/\" + show_slug)\r\n        media_data = api_data[\"success\"][\"page\"][\"spaces\"][\"hero\"][\"widget_wrappers\"][0][\"widget\"][\"data\"]\r\n        seasons_data = api_data[\"success\"][\"page\"][\"spaces\"][\"tray\"][\"widget_wrappers\"][0][\"widget\"][\"data\"] \\\r\n            [\"category_picker\"][\"data\"][\"tabs\"]\r\n\r\n        seasons = []\r\n\r\n        for season_data in [season_data[\"tab\"][\"data\"] for season_data in seasons_data]:\r\n            url_params = parse_url_params(season_data[\"tray_widget_url\"])\r\n            seasons.append(\r\n                self.get_season_data(\r\n                    show_id=url_params[\"content_id\"],\r\n                    season_id=url_params[\"season_id\"],\r\n                )\r\n            )\r\n\r\n        pass\r\n\r\n    def get_data(self, url: str) -> MovieData | SeriesData:\r\n        regex_match = self.match_url(url, raise_error=True)\r\n        url_data = regex_match.groupdict()\r\n\r\n        if not all(url_data.get(key) for key in (\"country_code\", \"media_type\", \"media_name\", \"media_id\")):\r\n            raise ScraperException(f\"Complete slug URL required for scraping from '{self.name}'.\")\r\n\r\n        if url_data[\"media_type\"] == \"movies\":\r\n            return self.get_movie_data(url_data[\"media_id\"])\r\n\r\n        elif url_data[\"media_type\"] == \"shows\":\r\n            return self.get_show_data(url_data[\"slug\"])\r\n\r\n    def get_subtitles(self, main_playlist, language_filter: list[str] | None = None,\r\n                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:\r\n        pass\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/disneyplus_hotstar_scraper.py b/isubrip/scrapers/disneyplus_hotstar_scraper.py
+--- a/isubrip/scrapers/disneyplus_hotstar_scraper.py	(revision 4c9e5e6f8831ad9b86b31073222de0df93e061e6)
++++ b/isubrip/scrapers/disneyplus_hotstar_scraper.py	(date 1686393116860)
+@@ -80,7 +80,32 @@
+         response.raise_for_status()
+         return response.json()
+ 
+-    def _get_episodes_data(self, show_id: str, season_id: str) -> list[dict]:
++    def _get_episode_data(self, episode_slug: str) -> dict:
++        """
++        Retrieve episode data from the API.
++
++        Args:
++            episode_slug (str): Episode slug.
++
++        Returns:
++            dict: Episode data as returned by the API, reorganized to include only the necessary data.
++
++        """
++        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)
++        api_data = self._get_api_data(endpoint=f"v2/slugs/{episode_slug}?{player_params}")
++
++        media_data = api_data["success"]["page"]["spaces"]["adaptive_tray"]["widget_wrappers"][1]["widget"]["data"] \
++            ["tray_items"]["data"]["items"][0]["playable_content"]["data"]
++
++        player_config = api_data["success"]["page"]["spaces"]["player"]["widget_wrappers"][0]["widget"]["data"] \
++            ["player_config"]
++
++        return {
++            "media_data": media_data,
++            "player_config": player_config,
++        }
++
++    def _get_season_data(self, show_id: str, season_id: str) -> list[dict]:
+         """
+         Retrieve paginated season episodes data from the API.
+ 
+@@ -91,7 +116,8 @@
+         Returns:
+             list[dict]: List of paginated episodes data as returned by the API.
+         """
+-        endpoint = f"v2/pages/841/spaces/803/widgets/1196/widgets/168?content_id={show_id}&season_id={season_id}"
++        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)
++        endpoint = f"v2/pages/841/spaces/803/widgets/1196/widgets/168?content_id={show_id}&season_id={season_id}?{player_params}"
+         paginated_data = []
+ 
+         while endpoint:
+@@ -105,48 +131,29 @@
+     def get_movie_data(self, movie_id: str) -> MovieData:
+         pass
+ 
+-    def get_episode_data(self, show_name: str, episode_slug: str) -> EpisodeData:
+-        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)
+-        api_data = self._get_api_data(endpoint=f"v2/slugs/{episode_slug}?{player_params}")
+-
+-        media_data = api_data["success"]["page"]["spaces"]["adaptive_tray"]["widget_wrappers"][1]["widget"]["data"] \
+-            ["tray_items"]["data"]["items"][0]["playable_content"]["data"]
+-
+-        player_config = api_data["success"]["page"]["spaces"]["player"]["widget_wrappers"][0]["widget"]["data"] \
+-            ["player_config"]
+-
+-        playlists = [
+-            player_config["media_asset_v2"]["primary"]["content_url"],
+-            player_config["media_asset_v2"]["fallback"]["content_url"]
+-        ]
+-
+-        return EpisodeData(
+-            id=media_data["cw_info"]["content_id"],
+-            name=show_name,
+-            playlist=playlists,
+-            scraper=self,
+-            original_scraper=self,
+-            original_data=api_data["success"]["page"]["spaces"],
+-            episode_name=media_data["title"],
+-            duration=timedelta(seconds=media_data["cw_info"]["duration"]),
+-        )
+-
+     def get_season_data(self, show_id: str, season_id: str) -> SeasonData:
+-        api_data = self._get_episodes_data(show_id, season_id)
++        api_data = self._get_season_data(show_id, season_id)
+         episodes = []
+ 
+         for episode_data in api_data:
+             page_slug = episode_data["actions"]["on_click"][1]["page_navigation"]["page_slug"].split("?")[0]
++            additional_episode_data = self._get_episode_data(page_slug)
++
++            playlists = [
++                additional_episode_data["player_config"]["media_asset_v2"]["primary"]["content_url"],
++                additional_episode_data["player_config"]["media_asset_v2"]["fallback"]["content_url"],
++            ]
++
+             episodes.append(
+-                self.get_episode_data(
++                self._get_episode_data(
+                     episode_slug=page_slug,
+                 ))
+ 
+     def get_show_data(self, show_slug: str) -> SeriesData:
+-        api_data = self._get_api_data(endpoint="v2/slugs/" + show_slug)
+-        media_data = api_data["success"]["page"]["spaces"]["hero"]["widget_wrappers"][0]["widget"]["data"]
+-        seasons_data = api_data["success"]["page"]["spaces"]["tray"]["widget_wrappers"][0]["widget"]["data"] \
+-            ["category_picker"]["data"]["tabs"]
++        player_params = generate_url_params(data=self._player_params, remove_dict_spaces=True)
++        api_data = self._get_api_data(endpoint=f"v2/slugs/{show_slug}?{player_params}")["success"]["page"]["spaces"]
++        media_data = api_data["hero"]["widget_wrappers"][0]["widget"]["data"]
++        seasons_data = api_data["tray"]["widget_wrappers"][0]["widget"]["data"]["category_picker"]["data"]["tabs"]
+ 
+         seasons = []
+ 

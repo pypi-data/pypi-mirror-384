@@ -1,0 +1,252 @@
+Index: isubrip/scrapers/yesplus_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/yesplus_scraper.py b/isubrip/scrapers/yesplus_scraper.py
+new file mode 100644
+--- /dev/null	(date 1712951403591)
++++ b/isubrip/scrapers/yesplus_scraper.py	(date 1712951403591)
+@@ -0,0 +1,242 @@
++from __future__ import annotations
++
++import datetime as dt
++import re
++from typing import Iterator
++
++from isubrip.config import ConfigSetting
++from isubrip.data_structures import Episode, Movie, ScrapedMediaResponse, Season, Series, SubtitlesData
++from isubrip.logger import logger
++from isubrip.scrapers.scraper import DASHScraper, PlaylistLoadError, ScraperError
++from isubrip.utils import (
++    raise_for_status,
++)
++
++
++class YesPlusScraper(DASHScraper):
++    """A Yes+ scraper"""
++    id = "yesplus"
++    name = "yes+"
++    abbreviation = "YESP"
++    url_regex = re.compile(r"(?P<base_url>https?://go-cgw-prod\.stingtv\.co\.il:4443)/ctap/r1\.6\.0/contentinstances/(?P<media_id>[^?]*)(?:\?(?P<url_params>.*))?", flags=re.IGNORECASE)  # noqa: E501
++    subtitles_class = None  # TODO
++    is_movie_scraper = True
++    is_series_scraper = True
++
++    _api_base_url = "https://go-cgw-prod.stingtv.co.il:4443/ctap/r1.6.0"
++    _client_token = "v:1!r:24858!ur:yesLive!community:GO!t:k!dt:ANDROID!f:byoux!pd:byoux!pt:Adults"  # TODO: Check if this can be obtained dynamically
++    _playlists_user_agent = "yes+/1.6.95 (Linux;Android 13) ExoPlayerLib/2.17.0"
++
++    def __init__(self, user_agent: str | None = None, config_data: dict | None = None):
++        super().__init__(user_agent=user_agent, config_data=config_data)
++
++        # Add "token" setting to config
++        self.config.add_settings(
++            ConfigSetting(
++                key="token",  # TODO: Seems like this token expires quickly. Find a way to use cookie token instead.
++                type=str,
++                required=True,
++            ),
++            check_config=True)
++
++        self.jwt_token: str = self.config["token"]
++
++        self._session.headers.update(
++            {
++                "Accept-Language": "en",
++                "Authorization": f"Bearer {self.jwt_token}",
++            })
++
++    def _extract_subtitles_data(self, data: bytes) -> bytes:
++        """
++        Extract SMPTE-TT subtitles from MP4 returned MP4 data.
++
++        Args:
++            data (bytes): MP4 data.
++
++        Returns:
++            bytes: Subtitles data.
++        """
++
++
++    def _get_api_data(self, endpoint: str, params: dict | None = None) -> dict:
++        """
++        Retrieve data from Yes+'s API.
++
++        Args:
++            endpoint (str): API endpoint.
++
++        Returns:
++            dict: Data returned by the API for the given endpoint.
++        """
++        response = self._session.get(f"{self._api_base_url}/{endpoint}", params=params)
++        raise_for_status(response)
++        return response.json()
++
++    def _get_media_playlist(self, media_id: str) -> str:
++        api_data = self._get_api_data(endpoint="devices/me/playsessions", params={"instanceId": media_id})
++        return api_data["playSessions"][0]["_links"]["playUrl"]["href"]
++
++    def _get_episodes_data(self, series_id: str) -> list[dict]:
++        endpoint = "shared/content"
++        params = {
++            "clientToken": self._client_token,
++            "limit": 1000,
++            "seasonId": series_id.rstrip("~vod"),
++        }
++
++        data = self._get_api_data(endpoint=endpoint, params=params)
++        return data["content"]
++
++    def _get_seasons_data(self, series_id: str) -> list[dict]:
++        endpoint = "shared/content"
++        params = {
++            "clientToken": self._client_token,
++            "limit": 1000,
++            "showId": series_id.rstrip("~vod"),
++        }
++
++        data = self._get_api_data(endpoint=endpoint, params=params)
++        return data["content"]
++
++    def get_media_data(self, media_id: str) -> dict:
++        """
++        Get media data from the API.
++        This call also sets the 'WsbSession' cookie required for
++
++        Args:
++            media_id (str): Media ID.
++
++        Returns:
++            dict: Media data.
++        """
++        return self._get_api_data(endpoint=f"shared/asset/{media_id}", params={"clientToken": self._client_token})
++
++    def generate_play_session(self, media_id: str) -> dict:
++        """
++        Generate a play session for the given media ID.
++
++        Args:
++            media_id (str): Media ID.
++
++        Returns:
++            str: Play session.
++        """
++        return self._get_api_data(endpoint="devices/me/playsessions", params={"instanceId": media_id})
++
++    def get_movie_data(self, data: dict) -> ScrapedMediaResponse[Movie]:
++        raise NotImplementedError  # TODO
++
++    def get_series_data(self, series_api_data: dict) -> ScrapedMediaResponse[Series]:
++        series_name = series_api_data["title"]
++        series_id = series_api_data["id"]
++
++        series_seasons: list[Season] = []
++        seasons_api_data = self._get_seasons_data(series_id=series_id)
++
++        for season_api_data in seasons_api_data:
++            season_id = season_api_data["seasonId"]
++            season_number = int(season_api_data["seasonNumber"])
++
++            season_episodes: list[Episode] = []
++            episodes_api_data = self._get_episodes_data(series_id=season_id)
++
++            for episode_api_data in episodes_api_data:
++                episode_id = episode_api_data["id"]
++                episode_playlist = self._get_media_playlist(media_id=episode_id)
++
++                season_episodes.append(
++                    Episode(
++                        id=episode_id,
++                        series_name=series_name,
++                        season_number=season_number,
++                        episode_number=episode_api_data["episodeNumber"],
++                        episode_release_date=int(episode_api_data["productionYear"]),
++                        episode_duration=dt.timedelta(seconds=episode_api_data["duration"]),
++                        playlist=episode_playlist,
++                    ),
++                )
++
++            series_seasons.append(
++                Season(
++                    id=series_id,
++                    series_name=series_name,
++                    season_number=season_number,
++                    release_date=None,
++                    episodes=season_episodes,
++                ))
++
++        series_data = Series(
++            id=series_id,
++            series_name=series_name,
++            seasons=series_seasons,
++        )
++
++        return ScrapedMediaResponse(
++            media_data=[series_data],
++            metadata_scraper=self.id,
++            playlist_scraper=self.id,
++            original_data=series_api_data,
++        )
++
++    def get_data(self, url: str) -> ScrapedMediaResponse[Movie] | ScrapedMediaResponse[Series]:
++        regex_match = self.match_url(url=url, raise_error=True)
++        url_data = regex_match.groupdict()
++
++        media_id = url_data["media_id"]
++        media_data = self.get_media_data(media_id=media_id)
++
++        if media_data["contentType"] == "standalone":
++            return self.get_movie_data(data=media_data)
++
++        elif media_data["contentType"] == "show":
++            return self.get_series_data(series_api_data=media_data)
++
++        else:
++            raise ScraperError(f"Unexpected content type: '{media_data['contentType']}'.")
++
++    def get_subtitles(self, main_playlist: str | list[str], language_filter: list[str] | str | None = None,
++                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:
++        playlist_data = self.load_mpd(url=main_playlist, headers={"User-Agent": self._playlists_user_agent})
++
++        if not playlist_data:  # No valid playlist found
++            raise PlaylistLoadError("Could not find a valid MPD playlist.")
++
++        subtitles_period = playlist_data.get_periods()[0]
++        for subtitles_adaptation_set in subtitles_period.get_adaptation_sets(filters={"contentType": "text",
++                                                                                      "mimeType": "application/mp4"}):
++            if language_filter and subtitles_adaptation_set.lang not in language_filter:
++                continue
++
++            for subtitles_representation in subtitles_adaptation_set.get_representations():
++                subtitles_url = subtitles_representation.url
++                language_code = subtitles_adaptation_set.lang
++
++                try:
++                    subtitles_data = self._session.get(url=subtitles_url,
++                                                       headers={"User-Agent": self._playlists_user_agent})
++                    language_code = subtitles_adaptation_set.lang
++                    subtitles = self.subtitles_class.load(data=subtitles_data.content, language_code=language_code)
++
++                    subtitles.polish(
++                        fix_rtl=self.subtitles_fix_rtl,
++                        rtl_languages=self.subtitles_fix_rtl_languages,
++                        remove_duplicates=self.subtitles_remove_duplicates,
++                    )
++
++                    subtitles_type = self.detect_subtitles_type(subtitles_adaptation_set=subtitles_adaptation_set)
++
++                    yield SubtitlesData(
++                        language_code=language_code,
++                        language_name=None,
++                        subtitles_format=(SubtitlesFormatType.SUBRIP if subrip_conversion
++                                          else SubtitlesFormatType.WEBVTT),
++                        content=subtitles.to_srt().dump() if subrip_conversion else subtitles.dump(),
++                        content_encoding=subtitles.encoding,
++                        special_type=subtitles_type,
++                    )
++
++                except Exception as e:
++                    logger.warning(f"Failed to download '{language_code}' subtitles. Skipping...")
++                    logger.debug(e, exc_info=True)
++                    continue

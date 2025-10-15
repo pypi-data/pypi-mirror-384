@@ -1,0 +1,175 @@
+Index: isubrip/scrapers/itunes_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport re\r\nfrom typing import TYPE_CHECKING, Iterator\r\n\r\nimport m3u8\r\nfrom requests.exceptions import HTTPError\r\n\r\nfrom isubrip.data_structures import SubtitlesData, SubtitlesFormatType\r\nfrom isubrip.logger import logger\r\nfrom isubrip.scrapers.scraper import HLSScraper, PlaylistLoadError, ScraperError, ScraperFactory\r\nfrom isubrip.subtitle_formats.webvtt import WebVTTSubtitles\r\nfrom isubrip.utils import merge_dict_values, raise_for_status\r\n\r\nif TYPE_CHECKING:\r\n    from isubrip.data_structures import Movie, ScrapedMediaResponse\r\n\r\n\r\nclass ItunesScraper(HLSScraper):\r\n    \"\"\"An iTunes movie data scraper.\"\"\"\r\n    id = \"itunes\"\r\n    name = \"iTunes\"\r\n    abbreviation = \"iT\"\r\n    url_regex = re.compile(r\"(?i)(?P<base_url>https?://itunes\\.apple\\.com/(?:(?P<country_code>[a-z]{2})/)?(?P<media_type>movie|tv-show|tv-season|show)/(?:(?P<media_name>[\\w\\-%]+)/)?(?P<media_id>id\\d{9,10}))(?:\\?(?P<url_params>.*))?\")  # noqa: E501\r\n    subtitles_class = WebVTTSubtitles\r\n    is_movie_scraper = True\r\n    uses_scrapers = [\"appletv\"]\r\n\r\n    _subtitles_filters = {\r\n        HLSScraper.M3U8Attribute.GROUP_ID.value: [\"subtitles_ak\", \"subtitles_vod-ak-amt.tv.apple.com\"],\r\n        **HLSScraper._subtitles_filters,\r\n    }\r\n\r\n    def __init__(self,  user_agent: str | None = None, config_data: dict | None = None):\r\n        super().__init__(user_agent=user_agent, config_data=config_data)\r\n        self._appletv_scraper = ScraperFactory.get_scraper_instance(\r\n            scraper_id=\"appletv\",\r\n            kwargs={\"config_data\": config_data},\r\n            extract_scraper_config=True,\r\n            raise_error=True,\r\n        )\r\n\r\n    def get_data(self, url: str) -> ScrapedMediaResponse[Movie]:\r\n        \"\"\"\r\n        Scrape iTunes to find info about a movie, and it's M3U8 main_playlist.\r\n\r\n        Args:\r\n            url (str): An iTunes store movie URL.\r\n\r\n        Raises:\r\n            InvalidURL: `itunes_url` is not a valid iTunes store movie URL.\r\n            PageLoadError: HTML page did not load properly.\r\n            HTTPError: HTTP request failed.\r\n\r\n        Returns:\r\n            Movie: A Movie (NamedTuple) object with movie's name, and an M3U8 object of the main_playlist\r\n            if the main_playlist is found. None otherwise.\r\n        \"\"\"\r\n        regex_match = self.match_url(url, raise_error=True)\r\n        url = regex_match.group(1)\r\n        logger.debug(f\"Scraping iTunes URL: {url}.\")\r\n        response = self._session.get(url=url, allow_redirects=False)\r\n\r\n        try:\r\n            raise_for_status(response=response)\r\n\r\n        except HTTPError as e:\r\n            if response.status_code == 404:\r\n                raise ScraperError(\r\n                    \"Media not found. This could indicate that the provided URL is invalid.\",\r\n                ) from e\r\n\r\n            raise\r\n\r\n        redirect_location = response.headers.get(\"Location\")\r\n\r\n        if response.status_code != 301 or not redirect_location:\r\n            logger.debug(f\"iTunes URL: {url} did not redirect to an Apple TV URL.\\n\"\r\n                         f\"Response status code: {response.status_code}.\\n\"\r\n                         f\"Response headers:\\n{response.headers}.\\n\"\r\n                         f\"Response data:\\n{response.text}.\")\r\n            raise ScraperError(\"Apple TV redirect URL not found.\")\r\n\r\n        if not self._appletv_scraper.match_url(redirect_location):\r\n            logger.debug(f\"iTunes URL: {url} redirected to an invalid Apple TV URL: '{redirect_location}'.\")\r\n            raise ScraperError(\"Redirect URL is not a valid Apple TV URL.\")\r\n\r\n        return self._appletv_scraper.get_data(redirect_location)\r\n\r\n    def get_subtitles(self, main_playlist: str | list[str], language_filter: list[str] | str | None = None,\r\n                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:\r\n        language_filters = {self.M3U8Attribute.LANGUAGE.value: language_filter} if language_filter else None\r\n        main_playlist_m3u8 = self.load_m3u8(url=main_playlist)\r\n\r\n        if main_playlist_m3u8 is None:\r\n            raise PlaylistLoadError(\"Could not load M3U8 playlist.\")\r\n\r\n        playlist_filters = (merge_dict_values(self._subtitles_filters, language_filters)\r\n                            if language_filters\r\n                            else self._subtitles_filters)\r\n\r\n        matched_media_items = self.get_media_playlists(main_playlist=main_playlist_m3u8,\r\n                                                       playlist_filters=playlist_filters)\r\n\r\n        for matched_media in matched_media_items:\r\n            language_name = matched_media.name.replace(' (forced)', '').strip()\r\n            language_code = matched_media.language\r\n            language_info_str = f\"{language_name} ({language_code})\"\r\n\r\n            try:\r\n                m3u8_data = self._session.get(url=matched_media.absolute_uri)\r\n                matched_media_playlist = m3u8.loads(content=m3u8_data.text, uri=matched_media.absolute_uri)\r\n\r\n                subtitles_segments = self._download_segments(matched_media_playlist.segments)\r\n                subtitles = self.subtitles_class.load(data=subtitles_segments[0], language_code=language_code)\r\n\r\n                for segment in subtitles_segments[1:]:\r\n                    subtitles.append_subtitles(subtitles.load(data=segment, language_code=language_code))\r\n\r\n                subtitles.polish(\r\n                    fix_rtl=self.subtitles_fix_rtl,\r\n                    remove_duplicates=self.subtitles_remove_duplicates,\r\n                )\r\n\r\n                language_name = matched_media.name.replace(' (forced)', '').strip()\r\n\r\n                yield SubtitlesData(\r\n                    language_code=language_code,\r\n                    language_name=language_name,\r\n                    subtitles_format=SubtitlesFormatType.SUBRIP if subrip_conversion else SubtitlesFormatType.WEBVTT,\r\n                    content=subtitles.to_srt().dump() if subrip_conversion else subtitles.dump(),\r\n                    content_encoding=subtitles.encoding,\r\n                    special_type=self.detect_subtitles_type(matched_media),\r\n                )\r\n\r\n            except Exception as e:\r\n                logger.warning(f\"Failed to download {language_info_str} subtitles. \"\r\n                               f\"Skipping...\")\r\n                logger.debug(e, exc_info=True)\r\n                continue\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/itunes_scraper.py b/isubrip/scrapers/itunes_scraper.py
+--- a/isubrip/scrapers/itunes_scraper.py	(revision 9e34a9e34d28017c1832d504e71ab012c515c74d)
++++ b/isubrip/scrapers/itunes_scraper.py	(date 1711408273770)
+@@ -115,7 +115,10 @@
+                 subtitles = self.subtitles_class.load(data=subtitles_segments[0], language_code=language_code)
+ 
+                 for segment in subtitles_segments[1:]:
+-                    subtitles.append_subtitles(subtitles.load(data=segment, language_code=language_code))
++                    segment_subtitles_obj = self.subtitles_class.load(data=segment, language_code=language_code)
++
++                    # TODO: Remove Style block
++                    subtitles.append_subtitles(segment_subtitles_obj)
+ 
+                 subtitles.polish(
+                     fix_rtl=self.subtitles_fix_rtl,
+Index: isubrip/subtitle_formats/webvtt.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABCMeta\r\nimport re\r\nfrom typing import TYPE_CHECKING, Any, ClassVar\r\n\r\nfrom isubrip.data_structures import SubtitlesFormatType\r\nfrom isubrip.subtitle_formats.subrip import SubRipCaptionBlock\r\nfrom isubrip.subtitle_formats.subtitles import RTL_CHAR, Subtitles, SubtitlesBlock, SubtitlesCaptionBlock\r\nfrom isubrip.utils import split_subtitles_timestamp\r\n\r\nif TYPE_CHECKING:\r\n    from datetime import time\r\n\r\n# WebVTT Documentation:\r\n# https://www.w3.org/TR/webvtt1/#cues\r\n# https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API#webvtt_cues\r\n\r\n\r\nclass WebVTTBlock(SubtitlesBlock, metaclass=ABCMeta):\r\n    \"\"\"\r\n    Abstract base class for WEBVTT cue blocks.\r\n    \"\"\"\r\n    is_caption_block: bool = False\r\n\r\n\r\nclass Caption(SubtitlesCaptionBlock, WebVTTBlock):\r\n    \"\"\"An object representing a WebVTT caption block.\"\"\"\r\n    subrip_alignment_conversion: ClassVar[bool] = False\r\n\r\n    is_caption_block: bool = True\r\n\r\n    def __init__(self, start_time: time, end_time: time, payload: str, settings: str = \"\", identifier: str = \"\"):\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT caption block.\r\n\r\n        Args:\r\n            start_time (time): Cue start time.\r\n            end_time (time): Cue end time.\r\n            settings (str): Cue settings.\r\n            payload (str): Cue payload.\r\n        \"\"\"\r\n        super().__init__(start_time=start_time, end_time=end_time, payload=payload)\r\n        self.identifier = identifier\r\n        self.settings = settings\r\n\r\n    def to_srt(self) -> SubRipCaptionBlock:\r\n        # Add a {\\an8} tag at the start of the payload if it has 'line:0.00%' in the settings\r\n        if \"line:0.00%\" in self.settings and self.subrip_alignment_conversion:\r\n            # If the payload starts with an RTL control char, add the tag after it\r\n            if self.payload.startswith(RTL_CHAR):\r\n                payload = RTL_CHAR + WEBVTT_ALIGN_TOP_TAG + self.payload[len(RTL_CHAR):]\r\n\r\n            else:\r\n                payload = WEBVTT_ALIGN_TOP_TAG + self.payload\r\n\r\n        else:\r\n            payload = self.payload\r\n\r\n        return SubRipCaptionBlock(start_time=self.start_time, end_time=self.end_time, payload=payload)\r\n\r\n    def __eq__(self, other: Any) -> bool:\r\n        return isinstance(other, type(self)) and \\\r\n            self.start_time == other.start_time and self.end_time == other.end_time and self.payload == other.payload\r\n\r\n    def __str__(self) -> str:\r\n        result_str = \"\"\r\n        time_format = \"%H:%M:%S.%f\"\r\n\r\n        # Add identifier (if it exists)\r\n        if self.identifier:\r\n            result_str += f\"{self.identifier}\\n\"\r\n\r\n        result_str += f\"{self.start_time.strftime(time_format)[:-3]} --> {self.end_time.strftime(time_format)[:-3]}\"\r\n\r\n        if self.settings:\r\n            result_str += f\" {self.settings}\"\r\n\r\n        result_str += f\"\\n{self.payload}\"\r\n\r\n        return result_str\r\n\r\n\r\nclass Comment(WebVTTBlock):\r\n    \"\"\"An object representing a WebVTT comment block.\"\"\"\r\n    header = \"NOTE\"\r\n\r\n    def __init__(self, payload: str, inline: bool = False) -> None:\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT comment block.\r\n\r\n        Args:\r\n            payload (str): Comment payload.\r\n        \"\"\"\r\n        self.payload = payload\r\n        self.inline = inline\r\n\r\n    def __eq__(self, other: Any) -> bool:\r\n        return isinstance(other, type(self)) and self.inline == other.inline and self.payload == other.payload\r\n\r\n    def __str__(self) -> str:\r\n        if self.inline:\r\n            return f\"{self.header} {self.payload}\"\r\n\r\n        if self.payload:\r\n            return f\"{self.header}\\n{self.payload}\"\r\n\r\n        return self.header\r\n\r\n\r\nclass Style(WebVTTBlock):\r\n    \"\"\"An object representing a WebVTT style block.\"\"\"\r\n    header = \"STYLE\"\r\n\r\n    def __init__(self, payload: str) -> None:\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT style block.\r\n\r\n        Args:\r\n            payload (str): Style payload.\r\n        \"\"\"\r\n        self.payload = payload\r\n\r\n    def __eq__(self, other: Any) -> bool:\r\n        return isinstance(other, type(self)) and self.payload == other.payload\r\n\r\n    def __str__(self) -> str:\r\n        return f\"{self.header}\\n{self.payload}\"\r\n\r\n\r\nclass Region(WebVTTBlock):\r\n    \"\"\"An object representing a WebVTT region block.\"\"\"\r\n    header = \"REGION\"\r\n\r\n    def __init__(self, payload: str) -> None:\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT region block.\r\n\r\n        Args:\r\n            payload (str): Region payload.\r\n        \"\"\"\r\n        self.payload = payload\r\n\r\n    def __eq__(self, other: Any) -> bool:\r\n        return isinstance(other, type(self)) and self.payload == other.payload\r\n\r\n    def __str__(self) -> str:\r\n        return f\"{self.header} {self.payload}\"\r\n\r\n\r\nclass WebVTTSubtitles(Subtitles[WebVTTBlock]):\r\n    \"\"\"An object representing a WebVTT subtitles file.\"\"\"\r\n    format = SubtitlesFormatType.WEBVTT\r\n\r\n    def dumps(self) -> str:\r\n        \"\"\"\r\n        Dump subtitles to a string representing the subtitles in a WebVTT format.\r\n\r\n        Returns:\r\n            str: The subtitles in a string using a WebVTT format.\r\n        \"\"\"\r\n        subtitles_str = \"WEBVTT\\n\\n\"\r\n\r\n        for block in self.blocks:\r\n            subtitles_str += str(block) + \"\\n\\n\"\r\n\r\n        return subtitles_str.rstrip('\\n')\r\n\r\n    @classmethod\r\n    def loads(cls, data: str, language_code: str, encoding: str = \"utf-8\") -> WebVTTSubtitles:\r\n        \"\"\"\r\n        Load WebVTT subtitles from a string.\r\n\r\n        Args:\r\n            data (str): Subtitles data to load.\r\n            language_code (str): Language code of the subtitles.\r\n            encoding (str, optional): Encoding of the subtitles. Defaults to \"utf-8\".\r\n\r\n        Returns:\r\n            WebVTTSubtitles: A WebVTTSubtitles object representing the subtitles.\r\n        \"\"\"\r\n        subtitles_obj = WebVTTSubtitles(language_code=language_code, encoding=encoding)\r\n        prev_line: str = \"\"\r\n        lines_iterator = iter(data.splitlines())\r\n\r\n        for line in lines_iterator:\r\n            # If the line is a timestamp\r\n            if caption_block_regex := re.match(WEBVTT_CAPTION_BLOCK_REGEX, line):\r\n                # If previous line wasn't empty, add it as an identifier\r\n                if prev_line:\r\n                    caption_identifier = prev_line\r\n\r\n                else:\r\n                    caption_identifier = \"\"\r\n\r\n                caption_timestamps = split_subtitles_timestamp(caption_block_regex.group(1))\r\n                caption_settings = caption_block_regex.group(2)\r\n                caption_payload = \"\"\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    caption_payload += additional_line + \"\\n\"\r\n\r\n                caption_payload = caption_payload.rstrip(\"\\n\")\r\n                subtitles_obj.add_block(Caption(\r\n                    identifier=caption_identifier,\r\n                    start_time=caption_timestamps[0],\r\n                    end_time=caption_timestamps[1],\r\n                    settings=caption_settings,\r\n                    payload=caption_payload))\r\n\r\n            elif comment_block_regex := re.match(WEBVTT_COMMENT_HEADER_REGEX, line):\r\n                comment_payload = \"\"\r\n                inline = False\r\n\r\n                if comment_block_regex.group(1) is not None:\r\n                    comment_payload += comment_block_regex.group(1) + \"\\n\"\r\n                    inline = True\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    comment_payload += additional_line + \"\\n\"\r\n\r\n                subtitles_obj.add_block(Comment(comment_payload.rstrip(\"\\n\"), inline=inline))\r\n\r\n            elif line.rstrip(' \\t') == Region.header:\r\n                region_payload = \"\"\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    region_payload += additional_line + \"\\n\"\r\n\r\n                subtitles_obj.add_block(Region(region_payload.rstrip(\"\\n\")))\r\n\r\n            elif line.rstrip(' \\t') == Style.header:\r\n                style_payload = \"\"\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    style_payload += additional_line + \"\\n\"\r\n\r\n                subtitles_obj.add_block(Style(style_payload.rstrip(\"\\n\")))\r\n\r\n            prev_line = line\r\n        return subtitles_obj\r\n\r\n\r\n# --- Constants ---\r\nWEBVTT_PERCENTAGE_REGEX = r\"\\d{1,3}(?:\\.\\d+)?%\"\r\nWEBVTT_CAPTION_TIMINGS_REGEX = \\\r\n    r\"(?:[0-5]\\d:)?[0-5]\\d:[0-5]\\d[\\.,]\\d{3}[ \\t]+-->[ \\t]+(?:[0-5]\\d:)?[0-5]\\d:[0-5]\\d[\\.,]\\d{3}\"\r\n\r\nWEBVTT_CAPTION_SETTING_ALIGNMENT_REGEX = r\"align:(?:start|center|middle|end|left|right)\"\r\nWEBVTT_CAPTION_SETTING_LINE_REGEX = rf\"line:(?:{WEBVTT_PERCENTAGE_REGEX}|-?\\d+%)(?:,(?:start|center|middle|end))?\"\r\nWEBVTT_CAPTION_SETTING_POSITION_REGEX = rf\"position:{WEBVTT_PERCENTAGE_REGEX}(?:,(?:start|center|middle|end))?\"\r\nWEBVTT_CAPTION_SETTING_REGION_REGEX = r\"region:(?:(?!(?:-->)|\\t)\\S)+\"\r\nWEBVTT_CAPTION_SETTING_SIZE_REGEX = rf\"size:{WEBVTT_PERCENTAGE_REGEX}\"\r\nWEBVTT_CAPTION_SETTING_VERTICAL_REGEX = r\"vertical:(?:lr|rl)\"\r\n\r\nWEBVTT_CAPTION_SETTINGS_REGEX = (\"(?:\"\r\n                                 f\"(?:{WEBVTT_CAPTION_SETTING_ALIGNMENT_REGEX})|\"\r\n                                 f\"(?:{WEBVTT_CAPTION_SETTING_LINE_REGEX})|\"\r\n                                 f\"(?:{WEBVTT_CAPTION_SETTING_POSITION_REGEX})|\"\r\n                                 f\"(?:{WEBVTT_CAPTION_SETTING_REGION_REGEX})|\"\r\n                                 f\"(?:{WEBVTT_CAPTION_SETTING_SIZE_REGEX})|\"\r\n                                 f\"(?:{WEBVTT_CAPTION_SETTING_VERTICAL_REGEX})|\"\r\n                                 f\"(?:[ \\t]+)\"\r\n                                 \")*\")\r\n\r\nWEBVTT_CAPTION_BLOCK_REGEX = re.compile(rf\"^({WEBVTT_CAPTION_TIMINGS_REGEX})[ \\t]*({WEBVTT_CAPTION_SETTINGS_REGEX})?\")\r\nWEBVTT_COMMENT_HEADER_REGEX = re.compile(rf\"^{Comment.header}(?:$|[ \\t])(.+)?\")\r\n\r\nWEBVTT_ALIGN_TOP_TAG = \"{\\\\an8}\"\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/subtitle_formats/webvtt.py b/isubrip/subtitle_formats/webvtt.py
+--- a/isubrip/subtitle_formats/webvtt.py	(revision 9e34a9e34d28017c1832d504e71ab012c515c74d)
++++ b/isubrip/subtitle_formats/webvtt.py	(date 1711735425572)
+@@ -92,6 +92,7 @@
+         Args:
+             payload (str): Comment payload.
+         """
++        super().__init__()
+         self.payload = payload
+         self.inline = inline
+ 
+@@ -119,6 +120,7 @@
+         Args:
+             payload (str): Style payload.
+         """
++        super().__init__()
+         self.payload = payload
+ 
+     def __eq__(self, other: Any) -> bool:
+@@ -139,6 +141,7 @@
+         Args:
+             payload (str): Region payload.
+         """
++        super().__init__()
+         self.payload = payload
+ 
+     def __eq__(self, other: Any) -> bool:
+@@ -152,6 +155,18 @@
+     """An object representing a WebVTT subtitles file."""
+     format = SubtitlesFormatType.WEBVTT
+ 
++    def __init__(self, language_code: str, blocks: list[WebVTTBlock] | None = None, encoding: str = "utf-8"):
++        """
++        Initialize a new object representing a WebVTT subtitles file.
++
++        Args:
++            language_code (str): Language code of the subtitles.
++            blocks (list[WebVTTBlock] | None, optional): A list of subtitles blocks to initialize the object with.
++                Defaults to None.
++            encoding (str, optional): Encoding of the subtitles. Defaults to "utf-8".
++        """
++        super().__init__(language_code=language_code, blocks=blocks, encoding=encoding)
++
+     def dumps(self) -> str:
+         """
+         Dump subtitles to a string representing the subtitles in a WebVTT format.
+Index: isubrip/subtitle_formats/subtitles.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABC, abstractmethod\r\nfrom datetime import time\r\nfrom typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar\r\n\r\nif TYPE_CHECKING:\r\n    from isubrip.data_structures import SubtitlesFormatType\r\n    from isubrip.subtitle_formats.subrip import SubRipCaptionBlock, SubRipSubtitles\r\n\r\nRTL_CONTROL_CHARS = ('\\u200e', '\\u200f', '\\u202a', '\\u202b', '\\u202c', '\\u202d', '\\u202e')\r\nRTL_CHAR = '\\u202b'\r\nRTL_LANGUAGES = [\"ar\", \"he\", \"he-il\"]\r\n\r\nSubtitlesT = TypeVar('SubtitlesT', bound='Subtitles')\r\nSubtitlesBlockT = TypeVar('SubtitlesBlockT', bound='SubtitlesBlock')\r\n\r\n\r\nclass SubtitlesBlock(ABC):\r\n    \"\"\"Abstract base class for subtitles blocks.\"\"\"\r\n    @abstractmethod\r\n    def __str__(self) -> str:\r\n        pass\r\n\r\n    @abstractmethod\r\n    def __eq__(self, other: Any) -> bool:\r\n        pass\r\n\r\n\r\nclass SubtitlesCaptionBlock(SubtitlesBlock, ABC):\r\n    \"\"\"A base class for subtitles caption blocks.\"\"\"\r\n\r\n    def __init__(self, start_time: time, end_time: time, payload: str):\r\n        \"\"\"\r\n        Initialize a new SubtitlesCaptionBlock object.\r\n\r\n        Args:\r\n            start_time: Start timestamp of the caption block.\r\n            end_time: End timestamp of the caption block.\r\n            payload: Caption block's payload (text).\r\n        \"\"\"\r\n        self.start_time = start_time\r\n        self.end_time = end_time\r\n        self.payload = payload\r\n\r\n    def fix_rtl(self) -> None:\r\n        \"\"\"Fix text direction to RTL.\"\"\"\r\n        # Remove previous RTL-related formatting\r\n        for char in RTL_CONTROL_CHARS:\r\n            self.payload = self.payload.replace(char, '')\r\n\r\n        # Add RLM char at the start of every line\r\n        self.payload = RTL_CHAR + self.payload.replace(\"\\n\", f\"\\n{RTL_CHAR}\")\r\n\r\n    @abstractmethod\r\n    def to_srt(self) -> SubRipCaptionBlock:\r\n        \"\"\"\r\n        Convert WebVTT caption block to SRT caption block.\r\n\r\n        Returns:\r\n            SubRipCaptionBlock: The caption block in SRT format.\r\n        \"\"\"\r\n        ...\r\n\r\n\r\nclass Subtitles(Generic[SubtitlesBlockT], ABC):\r\n    \"\"\"\r\n    An object representing subtitles, made out of blocks.\r\n\r\n    Attributes:\r\n        format (SubtitlesFormatType): [Class Attribute] Format of the subtitles (contains name and file extension).\r\n        language_code (str): Language code of the subtitles.\r\n        blocks (list[SubtitlesBlock]): A list of subtitles blocks that make up the subtitles.\r\n        encoding (str): Encoding of the subtitles.\r\n    \"\"\"\r\n    format: ClassVar[SubtitlesFormatType]\r\n\r\n    def __init__(self, language_code: str, blocks: list[SubtitlesBlockT] | None = None, encoding: str = \"utf-8\"):\r\n        \"\"\"\r\n        Initialize a new Subtitles object.\r\n\r\n        Args:\r\n            language_code (str): Language code of the subtitles.\r\n            blocks (list[SubtitlesBlock] | None, optional): A list of subtitles to initialize the object with.\r\n                Defaults to None.\r\n            encoding (str, optional): Encoding of the subtitles. Defaults to \"utf-8\".\r\n        \"\"\"\r\n        self.language_code = language_code\r\n        self.encoding = encoding\r\n\r\n        if blocks is None:\r\n            self.blocks = []\r\n\r\n        else:\r\n            self.blocks = blocks\r\n\r\n    def __add__(self: SubtitlesT, obj: SubtitlesBlockT | SubtitlesT) -> SubtitlesT:\r\n        \"\"\"\r\n        Add a new subtitles block, or append blocks from another subtitles object.\r\n\r\n        Args:\r\n            obj (SubtitlesBlock | Subtitles): A subtitles block or another subtitles object.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        if isinstance(obj, SubtitlesBlock):\r\n            self.add_block(obj)\r\n\r\n        elif isinstance(obj, self.__class__):\r\n            self.append_subtitles(obj)\r\n\r\n        return self\r\n\r\n    def __eq__(self, other: Any) -> bool:\r\n        return isinstance(other, type(self)) and self.blocks == other.blocks\r\n\r\n    def __str__(self) -> str:\r\n        return self.dumps()\r\n\r\n    def dump(self) -> bytes:\r\n        return self.dumps().encode(encoding=self.encoding)\r\n\r\n    @abstractmethod\r\n    def dumps(self) -> str:\r\n        \"\"\"Dump subtitles object to a string representing the subtitles.\"\"\"\r\n        ...\r\n\r\n    @classmethod\r\n    def load(cls, data: bytes, language_code: str, encoding: str = \"utf-8\") -> Subtitles:\r\n        parsed_data = data.decode(encoding=encoding)\r\n        return cls.loads(data=parsed_data, language_code=language_code, encoding=encoding)\r\n\r\n    @classmethod\r\n    @abstractmethod\r\n    def loads(cls, data: str, language_code: str, encoding: str = \"utf-8\") -> Subtitles:\r\n        ...\r\n\r\n    def add_block(self: SubtitlesT, block: SubtitlesBlockT | list[SubtitlesBlockT]) -> SubtitlesT:\r\n        \"\"\"\r\n        Add a new subtitles block to current subtitles.\r\n\r\n        Args:\r\n            block (SubtitlesBlock | list[SubtitlesBlock]):\r\n                A block object or a list of block objects to append.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        if isinstance(block, list):\r\n            self.blocks.extend(block)\r\n\r\n        else:\r\n            self.blocks.append(block)\r\n\r\n        return self\r\n\r\n    def append_subtitles(self: SubtitlesT, subtitles: SubtitlesT) -> SubtitlesT:\r\n        \"\"\"\r\n        Append subtitles to an existing subtitles object.\r\n\r\n        Args:\r\n            subtitles (Subtitles): Subtitles object to append to current subtitles.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        for block in subtitles.blocks:\r\n            self.add_block(block)\r\n\r\n        return self\r\n\r\n    def polish(self: SubtitlesT,\r\n               fix_rtl: bool = False,\r\n               remove_duplicates: bool = True,\r\n               ) -> SubtitlesT:\r\n        \"\"\"\r\n        Apply various fixes to subtitles.\r\n\r\n        Args:\r\n            fix_rtl (bool, optional): Whether to fix text direction of RTL languages. Defaults to False.\r\n            remove_duplicates (bool, optional): Whether to remove duplicate captions. Defaults to False.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        fix_rtl = (fix_rtl and self.language_code in RTL_LANGUAGES)\r\n\r\n        if not any((\r\n                fix_rtl,\r\n                remove_duplicates,\r\n        )):\r\n            return self\r\n\r\n        previous_block: SubtitlesBlockT | None = None\r\n\r\n        for block in self.blocks:\r\n            if fix_rtl:\r\n                block.fix_rtl()\r\n\r\n            if remove_duplicates and previous_block is not None and block == previous_block:\r\n                self.blocks.remove(previous_block)\r\n\r\n            previous_block = block\r\n\r\n        return self\r\n\r\n    def to_srt(self) -> SubRipSubtitles:\r\n        \"\"\"\r\n        Convert subtitles to SRT format.\r\n\r\n        Returns:\r\n            SubRipSubtitles: The subtitles in SRT format.\r\n        \"\"\"\r\n        from isubrip.subtitle_formats.subrip import SubRipSubtitles\r\n\r\n        return SubRipSubtitles(\r\n            language_code=self.language_code,\r\n            blocks=[block.to_srt() for block in self.blocks if isinstance(block, SubtitlesCaptionBlock)],\r\n            encoding=self.encoding,\r\n        )\r\n\r\n\r\ndef split_timestamp(timestamp: str) -> tuple[time, time]:\r\n    \"\"\"\r\n    Split a subtitles timestamp into start and end.\r\n\r\n    Args:\r\n        timestamp (str): A subtitles timestamp. For example: \"00:00:00.000 --> 00:00:00.000\"\r\n\r\n    Returns:\r\n        tuple(time, time): A tuple containing start and end times as a datetime object.\r\n    \"\"\"\r\n    # Support ',' character in timestamp's milliseconds (used in SubRip format).\r\n    timestamp = timestamp.replace(',', '.')\r\n\r\n    start_time, end_time = timestamp.split(\" --> \")\r\n    return time.fromisoformat(start_time), time.fromisoformat(end_time)\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/subtitle_formats/subtitles.py b/isubrip/subtitle_formats/subtitles.py
+--- a/isubrip/subtitle_formats/subtitles.py	(revision 9e34a9e34d28017c1832d504e71ab012c515c74d)
++++ b/isubrip/subtitle_formats/subtitles.py	(date 1711735425565)
+@@ -17,7 +17,16 @@
+ 
+ 
+ class SubtitlesBlock(ABC):
+-    """Abstract base class for subtitles blocks."""
++    """
++    Abstract base class for subtitles blocks.
++
++    Attributes:
++        modified (bool): Whether the block has been modified.
++    """
++
++    def __init__(self):
++        self.modified: bool = False
++
+     @abstractmethod
+     def __str__(self) -> str:
+         pass
+@@ -28,7 +37,9 @@
+ 
+ 
+ class SubtitlesCaptionBlock(SubtitlesBlock, ABC):
+-    """A base class for subtitles caption blocks."""
++    """
++    A base class for subtitles caption blocks.
++    """
+ 
+     def __init__(self, start_time: time, end_time: time, payload: str):
+         """
+@@ -39,6 +50,7 @@
+             end_time: End timestamp of the caption block.
+             payload: Caption block's payload (text).
+         """
++        super().__init__()
+         self.start_time = start_time
+         self.end_time = end_time
+         self.payload = payload
+@@ -72,6 +84,8 @@
+         language_code (str): Language code of the subtitles.
+         blocks (list[SubtitlesBlock]): A list of subtitles blocks that make up the subtitles.
+         encoding (str): Encoding of the subtitles.
++        raw_data (bytes | None): Raw data of the subtitles.
++        modified (bool): Whether the subtitles have been modified.
+     """
+     format: ClassVar[SubtitlesFormatType]
+ 
+@@ -87,6 +101,8 @@
+         """
+         self.language_code = language_code
+         self.encoding = encoding
++        self.raw_data: bytes | None = None
++        self.modified: bool = False
+ 
+         if blocks is None:
+             self.blocks = []
+@@ -128,6 +144,7 @@
+ 
+     @classmethod
+     def load(cls, data: bytes, language_code: str, encoding: str = "utf-8") -> Subtitles:
++        # TODO: Add raw_data
+         parsed_data = data.decode(encoding=encoding)
+         return cls.loads(data=parsed_data, language_code=language_code, encoding=encoding)
+ 
+@@ -171,6 +188,7 @@
+         return self
+ 
+     def polish(self: SubtitlesT,
++               fix_formatting: bool = True,
+                fix_rtl: bool = False,
+                remove_duplicates: bool = True,
+                ) -> SubtitlesT:
+@@ -178,8 +196,9 @@
+         Apply various fixes to subtitles.
+ 
+         Args:
++            fix_formatting (bool, optional): Whether to fix subtitles formatting. Defaults to True.
+             fix_rtl (bool, optional): Whether to fix text direction of RTL languages. Defaults to False.
+-            remove_duplicates (bool, optional): Whether to remove duplicate captions. Defaults to False.
++            remove_duplicates (bool, optional): Whether to remove duplicate captions. Defaults to True.
+ 
+         Returns:
+             Subtitles: The current subtitles object.
+@@ -187,6 +206,7 @@
+         fix_rtl = (fix_rtl and self.language_code in RTL_LANGUAGES)
+ 
+         if not any((
++                fix_formatting,
+                 fix_rtl,
+                 remove_duplicates,
+         )):

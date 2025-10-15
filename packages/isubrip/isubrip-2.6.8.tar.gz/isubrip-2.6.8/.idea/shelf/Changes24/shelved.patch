@@ -1,0 +1,120 @@
+Index: isubrip/__init__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>__version__ = \"2.3.3\"\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/__init__.py b/isubrip/__init__.py
+--- a/isubrip/__init__.py	(revision c21e291085ea478730aa0f8dd19b10c793b8490b)
++++ b/isubrip/__init__.py	(date 1684610266038)
+@@ -1,1 +1,1 @@
+-__version__ = "2.3.3"
++__version__ = "2.4.0"
+Index: isubrip/scrapers/disneyplus_hotstar_scraper_.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/disneyplus_hotstar_scraper_.py b/isubrip/scrapers/disneyplus_hotstar_scraper_.py
+new file mode 100644
+--- /dev/null	(date 1684791340097)
++++ b/isubrip/scrapers/disneyplus_hotstar_scraper_.py	(date 1684791340097)
+@@ -0,0 +1,58 @@
++from __future__ import annotations
++
++from isubrip.data_structures import EpisodeData, MovieData, SeasonData, SeriesData, PlaylistData
++from isubrip.scrapers.scraper import M3U8Scraper, MovieScraper, ScraperException, SeriesScraper
++from isubrip.subtitle_formats.webvtt import WebVTTSubtitles
++
++
++class AppleTVScraper(M3U8Scraper, MovieScraper, SeriesScraper):
++    """An Apple TV scraper."""
++    id = "dsnphs"
++    name = "Disney+ Hotstar"
++    abbreviation = "DSHS"
++    url_regex = r"(?P<base_url>https?://tv\.apple\.com/(?:(?P<country_code>[a-z]{2})/)?(?P<media_type>movie|episode|season|show)/(?:(?P<media_name>[\w\-%]+)/)?(?P<media_id>umc\.cmc\.[a-z\d]{24,25}))(?:\?(?P<url_params>(?:).*))?"  # noqa: E501
++    subtitles_class = WebVTTSubtitles
++    is_movie_scraper = True
++    is_series_scraper = True
++
++    _api_url = "https://www.apps.disneyplus.com/api/internal/bff"
++
++    def __init__(self, config_data: dict | None = None):
++        super().__init__(config_data=config_data)
++        self._config_data = config_data
++
++    def get_movie_data(self, storefront_id: str, movie_id: str) -> MovieData | list[MovieData]:
++        data = self._fetch_api_data(
++            storefront_id=storefront_id,
++            endpoint=f"/movies/{movie_id}",
++        )
++
++        mapped_playables = self._map_playables_by_channel(playables=data["playables"].values())
++
++        if self.Channel.ITUNES.value not in mapped_playables:
++            if self.Channel.APPLE_TV_PLUS.value in mapped_playables:
++                raise ScraperException("Scraping AppleTV+ content is not currently supported.")
++
++            else:
++                raise ScraperException("No iTunes playables could be found.")
++
++        return_data = []
++        for playable_data in mapped_playables[self.Channel.ITUNES.value]:
++            return_data.append(self._get_movie_data_itunes(playable_data))
++
++        if len(return_data) == 1:
++            return return_data[0]
++
++        return return_data
++
++    def get_episode_data(self, storefront_id: str, episode_id: str) -> EpisodeData:
++        raise NotImplementedError("Series scraping is not currently supported.")
++
++    def get_season_data(self, storefront_id: str, season_id: str, show_id: str) -> SeasonData:
++        raise NotImplementedError("Series scraping is not currently supported.")
++
++    def get_show_data(self, storefront_id: str, show_id: str) -> SeriesData:
++        raise NotImplementedError("Series scraping is not currently supported.")
++
++    def get_data(self, url: str) -> MovieData | list[MovieData] | EpisodeData | SeasonData | SeriesData:
++        pass
+Index: CHANGELOG.md
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># Changelog\r\n## 2.3.3 [2022-10-09]\r\n### Changes:\r\n* Added release year to zip file names. ([Issue #31](https://github.com/MichaelYochpaz/iSubRip/issues/31))\r\n* If the generated path for a zip file is already taken, a number will be appended at the end of the file's name to avoid overwriting. ([Issue #34](https://github.com/MichaelYochpaz/iSubRip/issues/34))\r\n### Bug Fixes:\r\n* Fixed an exception being thrown if the path to downloads folder on the config is invalid.\r\n* Fixed AppleTV URLs without a movie title not working. ([Issue #29](https://github.com/MichaelYochpaz/iSubRip/issues/29))\r\n* Fixed issues for movies with specific characters (`/`, `:`), and Windows reserved names in their title. ([Issue #30](https://github.com/MichaelYochpaz/iSubRip/issues/30))\r\n---\r\n## 2.3.2 [2022-08-06]\r\n### Changes:\r\n* Changed config paths to the following locations:  \r\nWindows: `%USERPROFILE%\\.isubrip\\config.json`  \r\nLinux / macOS: `$HOME/.isubrip/config.json`  \r\nMore info under Notes (and examples on the [README](https://github.com/MichaelYochpaz/iSubRip#configuration) file).\r\n\r\n### Bug Fixes:\r\n* Fixed an error with AppleTV links for movies released before 1970 (Epoch time). ([Issue #21](https://github.com/MichaelYochpaz/iSubRip/issues/21))\r\n* Fixed config file not being loaded on macOS. ([Issue #22](https://github.com/MichaelYochpaz/iSubRip/issues/22))\r\n* Fixed AppleTV scraping from the same storefront. ([Issue #24](https://github.com/MichaelYochpaz/iSubRip/issues/24))\r\n\r\n### Notes:\r\n* Running iSubRip with a config file in the previous locations will still work, but support for them will be dropped in the future.  \r\n* `xdg` package is no longer required or used.\r\n---\r\n## 2.3.1 [2022-07-15]\r\n### Changes:\r\n* Improved AppleTV scraping to utilize AppleTV's API instead of scraping HTML.\r\n\r\n### Bug Fixes:\r\n* Fixed HTML escaped (for non-English) characters not matching AppleTV's URL RegEx. ([Issue #15](https://github.com/MichaelYochpaz/iSubRip/issues/15))\r\n---\r\n## 2.3.0 [2022-06-23]\r\n### Added:\r\n* AppleTV movie URLs are now supported.\r\n* Added a `merge-playlists` config option to treat multiple playlists that can be found on AppleTV pages as one (more info on the example config).\r\n\r\n### Changes:\r\n* Improved subtitles parser to perserve additional WebVTT data.\r\n* The config value `user-agent` under `scraping` is now separated to 2 different values: `itunes-user-agent`, and `appletv-user-agent`.\r\n\r\n### Bug Fixes:\r\n* Fixed movie titles with invalid Windows file-name characters (example: '?') causing a crash. ([Issue #14](https://github.com/MichaelYochpaz/iSubRip/issues/14))\r\n* Fixed iTunes store URLs without a movie title not working. ([Issue #13](https://github.com/MichaelYochpaz/iSubRip/issues/13))\r\n---\r\n## 2.2.0 [2022-04-25]\r\n### Added:\r\n* Replaced FFmpeg usage for parsing with a native subtitles parser (downloads are much faster now).\r\n* Added a `remove-duplicates` configuration remove duplicate paragraphs. (Was previously automatically fixed by FFmpeg.)\r\n* Added `fix-rtl` and `rtl-languages` configuration to fix RTL in RTL-languaged subtitles (has to be enabled in the config).\r\n\r\n### Changes:\r\n* FFmpeg is no longer required or used, and all FFmpeg-related settings are deprecated.\r\n\r\n### Notes:\r\n* `fix-rtl` is off by default and has to be enabled on the config. Check the `config.toml` example file for more info.\r\n* Minimum supported Python version bumped to 3.7.\r\n---\r\n## 2.1.2 [2022-04-03]\r\n### Bug Fixes:\r\n* Fixed subtitles being downloaded twice, which causes long (doubled) download times.\r\n---\r\n## 2.1.1 [2022-03-28]\r\n### Bug Fixes:\r\n* Fixed a compatibility issue with Python versions that are lower than 3.10.\r\n* Fixed downloading subtitles to an archive file not working properly.\r\n* Fixed a bug where the code continues to run if subtitles download failed, as if the download was successful.\r\n---\r\n## 2.1.0 [2022-03-19]\r\n### Added:\r\n* A note will be printed if a newer version is available on PyPI (can be disabled on the config).\r\n* Config will now be checked for errors before running.\r\n\r\n### Changes:\r\n* Big improvements to scraping, which is now far more reliable.\r\n* Added release year to subtitles file names.\r\n* Config structure slightly changed.\r\n\r\n### Notes:\r\n* If you use a user-config, it might need to be updated to match the new config structure.\r\n  Example of an updated valid structure can be found [here](https://github.com/MichaelYochpaz/iSubRip/blob/main/config.toml).\r\n---\r\n## 2.0.0 [2022-01-30]\r\nThe script is now a Python package that can be installed using pip.\r\n\r\n### Added:\r\n* Added a config file for changing configurations. (Example can be found [here](https://github.com/MichaelYochpaz/iSubRip/blob/main/config.toml))\r\n* Added an option to choose subtitles format (vtt / srt).\r\n* Added an option to choose whether to zip subtitles files or not.\r\n* Multiple links can be passed for downloading subtitles for multiple movies one after another.\r\n* Temporary files are automatically removed if the script stops unexpectedly.\r\n\r\n### Changes:\r\n* A complete code overhaul from a single python script file to a package, while utilizing OOP and classes.\r\n* Improved scraping algorithm for faster playlist scraping.\r\n* FFmpeg will now automatically overwrite existing subtitles with the same file name.\r\n\r\n### Bug Fixes:\r\n* Fixed a bug where in some cases, no subtitles were found since the title has HTML escaped characters, which causes bad matching when checking if a valid playlist was found.\r\n---\r\n## 1.0.6 [2021-07-23]\r\n### Bug Fixes:\r\n* Fixed an issue where in some cases subtitles won't download when using `DOWNLOAD_FILTER` because of letter casing not matching.\r\n* Fixed and improved error handling, and added more descriptive error messages. ([Issue #9](https://github.com/MichaelYochpaz/iSubRip/issues/9))\r\n---\r\n## 1.0.5 [2021-05-27]\r\n### Bug Fixes:\r\n* Fixed subtitles for some movies not being found after previous release. ([Issue #8](https://github.com/MichaelYochpaz/iSubRip/issues/8))\r\n---\r\n## 1.0.4 [2021-05-25]\r\n### Bug Fixes:\r\n* Fixed the script not working after iTunes webpage data orientation slightly changed. ([Issue #6](https://github.com/MichaelYochpaz/iSubRip/issues/6) , [Issue #7](https://github.com/MichaelYochpaz/iSubRip/issues/7))\r\n---\r\n## 1.0.3 [2021-04-30]\r\n### Bug Fixes:\r\n* Fixed a bug where subtitles for suggested movies are being downloaded if movie's main playlist is not found. ([Issue #2](https://github.com/MichaelYochpaz/iSubRip/issues/2))\r\n* Added a \"cc\" tag to closed-caption subtitles' filename to avoid a collision with non-cc subtitles. ([Issue #3](https://github.com/MichaelYochpaz/iSubRip/issues/3))\r\n---\r\n## 1.0.2 [2021-04-15]\r\n### Added:\r\n* Added a User-Agent for sessions to avoid being blocked.\r\n\r\n### Changes:\r\n* `DOWNLOAD_FILTER` is no longer case-sensitive.\r\n* Added `lxml` to `requirements.txt`. ([Issue #1](https://github.com/MichaelYochpaz/iSubRip/issues/1))\r\n\r\n### Bug Fixes:\r\n* Fixed the script not working after iTunes webpage data orientation slightly changed. ([Issue #1](https://github.com/MichaelYochpaz/iSubRip/issues/1))\r\n---\r\n## 1.0.1 [2020-12-13]\r\n### Changes:\r\n* Improved error handling.\r\n  \r\n### Bug Fixes:\r\n* Fixed file name formatting.\r\n---\r\n## 1.0.0 [2020-11-02]\r\n* Initial release.
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+--- a/CHANGELOG.md	(revision c21e291085ea478730aa0f8dd19b10c793b8490b)
++++ b/CHANGELOG.md	(date 1684610449647)
+@@ -1,4 +1,28 @@
+ # Changelog
++## 2.4.0 [2023-21-05]
++### Added:
++- iTunes links will now redirect to AppleTV and scrape metadata from it, as it has additional and more accurate metadata.
++- Improved error messages to be more informative and case-specific:
++  - If a movie is a pre-order and has no available playlist, a proper error message will be printed with its release date (if available).
++  - If trying to scrape AppleTV+ content (which isn't currently supported), a proper error will be printed.
++
++### Changes:
++- A major refactor to the code, to make it more modular and allow for easier development of new features in the future.
++- Multiple changes (with some breaking changes) to the config file:
++  - The `downloads.format` setting is deprecated, and replaced by the `subtitles.convert-to-srt` setting.
++  - The `downloads.merge-playlists` setting is deprecated, with no replacement.  
++    If an AppleTV link has multiple playlists, they will be downloaded separately.
++  - The `downloads.user-agent` setting is deprecated, with no replacement.
++    The user-agent used by the scraper, will be used for downloads as well.
++  - The `scraping` config category no longer exists, and is replaced by a `scrapers` category, which has a sub-category with settings for each scraper (for example, a `scrapers.itunes` sub-category).
++- Old config paths that were previously deprecated are no longer supported and will no longer work.
++  The updated config settings can be found in the [example config](https://github.com/MichaelYochpaz/iSubRip/blob/main/config.toml).
++### Notes:
++* This release includes a major rewrite of the code, which may have introduced new bugs to some core features. If you encountered one, [please report it](https://github.com/MichaelYochpaz/iSubRip/issues/new/choose).
++* Minimum supported Python version bumped to 3.8.
++* `beautifulsoup4` and `lxml` packages are no longer required or used.
++
++---
+ ## 2.3.3 [2022-10-09]
+ ### Changes:
+ * Added release year to zip file names. ([Issue #31](https://github.com/MichaelYochpaz/iSubRip/issues/31))

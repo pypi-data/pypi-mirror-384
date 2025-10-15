@@ -1,0 +1,795 @@
+Index: isubrip/data_structures.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABC\r\nfrom dataclasses import dataclass\r\nfrom enum import Enum\r\nfrom typing import List, NamedTuple, TYPE_CHECKING, TypeVar\r\n\r\nif TYPE_CHECKING:\r\n    from isubrip.scrapers.scraper import ScraperBase\r\n\r\n\r\nclass SubtitlesDownloadResults(NamedTuple):\r\n    \"\"\"\r\n    A named tuple containing download results.\r\n\r\n    Attributes:\r\n        media_data (type[MediaDataBase]): Media data.\r\n        successful_subtitles (list[SubtitlesData]): List of subtitles that were successfully downloaded.\r\n        failed_subtitles (list[SubtitlesData]): List of subtitles that failed to download.\r\n        is_zip (bool): Whether the subtitles were saved in a zip file.\r\n    \"\"\"\r\n    media_data: type[MediaDataBase]\r\n    successful_subtitles: List[SubtitlesData]\r\n    failed_subtitles: List[SubtitlesData]\r\n    is_zip: bool\r\n\r\n\r\nclass SubtitlesFormatData(NamedTuple):\r\n    \"\"\"\r\n    A named tuple for containing metadata about subtitles formats.\r\n\r\n    Attributes:\r\n        name (str): Name of the format.\r\n        file_extension (str): File extension of the format.\r\n    \"\"\"\r\n    name: str\r\n    file_extension: str\r\n\r\n\r\nclass SubtitlesFormat(Enum):\r\n    \"\"\"\r\n    A named tuple containing subtitles formats.\r\n\r\n    Attributes:\r\n        SUBRIP (SubtitlesFormatData): SubRip format.\r\n        WEBVTT (SubtitlesFormatData): WebVTT format.\r\n    \"\"\"\r\n    SUBRIP = SubtitlesFormatData(\"SubRip\", \"srt\")\r\n    WEBVTT = SubtitlesFormatData(\"WebVTT\", \"vtt\")\r\n\r\n\r\nclass SubtitlesType(Enum):\r\n    \"\"\"\r\n    Subtitles special type.\r\n\r\n    Attributes:\r\n        CC (SubtitlesType): Closed captions.\r\n        FORCED (SubtitlesType): Forced subtitles.\r\n    \"\"\"\r\n    CC = \"CC\"\r\n    FORCED = \"Forced\"\r\n\r\n\r\nclass SubtitlesData(NamedTuple):\r\n    \"\"\"\r\n    A named tuple containing subtitles metadata.\r\n\r\n    Attributes:\r\n        language_code (str): Language code of the language the subtitles are in.\r\n        language_name (str): Name of the language the subtitles are in.\r\n        format (SubtitlesFormat): Format of the subtitles.\r\n        content (bytes): Content of the subtitles in binary format.\r\n        special_type (SubtitlesType | None): Type of the subtitles, if they're not regular. Defaults to None.\r\n    \"\"\"\r\n    language_code: str\r\n    language_name: str\r\n    format: SubtitlesFormat\r\n    content: bytes\r\n    special_type: SubtitlesType | None = None\r\n\r\n\r\n# TODO: Add optional additional metadata to the following classes, such as description, trailer playlist, etc.\r\n\r\nclass MediaSourceData(NamedTuple):\r\n    \"\"\"\r\n    A named tuple containing media source data.\r\n\r\n    Attributes:\r\n        id (str): Internal ID of the source.\r\n        name (str): Name of the source.\r\n        abbreviation (str): Abbreviation of the source.\r\n    \"\"\"\r\n    id: str\r\n    name: str\r\n    abbreviation: str\r\n\r\n\r\n@dataclass\r\nclass MediaDataBase(ABC):\r\n    \"\"\"\r\n    A base class for media data.\r\n\r\n    Attributes:\r\n        id (str | None): ID of the media.\r\n        name (str): Name of the media. (movie or series name)\r\n        release_year (int): Release year of the media.\r\n        playlist (str | None): URL to the playlist.\r\n        source (MediaSourceData): Source of the media.\r\n        scraper (ScraperBase): A reference to the scraper that was used to get the data.\r\n    \"\"\"\r\n    id: str | None\r\n    name: str\r\n    release_year: int\r\n    playlist: str | None\r\n    source: MediaSourceData\r\n    scraper: ScraperBase\r\n\r\n\r\n@dataclass\r\nclass MovieData(MediaDataBase):\r\n    \"\"\"A named tuple containing movie metadata.\r\n\r\n    Attributes:\r\n        id (str | None): ID of the movie.\r\n        name (str): Name of the movie.\r\n        release_year (int): Release year of the movie.\r\n        playlist (str | None): URL to the playlist.\r\n        source (MediaSourceData): Source of the media.\r\n    \"\"\"\r\n    pass\r\n\r\n\r\n@dataclass\r\nclass EpisodeData(MediaDataBase):\r\n    \"\"\"\r\n    A named tuple containing episode metadata.\r\n\r\n    Attributes:\r\n        id (str | None): ID of the episode.\r\n        name (str): Name of the movie.\r\n        release_year (int): Release year of the series.\r\n        playlist (str | None): URL to the playlist.\r\n        source (MediaSourceData): Source of the media.\r\n        episode_number (int): Episode number.\r\n        season_number (int): Season number.\r\n        episode_name (str | None, optional): Episode name. Defaults to None.\r\n        season_name (str | None, optional): Season name. Defaults to None.\r\n    \"\"\"\r\n    episode_number: int\r\n    season_number: int\r\n    episode_name: str | None = None\r\n    season_name: str | None = None\r\n\r\n\r\n@dataclass\r\nclass SeasonData(MediaDataBase):\r\n    \"\"\"\r\n    A named tuple containing season metadata.\r\n\r\n    Attributes:\r\n        id (str | None): ID of the season.\r\n        name (str): Name of the series.\r\n        release_year (int): Release year of the series.\r\n        playlist (str | None): URL to the playlist.\r\n        source (MediaSourceData): Source of the media.\r\n        season_number (int): Season number.\r\n        season_episodes (list[EpisodeData]): Episodes that belong to the season.\r\n        season_name (str | None, optional): Season name. Defaults to None.\r\n    \"\"\"\r\n    season_number: int\r\n    season_episodes: List[EpisodeData]\r\n    season_name: str | None = None\r\n\r\n\r\n@dataclass\r\nclass SeriesData(MediaDataBase):\r\n    \"\"\"\r\n    A named tuple containing series metadata.\r\n\r\n    Attributes:\r\n        id (str | None): ID of the series.\r\n        name (str): Name of the series.\r\n        release_year (int): Release year of the series.\r\n        playlist (str | None): URL to the playlist.\r\n        source (MediaSourceData): Source of the media.\r\n        series_seasons (list[SeasonData]): Seasons that belong to the series.\r\n    \"\"\"\r\n    series_seasons: List[SeasonData]\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/data_structures.py b/isubrip/data_structures.py
+--- a/isubrip/data_structures.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/data_structures.py	(date 1681766682279)
+@@ -6,7 +6,7 @@
+ from typing import List, NamedTuple, TYPE_CHECKING, TypeVar
+ 
+ if TYPE_CHECKING:
+-    from isubrip.scrapers.scraper import ScraperBase
++    from isubrip.scrapers.scraper import Scraper
+ 
+ 
+ class SubtitlesDownloadResults(NamedTuple):
+@@ -14,12 +14,12 @@
+     A named tuple containing download results.
+ 
+     Attributes:
+-        media_data (type[MediaDataBase]): Media data.
++        media_data (MediaData): Media data.
+         successful_subtitles (list[SubtitlesData]): List of subtitles that were successfully downloaded.
+         failed_subtitles (list[SubtitlesData]): List of subtitles that failed to download.
+         is_zip (bool): Whether the subtitles were saved in a zip file.
+     """
+-    media_data: type[MediaDataBase]
++    media_data: MediaData
+     successful_subtitles: List[SubtitlesData]
+     failed_subtitles: List[SubtitlesData]
+     is_zip: bool
+@@ -96,7 +96,7 @@
+ 
+ 
+ @dataclass
+-class MediaDataBase(ABC):
++class MediaData(ABC):
+     """
+     A base class for media data.
+ 
+@@ -106,18 +106,18 @@
+         release_year (int): Release year of the media.
+         playlist (str | None): URL to the playlist.
+         source (MediaSourceData): Source of the media.
+-        scraper (ScraperBase): A reference to the scraper that was used to get the data.
++        scraper (Scraper): A reference to the scraper that was used to get the data.
+     """
+     id: str | None
+     name: str
+     release_year: int
+     playlist: str | None
+     source: MediaSourceData
+-    scraper: ScraperBase
++    scraper: Scraper
+ 
+ 
+ @dataclass
+-class MovieData(MediaDataBase):
++class MovieData(MediaData):
+     """A named tuple containing movie metadata.
+ 
+     Attributes:
+@@ -131,7 +131,7 @@
+ 
+ 
+ @dataclass
+-class EpisodeData(MediaDataBase):
++class EpisodeData(MediaData):
+     """
+     A named tuple containing episode metadata.
+ 
+@@ -153,7 +153,7 @@
+ 
+ 
+ @dataclass
+-class SeasonData(MediaDataBase):
++class SeasonData(MediaData):
+     """
+     A named tuple containing season metadata.
+ 
+@@ -173,7 +173,7 @@
+ 
+ 
+ @dataclass
+-class SeriesData(MediaDataBase):
++class SeriesData(MediaData):
+     """
+     A named tuple containing series metadata.
+ 
+Index: isubrip/subtitle_formats/webvtt.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\nimport re\r\n\r\nfrom abc import ABCMeta\r\nfrom datetime import time\r\n\r\nfrom isubrip.data_structures import SubtitlesFormat\r\nfrom isubrip.subtitle_formats.subtitles import Subtitles, SubtitlesBlockBase, SubtitlesBase, SubtitlesCaptionBlockBase\r\nfrom isubrip.utils import split_subtitles_timestamp\r\n\r\n\r\n# WebVTT Documentation:\r\n# https://www.w3.org/TR/webvtt1/#cues\r\n# https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API#webvtt_cues\r\n\r\n\r\nclass WebVTTBlockBase(SubtitlesBlockBase, metaclass=ABCMeta):\r\n    \"\"\"\r\n    Abstract base class for WEBVTT cue blocks.\r\n    \"\"\"\r\n    is_caption_block: bool = False\r\n\r\n\r\nclass Caption(SubtitlesCaptionBlockBase, WebVTTBlockBase):\r\n    \"\"\"An object representing a WebVTT caption block.\"\"\"\r\n    is_caption_block: bool = True\r\n\r\n    def __init__(self, start_time: time, end_time: time, payload: str, settings: str = \"\", identifier: str = \"\"):\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT caption block.\r\n\r\n        Args:\r\n            start_time (time): Cue start time.\r\n            end_time (time): Cue end time.\r\n            settings (str): Cue settings.\r\n            payload (str): Cue payload.\r\n        \"\"\"\r\n        super().__init__(start_time=start_time, end_time=end_time, payload=payload)\r\n        self.identifier = identifier\r\n        self.settings = settings\r\n\r\n    def __eq__(self, other):\r\n        return isinstance(other, type(self)) and \\\r\n            self.start_time == other.start_time and self.end_time == other.end_time and self.payload == other.payload\r\n\r\n    def __str__(self):\r\n        result_str = \"\"\r\n        time_format = \"%H:%M:%S.%f\"\r\n\r\n        # Add identifier (if it exists)\r\n        if self.identifier:\r\n            result_str += f\"{self.identifier}\\n\"\r\n\r\n        result_str += f\"{self.start_time.strftime(time_format)[:-3]} --> {self.end_time.strftime(time_format)[:-3]}\"\r\n\r\n        if self.settings:\r\n            result_str += f\" {self.settings}\"\r\n\r\n        result_str += f\"\\n{self.payload}\"\r\n\r\n        return result_str\r\n\r\n\r\nclass Comment(WebVTTBlockBase):\r\n    \"\"\"An object representing a WebVTT comment block.\"\"\"\r\n    header = \"NOTE\"\r\n\r\n    def __init__(self, payload, inline: bool = False):\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT comment block.\r\n\r\n        Args:\r\n            payload (str): Comment payload.\r\n        \"\"\"\r\n        self.payload = payload\r\n        self.inline = inline\r\n\r\n    def __eq__(self, other):\r\n        return isinstance(other, type(self)) and self.inline == other.inline and self.payload == other.payload\r\n\r\n    def __str__(self):\r\n        if self.inline:\r\n            return f\"{self.header} {self.payload}\"\r\n\r\n        else:\r\n            if self.payload:\r\n                return f\"{self.header}\\n{self.payload}\"\r\n\r\n            else:\r\n                return self.header\r\n\r\n\r\nclass Style(WebVTTBlockBase):\r\n    \"\"\"An object representing a WebVTT style block.\"\"\"\r\n    header = \"STYLE\"\r\n\r\n    def __init__(self, payload):\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT style block.\r\n\r\n        Args:\r\n            payload (str): Style payload.\r\n        \"\"\"\r\n        self.payload = payload\r\n\r\n    def __eq__(self, other):\r\n        return isinstance(other, type(self)) and self.payload == other.payload\r\n\r\n    def __str__(self):\r\n        return f\"{self.header} {self.payload}\"\r\n\r\n\r\nclass Region(WebVTTBlockBase):\r\n    \"\"\"An object representing a WebVTT region block.\"\"\"\r\n    header = \"REGION\"\r\n\r\n    def __init__(self, payload):\r\n        \"\"\"\r\n        Initialize a new object representing a WebVTT region block.\r\n\r\n        Args:\r\n            payload (str): Region payload.\r\n        \"\"\"\r\n        self.payload = payload\r\n\r\n    def __eq__(self, other):\r\n        return isinstance(other, type(self)) and self.payload == other.payload\r\n\r\n    def __str__(self) -> str:\r\n        return f\"{self.header} {self.payload}\"\r\n\r\n\r\nclass WebVTTSubtitles(SubtitlesBase[WebVTTBlockBase]):\r\n    \"\"\"An object representing a WebVTT subtitles file.\"\"\"\r\n    format = SubtitlesFormat.WEBVTT\r\n\r\n    def dumps(self) -> str:\r\n        \"\"\"\r\n        Dump subtitles to a string representing the subtitles in a WebVTT format.\r\n\r\n        Returns:\r\n            str: The subtitles in a string using a WebVTT format.\r\n        \"\"\"\r\n        subtitles_str = \"WEBVTT\\n\\n\"\r\n\r\n        for block in self.blocks:\r\n            subtitles_str += str(block) + \"\\n\\n\"\r\n\r\n        return subtitles_str.rstrip('\\n')\r\n\r\n    @classmethod\r\n    def loads(cls: Subtitles, subtitles_data: str) -> WebVTTSubtitles:\r\n        \"\"\"\r\n        Load WebVTT subtitles from a string.\r\n\r\n        Args:\r\n            subtitles_data (str): Subtitles data to load.\r\n\r\n        Returns:\r\n            WebVTTSubtitles: A WebVTTSubtitles object representing the subtitles.\r\n        \"\"\"\r\n        subtitles_obj = WebVTTSubtitles()\r\n        prev_line: str = \"\"\r\n        lines_iterator = iter(subtitles_data.splitlines())\r\n\r\n        for line in lines_iterator:\r\n            # If the line is a timestamp\r\n            if caption_block_regex := re.match(WEBVTT_CAPTION_BLOCK_REGEX, line):\r\n                # If previous line wasn't empty, add it as an identifier\r\n                if prev_line:\r\n                    caption_identifier = prev_line\r\n\r\n                else:\r\n                    caption_identifier = \"\"\r\n\r\n                caption_timestamps = split_subtitles_timestamp(caption_block_regex.group(1))\r\n                caption_settings = caption_block_regex.group(2)\r\n                caption_payload = \"\"\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    caption_payload += additional_line + \"\\n\"\r\n\r\n                caption_payload = caption_payload.rstrip(\"\\n\")\r\n                subtitles_obj.add_block(Caption(\r\n                    identifier=caption_identifier,\r\n                    start_time=caption_timestamps[0],\r\n                    end_time=caption_timestamps[1],\r\n                    settings=caption_settings,\r\n                    payload=caption_payload))\r\n\r\n            elif comment_block_regex := re.match(WEBVTT_COMMENT_HEADER_REGEX, line):\r\n                comment_payload = \"\"\r\n                inline = False\r\n\r\n                if comment_block_regex.group(1) is not None:\r\n                    comment_payload += comment_block_regex.group(1) + \"\\n\"\r\n                    inline = True\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    comment_payload += additional_line + \"\\n\"\r\n\r\n                subtitles_obj.add_block(Comment(comment_payload.rstrip(\"\\n\"), inline=inline))\r\n\r\n            elif line.rstrip(' \\t') == Region.header:\r\n                region_payload = \"\"\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    region_payload += additional_line + \"\\n\"\r\n\r\n                subtitles_obj.add_block(Region(region_payload.rstrip(\"\\n\")))\r\n\r\n            elif line.rstrip(' \\t') == Style.header:\r\n                style_payload = \"\"\r\n\r\n                for additional_line in lines_iterator:\r\n                    if not additional_line:\r\n                        line = additional_line\r\n                        break\r\n\r\n                    style_payload += additional_line + \"\\n\"\r\n\r\n                subtitles_obj.add_block(Region(style_payload.rstrip(\"\\n\")))\r\n\r\n            prev_line = line\r\n        return subtitles_obj\r\n\r\n\r\n# --- Constants ---\r\nWEBVTT_PERCENTAGE_REGEX = r\"\\d{1,3}(?:\\.\\d+)?%\"\r\nWEBVTT_CAPTION_TIMINGS_REGEX = \\\r\n    r\"(?:[0-5]\\d:)?[0-5]\\d:[0-5]\\d[\\.,]\\d{3}[ \\t]+-->[ \\t]+(?:[0-5]\\d:)?[0-5]\\d:[0-5]\\d[\\.,]\\d{3}\"\r\n\r\nWEBVTT_CAPTION_SETTING_ALIGNMENT_REGEX = r\"align:(?:start|center|middle|end|left|right)\"\r\nWEBVTT_CAPTION_SETTING_LINE_REGEX = rf\"line:(?:{WEBVTT_PERCENTAGE_REGEX}|-?\\d+%)(?:,(?:start|center|middle|end))?\"\r\nWEBVTT_CAPTION_SETTING_POSITION_REGEX = rf\"position:{WEBVTT_PERCENTAGE_REGEX}(?:,(?:start|center|middle|end))?\"\r\nWEBVTT_CAPTION_SETTING_REGION_REGEX = r\"region:(?:(?!(?:-->)|\\t)\\S)+\"\r\nWEBVTT_CAPTION_SETTING_SIZE_REGEX = rf\"size:{WEBVTT_PERCENTAGE_REGEX}\"\r\nWEBVTT_CAPTION_SETTING_VERTICAL_REGEX = r\"vertical:(?:lr|rl)\"\r\n\r\nWEBVTT_CAPTION_SETTINGS_REGEX = f\"(?:(?:{WEBVTT_CAPTION_SETTING_ALIGNMENT_REGEX})|\" \\\r\n                                f\"(?:{WEBVTT_CAPTION_SETTING_LINE_REGEX})|\" \\\r\n                                f\"(?:{WEBVTT_CAPTION_SETTING_POSITION_REGEX})|\" \\\r\n                                f\"(?:{WEBVTT_CAPTION_SETTING_REGION_REGEX})|\" \\\r\n                                f\"(?:{WEBVTT_CAPTION_SETTING_SIZE_REGEX})|\" \\\r\n                                f\"(?:{WEBVTT_CAPTION_SETTING_VERTICAL_REGEX})|\" \\\r\n                                f\"(?:[ \\t]+))*\"\r\n\r\nWEBVTT_CAPTION_BLOCK_REGEX = rf\"^({WEBVTT_CAPTION_TIMINGS_REGEX})[ \\t]*({WEBVTT_CAPTION_SETTINGS_REGEX})?\"\r\nWEBVTT_COMMENT_HEADER_REGEX = rf\"^{Comment.header}(?:$|[ \\t])(.+)?\"\r\n\r\n# Unicode\r\nRTL_CONTROL_CHARS = ('\\u200e', '\\u200f', '\\u202a', '\\u202b', '\\u202c', '\\u202d', '\\u202e')\r\nRTL_CHAR = '\\u202b'\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/subtitle_formats/webvtt.py b/isubrip/subtitle_formats/webvtt.py
+--- a/isubrip/subtitle_formats/webvtt.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/subtitle_formats/webvtt.py	(date 1681766534185)
+@@ -5,7 +5,7 @@
+ from datetime import time
+ 
+ from isubrip.data_structures import SubtitlesFormat
+-from isubrip.subtitle_formats.subtitles import Subtitles, SubtitlesBlockBase, SubtitlesBase, SubtitlesCaptionBlockBase
++from isubrip.subtitle_formats.subtitles import SubtitlesT, SubtitlesBlock, Subtitles, SubtitlesCaptionBlock
+ from isubrip.utils import split_subtitles_timestamp
+ 
+ 
+@@ -14,14 +14,14 @@
+ # https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API#webvtt_cues
+ 
+ 
+-class WebVTTBlockBase(SubtitlesBlockBase, metaclass=ABCMeta):
++class WebVTTBlock(SubtitlesBlock, metaclass=ABCMeta):
+     """
+     Abstract base class for WEBVTT cue blocks.
+     """
+     is_caption_block: bool = False
+ 
+ 
+-class Caption(SubtitlesCaptionBlockBase, WebVTTBlockBase):
++class Caption(SubtitlesCaptionBlock, WebVTTBlock):
+     """An object representing a WebVTT caption block."""
+     is_caption_block: bool = True
+ 
+@@ -61,7 +61,7 @@
+         return result_str
+ 
+ 
+-class Comment(WebVTTBlockBase):
++class Comment(WebVTTBlock):
+     """An object representing a WebVTT comment block."""
+     header = "NOTE"
+ 
+@@ -90,7 +90,7 @@
+                 return self.header
+ 
+ 
+-class Style(WebVTTBlockBase):
++class Style(WebVTTBlock):
+     """An object representing a WebVTT style block."""
+     header = "STYLE"
+ 
+@@ -110,7 +110,7 @@
+         return f"{self.header} {self.payload}"
+ 
+ 
+-class Region(WebVTTBlockBase):
++class Region(WebVTTBlock):
+     """An object representing a WebVTT region block."""
+     header = "REGION"
+ 
+@@ -130,7 +130,7 @@
+         return f"{self.header} {self.payload}"
+ 
+ 
+-class WebVTTSubtitles(SubtitlesBase[WebVTTBlockBase]):
++class WebVTTSubtitles(Subtitles[WebVTTBlock]):
+     """An object representing a WebVTT subtitles file."""
+     format = SubtitlesFormat.WEBVTT
+ 
+@@ -148,8 +148,8 @@
+ 
+         return subtitles_str.rstrip('\n')
+ 
+-    @classmethod
+-    def loads(cls: Subtitles, subtitles_data: str) -> WebVTTSubtitles:
++    @staticmethod
++    def loads(subtitles_data: str) -> WebVTTSubtitles:
+         """
+         Load WebVTT subtitles from a string.
+ 
+Index: isubrip/subtitle_formats/subrip.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom isubrip.data_structures import SubtitlesFormat\r\nfrom isubrip.subtitle_formats.subtitles import Subtitles, SubtitlesBase, SubtitlesCaptionBlockBase\r\n\r\n\r\nclass SubRipCaptionBlock(SubtitlesCaptionBlockBase):\r\n    \"\"\"A subtitles caption block based on the SUBRIP format.\"\"\"\r\n    def __str__(self):\r\n        result_str = \"\"\r\n        time_format = \"%H:%M:%S,%f\"\r\n\r\n        result_str += f\"{self.start_time.strftime(time_format)[:-3]} --> {self.end_time.strftime(time_format)[:-3]}\\n\"\r\n        result_str += f\"{self.payload}\"\r\n\r\n        return result_str\r\n\r\n    def __eq__(self, other):\r\n        return isinstance(other, type(self)) and \\\r\n               self.start_time == other.start_time and self.end_time == other.end_time and self.payload == other.payload\r\n\r\n    def to_srt(self):\r\n        return self\r\n\r\n\r\nclass SubRipSubtitles(SubtitlesBase[SubRipCaptionBlock]):\r\n    \"\"\"An object representing a SubRip subtitles file.\"\"\"\r\n    format = SubtitlesFormat.SUBRIP\r\n\r\n    def dumps(self) -> str:\r\n        subtitles_str = \"\"\r\n        count = 0\r\n\r\n        for block in self.blocks:\r\n            subtitles_str += f\"{(count + 1)}\\n{str(block)}\\n\\n\"\r\n            count += 1\r\n\r\n        return subtitles_str.rstrip('\\n')\r\n\r\n    @classmethod\r\n    def loads(cls: Subtitles, subtitles_data: str) -> SubRipSubtitles:\r\n        raise NotImplementedError(\"SubRip subtitles loading is not supported.\")\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/subtitle_formats/subrip.py b/isubrip/subtitle_formats/subrip.py
+--- a/isubrip/subtitle_formats/subrip.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/subtitle_formats/subrip.py	(date 1681766534181)
+@@ -1,10 +1,10 @@
+ from __future__ import annotations
+ 
+ from isubrip.data_structures import SubtitlesFormat
+-from isubrip.subtitle_formats.subtitles import Subtitles, SubtitlesBase, SubtitlesCaptionBlockBase
++from isubrip.subtitle_formats.subtitles import SubtitlesT, Subtitles, SubtitlesCaptionBlock
+ 
+ 
+-class SubRipCaptionBlock(SubtitlesCaptionBlockBase):
++class SubRipCaptionBlock(SubtitlesCaptionBlock):
+     """A subtitles caption block based on the SUBRIP format."""
+     def __str__(self):
+         result_str = ""
+@@ -23,7 +23,7 @@
+         return self
+ 
+ 
+-class SubRipSubtitles(SubtitlesBase[SubRipCaptionBlock]):
++class SubRipSubtitles(Subtitles[SubRipCaptionBlock]):
+     """An object representing a SubRip subtitles file."""
+     format = SubtitlesFormat.SUBRIP
+ 
+@@ -37,6 +37,6 @@
+ 
+         return subtitles_str.rstrip('\n')
+ 
+-    @classmethod
+-    def loads(cls: Subtitles, subtitles_data: str) -> SubRipSubtitles:
++    @staticmethod
++    def loads(subtitles_data: str) -> SubRipSubtitles:
+         raise NotImplementedError("SubRip subtitles loading is not supported.")
+Index: isubrip/subtitle_formats/subtitles.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom abc import ABC, abstractmethod\r\nfrom datetime import time\r\nfrom typing import ClassVar, Generic, List, TYPE_CHECKING, TypeVar\r\n\r\nfrom isubrip.data_structures import SubtitlesFormat, SubtitlesType\r\nfrom isubrip.globals import GlobalSettings\r\n\r\nif TYPE_CHECKING:\r\n    from isubrip.subtitle_formats.subrip import SubRipCaptionBlock, SubRipSubtitles\r\n\r\nRTL_CONTROL_CHARS = ('\\u200e', '\\u200f', '\\u202a', '\\u202b', '\\u202c', '\\u202d', '\\u202e')\r\nRTL_CHAR = '\\u202b'\r\n\r\nSubtitles = TypeVar('Subtitles', bound='SubtitlesBase')\r\nSubtitlesBlock = TypeVar('SubtitlesBlock', bound='SubtitlesBlockBase')\r\n\r\n\r\nclass SubtitlesBlockBase(ABC):\r\n    \"\"\"Abstract base class for subtitles blocks.\"\"\"\r\n    @abstractmethod\r\n    def __str__(self):\r\n        pass\r\n\r\n    @abstractmethod\r\n    def __eq__(self, other):\r\n        pass\r\n\r\n\r\nclass SubtitlesCaptionBlockBase(SubtitlesBlockBase, ABC):\r\n    \"\"\"A base class for subtitles caption blocks.\"\"\"\r\n\r\n    def __init__(self, start_time: time, end_time: time, payload: str):\r\n        \"\"\"\r\n        Initialize a new SubtitlesCaptionBlock object.\r\n\r\n        Args:\r\n            start_time: Start timestamp of the caption block.\r\n            end_time: End timestamp of the caption block.\r\n            payload: Caption block's payload (text).\r\n        \"\"\"\r\n        self.start_time = start_time\r\n        self.end_time = end_time\r\n        self.payload = payload\r\n\r\n    def fix_rtl(self) -> None:\r\n        \"\"\"Fix text direction to RTL.\"\"\"\r\n        # Remove previous RTL-related formatting\r\n        for char in RTL_CONTROL_CHARS:\r\n            self.payload = self.payload.replace(char, '')\r\n\r\n        # Add RLM char at the start of every line\r\n        self.payload = RTL_CHAR + self.payload.replace(\"\\n\", f\"\\n{RTL_CHAR}\")\r\n\r\n    def to_srt(self) -> SubRipCaptionBlock:\r\n        \"\"\"\r\n        Convert WebVTT caption block to SRT caption block.\r\n\r\n        Returns:\r\n            SubRipCaptionBlock: The caption block in SRT format.\r\n        \"\"\"\r\n        from isubrip.subtitle_formats.subrip import SubRipCaptionBlock\r\n\r\n        return SubRipCaptionBlock(self.start_time, self.end_time, self.payload)\r\n\r\n\r\nclass SubtitlesBase(Generic[SubtitlesBlock], ABC):\r\n    \"\"\"\r\n    An object representing subtitles, made out of blocks.\r\n\r\n    Attributes:\r\n        format (SubtitlesFormat): [Class Attribute] Format of the subtitles (contains name and file extension).\r\n        blocks (list[SubtitlesBlock]): A list of subtitles blocks that make up the subtitles.\r\n        language_code (str | None): Language code of the subtitles.\r\n        language_name (str | None): Name of the subtitles' language.\r\n        special_type (SubtitlesType | None): Special type of the subtitles (if any).\r\n    \"\"\"\r\n    format: ClassVar[SubtitlesFormat]\r\n\r\n    @abstractmethod\r\n    def dumps(self) -> str:\r\n        \"\"\"Dump subtitles object to a string representing the subtitles.\"\"\"\r\n        pass\r\n\r\n    def __init__(self, blocks: List[SubtitlesBlock] | None = None,\r\n                 language_code: str | None = None, language_name: str | None = None,\r\n                 special_type: SubtitlesType | None = None):\r\n        \"\"\"\r\n        Initialize a new Subtitles object.\r\n\r\n        Args:\r\n            blocks (list[SubtitlesBlock] | None, optional): A list of subtitles to initialize the object with.\r\n                Defaults to None.\r\n            language_code (str | None, optional): Language code of the subtitles. Defaults to None.\r\n            language_name (str | None, optional): Name of the subtitles' language. Defaults to None.\r\n            special_type (SubtitlesType | None, optional): Special type of the subtitles (if any). Defaults to None.\r\n        \"\"\"\r\n        self.language_code = language_code\r\n        self.language_name = language_name\r\n        self.special_type = special_type\r\n\r\n        if blocks is None:\r\n            self.blocks = []\r\n\r\n        else:\r\n            self.blocks = blocks\r\n\r\n    def __add__(self: Subtitles, obj: SubtitlesBlock | Subtitles) -> Subtitles:\r\n        \"\"\"\r\n        Add a new subtitles block, or append blocks from another subtitles object.\r\n\r\n        Args:\r\n            obj (SubtitlesBlock | Subtitles): A subtitles block or another subtitles object.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        if isinstance(obj, SubtitlesBlockBase):\r\n            self.add_block(obj)\r\n\r\n        elif isinstance(obj, self.__class__):\r\n            self.append_subtitles(obj)\r\n\r\n        return self\r\n\r\n    def __eq__(self, other) -> bool:\r\n        return isinstance(other, type(self)) and self.blocks == other.blocks\r\n\r\n    def __str__(self) -> str:\r\n        return self.dumps()\r\n\r\n    @classmethod\r\n    @abstractmethod\r\n    def loads(cls: Subtitles, subtitles_data: str) -> Subtitles:\r\n        pass\r\n\r\n    def add_block(self: Subtitles, block: SubtitlesBlock | List[SubtitlesBlock]) -> Subtitles:\r\n        \"\"\"\r\n        Add a new subtitles block to current subtitles.\r\n\r\n        Args:\r\n            block (SubtitlesBlock | List[SubtitlesBlock]):\r\n                A block object or a list of block objects to append.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        if isinstance(block, list):\r\n            self.blocks.extend(block)\r\n\r\n        else:\r\n            self.blocks.append(block)\r\n\r\n        return self\r\n\r\n    def append_subtitles(self: Subtitles, subtitles: Subtitles) -> Subtitles:\r\n        \"\"\"\r\n        Append an existing subtitles object.\r\n\r\n        Args:\r\n            subtitles (Subtitles): Subtitles object to append to current subtitles.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        for block in subtitles.blocks:\r\n            self.add_block(block)\r\n\r\n        return self\r\n\r\n    def dump(self) -> bytes:\r\n        return self.dumps().encode(encoding=\"UTF-8\")\r\n\r\n    def polish(self: Subtitles,\r\n               fix_rtl: bool = False,\r\n               remove_duplicates: bool = False) -> Subtitles:\r\n        \"\"\"\r\n        Apply various fixes to subtitles.\r\n\r\n        Args:\r\n            fix_rtl (bool, optional): Whether to fix text direction of RTL languages. Defaults to False.\r\n            remove_duplicates (bool, optional): Whether to remove duplicate captions. Defaults to False.\r\n\r\n        Returns:\r\n            Subtitles: The current subtitles object.\r\n        \"\"\"\r\n        previous_block: SubtitlesBlock | None = None\r\n\r\n        for block in self.blocks:\r\n            if fix_rtl and isinstance(block, SubtitlesCaptionBlockBase) and \\\r\n                    self.language_code in GlobalSettings.subtitles_fix_rtl_languages:\r\n                block.fix_rtl()\r\n\r\n            if remove_duplicates and previous_block is not None and block == previous_block:\r\n                self.blocks.remove(previous_block)\r\n\r\n            previous_block = block\r\n\r\n        return self\r\n\r\n    def to_srt(self) -> SubRipSubtitles:\r\n        \"\"\"\r\n        Convert subtitles to SRT format.\r\n\r\n        Returns:\r\n            SubRipSubtitles: The subtitles in SRT format.\r\n        \"\"\"\r\n        from isubrip.subtitle_formats.subrip import SubRipSubtitles\r\n\r\n        return SubRipSubtitles(\r\n            blocks=[block.to_srt() for block in self.blocks if isinstance(block, SubtitlesCaptionBlockBase)],\r\n            language_code=self.language_code,\r\n            language_name=self.language_name,\r\n            special_type=self.special_type\r\n        )\r\n\r\n\r\ndef split_timestamp(timestamp: str) -> tuple[time, time]:\r\n    \"\"\"\r\n    Split a subtitles timestamp into start and end.\r\n\r\n    Args:\r\n        timestamp (str): A subtitles timestamp. For example: \"00:00:00.000 --> 00:00:00.000\"\r\n\r\n    Returns:\r\n        tuple(time, time): A tuple containing start and end times as a datetime object.\r\n    \"\"\"\r\n    # Support ',' character in timestamp's milliseconds (used in SubRip format).\r\n    timestamp = timestamp.replace(',', '.')\r\n\r\n    start_time, end_time = timestamp.split(\" --> \")\r\n    return time.fromisoformat(start_time), time.fromisoformat(end_time)\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/subtitle_formats/subtitles.py b/isubrip/subtitle_formats/subtitles.py
+--- a/isubrip/subtitle_formats/subtitles.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/subtitle_formats/subtitles.py	(date 1681766534194)
+@@ -13,11 +13,11 @@
+ RTL_CONTROL_CHARS = ('\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e')
+ RTL_CHAR = '\u202b'
+ 
+-Subtitles = TypeVar('Subtitles', bound='SubtitlesBase')
+-SubtitlesBlock = TypeVar('SubtitlesBlock', bound='SubtitlesBlockBase')
++SubtitlesT = TypeVar('SubtitlesT', bound='Subtitles')
++SubtitlesBlockT = TypeVar('SubtitlesBlockT', bound='SubtitlesBlock')
+ 
+ 
+-class SubtitlesBlockBase(ABC):
++class SubtitlesBlock(ABC):
+     """Abstract base class for subtitles blocks."""
+     @abstractmethod
+     def __str__(self):
+@@ -28,7 +28,7 @@
+         pass
+ 
+ 
+-class SubtitlesCaptionBlockBase(SubtitlesBlockBase, ABC):
++class SubtitlesCaptionBlock(SubtitlesBlock, ABC):
+     """A base class for subtitles caption blocks."""
+ 
+     def __init__(self, start_time: time, end_time: time, payload: str):
+@@ -65,7 +65,7 @@
+         return SubRipCaptionBlock(self.start_time, self.end_time, self.payload)
+ 
+ 
+-class SubtitlesBase(Generic[SubtitlesBlock], ABC):
++class Subtitles(Generic[SubtitlesBlockT], ABC):
+     """
+     An object representing subtitles, made out of blocks.
+ 
+@@ -83,7 +83,7 @@
+         """Dump subtitles object to a string representing the subtitles."""
+         pass
+ 
+-    def __init__(self, blocks: List[SubtitlesBlock] | None = None,
++    def __init__(self, blocks: List[SubtitlesBlockT] | None = None,
+                  language_code: str | None = None, language_name: str | None = None,
+                  special_type: SubtitlesType | None = None):
+         """
+@@ -106,7 +106,7 @@
+         else:
+             self.blocks = blocks
+ 
+-    def __add__(self: Subtitles, obj: SubtitlesBlock | Subtitles) -> Subtitles:
++    def __add__(self: SubtitlesT, obj: SubtitlesBlockT | SubtitlesT) -> SubtitlesT:
+         """
+         Add a new subtitles block, or append blocks from another subtitles object.
+ 
+@@ -116,7 +116,7 @@
+         Returns:
+             Subtitles: The current subtitles object.
+         """
+-        if isinstance(obj, SubtitlesBlockBase):
++        if isinstance(obj, SubtitlesBlock):
+             self.add_block(obj)
+ 
+         elif isinstance(obj, self.__class__):
+@@ -130,12 +130,12 @@
+     def __str__(self) -> str:
+         return self.dumps()
+ 
+-    @classmethod
++    @staticmethod
+     @abstractmethod
+-    def loads(cls: Subtitles, subtitles_data: str) -> Subtitles:
++    def loads(subtitles_data: str) -> Subtitles:
+         pass
+ 
+-    def add_block(self: Subtitles, block: SubtitlesBlock | List[SubtitlesBlock]) -> Subtitles:
++    def add_block(self: SubtitlesT, block: SubtitlesBlockT | List[SubtitlesBlockT]) -> SubtitlesT:
+         """
+         Add a new subtitles block to current subtitles.
+ 
+@@ -154,7 +154,7 @@
+ 
+         return self
+ 
+-    def append_subtitles(self: Subtitles, subtitles: Subtitles) -> Subtitles:
++    def append_subtitles(self: SubtitlesT, subtitles: SubtitlesT) -> SubtitlesT:
+         """
+         Append an existing subtitles object.
+ 
+@@ -172,9 +172,9 @@
+     def dump(self) -> bytes:
+         return self.dumps().encode(encoding="UTF-8")
+ 
+-    def polish(self: Subtitles,
++    def polish(self: SubtitlesT,
+                fix_rtl: bool = False,
+-               remove_duplicates: bool = False) -> Subtitles:
++               remove_duplicates: bool = False) -> SubtitlesT:
+         """
+         Apply various fixes to subtitles.
+ 
+@@ -185,10 +185,10 @@
+         Returns:
+             Subtitles: The current subtitles object.
+         """
+-        previous_block: SubtitlesBlock | None = None
++        previous_block: SubtitlesBlockT | None = None
+ 
+         for block in self.blocks:
+-            if fix_rtl and isinstance(block, SubtitlesCaptionBlockBase) and \
++            if fix_rtl and isinstance(block, SubtitlesCaptionBlock) and \
+                     self.language_code in GlobalSettings.subtitles_fix_rtl_languages:
+                 block.fix_rtl()
+ 
+@@ -209,7 +209,7 @@
+         from isubrip.subtitle_formats.subrip import SubRipSubtitles
+ 
+         return SubRipSubtitles(
+-            blocks=[block.to_srt() for block in self.blocks if isinstance(block, SubtitlesCaptionBlockBase)],
++            blocks=[block.to_srt() for block in self.blocks if isinstance(block, SubtitlesCaptionBlock)],
+             language_code=self.language_code,
+             language_name=self.language_name,
+             special_type=self.special_type
+Index: isubrip/__main__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport atexit\r\nimport shutil\r\nimport sys\r\nfrom xml.etree import ElementTree\r\nfrom typing import List\r\nfrom pathlib import Path\r\n\r\nimport m3u8\r\nimport requests\r\n\r\nfrom isubrip.config import Config, ConfigException\r\nfrom isubrip.constants import ARCHIVE_FORMAT, DATA_FOLDER_PATH, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_SETTINGS,\\\r\n    PACKAGE_NAME, PYPI_RSS_URL, TEMP_FOLDER_PATH, USER_CONFIG_FILE\r\nfrom isubrip.data_structures import SubtitlesDownloadResults, SubtitlesData, MediaDataBase\r\nfrom isubrip.globals import GlobalSettings\r\nfrom isubrip.scrapers.scraper import ScraperFactory\r\nfrom isubrip.utils import download_subtitles_to_file, generate_non_conflicting_path, generate_release_name,\\\r\n    single_to_list\r\n\r\n\r\ndef main():\r\n    scraper_factory = None\r\n\r\n    try:\r\n        # Assure at least one argument was passed\r\n        if len(sys.argv) < 2:\r\n            print_usage()\r\n            exit(1)\r\n\r\n        config = generate_config()\r\n        update_global_settings(config)\r\n        scraper_factory = ScraperFactory()\r\n\r\n        multiple_urls = len(sys.argv) > 2\r\n\r\n        for idx, url in enumerate(sys.argv[1:]):\r\n            if idx > 0:\r\n                print(\"\\n--------------------------------------------------\\n\")  # Print between different movies\r\n\r\n            print(f\"Scraping {url}\")\r\n\r\n            try:\r\n                scraper = scraper_factory.get_matching_scraper(url, config.data.get(\"scrapers\"))\r\n\r\n                if scraper is None:\r\n                    raise ValueError(f\"No matching scraper was found for {url}\")\r\n\r\n                atexit.register(scraper.close)\r\n                scraper.config.check()\r\n\r\n                media_data = scraper.get_data(url=url)\r\n\r\n                if not media_data:\r\n                    print(f\"Error: No supported media data was found for {url}.\")\r\n                    continue\r\n\r\n                download_media_subtitles_args = {\r\n                    \"download_path\": Path(config.downloads[\"folder\"]),\r\n                    \"language_filter\": config.downloads.get(\"languages\"),\r\n                    \"convert_to_srt\": config.subtitles.get(\"convert-to-srt\", False),\r\n                    \"overwrite_existing\": config.downloads.get(\"overwrite-existing\", False),\r\n                    \"zip_files\": config.downloads.get(\"zip\", False),\r\n                }\r\n\r\n                media_items: List[type[MediaDataBase]] = single_to_list(media_data)\r\n                multiple_media_items = len(media_items) > 1\r\n                if multiple_media_items:\r\n                    print(f\"{len(media_items)} media items were found.\")\r\n\r\n                for media_item in media_items:\r\n                    try:\r\n                        if multiple_media_items:\r\n                            print(f\"{media_item.id if media_item.id else media_item.name}:\")\r\n\r\n                        if not media_item.playlist:\r\n                            print(f\"Error: No valid playlist were found.\")\r\n                            continue\r\n\r\n                        results = download_subtitles(media_data=media_item, **download_media_subtitles_args)\r\n\r\n                        success_count = len(results.successful_subtitles)\r\n                        failed_count = len(results.failed_subtitles)\r\n                        print(f\"\\n{success_count}/{success_count + failed_count} matching subtitles \"\r\n                              f\"for \\\"{media_item.name}\\\" have been successfully downloaded.\", sep='')\r\n\r\n                    except Exception as e:\r\n                        if multiple_media_items:\r\n                            print(f\"Error: Encountered an error while scraping playlist \"\r\n                                  f\"{media_item.id if media_item.id else media_item.name}: {e}\")\r\n                            continue\r\n\r\n                        else:\r\n                            raise e\r\n\r\n            except Exception as e:\r\n                if multiple_urls:\r\n                    print(f\"Error: Encountered an error while scraping {url}: {e}\")\r\n                    continue\r\n\r\n                else:\r\n                    raise e\r\n\r\n    except Exception as e:\r\n        raise e  # TODO: Remove\r\n        # print(f\"Error: {e}\")\r\n        # exit(1)\r\n\r\n    finally:\r\n        if scraper_factory:\r\n            for scraper in scraper_factory.get_initialized_scrapers():\r\n                scraper.close()\r\n\r\n\r\ndef check_for_updates() -> None:\r\n    \"\"\"Check and print if a newer version of the package is available.\"\"\"\r\n    try:\r\n        current_version = sys.modules[PACKAGE_NAME].__version__\r\n\r\n        response = requests.get(PYPI_RSS_URL)\r\n        response.raise_for_status()\r\n\r\n        xml_data = ElementTree.fromstring(response.text)\r\n        if latest_version_element := xml_data.find(\"channel/item/title\"):\r\n            latest_version = latest_version_element.text\r\n\r\n            if latest_version != current_version:\r\n                print(f\"Note: You are currently using version {current_version} of {PACKAGE_NAME}, \"\r\n                      f\"however version {latest_version} is available.\",\r\n                      f\"\\nConsider upgrading by running \\\"python3 -m pip install --upgrade {PACKAGE_NAME}\\\"\\n\")\r\n\r\n        else:\r\n            pass  # TODO: Add logger info\r\n\r\n    except Exception:\r\n        # TODO: Add logger warning\r\n        return\r\n\r\n\r\ndef download_subtitles(media_data: type[MediaDataBase], download_path: Path,\r\n                       language_filter: List[str] | None = None, convert_to_srt: bool = False,\r\n                       overwrite_existing: bool = True, zip_files: bool = False) -> SubtitlesDownloadResults:\r\n    \"\"\"\r\n    Download subtitles for the given media data.\r\n\r\n    Args:\r\n        media_data (type[MediaDataBase]): Media data object.\r\n        download_path (Path): Path to a folder where the subtitles will be downloaded to.\r\n        language_filter (list[str] | None): List of specific languages to download subtitles for.\r\n            None for all languages (no filter). Defaults to None.\r\n        convert_to_srt (bool, optional): Whether to convert the subtitles to SRT format. Defaults to False.\r\n        overwrite_existing (bool, optional): Whether to overwrite existing subtitles. Defaults to True.\r\n        zip_files (bool, optional): Whether to unite the subtitles into a single zip file\r\n            (only if there are multiple subtitles).\r\n\r\n    Returns:\r\n        Path: Path to the parent folder of the downloaded subtitles files / zip file.\r\n    \"\"\"\r\n    temp_download_path = generate_media_path(base_path=TEMP_FOLDER_PATH, media_data=media_data)\r\n    atexit.register(shutil.rmtree, TEMP_FOLDER_PATH, ignore_errors=False, onerror=None)\r\n\r\n    if media_data.playlist is None:\r\n        raise ValueError(\"No playlist data was found for the given media data.\")\r\n\r\n    successful_downloads: List[SubtitlesData] = []\r\n    failed_downloads: List[SubtitlesData] = []\r\n    temp_downloads: List[Path] = []\r\n\r\n    m3u8_playlist = m3u8.load(media_data.playlist)\r\n\r\n    for subtitles_data in media_data.scraper.get_subtitles(main_playlist=m3u8_playlist,\r\n                                                           language_filter=language_filter,\r\n                                                           subrip_conversion=convert_to_srt):\r\n        try:\r\n            temp_downloads.append(download_subtitles_to_file(\r\n                media_data=media_data,\r\n                subtitles_data=subtitles_data,\r\n                output_path=temp_download_path,\r\n                overwrite=overwrite_existing,\r\n            ))\r\n\r\n            successful_downloads.append(subtitles_data)\r\n            language_data = f\"{subtitles_data.language_name} ({subtitles_data.language_code}\"\r\n\r\n            if subtitles_data.special_type:\r\n                language_data += f\" [{subtitles_data.special_type}]\"\r\n\r\n            print(f\"{language_data} subtitles were successfully downloaded.\")\r\n\r\n        except Exception as e:\r\n            # TODO: Add logger error\r\n            raise e  # TODO REFACTOR: remove\r\n            failed_downloads.append(subtitles_data)\r\n            continue\r\n\r\n    if not zip_files or len(temp_downloads) == 1:\r\n        for file_path in temp_downloads:\r\n            if overwrite_existing:\r\n                file_path.replace(generate_non_conflicting_path(download_path / file_path.name))\r\n\r\n            else:\r\n                file_path.replace(download_path / file_path.name)\r\n\r\n    else:\r\n        archive_path = Path(shutil.make_archive(  # TODO REFACTOR: Issue with zip creation\r\n            base_name=str(temp_download_path.parent / temp_download_path.name),\r\n            format=ARCHIVE_FORMAT,\r\n            root_dir=temp_download_path,\r\n        ))\r\n\r\n        file_name = generate_media_folder_name(media_data=media_data) + f\".{ARCHIVE_FORMAT}\"\r\n\r\n        if overwrite_existing:\r\n            destination_path = download_path / file_name\r\n\r\n        else:\r\n            destination_path = generate_non_conflicting_path(download_path / file_name)\r\n\r\n        archive_path.replace(destination_path)\r\n\r\n    shutil.rmtree(temp_download_path)\r\n    atexit.unregister(shutil.rmtree)\r\n\r\n    return SubtitlesDownloadResults(\r\n        media_data=media_data,\r\n        successful_subtitles=successful_downloads,\r\n        failed_subtitles=failed_downloads,\r\n        is_zip=zip_files,\r\n    )\r\n\r\n\r\ndef generate_config() -> Config:\r\n    \"\"\"\r\n    Generate a config object using config files, and validate it.\r\n\r\n    Returns:\r\n        Config: A config object.\r\n\r\n    Raises:\r\n        ConfigException: If there is a general config error.\r\n        MissingConfigValue: If a required config value is missing.\r\n        InvalidConfigValue: If a config value is invalid.\r\n    \"\"\"\r\n    config_files = [DEFAULT_CONFIG_PATH]\r\n\r\n    if not DEFAULT_CONFIG_PATH.is_file():\r\n        raise ConfigException(\"Default config file could not be found.\")\r\n\r\n    # If data folder doesn't exist, create it\r\n    if not DATA_FOLDER_PATH.is_dir():\r\n        DATA_FOLDER_PATH.mkdir(parents=True, exist_ok=True)\r\n\r\n    else:\r\n        # If a user config file exists, add it to config_files\r\n        if USER_CONFIG_FILE.is_file():\r\n            config_files.append(USER_CONFIG_FILE)\r\n\r\n    config = Config(config_settings=DEFAULT_CONFIG_SETTINGS)\r\n\r\n    for file_path in config_files:\r\n        with open(file_path, 'r') as data:\r\n            config.loads(config_data=data.read(), check_config=True)\r\n\r\n    config.check()\r\n    return config\r\n\r\n\r\ndef generate_media_folder_name(media_data: type[MediaDataBase]) -> str:\r\n    \"\"\"\r\n    Generate a folder name for media data.\r\n\r\n    Args:\r\n        media_data (type[MediaDataBase]): A media data object.\r\n\r\n    Returns:\r\n        str: A folder name for the media data.\r\n    \"\"\"\r\n    return generate_release_name(\r\n        title=media_data.name,\r\n        release_year=media_data.release_year,\r\n        media_source=media_data.source.abbreviation,\r\n    )\r\n\r\n\r\ndef generate_media_path(base_path: Path, media_data: type[MediaDataBase]) -> Path:\r\n    \"\"\"\r\n    Generate a temporary folder for downloading media data.\r\n\r\n    Args:\r\n        base_path (Path): A base path to generate the folder in.\r\n        media_data (type[MediaDataBase]): A media data object.\r\n\r\n    Returns:\r\n        Path: A path to the temporary folder.\r\n    \"\"\"\r\n    temp_folder_name = generate_media_folder_name(media_data=media_data)\r\n    path = generate_non_conflicting_path(base_path / temp_folder_name, has_extension=False)\r\n    path.mkdir(parents=True, exist_ok=True)\r\n\r\n    return path\r\n\r\n\r\ndef update_global_settings(config: Config) -> None:\r\n    \"\"\"\r\n    Update global settings according to a config object.\r\n\r\n    Args:\r\n        config (Config): A config object to set settings according to.\r\n    \"\"\"\r\n    GlobalSettings.subtitles_remove_duplicates = config.subtitles[\"remove-duplicates\"]\r\n    GlobalSettings.subtitles_fix_rtl = config.subtitles[\"fix-rtl\"]\r\n    GlobalSettings.subtitles_fix_rtl_languages = config.subtitles[\"rtl-languages\"]\r\n\r\n    if config.scrapers[\"user-agent\"]:\r\n        GlobalSettings.scrapers_default_user_agent = config.scrapers[\"user-agent\"]\r\n\r\n\r\ndef print_usage() -> None:\r\n    \"\"\"Print usage information.\"\"\"\r\n    print(f\"Usage: {PACKAGE_NAME} <iTunes movie URL> [iTunes movie URL...]\")\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/__main__.py b/isubrip/__main__.py
+--- a/isubrip/__main__.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/__main__.py	(date 1681844076858)
+@@ -13,7 +13,7 @@
+ from isubrip.config import Config, ConfigException
+ from isubrip.constants import ARCHIVE_FORMAT, DATA_FOLDER_PATH, DEFAULT_CONFIG_PATH, DEFAULT_CONFIG_SETTINGS,\
+     PACKAGE_NAME, PYPI_RSS_URL, TEMP_FOLDER_PATH, USER_CONFIG_FILE
+-from isubrip.data_structures import SubtitlesDownloadResults, SubtitlesData, MediaDataBase
++from isubrip.data_structures import EpisodeData,  MediaData, MovieData, SubtitlesDownloadResults, SubtitlesData
+ from isubrip.globals import GlobalSettings
+ from isubrip.scrapers.scraper import ScraperFactory
+ from isubrip.utils import download_subtitles_to_file, generate_non_conflicting_path, generate_release_name,\
+@@ -42,10 +42,9 @@
+             print(f"Scraping {url}")
+ 
+             try:
+-                scraper = scraper_factory.get_matching_scraper(url, config.data.get("scrapers"))
+-
+-                if scraper is None:
+-                    raise ValueError(f"No matching scraper was found for {url}")
++                scraper = scraper_factory.get_matching_scraper(url=url,
++                                                               scrapers_config_data=config.data.get("scrapers"),
++                                                               raise_error=True)
+ 
+                 atexit.register(scraper.close)
+                 scraper.config.check()
+@@ -64,7 +63,7 @@
+                     "zip_files": config.downloads.get("zip", False),
+                 }
+ 
+-                media_items: List[type[MediaDataBase]] = single_to_list(media_data)
++                media_items: List[MediaData] = single_to_list(media_data)
+                 multiple_media_items = len(media_items) > 1
+                 if multiple_media_items:
+                     print(f"{len(media_items)} media items were found.")
+@@ -138,14 +137,14 @@
+         return
+ 
+ 
+-def download_subtitles(media_data: type[MediaDataBase], download_path: Path,
++def download_subtitles(media_data: MovieData | EpisodeData, download_path: Path,
+                        language_filter: List[str] | None = None, convert_to_srt: bool = False,
+                        overwrite_existing: bool = True, zip_files: bool = False) -> SubtitlesDownloadResults:
+     """
+     Download subtitles for the given media data.
+ 
+     Args:
+-        media_data (type[MediaDataBase]): Media data object.
++        media_data (MovieData | EpisodeData): A MovieData or an EpisodeData object of the media.
+         download_path (Path): Path to a folder where the subtitles will be downloaded to.
+         language_filter (list[str] | None): List of specific languages to download subtitles for.
+             None for all languages (no filter). Defaults to None.
+@@ -181,7 +180,7 @@
+             ))
+ 
+             successful_downloads.append(subtitles_data)
+-            language_data = f"{subtitles_data.language_name} ({subtitles_data.language_code}"
++            language_data = f"{subtitles_data.language_name} ({subtitles_data.language_code})"
+ 
+             if subtitles_data.special_type:
+                 language_data += f" [{subtitles_data.special_type}]"
+@@ -266,12 +265,12 @@
+     return config
+ 
+ 
+-def generate_media_folder_name(media_data: type[MediaDataBase]) -> str:
++def generate_media_folder_name(media_data: MediaData) -> str:
+     """
+     Generate a folder name for media data.
+ 
+     Args:
+-        media_data (type[MediaDataBase]): A media data object.
++        media_data (MediaData): A media data object.
+ 
+     Returns:
+         str: A folder name for the media data.
+@@ -283,13 +282,13 @@
+     )
+ 
+ 
+-def generate_media_path(base_path: Path, media_data: type[MediaDataBase]) -> Path:
++def generate_media_path(base_path: Path, media_data: MediaData) -> Path:
+     """
+     Generate a temporary folder for downloading media data.
+ 
+     Args:
+         base_path (Path): A base path to generate the folder in.
+-        media_data (type[MediaDataBase]): A media data object.
++        media_data (MediaData): A media data object.
+ 
+     Returns:
+         Path: A path to the temporary folder.
+Index: isubrip/utils.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport os\r\nimport re\r\nimport sys\r\n\r\nfrom datetime import time\r\nfrom os import PathLike\r\nfrom pathlib import Path\r\nfrom typing import Any, Iterable, List, Union, get_args, get_origin\r\n\r\nfrom isubrip.data_structures import EpisodeData, MovieData, SubtitlesData, SubtitlesFormat, SubtitlesType\r\n\r\n\r\ndef check_type(value: Any, type_) -> bool:\r\n    \"\"\"\r\n    Check if a value is of a certain type.\r\n    Works with parameterized generics.\r\n\r\n    Args:\r\n        value: Value to check.\r\n        type_: Type to check against.\r\n\r\n    Returns:\r\n        bool: True if the value is of the specified type, False otherwise.\r\n    \"\"\"\r\n    origin = get_origin(type_)\r\n    args = get_args(type_)\r\n\r\n    if origin is Union:\r\n        return any(check_type(value, union_sub_type) for union_sub_type in args)\r\n\r\n    elif origin is tuple:\r\n        if args[-1] is Ellipsis:\r\n            # Example: (int, str, ...)\r\n            args_len = len(args)\r\n\r\n            return check_type(value[:args_len - 1], tuple(args[:-1])) and \\\r\n                all(check_type(item, args[-2]) for item in value[args_len - 1:])\r\n\r\n        else:\r\n            return isinstance(value, tuple) and \\\r\n                len(value) == len(args) and \\\r\n                all(check_type(item, item_type) for item, item_type in zip(value, args))\r\n\r\n    elif origin is list:\r\n        return isinstance(value, list) and \\\r\n            all(check_type(item, args[0]) for item in value)\r\n\r\n    elif origin is dict:\r\n        return isinstance(value, dict) and \\\r\n            all(check_type(k, args[0]) and check_type(v, args[1]) for k, v in value.items())\r\n\r\n    return isinstance(value, type_)\r\n\r\n\r\ndef download_subtitles_to_file(media_data: MovieData | EpisodeData, subtitles_data: SubtitlesData,\r\n                               output_path: str | PathLike, overwrite: bool = False) -> Path:\r\n    \"\"\"\r\n    Download subtitles to a file.\r\n\r\n    Args:\r\n        media_data (MovieData | EpisodeData): A MovieData or EpisodeData object of the media.\r\n        subtitles_data (SubtitlesData): A SubtitlesData object containing subtitles data.\r\n        output_path (str | PathLike): Path to the output folder.\r\n        overwrite (bool, optional): Whether to overwrite files if they already exist. Defaults to True.\r\n\r\n    Returns:\r\n        Path: Path to the downloaded subtitles file.\r\n\r\n    Raises:\r\n        ValueError: If the path in `output_path` does not exist.\r\n    \"\"\"\r\n    if not os.path.isdir(output_path):\r\n        raise ValueError(f'Invalid path: {output_path}')\r\n\r\n    if isinstance(media_data, MovieData):\r\n        file_name = generate_release_name(title=media_data.name,\r\n                                          release_year=media_data.release_year,\r\n                                          media_source=media_data.source.abbreviation,\r\n                                          language_code=subtitles_data.language_code,\r\n                                          subtitles_type=subtitles_data.special_type,\r\n                                          file_format=subtitles_data.format)\r\n    elif isinstance(media_data, EpisodeData):\r\n        file_name = generate_release_name(title=media_data.name,\r\n                                          release_year=media_data.release_year,\r\n                                          season_number=media_data.season_number,\r\n                                          episode_number=media_data.episode_number,\r\n                                          episode_name=media_data.episode_name,\r\n                                          media_source=media_data.source.abbreviation,\r\n                                          language_code=subtitles_data.language_code,\r\n                                          subtitles_type=subtitles_data.special_type,\r\n                                          file_format=subtitles_data.format)\r\n\r\n    else:\r\n        raise TypeError(f'Invalid content data type: {type(media_data)}')\r\n\r\n    file_path = Path(output_path) / file_name\r\n\r\n    if file_path.exists() and not overwrite:\r\n        file_path = generate_non_conflicting_path(file_path)\r\n\r\n    with open(file_path, 'wb') as f:\r\n        f.write(subtitles_data.content)\r\n\r\n    return file_path\r\n\r\n\r\ndef generate_non_conflicting_path(file_path: str | Path, has_extension: bool = True) -> Path:\r\n    \"\"\"\r\n    Generate a non-conflicting path for a file.\r\n    If the file already exists, a number will be added to the end of the file name.\r\n\r\n    Args:\r\n        file_path (str | Path): Path to a file.\r\n        has_extension (bool, optional): Whether the name of the file includes file extension. Defaults to True.\r\n\r\n    Returns:\r\n        Path: A non-conflicting file path.\r\n    \"\"\"\r\n    if isinstance(file_path, str):\r\n        file_path = Path(file_path)\r\n\r\n    if not file_path.exists():\r\n        return file_path\r\n\r\n    i = 1\r\n    while True:\r\n        if has_extension:\r\n            new_file_path = file_path.parent / f'{file_path.stem}-{i}{file_path.suffix}'\r\n\r\n        else:\r\n            new_file_path = file_path.parent / f'{file_path}-{i}'\r\n\r\n        if not new_file_path.exists():\r\n            return new_file_path\r\n\r\n        i += 1\r\n\r\n\r\ndef generate_release_name(title: str,\r\n                          release_year: int | None = None,\r\n                          season_number: int | None = None,\r\n                          episode_number: int | None = None,\r\n                          episode_name: str | None = None,\r\n                          media_source: str | None = None,\r\n                          source_type: str | None = \"WEB\",\r\n                          additional_info: str | List[str] | None = None,\r\n                          language_code: str | None = None,\r\n                          subtitles_type: SubtitlesType | None = None,\r\n                          file_format: str | SubtitlesFormat | None = None) -> str:\r\n    \"\"\"\r\n    Generate a release name.\r\n\r\n    Args:\r\n        title (str): Media title.\r\n        release_year (int | None, optional): Release year. Defaults to None.\r\n        season_number (int | None, optional): Season number. Defaults to None.\r\n        episode_number (int | None, optional): Episode number. Defaults to None.\r\n        episode_name (str | None, optional): Episode name. Defaults to None.\r\n        media_source (str | None, optional): Media source name (full or abbreviation). Defaults to None.\r\n        source_type(str | None, optional): General source type (WEB, BluRay, etc.). Defaults to None.\r\n        additional_info (list[str] | str | None, optional): Additional info to add to the file name. Defaults to None.\r\n        language_code (str | None, optional): Language code. Defaults to None.\r\n        subtitles_type (SubtitlesType | None, optional): Subtitles type. Defaults to None.\r\n        file_format (SubtitlesFormat | str | None, optional): File format to use.  Defaults to None.\r\n\r\n    Returns:\r\n        str: Generated file name.\r\n    \"\"\"\r\n    file_name = standardize_title(title)\r\n\r\n    if release_year is not None and str(release_year) not in file_name:\r\n        file_name += f'.{release_year}'\r\n\r\n    if season_number is not None:\r\n        file_name += f'.S{season_number:02}'\r\n\r\n    if episode_number is not None:\r\n        file_name += f'.E{episode_number:02}'\r\n\r\n    if episode_name is not None:\r\n        file_name += f'.{standardize_title(episode_name)}'\r\n\r\n    if media_source is not None:\r\n        file_name += f'.{media_source}'\r\n\r\n    if source_type is not None:\r\n        file_name += f'.{source_type}'\r\n\r\n    if additional_info is not None:\r\n        if isinstance(additional_info, (list, tuple)):\r\n            additional_info = '.'.join(additional_info)\r\n\r\n        file_name += f'.{additional_info}'\r\n\r\n    if language_code is not None:\r\n        file_name += f'.{language_code}'\r\n\r\n    if subtitles_type is not None:\r\n        file_name += f'.{subtitles_type.value.lower()}'\r\n\r\n    if file_format is not None:\r\n        if isinstance(file_format, SubtitlesFormat):\r\n            file_format = file_format.value.file_extension\r\n\r\n        file_name += f'.{file_format}'\r\n\r\n    return file_name\r\n\r\n\r\ndef merge_dict_values(*dictionaries: dict) -> dict:\r\n    \"\"\"\r\n    A function for merging the values of multiple dictionaries using the same keys.\r\n    If a key already exists, the value will be added to a list of values mapped to that key.\r\n\r\n    Args:\r\n        *dictionaries (dict): Dictionaries to merge.\r\n\r\n    Returns:\r\n        dict: A merged dictionary.\r\n    \"\"\"\r\n    result: dict = {}\r\n\r\n    for dict_ in dictionaries:\r\n        for key, value in dict_.items():\r\n            if key in result:\r\n                if isinstance(result[key], list) and value not in result[key]:\r\n                    result[key].append(value)\r\n\r\n                elif isinstance(result[key], tuple) and value not in result[key]:\r\n                    result[key] = result[key] + (value,)\r\n\r\n                elif value != result[key]:\r\n                    result[key] = [result[key], value]\r\n            else:\r\n                result[key] = value\r\n\r\n    return result\r\n\r\n\r\ndef single_to_list(obj) -> list:\r\n    \"\"\"\r\n    Convert a single non-iterable object to a list.\r\n    If None is passed, an empty list will be returned.\r\n\r\n    Args:\r\n        obj: Object to convert.\r\n\r\n    Returns:\r\n        List[T]: A list containing the object.\r\n            If the object is already an iterable, it will be converted to a list.\r\n    \"\"\"\r\n    if isinstance(obj, Iterable):\r\n        if not isinstance(obj, str):\r\n            return list(obj)\r\n\r\n    elif obj is None:\r\n        return []\r\n\r\n    return [obj]\r\n\r\n\r\ndef split_subtitles_timestamp(timestamp: str) -> tuple[time, time]:\r\n    \"\"\"\r\n    Split a subtitles timestamp into start and end.\r\n\r\n    Args:\r\n        timestamp (str): A subtitles timestamp. For example: \"00:00:00.000 --> 00:00:00.000\"\r\n\r\n    Returns:\r\n        tuple(time, time): A tuple containing start and end times as a datetime object.\r\n    \"\"\"\r\n    # Support ',' character in timestamp's milliseconds (used in SubRip format).\r\n    timestamp = timestamp.replace(',', '.')\r\n\r\n    start_time, end_time = timestamp.split(\" --> \")\r\n    return time.fromisoformat(start_time), time.fromisoformat(end_time)\r\n\r\n\r\ndef standardize_title(title: str) -> str:\r\n    \"\"\"\r\n    Format movie title to a standardized title that can be used as a file name.\r\n\r\n    Args:\r\n        title (str): A movie title.\r\n\r\n    Returns:\r\n        str: The movie title, in a file-name-friendly format.\r\n    \"\"\"\r\n    title = title.strip()\r\n\r\n    # Replacements will be done in the same order of this list\r\n    replacement_pairs = [\r\n        (': ', '.'),\r\n        (':', '.'),\r\n        (' - ', '-'),\r\n        (', ', '.'),\r\n        ('. ', '.'),\r\n        (' ', '.'),\r\n        ('|', '.'),\r\n        ('/', '.'),\r\n        ('<', ''),\r\n        ('>', ''),\r\n        ('(', ''),\r\n        (')', ''),\r\n        ('\"', ''),\r\n        ('?', ''),\r\n        ('*', ''),\r\n    ]\r\n\r\n    for pair in replacement_pairs:\r\n        title = title.replace(pair[0], pair[1])\r\n\r\n    title = re.sub(r\"\\.+\", \".\", title)  # Replace multiple dots with a single dot\r\n\r\n    # If running on Windows, rename Windows reserved names to allow file creation\r\n    if sys.platform == 'win32':\r\n        split_title = title.split('.')\r\n\r\n        from isubrip.constants import WINDOWS_RESERVED_FILE_NAMES\r\n\r\n        if split_title[0].upper() in WINDOWS_RESERVED_FILE_NAMES:\r\n            if len(split_title) > 1:\r\n                return split_title[0] + split_title[1] + '.'.join(split_title[2:])\r\n\r\n            elif len(split_title) == 1:\r\n                return \"_\" + title\r\n\r\n    return title\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/utils.py b/isubrip/utils.py
+--- a/isubrip/utils.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/utils.py	(date 1681767168125)
+@@ -9,7 +9,7 @@
+ from pathlib import Path
+ from typing import Any, Iterable, List, Union, get_args, get_origin
+ 
+-from isubrip.data_structures import EpisodeData, MovieData, SubtitlesData, SubtitlesFormat, SubtitlesType
++from isubrip.data_structures import EpisodeData, MediaData, MovieData, SubtitlesData, SubtitlesFormat, SubtitlesType
+ 
+ 
+ def check_type(value: Any, type_) -> bool:
+@@ -60,7 +60,7 @@
+     Download subtitles to a file.
+ 
+     Args:
+-        media_data (MovieData | EpisodeData): A MovieData or EpisodeData object of the media.
++        media_data (MovieData | EpisodeData): An object containing media data.
+         subtitles_data (SubtitlesData): A SubtitlesData object containing subtitles data.
+         output_path (str | PathLike): Path to the output folder.
+         overwrite (bool, optional): Whether to overwrite files if they already exist. Defaults to True.
+@@ -93,7 +93,7 @@
+                                           file_format=subtitles_data.format)
+ 
+     else:
+-        raise TypeError(f'Invalid content data type: {type(media_data)}')
++        raise TypeError(f'This function only supports MovieData and EpisodeData objects. Got {type(media_data)}.')
+ 
+     file_path = Path(output_path) / file_name
+ 
+Index: isubrip/scrapers/itunes_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport json\r\nimport re\r\nfrom datetime import datetime\r\n\r\nimport m3u8\r\nfrom bs4 import BeautifulSoup, Tag, NavigableString\r\nfrom requests import HTTPError\r\n\r\nfrom isubrip.data_structures import MediaSourceData, MovieData\r\nfrom isubrip.scrapers.scraper import M3U8ScraperBase, MovieScraperBase, ScraperException\r\nfrom isubrip.subtitle_formats.webvtt import WebVTTSubtitles\r\n\r\n\r\nclass iTunesScraper(M3U8ScraperBase, MovieScraperBase):\r\n    \"\"\"An iTunes movie data scraper.\"\"\"\r\n    url_regex = r\"(https?://itunes\\.apple\\.com/[a-z]{2}/movie/(?:[\\w\\-%]+/)?(id\\d{9,10}))(?:\\?.*)?\"\r\n    service_data = MediaSourceData(id=\"itunes\", name=\"iTunes\", abbreviation=\"iT\")\r\n    subtitles_class = WebVTTSubtitles\r\n    is_movie_scraper = True\r\n\r\n    def get_data(self, url: str) -> MovieData:\r\n        \"\"\"\r\n        Scrape iTunes to find info about a movie, and it's M3U8 main_playlist.\r\n\r\n        Args:\r\n            url (str): An iTunes store movie URL.\r\n\r\n        Raises:\r\n            InvalidURL: `itunes_url` is not a valid iTunes store movie URL.\r\n            PageLoadError: HTML page did not load properly.\r\n            HTTPError: HTTP request failed.\r\n\r\n        Returns:\r\n            MovieData: A MovieData (NamedTuple) object with movie's name, and an M3U8 object of the main_playlist\r\n            if the main_playlist is found. None otherwise.\r\n        \"\"\"\r\n        regex_match = self.match_url(url, raise_error=True)\r\n\r\n        url = regex_match.group(1)\r\n        response = self._session.get(url)\r\n        response.raise_for_status()\r\n\r\n        # Response is JSON formatted\r\n        if \"application/json\" in response.headers['content-type']:\r\n            try:\r\n                json_data = json.loads(response.content)\r\n\r\n            except json.JSONDecodeError:\r\n                raise ScraperException(\"Received an invalid JSON response.\")\r\n\r\n            return self._find_playlist_data_json(json_data)\r\n\r\n        # Response is HTML formatted\r\n        elif \"text/html\" in response.headers['content-type'] and response.status_code != 404:\r\n            html_data = BeautifulSoup(response.content, \"lxml\")\r\n            return self._find_playlist_data_html(html_data)\r\n\r\n        raise ScraperException(\"Received an unexpected response.\")\r\n\r\n    def _find_playlist_data_json(self, json_data: dict) -> MovieData:\r\n        \"\"\"\r\n        Scrape an iTunes JSON response to get movie info.\r\n\r\n        Args:\r\n            json_data (dict): A dictionary with iTunes data loaded from a JSON response.\r\n\r\n        Returns:\r\n            MovieData: A MovieData (NamedTuple) object with movie's name, and an M3U8 object of the main_playlist\r\n            if the main_playlist is found. None otherwise.\r\n        \"\"\"\r\n        itunes_id = json_data[\"pageData\"][\"id\"]\r\n        movie_data = json_data[\"storePlatformData\"][\"product-dv\"][\"results\"][itunes_id]\r\n\r\n        movie_title = movie_data[\"nameRaw\"]\r\n        movie_release_year = datetime.strptime(movie_data[\"releaseDate\"], '%Y-%m-%d').year\r\n\r\n        # Loop safely to find a matching main_playlist\r\n        for offer in movie_data[\"offers\"]:\r\n            if isinstance(offer.get(\"type\"), str) and offer[\"type\"] in [\"buy\", \"rent\"]:\r\n                if isinstance(offer.get(\"assets\"), list) and len(offer[\"assets\"]) > 0:\r\n                    for asset in offer[\"assets\"]:\r\n                        playlist_url: str = asset[\"hlsUrl\"]\r\n\r\n                        # Assure main_playlist is valid\r\n                        try:\r\n                            m3u8.load(playlist_url)\r\n\r\n                        # If m3u8 main_playlist is invalid, skip it\r\n                        except (ValueError, HTTPError):\r\n                            continue\r\n\r\n                        return MovieData(\r\n                            id=itunes_id,\r\n                            name=movie_title,\r\n                            release_year=movie_release_year,\r\n                            playlist=playlist_url,\r\n                            source=self.service_data,\r\n                            scraper=self,\r\n                        )\r\n\r\n        return MovieData(\r\n            id=itunes_id,\r\n            name=movie_title,\r\n            release_year=movie_release_year,\r\n            playlist=None,\r\n            source=self.service_data,\r\n            scraper=self,\r\n        )\r\n\r\n    def _find_playlist_data_html(self, html_data: BeautifulSoup) -> MovieData:\r\n        \"\"\"\r\n        Scrape an iTunes HTML page to get movie info.\r\n\r\n        Note:\r\n            This function uses web-scraping and because of that,\r\n            it's a lot less reliable than `_find_playlist_data_itunes_json_`.\r\n\r\n        Args:\r\n            html_data (BeautifulSoup): A BeautifulSoup object of the page.\r\n\r\n        Raises:\r\n            PageLoadError: HTML page did not load properly.\r\n\r\n        Returns:\r\n            MovieData: A MovieData (NamedTuple) object with movie's name, and an M3U8 object of the main_playlist\r\n            if the main_playlist is found. None otherwise.\r\n        \"\"\"\r\n        itunes_id_tag: Tag | NavigableString | None = html_data.find(\"meta\", attrs={\"name\": \"apple:content_id\"})\r\n        if not isinstance(itunes_id_tag, Tag):\r\n            raise ScraperException(\"HTML page did not load properly.\")\r\n\r\n        itunes_id: str = itunes_id_tag.attrs[\"content\"]\r\n\r\n        # Scrape a dictionary on the webpage that has playlists data\r\n        shoebox_data_tag: Tag | NavigableString | None = \\\r\n            html_data.find(\"script\", attrs={\"id\": \"shoebox-ember-data-store\", \"type\": \"fastboot/shoebox\"})\r\n\r\n        # fastboot/shoebox data could not be found\r\n        if not isinstance(shoebox_data_tag, Tag):\r\n            raise ScraperException(\"fastboot/shoebox data could not be found.\")\r\n\r\n        # Convert to dictionary structure\r\n        shoebox_data: dict = json.loads(str(shoebox_data_tag.contents[0]).strip())\r\n\r\n        # Loop safely to find a matching main_playlist\r\n        if isinstance(shoebox_data[itunes_id].get(\"included\"), list):\r\n            movie_data: dict = shoebox_data[itunes_id]\r\n            movie_title: str = movie_data[\"data\"][\"attributes\"][\"name\"]\r\n            movie_release_year = datetime.strptime(movie_data[\"data\"][\"attributes\"][\"releaseDate\"], '%Y-%m-%d').year\r\n\r\n            for item in movie_data[\"included\"]:\r\n                if isinstance(item.get(\"type\"), str) and item[\"type\"] == \"offer\":\r\n                    if isinstance(item.get(\"attributes\"), dict) and \\\r\n                        isinstance(item[\"attributes\"].get(\"assets\"), list) and \\\r\n                            len(item[\"attributes\"][\"assets\"]) > 0:\r\n\r\n                        for asset in item[\"attributes\"][\"assets\"]:\r\n                            if isinstance(asset, dict) and isinstance(asset.get(\"hlsUrl\"), str):\r\n                                playlist_url: str = item[\"attributes\"][\"assets\"][0][\"hlsUrl\"]\r\n\r\n                                # Try loading the main_playlist to assure it's working\r\n                                try:\r\n                                    m3u8.load(playlist_url)\r\n\r\n                                # If m3u8 main_playlist is invalid, skip it\r\n                                except (ValueError, HTTPError):\r\n                                    continue\r\n\r\n                                return MovieData(\r\n                                    id=itunes_id,\r\n                                    name=movie_title,\r\n                                    release_year=movie_release_year,\r\n                                    playlist=playlist_url,\r\n                                    source=self.service_data,\r\n                                    scraper=self,\r\n                                )\r\n        else:\r\n            raise ScraperException(\"Invalid shoebox data.\")\r\n\r\n        return MovieData(\r\n            id=itunes_id,\r\n            name=movie_title,\r\n            release_year=movie_release_year,\r\n            playlist=None,\r\n            source=self.service_data,\r\n            scraper=self,\r\n        )\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/itunes_scraper.py b/isubrip/scrapers/itunes_scraper.py
+--- a/isubrip/scrapers/itunes_scraper.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/scrapers/itunes_scraper.py	(date 1681766177909)
+@@ -9,11 +9,11 @@
+ from requests import HTTPError
+ 
+ from isubrip.data_structures import MediaSourceData, MovieData
+-from isubrip.scrapers.scraper import M3U8ScraperBase, MovieScraperBase, ScraperException
++from isubrip.scrapers.scraper import M3U8Scraper, MovieScraper, ScraperException
+ from isubrip.subtitle_formats.webvtt import WebVTTSubtitles
+ 
+ 
+-class iTunesScraper(M3U8ScraperBase, MovieScraperBase):
++class iTunesScraper(M3U8Scraper, MovieScraper):
+     """An iTunes movie data scraper."""
+     url_regex = r"(https?://itunes\.apple\.com/[a-z]{2}/movie/(?:[\w\-%]+/)?(id\d{9,10}))(?:\?.*)?"
+     service_data = MediaSourceData(id="itunes", name="iTunes", abbreviation="iT")
+Index: isubrip/scrapers/appletv_scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom typing import List\r\n\r\nfrom isubrip.data_structures import MovieData, MediaDataBase\r\nfrom isubrip.scrapers.itunes_scraper import iTunesScraper\r\nfrom isubrip.scrapers.scraper import M3U8ScraperBase, MediaSourceData, MovieScraperBase, ScraperException, \\\r\n    SeriesScraperBase\r\nfrom isubrip.subtitle_formats.webvtt import WebVTTSubtitles\r\n\r\n\r\nclass AppleTVPlusScraper(M3U8ScraperBase, MovieScraperBase, SeriesScraperBase):\r\n    \"\"\"\r\n    An Apple TV+ movie data scraper.\r\n    Also works for Apple TV items that include iTunes links (by redirecting to the iTunes scraper).\r\n    \"\"\"\r\n    url_regex = r\"(https?://tv\\.apple\\.com/([a-z]{2})/(movie|show)/(?:[\\w\\-%]+/)?(umc\\.cmc\\.[a-z\\d]{24,25}))(?:\\?.*)?\"\r\n    service_data = MediaSourceData(id=\"appletvplus\", name=\"Apple TV+\", abbreviation=\"ATVP\")\r\n    subtitles_class = WebVTTSubtitles\r\n    is_movie_scraper = True\r\n    is_series_scraper = True\r\n    uses_scrapers = [iTunesScraper]\r\n\r\n    _api_url = \"https://tv.apple.com/api/uts/v3/movies/\"\r\n    _api_request_params = {\r\n        \"utscf\": \"OjAAAAAAAAA~\",\r\n        \"utsk\": \"6e3013c6d6fae3c2::::::235656c069bb0efb\",\r\n        \"caller\": \"web\",\r\n        \"v\": \"58\",\r\n        \"pfm\": \"web\",\r\n        \"locale\": \"en-US\"\r\n    }\r\n    _storefronts_mapping = {\r\n        \"AF\": \"143610\", \"AO\": \"143564\", \"AI\": \"143538\", \"AL\": \"143575\", \"AD\": \"143611\", \"AE\": \"143481\", \"AR\": \"143505\",\r\n        \"AM\": \"143524\", \"AG\": \"143540\", \"AU\": \"143460\", \"AT\": \"143445\", \"AZ\": \"143568\", \"BE\": \"143446\", \"BJ\": \"143576\",\r\n        \"BF\": \"143578\", \"BD\": \"143490\", \"BG\": \"143526\", \"BH\": \"143559\", \"BS\": \"143539\", \"BA\": \"143612\", \"BY\": \"143565\",\r\n        \"BZ\": \"143555\", \"BM\": \"143542\", \"BO\": \"143556\", \"BR\": \"143503\", \"BB\": \"143541\", \"BN\": \"143560\", \"BT\": \"143577\",\r\n        \"BW\": \"143525\", \"CF\": \"143623\", \"CA\": \"143455\", \"CH\": \"143459\", \"CL\": \"143483\", \"CN\": \"143465\", \"CI\": \"143527\",\r\n        \"CM\": \"143574\", \"CD\": \"143613\", \"CG\": \"143582\", \"CO\": \"143501\", \"CV\": \"143580\", \"CR\": \"143495\", \"KY\": \"143544\",\r\n        \"CY\": \"143557\", \"CZ\": \"143489\", \"DE\": \"143443\", \"DM\": \"143545\", \"DK\": \"143458\", \"DO\": \"143508\", \"DZ\": \"143563\",\r\n        \"EC\": \"143509\", \"EG\": \"143516\", \"ES\": \"143454\", \"EE\": \"143518\", \"ET\": \"143569\", \"FI\": \"143447\", \"FJ\": \"143583\",\r\n        \"FR\": \"143442\", \"FM\": \"143591\", \"GA\": \"143614\", \"GB\": \"143444\", \"GE\": \"143615\", \"GH\": \"143573\", \"GN\": \"143616\",\r\n        \"GM\": \"143584\", \"GW\": \"143585\", \"GR\": \"143448\", \"GD\": \"143546\", \"GT\": \"143504\", \"GY\": \"143553\", \"HK\": \"143463\",\r\n        \"HN\": \"143510\", \"HR\": \"143494\", \"HU\": \"143482\", \"ID\": \"143476\", \"IN\": \"143467\", \"IE\": \"143449\", \"IQ\": \"143617\",\r\n        \"IS\": \"143558\", \"IL\": \"143491\", \"IT\": \"143450\", \"JM\": \"143511\", \"JO\": \"143528\", \"JP\": \"143462\", \"KZ\": \"143517\",\r\n        \"KE\": \"143529\", \"KG\": \"143586\", \"KH\": \"143579\", \"KN\": \"143548\", \"KR\": \"143466\", \"KW\": \"143493\", \"LA\": \"143587\",\r\n        \"LB\": \"143497\", \"LR\": \"143588\", \"LY\": \"143567\", \"LC\": \"143549\", \"LI\": \"143522\", \"LK\": \"143486\", \"LT\": \"143520\",\r\n        \"LU\": \"143451\", \"LV\": \"143519\", \"MO\": \"143515\", \"MA\": \"143620\", \"MC\": \"143618\", \"MD\": \"143523\", \"MG\": \"143531\",\r\n        \"MV\": \"143488\", \"MX\": \"143468\", \"MK\": \"143530\", \"ML\": \"143532\", \"MT\": \"143521\", \"MM\": \"143570\", \"ME\": \"143619\",\r\n        \"MN\": \"143592\", \"MZ\": \"143593\", \"MR\": \"143590\", \"MS\": \"143547\", \"MU\": \"143533\", \"MW\": \"143589\", \"MY\": \"143473\",\r\n        \"NA\": \"143594\", \"NE\": \"143534\", \"NG\": \"143561\", \"NI\": \"143512\", \"NL\": \"143452\", \"NO\": \"143457\", \"NP\": \"143484\",\r\n        \"NR\": \"143606\", \"NZ\": \"143461\", \"OM\": \"143562\", \"PK\": \"143477\", \"PA\": \"143485\", \"PE\": \"143507\", \"PH\": \"143474\",\r\n        \"PW\": \"143595\", \"PG\": \"143597\", \"PL\": \"143478\", \"PT\": \"143453\", \"PY\": \"143513\", \"PS\": \"143596\", \"QA\": \"143498\",\r\n        \"RO\": \"143487\", \"RU\": \"143469\", \"RW\": \"143621\", \"SA\": \"143479\", \"SN\": \"143535\", \"SG\": \"143464\", \"SB\": \"143601\",\r\n        \"SL\": \"143600\", \"SV\": \"143506\", \"RS\": \"143500\", \"ST\": \"143598\", \"SR\": \"143554\", \"SK\": \"143496\", \"SI\": \"143499\",\r\n        \"SE\": \"143456\", \"SZ\": \"143602\", \"SC\": \"143599\", \"TC\": \"143552\", \"TD\": \"143581\", \"TH\": \"143475\", \"TJ\": \"143603\",\r\n        \"TM\": \"143604\", \"TO\": \"143608\", \"TT\": \"143551\", \"TN\": \"143536\", \"TR\": \"143480\", \"TW\": \"143470\", \"TZ\": \"143572\",\r\n        \"UG\": \"143537\", \"UA\": \"143492\", \"UY\": \"143514\", \"US\": \"143441\", \"UZ\": \"143566\", \"VC\": \"143550\", \"VE\": \"143502\",\r\n        \"VG\": \"143543\", \"VN\": \"143471\", \"VU\": \"143609\", \"WS\": \"143607\", \"XK\": \"143624\", \"YE\": \"143571\", \"ZA\": \"143472\",\r\n        \"ZM\": \"143622\", \"ZW\": \"143605\",\r\n    }\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data=config_data)\r\n        self.itunes_scraper = iTunesScraper(config_data=config_data)\r\n\r\n    def fetch_api_data(self, url: str) -> dict:\r\n        \"\"\"\r\n        Send a request to AppleTV's API and return the JSON response.\r\n\r\n        Args:\r\n            url: The URL to send the request to.\r\n\r\n        Returns:\r\n            dict: The JSON response.\r\n\r\n        Raises:\r\n            HttpError: If an HTTP error response is received.\r\n        \"\"\"\r\n        regex_match = self.match_url(url, raise_error=True)\r\n\r\n        # Add storefront ID to params\r\n        request_params = self._api_request_params.copy()\r\n\r\n        if regex_match.group(2).upper() in self._storefronts_mapping:\r\n            request_params[\"sf\"] = self._storefronts_mapping[regex_match.group(2).upper()]\r\n\r\n        else:\r\n            raise ScraperException(f\"ID mapping for storefront '{regex_match.group(2).upper()}' could not be found.\")\r\n\r\n        response = self._session.get(self._api_url + regex_match.group(4), params=request_params)\r\n        response.raise_for_status()\r\n        response_json = response.json()\r\n\r\n        return response_json.get(\"data\", {})\r\n\r\n    def get_data(self, url: str) -> type[MediaDataBase] | List[type[MediaDataBase]] | None:\r\n        json_data = self.fetch_api_data(url)\r\n        itunes_channel: str | None = None\r\n        appletvplus_channel: str | None = None\r\n\r\n        for channel in json_data[\"channels\"].values():\r\n            if channel.get(\"isAppleTvPlus\", False):\r\n                appletvplus_channel = channel[\"id\"]\r\n\r\n            elif channel.get(\"isItunes\", False):\r\n                itunes_channel = channel[\"id\"]\r\n        \r\n        if appletvplus_channel:\r\n            media_type = json_data.get(\"content\", {}).get(\"type\")\r\n\r\n            if media_type in (\"Movie\", \"Show\"):\r\n                for playable in json_data[\"playables\"].values():\r\n                    if playable.get(\"channelId\") == appletvplus_channel:\r\n                        return self._get_data_appletvplus(media_type=media_type, playable_data=playable)\r\n\r\n            else:\r\n                raise ScraperException(f\"Unsupported media type: '{media_type}'.\")\r\n\r\n        elif itunes_channel:\r\n            itunes_playables = []\r\n\r\n            for playable in json_data[\"playables\"].values():\r\n                if playable.get(\"channelId\", '') == itunes_channel:\r\n                    itunes_playables.append(playable)\r\n\r\n            return self._get_data_itunes(playables_data=itunes_playables)\r\n\r\n        # TODO: Add log message \"No supported AppleTV channel could be found.\"\r\n        return None\r\n\r\n    def _get_data_itunes(self, playables_data: List[dict]) -> MovieData | List[MovieData]:\r\n        results = []\r\n\r\n        for playable_data in playables_data:\r\n            itunes_url = playable_data[\"punchoutUrls\"][\"open\"].replace(\"itmss://\", \"https://\")\r\n            results.append(self.itunes_scraper.get_data(itunes_url))\r\n\r\n        if len(results) == 1:\r\n            return results[0]\r\n\r\n        return results\r\n\r\n    def _get_data_appletvplus(self, media_type: str, playable_data: dict) -> MovieData:\r\n        raise NotImplementedError(\"AppleTV+ scraping is not currently supported.\")  # TODO REFACTOR\r\n        # data = playable_data[\"content\"]\r\n        # title = data[\"title\"]\r\n        #\r\n        # if \"releaseDate\" in data:\r\n        #     release_epoch = data[\"releaseDate\"] // 1000\r\n        #\r\n        # else:\r\n        #     raise ScraperException(\"Release date could not be found. \"\r\n        #                            \"This might indicate that the media has not been released yet.\")\r\n        #\r\n        # # Release date epoch is not negative (After 01/01/1970)\r\n        # if release_epoch > 0:\r\n        #     movie_release_year = datetime.fromtimestamp(release_epoch).year\r\n        #\r\n        # else:\r\n        #     movie_release_year = (datetime(1970, 1, 1) + timedelta(seconds=release_epoch)).year\r\n        #\r\n        # # TODO: Get playlist\r\n        #\r\n        # return MovieData(\r\n        #     id=data[\"id\"],\r\n        #     name=title,\r\n        #     release_year=movie_release_year,\r\n        #     playlist=playlist,\r\n        #     source=self.service_data,\r\n        #     scraper=self,\r\n        # )\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/appletv_scraper.py b/isubrip/scrapers/appletv_scraper.py
+--- a/isubrip/scrapers/appletv_scraper.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/scrapers/appletv_scraper.py	(date 1681843936735)
+@@ -2,14 +2,14 @@
+ 
+ from typing import List
+ 
+-from isubrip.data_structures import MovieData, MediaDataBase
++from isubrip.data_structures import MovieData, MediaData
+ from isubrip.scrapers.itunes_scraper import iTunesScraper
+-from isubrip.scrapers.scraper import M3U8ScraperBase, MediaSourceData, MovieScraperBase, ScraperException, \
+-    SeriesScraperBase
++from isubrip.scrapers.scraper import M3U8Scraper, MediaSourceData, MovieScraper, ScraperException, \
++    SeriesScraper
+ from isubrip.subtitle_formats.webvtt import WebVTTSubtitles
+ 
+ 
+-class AppleTVPlusScraper(M3U8ScraperBase, MovieScraperBase, SeriesScraperBase):
++class AppleTVPlusScraper(M3U8Scraper, MovieScraper, SeriesScraper):
+     """
+     An Apple TV+ movie data scraper.
+     Also works for Apple TV items that include iTunes links (by redirecting to the iTunes scraper).
+@@ -94,7 +94,7 @@
+ 
+         return response_json.get("data", {})
+ 
+-    def get_data(self, url: str) -> type[MediaDataBase] | List[type[MediaDataBase]] | None:
++    def get_data(self, url: str) -> MovieData | List[MovieData] | None:
+         json_data = self.fetch_api_data(url)
+         itunes_channel: str | None = None
+         appletvplus_channel: str | None = None
+Index: isubrip/scrapers/scraper.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nimport asyncio\r\nimport importlib\r\nimport inspect\r\nimport os\r\nimport re\r\nimport sys\r\nfrom abc import abstractmethod, ABC, ABCMeta\r\nfrom enum import Enum\r\nfrom glob import glob\r\nfrom pathlib import Path\r\nfrom typing import ClassVar, Iterator, Literal, List, overload, Union, TypeVar\r\n\r\nimport aiohttp\r\nimport m3u8\r\nimport requests\r\nfrom m3u8 import M3U8, Media, Segment, SegmentList\r\n\r\nfrom isubrip.config import Config, ConfigSetting\r\nfrom isubrip.constants import PACKAGE_NAME, SCRAPER_MODULES_SUFFIX\r\nfrom isubrip.data_structures import MediaSourceData, SubtitlesData, SubtitlesFormat, SubtitlesType, MediaDataBase\r\nfrom isubrip.globals import GlobalSettings\r\nfrom isubrip.subtitle_formats.subtitles import SubtitlesBase\r\nfrom isubrip.utils import merge_dict_values\r\n\r\nScraper = TypeVar('Scraper', bound='ScraperBase')\r\n\r\n\r\nclass Singleton(ABCMeta):\r\n    \"\"\"\r\n    A metaclass that implements the Singleton pattern.\r\n    When a class using this metaclass is initialized, it will return the same instance every time.\r\n    \"\"\"\r\n    _instances: dict[str, ScraperBase] = {}\r\n\r\n    def __call__(cls, *args, **kwargs) -> object:\r\n        if cls._instances.get(cls.__name__) is None:\r\n            cls._instances[cls.__name__] = super().__call__(*args, **kwargs)\r\n\r\n        return cls._instances[cls.__name__]\r\n\r\n\r\nclass ScraperBase(ABC, metaclass=Singleton):\r\n    \"\"\"\r\n    A base class for scrapers.\r\n\r\n    Attributes:\r\n        default_user_agent (str): [Class Attribute]\r\n            Default user agent to use if no other user agent is specified when making requests.\r\n        url_regex: [Class Attribute] A RegEx pattern to find URLs matching the service.\r\n        service_data: [Class Attribute] A MediaSourceData object containing the service's name and abbreviation.\r\n        subtitles_class: [Class Attribute] Class of the subtitles format returned by the scraper.\r\n        is_movie_scraper: [Class Attribute] Whether the scraper is for movies.\r\n        is_series_scraper: [Class Attribute] Whether the scraper is for series.\r\n        uses_scrapers: [Class Attribute] A list of other scraper classes that this scraper uses.\r\n            This assures that the config data for the other scrapers is passed as well.\r\n        _session (requests.Session): A requests session to use for making requests.\r\n        config (Config): A Config object containing the scraper's configuration.\r\n    \"\"\"\r\n    default_user_agent: ClassVar[str] = GlobalSettings.scrapers_default_user_agent\r\n    url_regex: ClassVar[str | List[str]]\r\n    service_data: ClassVar[MediaSourceData]\r\n    subtitles_class: ClassVar[type[SubtitlesBase]]\r\n    is_movie_scraper: ClassVar[bool] = False\r\n    is_series_scraper: ClassVar[bool] = False\r\n    uses_scrapers: ClassVar[List[type[ScraperBase]]] = []\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        \"\"\"\r\n        Initialize a Scraper object.\r\n\r\n        Args:\r\n            config_data (dict | None, optional): A dictionary containing scraper's configuration data. Defaults to None.\r\n        \"\"\"\r\n        self._session = requests.Session()\r\n        self._session.headers.update({\"User-Agent\": self.default_user_agent})\r\n        self.config = Config(config_data=config_data)\r\n\r\n        self.config.add_settings([\r\n            ConfigSetting(\r\n                key=\"user-agent\",\r\n                type=str,\r\n                required=False,\r\n            )],\r\n            check_config=False)\r\n\r\n        if \"user-agent\" in self.config.data:\r\n            self._session.headers.update({\"User-Agent\": self.config[\"user-agent\"]})\r\n\r\n    @classmethod\r\n    @overload\r\n    def match_url(cls, url: str, raise_error: Literal[False] = False) -> re.Match | None:\r\n        ...\r\n\r\n    @classmethod\r\n    @overload\r\n    def match_url(cls, url: str, raise_error: Literal[True]) -> re.Match:\r\n        ...\r\n\r\n    @classmethod\r\n    def match_url(cls, url: str, raise_error: bool = False) -> re.Match | None:\r\n        \"\"\"\r\n        Checks if a URL matches scraper's url regex.\r\n\r\n        Args:\r\n            url (str): A URL to check against the regex.\r\n            raise_error (bool, optional): Whether to raise an error instead of returning None if the URL doesn't match.\r\n\r\n        Returns:\r\n            re.Match | None: A Match object if the URL matches the regex, None otherwise (if raise_error is False).\r\n\r\n        Raises:\r\n            ValueError: If the URL doesn't match the regex and raise_error is True.\r\n        \"\"\"\r\n        if isinstance(cls.url_regex, str):\r\n            return re.fullmatch(cls.url_regex, url)\r\n\r\n        else:  # isinstance(cls.url_regex, (list, tuple)):\r\n            for regex in cls.url_regex:\r\n                if result := re.fullmatch(regex, url):\r\n                    return result\r\n\r\n        if raise_error:\r\n            raise ValueError(f\"URL '{url}' doesn't match the URL regex of {cls.service_data.name}.\")\r\n\r\n        return None\r\n\r\n    def __enter__(self):\r\n        return self\r\n\r\n    def __exit__(self, exc_type, exc_val, exc_tb):\r\n        self.close()\r\n\r\n    def close(self):\r\n        self._session.close()\r\n\r\n    @abstractmethod\r\n    def get_data(self, url: str) -> type[MediaDataBase] | List[type[MediaDataBase]] | None:\r\n        \"\"\"\r\n        Scrape media information about the media on a URL.\r\n\r\n        Args:\r\n            url (str): A URL to get media information about.\r\n\r\n        Returns:\r\n            type[MediaData] | list[type[MediaData]] | None:\r\n                An object (or list of objects) containing scraped media information. None if no media was found.\r\n        \"\"\"\r\n        pass\r\n\r\n    @abstractmethod\r\n    def get_subtitles(self, main_playlist: M3U8, language_filter: List[str] | None = None,\r\n                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:\r\n        \"\"\"\r\n        Find and yield subtitles data from a main_playlist.\r\n\r\n        Args:\r\n            main_playlist (M3U8): Main playlist of the media to search for subtitles in.\r\n            language_filter (list[str], optional): A list of languages to filter for.\r\n            subrip_conversion (bool, optional): Whether to convert the subtitles to SubRip format. Defaults to False.\r\n\r\n        Yields:\r\n            SubtitlesData: A SubtitlesData object for each subtitle found\r\n                in the main playlist (matching the filters, if given).\r\n        \"\"\"\r\n        pass\r\n\r\n\r\nclass MovieScraperBase(ScraperBase, ABC):\r\n    \"\"\"A base class for movie scrapers.\"\"\"\r\n    is_movie_scraper = True\r\n\r\n\r\nclass SeriesScraperBase(ScraperBase, ABC):\r\n    \"\"\"A base class for series scrapers.\"\"\"\r\n    is_series_scraper = True\r\n\r\n\r\nclass AsyncScraperBase(ScraperBase, ABC):\r\n    \"\"\"A base class for scrapers that utilize async requests.\"\"\"\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n        self.async_session = aiohttp.ClientSession()\r\n        self.async_session.headers.update({\"User-Agent\": self.default_user_agent})\r\n\r\n    def close(self):\r\n        asyncio.get_event_loop().run_until_complete(self._async_close())\r\n        super().close()\r\n\r\n    async def _async_close(self):\r\n        await self.async_session.close()\r\n\r\n\r\nclass M3U8ScraperBase(AsyncScraperBase, ABC):\r\n    \"\"\"A base class for M3U8 scrapers.\"\"\"\r\n    playlist_filters_config_category = \"playlist-filters\"\r\n\r\n    class M3U8Attribute(Enum):\r\n        \"\"\"\r\n        An enum representing all possible M3U8 attributes.\r\n        Names / Keys represent M3U8 Media object attributes (should be converted to lowercase),\r\n        and values represent the name of the key for config usage.\r\n        \"\"\"\r\n        ASSOC_LANGUAGE = \"assoc-language\"\r\n        AUTOSELECT = \"autoselect\"\r\n        CHARACTERISTICS = \"characteristics\"\r\n        CHANNELS = \"channels\"\r\n        DEFAULT = \"default\"\r\n        FORCED = \"forced\"\r\n        GROUP_ID = \"group-id\"\r\n        INSTREAM_ID = \"instream-id\"\r\n        LANGUAGE = \"language\"\r\n        NAME = \"name\"\r\n        STABLE_RENDITION_ID = \"stable-rendition-id\"\r\n        TYPE = \"type\"\r\n\r\n    def __init__(self, config_data: dict | None = None):\r\n        super().__init__(config_data)\r\n\r\n        if self.config is None:\r\n            self.config = Config()\r\n\r\n        # Add M3U8 filters settings\r\n        self.config.add_settings([\r\n            ConfigSetting(\r\n                category=self.playlist_filters_config_category,\r\n                key=m3u8_attribute.value,\r\n                type=Union[str, List[str]],\r\n                required=False,\r\n            ) for m3u8_attribute in self.M3U8Attribute],\r\n            check_config=False)\r\n\r\n    def _download_segments_async(self, segments: SegmentList[Segment]) -> List[bytes]:\r\n        \"\"\"\r\n        Download M3U8 segments asynchronously.\r\n\r\n        Args:\r\n            segments (m3u8.SegmentList[m3u8.Segment]): List of segments to download.\r\n\r\n        Returns:\r\n            list[bytes]: List of downloaded segments.\r\n        \"\"\"\r\n        loop = asyncio.get_event_loop()\r\n        async_tasks = [loop.create_task(self._download_segment_async(segment.absolute_uri)) for segment in segments]\r\n        segments_bytes = loop.run_until_complete(asyncio.gather(*async_tasks))\r\n\r\n        return list(segments_bytes)\r\n\r\n    async def _download_segment_async(self, url: str) -> bytes:\r\n        \"\"\"\r\n        Download an M3U8 segment asynchronously.\r\n\r\n        Args:\r\n            url (str): URL of the segment to download.\r\n\r\n        Returns:\r\n            bytes: Downloaded segment.\r\n        \"\"\"\r\n        async with self.async_session.get(url) as response:\r\n            return await response.read()\r\n\r\n    @staticmethod\r\n    def detect_subtitles_type(subtitles_media: Media) -> SubtitlesType | None:\r\n        \"\"\"\r\n        Detect the subtitles type (Closed Captions, Forced, etc.) from an M3U8 Media object.\r\n\r\n        Args:\r\n            subtitles_media (m3u8.Media): Subtitles Media object to detect the type of.\r\n\r\n        Returns:\r\n            SubtitlesType | None: The type of the subtitles, None for regular subtitles.\r\n        \"\"\"\r\n        if subtitles_media.forced == \"YES\":\r\n            return SubtitlesType.FORCED\r\n\r\n        elif subtitles_media.characteristics is not None and \"public.accessibility\" in subtitles_media.characteristics:\r\n            return SubtitlesType.CC\r\n\r\n        return None\r\n\r\n    def get_media_playlists(self, main_playlist: M3U8,\r\n                            playlist_filters: dict[str, str | List[str]] | None = None,\r\n                            include_default_filters: bool = True) -> Iterator[Media]:\r\n        \"\"\"\r\n        Find and yield playlists of media within an M3U8 main_playlist using optional filters.\r\n\r\n        Args:\r\n            main_playlist (m3u8.M3U8): an M3U8 object of the main main_playlist.\r\n            playlist_filters (dict[str, str | list[str], optional):\r\n                A dictionary of filters to use when searching for subtitles.\r\n                Will be added to filters set by the config (unless `include_default_filters` is set to false).\r\n                Defaults to None.\r\n            include_default_filters (bool, optional): Whether to include the default filters set by the config or not.\r\n                Defaults to True.\r\n\r\n        Yields:\r\n            SubtitlesData: A NamedTuple with a matching main_playlist, and it's metadata:\r\n                Language Code, Language Name, SubtitlesType, Playlist URL.\r\n        \"\"\"\r\n        default_filters: dict | None = self.config.get(M3U8ScraperBase.playlist_filters_config_category)\r\n\r\n        if include_default_filters and default_filters:\r\n            if not playlist_filters:\r\n                playlist_filters = default_filters\r\n\r\n            else:\r\n                playlist_filters = merge_dict_values(default_filters, playlist_filters)\r\n\r\n        for media in main_playlist.media:\r\n            if not playlist_filters:\r\n                yield media\r\n\r\n            else:\r\n                is_valid = True\r\n\r\n                for filter_name, filter_value in playlist_filters.items():\r\n                    try:\r\n                        filter_name_enum = M3U8ScraperBase.M3U8Attribute(filter_name)\r\n                        attribute_value = getattr(media, filter_name_enum.name.lower(), None)\r\n\r\n                        if attribute_value is None:\r\n                            is_valid = False\r\n                            break\r\n\r\n                        elif isinstance(filter_value, list) and \\\r\n                                attribute_value.casefold() not in (x.casefold() for x in filter_value):\r\n                            is_valid = False\r\n                            break\r\n\r\n                        elif isinstance(filter_value, str) and filter_value.casefold() != attribute_value.casefold():\r\n                            is_valid = False\r\n                            break\r\n\r\n                    except Exception as e:\r\n                        # TODO: Add logger warning\r\n                        continue\r\n\r\n                if is_valid:\r\n                    yield media\r\n\r\n    def get_subtitles(self, main_playlist: M3U8, language_filter: List[str] | None = None,\r\n                      subrip_conversion: bool = False) -> Iterator[SubtitlesData]:\r\n        \"\"\"\r\n        Find and yield subtitles for a movie using optional filters.\r\n\r\n        Args:\r\n            main_playlist (m3u8.M3U8): an M3U8 object of the main playlist.\r\n            language_filter (list[str] | None, optional): A list of languages to filter for. Defaults to None.\r\n            subrip_conversion (bool, optional): Whether to convert and return the subtitles as an SRT file or not.\r\n                Defaults to False.\r\n\r\n        Yields:\r\n            SubtitlesData: A SubtitlesData NamedTuple with a matching playlist, and it's metadata.\r\n        \"\"\"\r\n        playlist_filters = {self.M3U8Attribute.LANGUAGE.value: language_filter} if language_filter else None\r\n\r\n        for matched_media in self.get_media_playlists(main_playlist=main_playlist, playlist_filters=playlist_filters):\r\n            # TODO: Add logger info\r\n            try:\r\n                matched_media_playlist = m3u8.load(matched_media.absolute_uri)\r\n                subtitles = self.subtitles_class(language_code=matched_media.language,\r\n                                                 language_name=matched_media.name.strip(' '))\r\n                for segment in self._download_segments_async(matched_media_playlist.segments):\r\n                    subtitles.append_subtitles(subtitles.loads(segment.decode(\"utf-8\")))\r\n\r\n                subtitles.polish(\r\n                    fix_rtl=GlobalSettings.subtitles_fix_rtl,\r\n                    remove_duplicates=GlobalSettings.subtitles_remove_duplicates,\r\n                )\r\n\r\n                yield SubtitlesData(\r\n                    language_code=matched_media.language,\r\n                    language_name=matched_media.name,\r\n                    format=SubtitlesFormat.SUBRIP if subrip_conversion else SubtitlesFormat.WEBVTT,\r\n                    content=subtitles.to_srt().dump() if subrip_conversion else subtitles.dump(),\r\n                    special_type=self.detect_subtitles_type(matched_media),\r\n                )\r\n\r\n            except Exception as e:\r\n                pass  # TODO: Add logger warning\r\n                continue\r\n\r\n\r\nclass ScraperFactory:\r\n    def __init__(self):\r\n        self._scraper_classes = self.get_scraper_classes()\r\n        self._scrapers_cache: dict[type[Scraper], type[ScraperBase]] = {}\r\n\r\n    def get_initialized_scrapers(self) -> List[type[ScraperBase]]:\r\n        \"\"\"\r\n        Get a list of all previously initialized scrapers.\r\n\r\n        Returns:\r\n            list[type[ScraperBase]]: A list of initialized scrapers.\r\n        \"\"\"\r\n        return list(self._scrapers_cache.values())\r\n\r\n    @staticmethod\r\n    def get_scraper_classes() -> List[type[Scraper]]:\r\n        \"\"\"\r\n        Get a list of all scraper classes.\r\n\r\n        Returns:\r\n            list[type[Scraper]]: A list of scraper classes.\r\n        \"\"\"\r\n        scrapers_list: List[type[Scraper]] = []\r\n\r\n        scraper_modules_paths = glob(os.path.dirname(__file__) + f\"/*{SCRAPER_MODULES_SUFFIX}.py\")\r\n\r\n        for scraper_module_path in scraper_modules_paths:\r\n            sys.path.append(scraper_module_path)\r\n\r\n            module = importlib.import_module(f\"{PACKAGE_NAME}.scrapers.{Path(scraper_module_path).stem}\")\r\n\r\n            # find Scraper subclasses\r\n            for name, obj in inspect.getmembers(module,\r\n                                                predicate=lambda x: inspect.isclass(x) and issubclass(x, ScraperBase)):\r\n                # Skip object if it's an abstract or imported from another module\r\n                if not inspect.isabstract(obj) and obj.__module__ == module.__name__:\r\n                    if any((obj.is_movie_scraper, obj.is_series_scraper)):\r\n                        scrapers_list.append(obj)\r\n\r\n                    else:\r\n                        pass  # TODO: Add logger warning \"Scraper class {obj.__name__} is not a movie or series scraper\"\r\n\r\n        return scrapers_list\r\n\r\n    def get_matching_scraper(self, url: str, scrapers_config_data: dict | None = None) -> type[Scraper] | None:\r\n        \"\"\"\r\n        Find and return a scraper that matches the given URL.\r\n\r\n        Args:\r\n            url (str): A URL to check for a matching scraper.\r\n            scrapers_config_data (dict, optional): A dictionary containing scrapers config data to use\r\n                when creating a new scraper. Defaults to None.\r\n\r\n        Returns:\r\n            type[Scraper] | None: An instance of a scraper that matches the given URL, or None if no match was found.\r\n        \"\"\"\r\n        for scraper in self._scraper_classes:\r\n            if scraper.match_url(url) is not None:\r\n                if scraper not in self._scrapers_cache:\r\n                    config_data = scrapers_config_data.get(scraper.service_data.id) if scrapers_config_data else None\r\n                    self._scrapers_cache[scraper] = scraper(config_data=config_data)\r\n\r\n                return self._scrapers_cache[scraper]\r\n\r\n        return None\r\n\r\n\r\ndef get_matching_scraper(url: str, config_data: dict | None = None) -> Scraper | None:\r\n    \"\"\"\r\n\r\n    Args:\r\n        url (str): A URL to check for a matching scraper.\r\n        config_data (dict, optional): A dictionary of config data to use when creating a new scraper.\r\n\r\n    Returns:\r\n        Scraper | None: An instance of the scraper that matches the given URL, or None if no match was found.\r\n    \"\"\"\r\n    scraper_modules_paths = glob(os.path.dirname(__file__) + \"/*_scraper.py\")\r\n\r\n    for scraper_module_path in scraper_modules_paths:\r\n        sys.path.append(scraper_module_path)\r\n\r\n        module = importlib.import_module(f\"scrapers.{Path(scraper_module_path).stem}\")\r\n\r\n        # find Scraper subclasses\r\n        for name, obj in inspect.getmembers(module,\r\n                                            predicate=lambda x: inspect.isclass(x) and issubclass(x, ScraperBase)):\r\n            if obj.match_url(url) is not None:\r\n                return obj(config_data=config_data)\r\n\r\n            else:\r\n                pass  # TODO: Add logger debug message \"Scraper {obj} does not match URL {url}\"\r\n    return None\r\n\r\n\r\nclass ScraperException(Exception):\r\n    pass\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scrapers/scraper.py b/isubrip/scrapers/scraper.py
+--- a/isubrip/scrapers/scraper.py	(revision e814963d0081a0834bc004e234ef78e7ebf3fbed)
++++ b/isubrip/scrapers/scraper.py	(date 1681766874266)
+@@ -19,20 +19,18 @@
+ 
+ from isubrip.config import Config, ConfigSetting
+ from isubrip.constants import PACKAGE_NAME, SCRAPER_MODULES_SUFFIX
+-from isubrip.data_structures import MediaSourceData, SubtitlesData, SubtitlesFormat, SubtitlesType, MediaDataBase
++from isubrip.data_structures import MediaSourceData, SubtitlesData, SubtitlesFormat, SubtitlesType, MediaData
+ from isubrip.globals import GlobalSettings
+-from isubrip.subtitle_formats.subtitles import SubtitlesBase
++from isubrip.subtitle_formats.subtitles import Subtitles
+ from isubrip.utils import merge_dict_values
+ 
+-Scraper = TypeVar('Scraper', bound='ScraperBase')
+-
+ 
+ class Singleton(ABCMeta):
+     """
+     A metaclass that implements the Singleton pattern.
+     When a class using this metaclass is initialized, it will return the same instance every time.
+     """
+-    _instances: dict[str, ScraperBase] = {}
++    _instances: dict[str, Scraper] = {}
+ 
+     def __call__(cls, *args, **kwargs) -> object:
+         if cls._instances.get(cls.__name__) is None:
+@@ -41,7 +39,7 @@
+         return cls._instances[cls.__name__]
+ 
+ 
+-class ScraperBase(ABC, metaclass=Singleton):
++class Scraper(ABC, metaclass=Singleton):
+     """
+     A base class for scrapers.
+ 
+@@ -61,10 +59,10 @@
+     default_user_agent: ClassVar[str] = GlobalSettings.scrapers_default_user_agent
+     url_regex: ClassVar[str | List[str]]
+     service_data: ClassVar[MediaSourceData]
+-    subtitles_class: ClassVar[type[SubtitlesBase]]
++    subtitles_class: ClassVar[type[Subtitles]]
+     is_movie_scraper: ClassVar[bool] = False
+     is_series_scraper: ClassVar[bool] = False
+-    uses_scrapers: ClassVar[List[type[ScraperBase]]] = []
++    uses_scrapers: ClassVar[List[type[Scraper]]] = []
+ 
+     def __init__(self, config_data: dict | None = None):
+         """
+@@ -136,7 +134,7 @@
+         self._session.close()
+ 
+     @abstractmethod
+-    def get_data(self, url: str) -> type[MediaDataBase] | List[type[MediaDataBase]] | None:
++    def get_data(self, url: str) -> MediaData | List[MediaData] | None:
+         """
+         Scrape media information about the media on a URL.
+ 
+@@ -144,7 +142,7 @@
+             url (str): A URL to get media information about.
+ 
+         Returns:
+-            type[MediaData] | list[type[MediaData]] | None:
++            MediaData | list[MediaData] | None:
+                 An object (or list of objects) containing scraped media information. None if no media was found.
+         """
+         pass
+@@ -167,17 +165,17 @@
+         pass
+ 
+ 
+-class MovieScraperBase(ScraperBase, ABC):
++class MovieScraper(Scraper, ABC):
+     """A base class for movie scrapers."""
+     is_movie_scraper = True
+ 
+ 
+-class SeriesScraperBase(ScraperBase, ABC):
++class SeriesScraper(Scraper, ABC):
+     """A base class for series scrapers."""
+     is_series_scraper = True
+ 
+ 
+-class AsyncScraperBase(ScraperBase, ABC):
++class AsyncScraper(Scraper, ABC):
+     """A base class for scrapers that utilize async requests."""
+     def __init__(self, config_data: dict | None = None):
+         super().__init__(config_data)
+@@ -192,7 +190,7 @@
+         await self.async_session.close()
+ 
+ 
+-class M3U8ScraperBase(AsyncScraperBase, ABC):
++class M3U8Scraper(AsyncScraper, ABC):
+     """A base class for M3U8 scrapers."""
+     playlist_filters_config_category = "playlist-filters"
+ 
+@@ -298,7 +296,7 @@
+             SubtitlesData: A NamedTuple with a matching main_playlist, and it's metadata:
+                 Language Code, Language Name, SubtitlesType, Playlist URL.
+         """
+-        default_filters: dict | None = self.config.get(M3U8ScraperBase.playlist_filters_config_category)
++        default_filters: dict | None = self.config.get(M3U8Scraper.playlist_filters_config_category)
+ 
+         if include_default_filters and default_filters:
+             if not playlist_filters:
+@@ -316,7 +314,7 @@
+ 
+                 for filter_name, filter_value in playlist_filters.items():
+                     try:
+-                        filter_name_enum = M3U8ScraperBase.M3U8Attribute(filter_name)
++                        filter_name_enum = M3U8Scraper.M3U8Attribute(filter_name)
+                         attribute_value = getattr(media, filter_name_enum.name.lower(), None)
+ 
+                         if attribute_value is None:
+@@ -384,26 +382,31 @@
+ 
+ class ScraperFactory:
+     def __init__(self):
+-        self._scraper_classes = self.get_scraper_classes()
+-        self._scrapers_cache: dict[type[Scraper], type[ScraperBase]] = {}
++        self._scraper_classes_cache: list[type[Scraper]] | None = None
++        self._scraper_instances_cache: dict[str, Scraper] = {}
+ 
+-    def get_initialized_scrapers(self) -> List[type[ScraperBase]]:
++    def get_initialized_scrapers(self) -> List[Scraper]:
+         """
+         Get a list of all previously initialized scrapers.
+ 
+         Returns:
+-            list[type[ScraperBase]]: A list of initialized scrapers.
++            list[Scraper]: A list of initialized scrapers.
+         """
+-        return list(self._scrapers_cache.values())
++        return list(self._scraper_instances_cache.values())
+ 
+-    @staticmethod
+-    def get_scraper_classes() -> List[type[Scraper]]:
++    def get_scraper_classes(self) -> List[type[Scraper]]:
+         """
+         Get a list of all scraper classes.
+ 
+         Returns:
+             list[type[Scraper]]: A list of scraper classes.
+         """
++        if self._scraper_classes_cache is None:
++            self._scraper_classes_cache = self._get_scraper_classes()
++
++        return self._scraper_classes_cache
++
++    def _get_scraper_classes(self) -> List[type[Scraper]]:
+         scrapers_list: List[type[Scraper]] = []
+ 
+         scraper_modules_paths = glob(os.path.dirname(__file__) + f"/*{SCRAPER_MODULES_SUFFIX}.py")
+@@ -415,7 +418,7 @@
+ 
+             # find Scraper subclasses
+             for name, obj in inspect.getmembers(module,
+-                                                predicate=lambda x: inspect.isclass(x) and issubclass(x, ScraperBase)):
++                                                predicate=lambda x: inspect.isclass(x) and issubclass(x, Scraper)):
+                 # Skip object if it's an abstract or imported from another module
+                 if not inspect.isabstract(obj) and obj.__module__ == module.__name__:
+                     if any((obj.is_movie_scraper, obj.is_series_scraper)):
+@@ -426,55 +429,46 @@
+ 
+         return scrapers_list
+ 
+-    def get_matching_scraper(self, url: str, scrapers_config_data: dict | None = None) -> type[Scraper] | None:
++    @overload
++    def get_matching_scraper(self, url: str, scrapers_config_data: dict | None = None,
++                             raise_error: Literal[False] = False) -> Scraper | None:
++        ...
++
++    @overload
++    def get_matching_scraper(self, url: str, scrapers_config_data: dict,
++                             raise_error: Literal[True]) -> Scraper:
++        ...
++
++    def get_matching_scraper(self, url: str, scrapers_config_data: dict | None = None,
++                             raise_error: bool = False) -> Scraper | None:
+         """
+-        Find and return a scraper that matches the given URL.
++        Find, initialize and return a scraper that matches the given URL.
+ 
+         Args:
+             url (str): A URL to check for a matching scraper.
+             scrapers_config_data (dict, optional): A dictionary containing scrapers config data to use
+                 when creating a new scraper. Defaults to None.
++            raise_error (bool, optional): Whether to raise an error if no scraper was found. Defaults to False.
+ 
+         Returns:
+-            type[Scraper] | None: An instance of a scraper that matches the given URL, or None if no match was found.
++            Scraper | None: An instance of a scraper that matches the given URL,
++                None otherwise (if raise_error is False).
++
++        Raises:
++            ValueError: If no scraper was found and raise_error is True.
+         """
+-        for scraper in self._scraper_classes:
++        for scraper in self.get_scraper_classes():
+             if scraper.match_url(url) is not None:
+-                if scraper not in self._scrapers_cache:
++                if scraper.__name__ not in self._scraper_instances_cache:
+                     config_data = scrapers_config_data.get(scraper.service_data.id) if scrapers_config_data else None
+-                    self._scrapers_cache[scraper] = scraper(config_data=config_data)
+-
+-                return self._scrapers_cache[scraper]
+-
+-        return None
+-
++                    self._scraper_instances_cache[scraper.__name__] = scraper(config_data=config_data)
+ 
+-def get_matching_scraper(url: str, config_data: dict | None = None) -> Scraper | None:
+-    """
++                return self._scraper_instances_cache[scraper.__name__]
+ 
+-    Args:
+-        url (str): A URL to check for a matching scraper.
+-        config_data (dict, optional): A dictionary of config data to use when creating a new scraper.
++        if raise_error:
++            raise ValueError(f"No matching scraper was found for {url}")
+ 
+-    Returns:
+-        Scraper | None: An instance of the scraper that matches the given URL, or None if no match was found.
+-    """
+-    scraper_modules_paths = glob(os.path.dirname(__file__) + "/*_scraper.py")
+-
+-    for scraper_module_path in scraper_modules_paths:
+-        sys.path.append(scraper_module_path)
+-
+-        module = importlib.import_module(f"scrapers.{Path(scraper_module_path).stem}")
+-
+-        # find Scraper subclasses
+-        for name, obj in inspect.getmembers(module,
+-                                            predicate=lambda x: inspect.isclass(x) and issubclass(x, ScraperBase)):
+-            if obj.match_url(url) is not None:
+-                return obj(config_data=config_data)
+-
+-            else:
+-                pass  # TODO: Add logger debug message "Scraper {obj} does not match URL {url}"
+-    return None
++        return None
+ 
+ 
+ class ScraperException(Exception):

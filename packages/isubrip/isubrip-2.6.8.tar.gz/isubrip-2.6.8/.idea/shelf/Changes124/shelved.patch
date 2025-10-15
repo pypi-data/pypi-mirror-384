@@ -1,0 +1,128 @@
+Index: isubrip/scripts/release_date_check.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\nfrom contextlib import suppress\r\nfrom dataclasses import dataclass\r\nimport sys\r\nfrom typing import TYPE_CHECKING, Any, Iterator\r\n\r\nfrom rich.console import Console\r\nfrom rich.progress import (\r\n    BarColumn,\r\n    MofNCompleteColumn,\r\n    Progress,\r\n    SpinnerColumn,\r\n    TaskProgressColumn,\r\n    TextColumn,\r\n    TimeElapsedColumn,\r\n)\r\nfrom rich.table import Table\r\n\r\nfrom isubrip.scrapers.appletv_scraper import AppleTVScraper\r\nfrom isubrip.scrapers.itunes_scraper import ItunesScraper\r\nfrom isubrip.scrapers.scraper import PlaylistLoadError\r\n\r\nif TYPE_CHECKING:\r\n    import datetime as dt\r\n\r\n    from m3u8.model import M3U8\r\n\r\n    from isubrip.data_structures import Movie\r\n\r\nUSER_AGENT = (\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \"\r\n              \"Chrome/100.0.4896.127 Safari/537.36\")\r\n\r\n\r\n@dataclass\r\nclass AppleTVResult:\r\n    movie_data: Movie | None\r\n    storefront: str\r\n    released: bool\r\n    release_date: dt.datetime | None = None\r\n\r\n\r\ndef main():\r\n    apple_tv_scraper = AppleTVScraper(user_agent=USER_AGENT)\r\n    itunes_scraper = ItunesScraper(user_agent=USER_AGENT)\r\n\r\n    console = Console()\r\n\r\n    if len(sys.argv) != 2:\r\n        print(\"Usage: generate_release_dates_report.py <AppleTV URL>\")\r\n        sys.exit(1)\r\n\r\n    url = sys.argv[1]\r\n\r\n    released_items: list[AppleTVResult] = []\r\n    unreleased_items_with_release_date: list[AppleTVResult] = []\r\n    unknown_release_items: list[AppleTVResult] = []\r\n    no_store_page_items: list[AppleTVResult] = []\r\n\r\n    with Progress(\r\n            SpinnerColumn(),\r\n            TextColumn(\"[progress.description]{task.description}\"),\r\n            BarColumn(),\r\n            MofNCompleteColumn(),\r\n            TaskProgressColumn(),\r\n            TimeElapsedColumn(),\r\n            console=console,\r\n            transient=False,\r\n    ) as progress:\r\n        task = progress.add_task(\"[bold green]Fetching data from all storefronts[/bold green]\",\r\n                                 total=len(apple_tv_scraper.storefronts_mapping.keys()))\r\n\r\n        for results_list in fetch_movie_from_all_storefronts(apple_tv_scraper=apple_tv_scraper,\r\n                                                             itunes_scraper=itunes_scraper, url=url):\r\n            for result_item in results_list:\r\n                if result_item.movie_data is None:\r\n                    no_store_page_items.append(result_item)\r\n\r\n                elif result_item.released is True:\r\n                    released_items.append(result_item)\r\n\r\n                elif result_item.released is False:\r\n                    unreleased_items_with_release_date.append(result_item)\r\n\r\n                elif result_item.released is None:\r\n                    unknown_release_items.append(result_item)\r\n\r\n            progress.advance(task)\r\n\r\n    # Released Items Table:\r\n    if len(released_items) > 0:\r\n        released_items_table = create_released_results_table(\r\n            itunes_scraper=itunes_scraper,\r\n            result_items=released_items,\r\n        )\r\n        console.print(\"[bold green]Released Items:[/bold green]\")\r\n        console.print(released_items_table)\r\n\r\n    # Unreleased Items Table:\r\n    if len(unreleased_items_with_release_date) > 0:\r\n        unreleased_items_with_release_date_table = create_unreleased_results_table(\r\n            itunes_scraper=itunes_scraper,\r\n            result_items=unreleased_items_with_release_date,\r\n        )\r\n        console.print(\"[bold yellow]Unreleased Items:[/bold yellow]\")\r\n        console.print(unreleased_items_with_release_date_table)\r\n\r\n\r\ndef fetch_movie_from_all_storefronts(apple_tv_scraper: AppleTVScraper,\r\n                                     itunes_scraper: ItunesScraper, url: str) -> Iterator[list[AppleTVResult]]:\r\n    regex_match = apple_tv_scraper.match_url(url=url, raise_error=True)\r\n    regex_extracted_data = regex_match.groupdict()\r\n    movie_id = str(regex_extracted_data[\"media_id\"])\r\n    original_storefront = str(regex_extracted_data[\"country_code\"]).upper()\r\n\r\n    if regex_extracted_data[\"media_type\"] != \"movie\":\r\n        exit(\"Provided URL is not a movie URL.\")\r\n\r\n    storefronts = set(apple_tv_scraper.storefronts_mapping.keys())\r\n\r\n    with suppress(KeyError):\r\n        storefronts.remove(original_storefront)\r\n\r\n    with suppress(Exception):\r\n        yield fetch_movie_from_storefront(\r\n            apple_tv_scraper=apple_tv_scraper,\r\n            itunes_scraper=itunes_scraper,\r\n            movie_id=movie_id,\r\n            storefront=original_storefront,\r\n        )\r\n\r\n    for storefront in storefronts:\r\n        yield fetch_movie_from_storefront(\r\n            apple_tv_scraper=apple_tv_scraper,\r\n            itunes_scraper=itunes_scraper,\r\n            movie_id=movie_id,\r\n            storefront=storefront,\r\n        )\r\n\r\n\r\ndef fetch_movie_from_storefront(apple_tv_scraper: AppleTVScraper, itunes_scraper: ItunesScraper,\r\n                                movie_id: str, storefront: str) -> list[AppleTVResult] | None:\r\n    storefront_id = apple_tv_scraper.storefronts_mapping[storefront]\r\n\r\n    try:\r\n        response = apple_tv_scraper.get_movie_data(\r\n            storefront_id=storefront_id,\r\n            movie_id=movie_id,\r\n        )\r\n\r\n    except Exception:  # Movie is not available in this storefront\r\n        return [\r\n            AppleTVResult(\r\n                movie_data=None,\r\n                storefront=storefront,\r\n                released=False,\r\n                release_date=None,\r\n            ),\r\n        ]\r\n\r\n    results: list[AppleTVResult] = []\r\n\r\n    for movie_data in response.media_data:\r\n        if movie_data.playlist:\r\n            try:\r\n                playlist = itunes_scraper.load_m3u8(url=movie_data.playlist)\r\n\r\n            except Exception:\r\n                playlist = None\r\n\r\n        else:\r\n            playlist = None\r\n\r\n        results.append(\r\n            AppleTVResult(\r\n                movie_data=movie_data,\r\n                storefront=storefront,\r\n                released=determine_release_status(movie_data=movie_data, loaded_playlist=playlist),\r\n                release_date=movie_data.preorder_availability_date,\r\n            ),\r\n        )\r\n\r\n    return results\r\n\r\n\r\ndef determine_release_status(movie_data: Movie, loaded_playlist: M3U8 | None) -> bool | None:\r\n    if bool(loaded_playlist):\r\n        return True\r\n\r\n    else:\r\n        if movie_data.preorder_availability_date:\r\n            return False\r\n\r\n        return None\r\n\r\n\r\ndef create_released_results_table(itunes_scraper: ItunesScraper, result_items: list[AppleTVResult]) -> Table:\r\n    result_items = sorted(result_items, key=lambda item: item.storefront)\r\n    result_items_table = Table(show_header=True, header_style=\"bold green\", show_lines=True)\r\n    result_items_table.add_column(\"iTunes ID\")\r\n    result_items_table.add_column(\"Storefronts\")\r\n    result_items_table.add_column(\"Available Languages\")\r\n\r\n    id_mapping: dict[str, dict[str, Any]] = {}\r\n\r\n    for result in result_items:\r\n        result_id = result.movie_data.id\r\n\r\n        if result_id in id_mapping:\r\n            id_mapping[result_id][\"storefronts\"].append(result.storefront)\r\n\r\n            if id_mapping[result_id][\"languages\"] is None:\r\n                try:\r\n                    available_languages = list_available_subtitles_languages(\r\n                        itunes_scraper=itunes_scraper,\r\n                        main_playlist=result.movie_data.playlist,\r\n                    )\r\n\r\n                except PlaylistLoadError:\r\n                    available_languages = None\r\n\r\n                id_mapping[result_id][\"languages\"] = available_languages\r\n\r\n        else:\r\n            try:\r\n                available_languages = sorted(list_available_subtitles_languages(\r\n                    itunes_scraper=itunes_scraper,\r\n                    main_playlist=result.movie_data.playlist,\r\n                ))\r\n\r\n            except PlaylistLoadError:\r\n                available_languages = None\r\n\r\n            id_mapping[result_id] = {\r\n                \"storefronts\": [result.storefront],\r\n                \"languages\": available_languages if available_languages else [],\r\n            }\r\n\r\n    for result_id, data in id_mapping.items():\r\n        if data[\"languages\"] is None:\r\n            languages_str = \"Could not load languages.\"\r\n\r\n        else:\r\n            languages_str = \", \".join(data[\"languages\"])\r\n\r\n        result_items_table.add_row(\r\n            result_id,\r\n            \", \".join(data[\"storefronts\"]),\r\n            languages_str,\r\n        )\r\n\r\n    return result_items_table\r\n\r\n\r\ndef create_unreleased_results_table(itunes_scraper: ItunesScraper, result_items: list[AppleTVResult]) -> Table:\r\n    result_items = sorted(result_items, key=lambda item: item.storefront)\r\n    result_items_table = Table(show_header=True, header_style=\"bold green\", show_lines=True)\r\n    result_items_table.add_column(\"iTunes ID\")\r\n    result_items_table.add_column(\"Storefronts\")\r\n    result_items_table.add_column(\"Release Date\")\r\n    result_items_table.add_column(\"Available Languages\")\r\n\r\n    id_languages_mapping: dict[str, list[str] | None] = {}\r\n    results: list[dict[str, Any]] = []\r\n\r\n    for result in result_items:\r\n        result_id = result.movie_data.id\r\n\r\n        if result_id in id_languages_mapping:\r\n            available_languages = id_languages_mapping[result_id]\r\n\r\n            if id_languages_mapping[result_id] is None:\r\n                try:\r\n                    available_languages = list_available_subtitles_languages(\r\n                        itunes_scraper=itunes_scraper,\r\n                        main_playlist=result.movie_data.playlist,\r\n                    )\r\n                    id_languages_mapping[result_id] = available_languages\r\n\r\n                except PlaylistLoadError:\r\n                    pass\r\n\r\n        else:\r\n            try:\r\n                id_languages_mapping[result_id] = sorted(list_available_subtitles_languages(\r\n                    itunes_scraper=itunes_scraper,\r\n                    main_playlist=result.movie_data.playlist,\r\n                ))\r\n                available_languages = id_languages_mapping[result_id]\r\n\r\n            except PlaylistLoadError:\r\n                available_languages = None\r\n\r\n        results.append({\r\n            \"id\": result_id,\r\n            \"storefronts\": [result.storefront],\r\n            \"release_date\": result.release_date,\r\n            \"languages\": available_languages,\r\n        })\r\n\r\n    results = sorted(results, key=lambda x: x[\"release_date\"])\r\n\r\n    for result in results:\r\n        if result[\"languages\"] is None:\r\n            languages_str = \"Could not load languages.\"\r\n\r\n        else:\r\n            languages_str = \", \".join(result[\"languages\"])\r\n\r\n        result_items_table.add_row(\r\n            result[\"id\"],\r\n            \", \".join(result[\"storefronts\"]),\r\n            result[\"release_date\"].strftime(\"%Y-%m-%d\"),\r\n            languages_str,\r\n        )\r\n\r\n    return result_items_table\r\n\r\n\r\ndef list_available_subtitles_languages(itunes_scraper: ItunesScraper,\r\n                                       main_playlist: str | list[str]) -> list[str]:\r\n    main_playlist_m3u8 = itunes_scraper.load_m3u8(url=main_playlist)\r\n\r\n    if main_playlist_m3u8 is None:\r\n        raise PlaylistLoadError(\"Could not load M3U8 playlist.\")\r\n\r\n    playlist_results = itunes_scraper.get_media_playlists(main_playlist=main_playlist_m3u8,\r\n                                                          playlist_filters=itunes_scraper._subtitles_filters)\r\n\r\n    return list({\r\n        f\"{result.name} ({result.language})\" for result in playlist_results\r\n        if None not in (result.name, result.language)\r\n    })\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/isubrip/scripts/release_date_check.py b/isubrip/scripts/release_date_check.py
+--- a/isubrip/scripts/release_date_check.py	(revision f21bc8ead13215b5ae0dcd904f71ad4cd64ba5e4)
++++ b/isubrip/scripts/release_date_check.py	(date 1720612168608)
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import asyncio
+ from contextlib import suppress
+ from dataclasses import dataclass
+ import sys
+@@ -17,6 +18,7 @@
+ )
+ from rich.table import Table
+ 
++from isubrip.constants import EVENT_LOOP
+ from isubrip.scrapers.appletv_scraper import AppleTVScraper
+ from isubrip.scrapers.itunes_scraper import ItunesScraper
+ from isubrip.scrapers.scraper import PlaylistLoadError
+@@ -70,8 +72,15 @@
+         task = progress.add_task("[bold green]Fetching data from all storefronts[/bold green]",
+                                  total=len(apple_tv_scraper.storefronts_mapping.keys()))
+ 
+-        for results_list in fetch_movie_from_all_storefronts(apple_tv_scraper=apple_tv_scraper,
+-                                                             itunes_scraper=itunes_scraper, url=url):
++        results_lists = EVENT_LOOP.run_until_complete(
++            fetch_movie_from_all_storefronts(
++                apple_tv_scraper=apple_tv_scraper,
++                itunes_scraper=itunes_scraper,
++                url=url,
++            )
++        )
++
++        for results_list in results_lists:
+             for result_item in results_list:
+                 if result_item.movie_data is None:
+                     no_store_page_items.append(result_item)
+@@ -106,8 +115,8 @@
+         console.print(unreleased_items_with_release_date_table)
+ 
+ 
+-def fetch_movie_from_all_storefronts(apple_tv_scraper: AppleTVScraper,
+-                                     itunes_scraper: ItunesScraper, url: str) -> Iterator[list[AppleTVResult]]:
++async def fetch_movie_from_all_storefronts(apple_tv_scraper: AppleTVScraper,
++                                     itunes_scraper: ItunesScraper, url: str) -> list[AppleTVResult | None]:
+     regex_match = apple_tv_scraper.match_url(url=url, raise_error=True)
+     regex_extracted_data = regex_match.groupdict()
+     movie_id = str(regex_extracted_data["media_id"])
+@@ -121,29 +130,37 @@
+     with suppress(KeyError):
+         storefronts.remove(original_storefront)
+ 
++    results: list[AppleTVResult | None] = []
++
+     with suppress(Exception):
+-        yield fetch_movie_from_storefront(
+-            apple_tv_scraper=apple_tv_scraper,
+-            itunes_scraper=itunes_scraper,
+-            movie_id=movie_id,
+-            storefront=original_storefront,
++        results.append(
++            await fetch_movie_from_storefront(
++                apple_tv_scraper=apple_tv_scraper,
++                itunes_scraper=itunes_scraper,
++                movie_id=movie_id,
++                storefront=original_storefront,
++            )
+         )
+ 
+-    for storefront in storefronts:
+-        yield fetch_movie_from_storefront(
++    results_coroutines = [
++        fetch_movie_from_storefront(
+             apple_tv_scraper=apple_tv_scraper,
+             itunes_scraper=itunes_scraper,
+             movie_id=movie_id,
+             storefront=storefront,
+-        )
++        ) for storefront in storefronts
++    ]
+ 
++    results.extend(await asyncio.gather(*results_coroutines))
++    return results
+ 
+-def fetch_movie_from_storefront(apple_tv_scraper: AppleTVScraper, itunes_scraper: ItunesScraper,
+-                                movie_id: str, storefront: str) -> list[AppleTVResult] | None:
++
++async def fetch_movie_from_storefront(apple_tv_scraper: AppleTVScraper, itunes_scraper: ItunesScraper,
++                                      movie_id: str, storefront: str) -> list[AppleTVResult] | None:
+     storefront_id = apple_tv_scraper.storefronts_mapping[storefront]
+ 
+     try:
+-        response = apple_tv_scraper.get_movie_data(
++        response = await apple_tv_scraper.get_movie_data(
+             storefront_id=storefront_id,
+             movie_id=movie_id,
+         )
+@@ -163,7 +180,7 @@
+     for movie_data in response.media_data:
+         if movie_data.playlist:
+             try:
+-                playlist = itunes_scraper.load_m3u8(url=movie_data.playlist)
++                playlist = itunes_scraper.load_playlist(url=movie_data.playlist)
+ 
+             except Exception:
+                 playlist = None
+@@ -319,13 +336,12 @@
+ 
+ def list_available_subtitles_languages(itunes_scraper: ItunesScraper,
+                                        main_playlist: str | list[str]) -> list[str]:
+-    main_playlist_m3u8 = itunes_scraper.load_m3u8(url=main_playlist)
++    main_playlist_m3u8 = itunes_scraper.load_playlist(url=main_playlist)
+ 
+     if main_playlist_m3u8 is None:
+         raise PlaylistLoadError("Could not load M3U8 playlist.")
+ 
+-    playlist_results = itunes_scraper.get_media_playlists(main_playlist=main_playlist_m3u8,
+-                                                          playlist_filters=itunes_scraper._subtitles_filters)
++    playlist_results = itunes_scraper.find_matching_subtitles(main_playlist=main_playlist_m3u8)
+ 
+     return list({
+         f"{result.name} ({result.language})" for result in playlist_results
