@@ -1,0 +1,316 @@
+# Euno SDK
+
+Euno's CLI library to programmatically interact with Euno instance
+
+## Installation
+
+```bash
+pip install euno-sdk
+```
+
+## Quick Start
+
+### As a Library
+
+```python
+import euno
+
+# Hello world function
+message = euno.hello_world("Euno")
+print(message)  # Output: Hello, Euno! Welcome to the Euno SDK!
+
+# List resources from your Euno instance
+resources = euno.list_resources()
+print(f"Found {resources['count']} resources")
+
+# List resources with custom parameters
+resources = euno.list_resources(
+    properties="uri,type,name,description",
+    page_size=10
+)
+
+# List resources with EQL query
+resources = euno.list_resources(
+    eql="type='table'",
+    properties="uri,name"
+)
+
+# List metadata tags (custom properties)
+metadata_tags = euno.list_metadata_tags()
+print(f"Found {len(metadata_tags)} metadata tags")
+
+# Set values for a metadata tag
+value_updates = [
+    {"resource_uri": "table://schema.table1", "value": "production"},
+    {"resource_uri": "table://schema.table2", "value": "staging"}
+]
+result = euno.set_metadata_tag_value(123, value_updates)
+print(f"Updated {result.get('updated_count', 0)} values")
+```
+
+### As a CLI Tool
+
+```bash
+# Hello world command
+euno hello-world --name Euno
+
+# Show version
+euno version
+
+# Show help
+euno --help
+```
+
+## Development
+
+### Setup Development Environment
+
+```bash
+# Clone the repository
+git clone https://github.com/euno-ai/euno-sdk.git
+cd euno-sdk
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Install the package in development mode
+pip install -e .
+```
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Code Formatting
+
+```bash
+black euno tests
+```
+
+### Type Checking
+
+```bash
+mypy euno
+```
+
+## API Reference
+
+### Core Functions
+
+#### `hello_world(name: str = "World") -> str`
+
+A simple hello world function to demonstrate the SDK.
+
+**Parameters:**
+- `name` (str): The name to greet (default: "World")
+
+**Returns:**
+- str: A greeting message
+
+**Example:**
+```python
+from euno import hello_world
+
+message = hello_world("Euno")
+print(message)  # Output: Hello, Euno! Welcome to the Euno SDK!
+```
+
+#### `get_version() -> str`
+
+Get the current version of the Euno SDK.
+
+**Returns:**
+- str: The version string
+
+**Example:**
+```python
+from euno import get_version
+
+version = get_version()
+print(version)  # Output: 0.2.0
+```
+
+## CLI Commands
+
+### `euno hello-world`
+
+A simple hello world command to demonstrate the CLI.
+
+**Options:**
+- `--name, -n`: Name to greet (default: "World")
+
+**Example:**
+```bash
+euno hello-world --name Euno
+```
+
+### `euno version`
+
+Show the version of the Euno SDK.
+
+**Example:**
+```bash
+euno version
+```
+
+### `euno init`
+
+Initialize the Euno SDK with your API token.
+
+This command will prompt you for your Euno API token and validate it
+against the Euno backend. The token will be stored securely for future use.
+
+**Example:**
+```bash
+euno init
+```
+
+**Configuration:**
+- You can override the stored token by setting the `EUNO_TOKEN` environment variable
+- You can override the stored account ID by setting the `EUNO_ACCOUNT` environment variable
+
+### `euno status`
+
+Show the current configuration status.
+
+Displays information about the current configuration including
+backend URL, token status, and user information.
+
+**Example:**
+```bash
+euno status
+```
+
+### `euno logout`
+
+Clear the stored configuration and log out.
+
+This will remove the stored API token and require you to run
+'euno init' again to authenticate.
+
+**Example:**
+```bash
+euno logout
+```
+
+### `euno resources list`
+
+List resources from the Euno data model.
+
+**Options:**
+- `--eql, -e`: Euno Query Language expression
+- `--properties, -p`: Comma-separated list of properties (default: uri,type,name)
+- `--page`: Page number (default: 1)
+- `--page-size`: Number of resources per page (default: 50)
+- `--sorting, -s`: Sorting specification
+- `--relationships, -r`: Comma-separated list of relationships
+- `--format, -f`: Output format - json, csv, or pretty (default: json)
+
+**Examples:**
+```bash
+euno resources list
+euno resources list --eql "type='table'" --properties "uri,name" --format pretty
+euno resources list --relationships "parent,child" --page-size 20
+```
+
+### `euno metadata-tags list`
+
+List all metadata tags (custom properties) for the configured account.
+
+**Options:**
+- `--format, -f`: Output format - json, csv, or pretty (default: json)
+
+**Examples:**
+```bash
+euno metadata-tags list
+euno metadata-tags list --format pretty
+euno metadata-tags list --format csv
+```
+
+### `euno metadata-tags set-value`
+
+Set values for a metadata tag (custom property).
+
+**Arguments:**
+- `CP_ID`: The custom property ID
+- `VALUE_UPDATES`: JSON string containing the value updates
+
+**Options:**
+- `--format, -f`: Output format - json or pretty (default: json)
+
+**Examples:**
+```bash
+euno metadata-tags set-value 123 '[{"resource_uri": "table://schema.table", "value": "production"}]'
+euno metadata-tags set-value 456 '[{"resource_uri": "table://schema.table", "value": "production"}]' --format pretty
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for your changes
+5. Run the test suite
+6. Submit a pull request
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/euno-ai/euno-sdk.git
+cd euno-sdk
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Install the package in development mode
+pip install -e .
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage
+pytest tests/ -v --cov=euno --cov-report=html
+
+# Run specific test file
+pytest tests/test_euno.py -v
+```
+
+### Code Quality
+
+```bash
+# Format code
+make format
+
+# Run linting
+make lint
+
+# Type checking
+make type-check
+
+# Run all quality checks
+make lint && make type-check
+```
+
+## GitHub Actions
+
+This repository uses GitHub Actions for continuous integration:
+
+- **CI**: Runs tests on Python 3.8-3.12, linting, type checking, and builds
+- **Pre-commit**: Ensures code quality with pre-commit hooks
+- **Publish**: Automatically publishes to PyPI when a release is created
+
+See [.github/README.md](.github/README.md) for detailed workflow documentation.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
