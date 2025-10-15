@@ -1,0 +1,303 @@
+> """Download comics from gocomic."""
+  
+> from __future__ import annotations
+  
+> import atexit
+> import configparser
+> import datetime as dtm
+> from datetime import datetime
+> import fcntl
+> import os
+> from pathlib import Path
+> import pickle
+> import shutil
+> import stat
+> import sys
+> import time
+> from typing import IO, TYPE_CHECKING, ClassVar
+> from urllib import request
+  
+> from lxml.html import fromstring
+> from PIL import Image
+> from selenium import webdriver
+> from selenium.webdriver.common import action_chains
+> from selenium.webdriver.common.keys import Keys
+> from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
+> from selenium.webdriver.firefox.options import Options
+  
+> if TYPE_CHECKING:
+!     import lxml.html
+  
+> __date__ = "2024/07/13 22:31:49 hoel"
+> __author__ = "Berthold Höllmann"
+> __copyright__ = "Copyright © 2011-2017 by Berthold Höllmann"
+> __credits__ = ["Berthold Höllmann"]
+> __maintainer__ = "Berthold Höllmann"
+> __email__ = "berhoel@gmail.com"
+  
+> FILE_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
+> TOUCH_FMT = "%Y%m%d0300"
+  
+  
+> class SeleniumSingleton:
+>     """Access class for Selenium."""
+  
+>     __instance = None
+  
+>     def __init__(self) -> None:
+>         """Virtually private constructor."""
+!         self.driver = None
+!         if SeleniumSingleton.__instance is None:
+!             options = Options()
+!             options.add_argument("--headless")
+!             if os.name == "nt":
+!                 options.add_argument(
+!                     "--disable-gpu",
+!                 )  # Last I checked this was necessary.
+!                 options.add_argument("--headless")
+!             firefox_profile = FirefoxProfile()
+!             firefox_profile.set_preference(key="javascript.enabled", value=True)
+!             options.profile = firefox_profile
+!             self.driver = webdriver.Firefox(options=options)
+!             self.driver.get("http://www.gocomics.com/")
+!             if self.driver.current_url.startswith("https://login.microsoftonline.com/"):
+!                 self._ms_login()
+!             SeleniumSingleton.__instance = self
+!         else:
+!             msg = "This class is a singleton!"
+!             raise TypeError(msg)
+  
+>     def _ms_login(self) -> None:
+!         with (Path.home() / ".config" / "get_comics" / "login.cfg").open() as cfg_file:
+!             config = configparser.ConfigParser()
+!             config.read_file(cfg_file)
+!             section = config["https://login.microsoftonline.com"]
+!             time.sleep(3)
+!             action = action_chains.ActionChains(self.driver)
+!             action.send_keys(section["user"])
+!             action.send_keys(Keys.ENTER)
+!             action.perform()
+!             time.sleep(3)
+!             action = action_chains.ActionChains(self.driver)
+!             action.send_keys(section["pw"])
+!             action.send_keys(Keys.ENTER)
+!             action.perform()
+!             time.sleep(3)
+!             action.send_keys(Keys.ENTER)
+!             action.perform()
+  
+>     @staticmethod
+>     def get_instance() -> SeleniumSingleton:
+>         """Return singleton instance."""
+!         if SeleniumSingleton.__instance is None:
+!             return SeleniumSingleton()
+!         return SeleniumSingleton.__instance
+  
+  
+> class SaveState:
+>     """Save state information on already downloaded files and dates tried."""
+  
+>     def __init__(self) -> None:
+!         self.loaded: dict[str | None, str] = {}
+!         self.tried: dict[str, int] = {}
+!         self.downloaded = [0, 0, 0, 0]
+  
+  
+> def savestate(state: SaveState, statfile: IO[bytes]) -> None:
+>     """Save state dictionary."""
+!     pickle.dump(state, statfile, pickle.HIGHEST_PROTOCOL)
+!     fcntl.fcntl(statfile, fcntl.LOCK_UN)
+  
+  
+> def mk_dir_tree(path: Path) -> None:
+>     """Generate directory including missing upper directories."""
+!     if not path.is_dir():
+!         mode = (
+!             stat.S_ISGID
+!             | stat.S_IRWXU
+!             | stat.S_IRGRP
+!             | stat.S_IXGRP
+!             | stat.S_IROTH
+!             | stat.S_IXOTH
+!         )
+!         path.mkdir(mode=mode, parents=True)
+!         path.chmod(mode)
+  
+  
+> class GoComics:
+>     """Download comics from GoComics."""
+  
+>     start_year = -1
+>     start_month = -1
+>     start_day = -1
+  
+>     skip: ClassVar = {}
+  
+>     max_num = 100
+  
+>     gif_path_fmt = ""
+>     png_path_fmt = ""
+>     url_fmt = ""
+  
+>     statefile_name = Path()
+  
+>     def __init__(self) -> None:
+!         self.start_date = datetime(
+!             self.start_year,
+!             self.start_month,
+!             self.start_day,
+!             tzinfo=dtm.timezone.utc,
+!         )
+  
+!         self.delta = dtm.timedelta(days=1)
+  
+>     @staticmethod
+>     def _progres_cur_date(
+>         cur_year: int,
+>         cur_month: int,
+>         cur_date: datetime,
+>     ) -> tuple[int, int]:
+!         if cur_year != cur_date.year:
+!             if cur_year != 0:
+!                 sys.stdout.write("\r" + " " * 40)
+!             cur_year = cur_date.year
+!             sys.stdout.write(f"\rprocessing year: {cur_date:%Y}\n")
+!         if cur_month != cur_date.month:
+!             cur_month = cur_date.month
+!             sys.stdout.write("\r" + " " * 40)
+!             sys.stdout.write(f"\r{cur_date:%m} ")
+!         sys.stdout.flush()
+!         return cur_year, cur_month
+  
+>     def _open_statefile(self) -> tuple[SaveState, object]:
+!         if self.statefile_name.is_file():
+!             state = pickle.load(self.statefile_name.open("rb"))  # noqa:S301
+!             shutil.copy2(self.statefile_name, f"{self.statefile_name}_BAK")
+!         else:
+!             state = SaveState()
+!         statfile = self.statefile_name.open("wb")
+!         fcntl.fcntl(statfile, fcntl.LOCK_EX)
+!         atexit.register(savestate, state, statfile)
+!         state.downloaded = [0, 0, 0, 0]
+!         return state, statfile
+  
+>     def _get_img(
+>         self,
+>         cur_date: datetime,
+>         png_path: Path,
+>     ) -> tuple[lxml.html.HtmlElement] | None:
+!         url = f"{cur_date:{self.url_fmt}}"
+!         driver = SeleniumSingleton.get_instance().driver
+!         if isinstance(driver, webdriver.firefox.webdriver.WebDriver):
+!             driver.get(url)
+!             doc = fromstring(
+!                 driver.page_source,
+!             )
+!         else:
+!             raise TypeError
+  
+!         img = doc.xpath("//picture[@class='item-comic-image']/img")
+  
+!         if len(img) == 0:
+!             sys.stdout.write(f"***\nno download {png_path}\nURL: {url:s}\n")
+!             return None
+!         return img
+  
+>     def _postprocess_image(self, gif_path: Path, png_path: Path) -> None:
+!         Image.open(gif_path).save(png_path)
+  
+!         gif_path.unlink()
+!         png_path.chmod(FILE_MODE)
+  
+!         sys.stdout.write(f"\r                    \r{png_path}\n")
+  
+>     def _retrieve_image(self, data_norm: str, gif_path: Path) -> None:
+!         request.urlretrieve(  # noqa:S310
+!             url=data_norm,
+!             filename=gif_path,
+!         )
+  
+>     def __call__(self) -> None:  # noqa:PLR0915,C901
+>         """Control program flow."""
+!         state, statfile = self._open_statefile()
+  
+!         cur_date = datetime.now(tz=dtm.timezone.utc) + self.delta
+  
+!         count = self.max_num
+  
+!         cur_year = 0
+!         cur_month = 0
+  
+!         devidor = 7
+  
+!         while (cur_date := cur_date - self.delta) >= self.start_date:
+!             if cur_date in self.skip:
+!                 continue
+!             if count <= 0:
+!                 break
+!             cur_year, cur_month = self._progres_cur_date(cur_year, cur_month, cur_date)
+  
+!             png_path = Path(f"{cur_date:{self.png_path_fmt}}")
+!             pic_id = None
+!             if not png_path.is_file():
+!                 state.tried[f"{cur_date}"] = (
+!                     state.tried.get(f"{cur_date}", -1) + 1
+!                 ) % devidor
+!                 if state.tried[f"{cur_date}"] != 0:
+!                     sys.stdout.write("+")
+!                     state.downloaded[2] += 1
+!                     continue
+  
+!                 sys.stdout.flush()
+  
+!                 gif_path = Path(f"{cur_date:{self.gif_path_fmt}}")
+!                 if not gif_path.is_file():
+!                     data_norm = None
+!                     img = self._get_img(cur_date, png_path)
+!                     if img is None:
+!                         state.downloaded[3] += 1
+!                         continue
+  
+!                     data = img[0].get("src")
+!                     if data is None:
+!                         raise TypeError
+  
+!                     pic_id = data.split("/")[-1]
+  
+!                     if state.loaded.get(pic_id) is not None:
+!                         sys.stdout.write(".")
+!                         sys.stdout.flush()
+!                         sys.stdout.write(
+!                             f"\r{png_path} is same as of {state.loaded.get(pic_id)}\n",
+!                         )
+!                         state.downloaded[3] += 1
+!                         count -= 1
+!                         continue
+  
+!                     mk_dir_tree(png_path.parent)
+  
+!                     res = request.urlretrieve(url=data, filename=gif_path)  # noqa:S310
+!                     if res[1].get_content_type() == "text/html" and data != data_norm:
+!                         if not isinstance(data_norm, str):
+!                             raise TypeError
+!                         self._retrieve_image(data_norm, gif_path)
+  
+!                 self._postprocess_image(gif_path, png_path)
+  
+!                 state.loaded[pic_id] = f"{cur_date:%Y %m %d}"
+  
+!                 state.downloaded[0] += 1
+  
+!                 os.utime(f"{png_path}", (cur_date.timestamp(), cur_date.timestamp()))
+!             else:
+!                 state.downloaded[1] += 1
+!                 sys.stdout.write("*")
+  
+!             sys.stdout.flush()
+  
+!         sys.stdout.write(
+!             f"\ndownloaded {state.downloaded[0]:d} strips, "
+!             f"kept {state.downloaded[1]:d}, "
+!             f"skipped {state.downloaded[2]:d}, "
+!             f"failed {state.downloaded[3]:d}\n",
+!         )
