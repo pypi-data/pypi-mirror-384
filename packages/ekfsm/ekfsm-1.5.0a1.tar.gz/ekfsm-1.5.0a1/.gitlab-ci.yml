@@ -1,0 +1,219 @@
+include:
+  - project: templates/cicd
+    file: versioning.yml
+  - template: Jobs/Code-Quality.gitlab-ci.yml
+
+workflow:
+  name: $CI_COMMIT_MESSAGE
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_PIPELINE_SOURCE =~ /^(push|web)$/
+      when: always
+
+.default_rule_hotfix: &default_rule_hotfix
+  - if: $CI_COMMIT_BRANCH =~ /^hotfix(\/|-).*/
+    when: on_success
+
+default:
+  image:
+    name: $CI_REGISTRY/docker-container/nix-build:0.1.6 # Necessary due to if-not-present policy
+  tags:
+    - shell
+    - nix
+  interruptible: false
+
+variables:
+  CI_DEBUG_TRACE: $DEBUG # use value from gitlab project var
+  CI_SCRIPT_TRACE: $DEBUG
+  CI_GITVERSION_TRACE: $DEBUG
+  PACKAGE_REGISTRY_URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi
+
+stages:
+  - test
+  - 💻 release
+  - 🧱 build
+  - ⬆️ deploy
+
+coverage:
+  stage: test
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Coverage stage"
+    - direnv exec . generate-coverage
+  coverage: '/TOTAL\s+\d+\s+\d+\s+(\d+)%/'  # Extract the total test coverage percentage
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml  # Cobertura-compatible XML report
+      junit: report.xml  # JUnit-compatible XML report
+    paths:
+      - coverage.xml  # Ensure the XML report is uploaded as an artifact
+      - report.xml  # Ensure the JUnit report is uploaded as an artifact
+
+code_quality:
+  services: []       # Shut off Docker-in-Docker
+  tags:
+    - cq-wo-dind
+
+code_quality_html:
+  extends: code_quality
+  variables:
+    REPORT_FORMAT: html
+  artifacts:
+    paths: [gl-code-quality-report.html]
+
+lint:
+  stage: test
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Lint stage"
+    - direnv exec . lint
+
+typing:
+  stage: test
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Typing stage"
+    - direnv exec . typing
+
+release:
+  stage: 💻 release
+  image: registry.gitlab.com/gitlab-org/release-cli:v0.19.0
+  tags:
+    - shared
+  variables:
+    GIT_STRATEGY: none
+    GIT_SUBMODULE_STRATEGY: none
+  rules:
+    - *default_rule_hotfix
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "develop"
+      when: on_success
+  script:
+    - echo "Creating release ${GitVersion_SemVer} /w Asset debian packages..."
+    - echo "$CI_COMMIT_MESSAGE" > release-notes.md
+  release:
+    tag_name: "v${GitVersion_SemVer}"
+    description: release-notes.md
+    ref: "$CI_COMMIT_SHA"
+  needs:
+    - version
+    - coverage
+    - lint
+    - typing
+
+pkg:
+  stage: 🧱 build
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+    GIT_SUBMODULE_STRATEGY: recursive
+  before_script:
+    - echo "Starting build"
+    - direnv allow .
+  script:
+    - echo "Building package..."
+    - direnv exec . generate-package
+  needs:
+    - job: release
+      optional: true
+    - job: coverage
+    - job: lint
+    - job: typing
+  artifacts:
+    untracked: false
+    when: on_success
+    expire_in: "30 days"
+    paths:
+      - dist/
+
+build-html-docs:
+  stage: 🧱 build
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Building HTML documentation..."
+    - direnv exec . doc-html
+  artifacts:
+    when: on_success
+    paths:
+      - docs/build/html
+
+build-man-pages:
+  stage: 🧱 build
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Building man page documentation..."
+    - direnv exec . doc-man-pages
+  artifacts:
+    when: on_success
+    paths:
+      - docs/build/man/ekfsm.1
+
+build-pdf-doc:
+  stage: 🧱 build
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Building PDF documentation..."
+    - direnv exec . doc-pdf
+  artifacts:
+    when: on_success
+    paths:
+      - docs/build/latex/ekfsm.pdf
+
+build-doc-coverage:
+  stage: 🧱 build
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Compute documentation coverage..."
+    - direnv exec . doc-coverage
+  coverage: '/TOTAL\s+\|\s+(\d+\.\d+%)/'  # Extract the total doc coverage percentage
+  artifacts:
+    when: on_success
+    paths:
+      - docs/build/coverage
+
+deploy-gitlab-pypi:
+  stage: ⬆️ deploy
+  image: python:3.12
+  tags:
+    - shared
+  variables:
+    GIT_STRATEGY: none
+    GIT_SUBMODULE_STRATEGY: recursive
+  rules:
+    - *default_rule_hotfix
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "develop"
+      when: on_success
+  before_script:
+    - echo "Install twine..."
+    - python -m pip install twine
+  script:
+    - echo "Deploying version ${GitVersion_SemVer} to gitlab pypi repository..."
+    - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python -m twine upload --repository-url ${PACKAGE_REGISTRY_URL} dist/*
+  needs:
+    - pkg
+
+deploy-pypi:
+  stage: ⬆️ deploy
+  variables:
+    GIT_STRATEGY: clone
+    GIT_SUBMODULE_STRATEGY: recursive
+  rules:
+    - *default_rule_hotfix
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_BRANCH == "develop"
+      when: on_success
+  before_script:
+    - direnv allow .
+  script:
+    - echo "Deploying version ${GitVersion_SemVer} to pypi repository..."
+    - direnv exec . publish-package
+  needs:
+    - pkg
