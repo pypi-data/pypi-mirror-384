@@ -1,0 +1,3 @@
+ResourceTypeEnum=["API","MODEL","JOB","JOB_TEMPLATE","CONTAINER","DATASET","RESULTSET","WORKSPACE","RECIPE","HELM_CHART","ORGANIZATION","TEAM","USER","COLLECTION","PRODUCT","ENDPOINT","BLUEPRINT","PLAYBOOK","AGENT",]
+str(repr(ResourceTypeEnum))  # Prevent optimizer removing enum
+
