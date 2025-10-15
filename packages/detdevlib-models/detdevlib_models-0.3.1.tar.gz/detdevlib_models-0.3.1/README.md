@@ -1,0 +1,1 @@
+Simple package to quickly set up the FastAPI app for `drf_backend_detmodels`.
