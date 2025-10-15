@@ -1,0 +1,81 @@
+services:
+  gama_ui:
+    build:
+      context: ./projects/gama_ui
+      secrets:
+        - API_TOKEN_GITHUB
+    volumes:
+      - ./projects/gama_ui/.eslintrc.json:/app/.eslintrc.json
+      - ./projects/gama_ui/.nvmrc:/app/.nvmrc
+      - ./projects/gama_ui/.prettierrc.json:/app/.prettierrc.json
+      - ./projects/gama_ui/cypress:/app/cypress
+      - ./projects/gama_ui/cypress.json:/app/cypress.json
+      - ./projects/gama_ui/index.html:/app/index.html
+      - ./projects/gama_ui/jest.config.ts:/app/jest.config.ts
+      - ./projects/gama_ui/package.json:/app/package.json
+      - ./projects/gama_ui/public:/app/public
+      - ./projects/gama_ui/src:/app/src
+      - ./projects/gama_ui/tsconfig.json:/app/tsconfig.json
+      - ./projects/gama_ui/typings:/app/typings
+      - ./projects/gama_ui/vite.config.ts:/app/vite.config.ts
+      - ./projects/gama_ui/package-lock.json:/app/package-lock.json
+      - ./projects/gama_ui/env-server.js:/app/env-server.js
+    command: npm run dev
+
+  gama_vessel_base:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_vessel_base
+    image: ghcr.io/greenroom-robotics/gama_vessel_base:${GAMA_VERSION:-latest}
+    build:
+      dockerfile: projects/gama_vessel/Dockerfile
+      secrets:
+        - apt_conf
+        - API_TOKEN_GITHUB
+
+  gama_vessel:
+    depends_on:
+      - gama_vessel_base
+    build:
+      dockerfile: projects/gama_vessel_variants/Dockerfile
+      secrets:
+        - apt_conf
+        - API_TOKEN_GITHUB
+    volumes:
+      - ./.secrets/apt.conf:/etc/apt/auth.conf.d/greenroom-robotics.conf
+      - ./projects/gama_ui/src/generated/ros:/home/ros/gama_vessel/generated/ros
+      - ./projects/gama_vessel/src/gama_bringup:/home/ros/gama_vessel/src/gama_bringup
+      - ./projects/gama_vessel/src/gama_packages:/home/ros/gama_vessel/src/gama_packages
+      - ./projects/gama_vessel_variants:/home/ros/gama_vessel/src/
+      - ./libs/gama_config:/home/ros/gama_vessel/src/gama_config
+      - ./libs/gama_interfaces:/home/ros/gama_vessel/src/gama_interfaces
+      - ./projects/gama_vessel/ros-ts-generator-config.json:/home/ros/gama_vessel/ros-ts-generator-config.json
+
+  gama_docs:
+    build:
+      context: ./
+      dockerfile: projects/gama_docs/Dockerfile
+      secrets:
+        - API_TOKEN_GITHUB
+    volumes:
+      - ./projects/gama_docs/src:/app/src
+      - ./projects/gama_docs/static:/app/static
+      - ./projects/gama_docs/package.json:/app/package.json
+      - ./projects/gama_docs/package-lock.json:/app/package-lock.json
+      - ./projects/gama_docs/sidebars.js:/app/sidebars.js
+      - ./projects/gama_docs/docusaurus.config.js:/app/docusaurus.config.js
+      - ./projects/gama_docs/tsconfig.json:/app/tsconfig.json
+      - ./docs:/app/docs
+    command: npm run start
+
+  gama_greenstream:
+    build:
+      context: .
+      dockerfile: projects/gama_greenstream/Dockerfile
+
+networks:
+  vessel:
+
+secrets:
+  API_TOKEN_GITHUB:
+    file: ./.secrets/API_TOKEN_GITHUB
+  apt_conf:
+    file: ./.secrets/apt.conf

@@ -1,0 +1,107 @@
+services:
+  gama_ui:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_ui
+    image: ghcr.io/greenroom-robotics/gama_ui:${GAMA_VERSION:-latest}
+    ports:
+      - "${GAMA_UI_PORT:-3000}:3000"
+      - "${GAMA_ENV_SERVER_PORT:-3100}:${GAMA_ENV_SERVER_PORT:-3100}"
+    environment:
+      GAMA_VESSEL_HOST: ${GAMA_VESSEL_HOST:-}
+      GAMA_VARIANT: ${GAMA_VARIANT:-whiskey_bravo}
+      GAMA_NAMESPACE_VESSEL: ${GAMA_NAMESPACE_VESSEL:-vessel_1}
+      GAMA_NAMESPACE_GROUNDSTATION: ${GAMA_NAMESPACE_GROUNDSTATION:-vessel_1}
+      GAMA_DISPLAY_NAME: ${GAMA_DISPLAY_NAME:-GAMA Vessel}
+      GAMA_UI_HOST: vessel
+      GAMA_UI_PORT: ${GAMA_UI_PORT:-3000}
+      GAMA_CHART_TILER_PORT: ${GAMA_CHART_TILER_PORT:-3001}
+      GAMA_CHART_API_PORT: ${GAMA_CHART_API_PORT:-3002}
+      GAMA_DOCS_PORT: ${GAMA_DOCS_PORT:-3003}
+      GAMA_MISSION_PLAN_RUNNER_PORT: ${GAMA_MISSION_PLAN_RUNNER_PORT:-3004}
+      GAMA_GREENSTREAM_SIGNALLING_PORT: ${GAMA_GREENSTREAM_SIGNALLING_PORT:-3005}
+      GAMA_GREENSTREAM_UI_PORT: ${GAMA_GREENSTREAM_UI_PORT:-3006}
+      GAMA_TAPEDECK_PORT: ${GAMA_TAPEDECK_PORT:-3007}
+      GAMA_DATA_BRIDGE_PORT: ${GAMA_DATA_BRIDGE_PORT:-3010}
+      GAMA_GS_DATA_BRIDGE_PORT: ${GAMA_GS_DATA_BRIDGE_PORT:-3011}
+      GAMA_ENV_SERVER_PORT: ${GAMA_ENV_SERVER_PORT:-3100}
+    networks:
+      - vessel
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+    volumes:
+      - ${GAMA_RECORDINGS_DIR:-/tmp}:/app/public/recordings
+
+  gama_chart_tiler:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_chart_tiler
+    image: ghcr.io/greenroom-robotics/gr_chart_tiler:1.1.0
+    ports:
+      - "${GAMA_CHART_TILER_PORT:-3001}:8080"
+    networks:
+      - vessel
+    volumes:
+      - ${GAMA_CHARTS_DIR:-/tmp}/styles:/app/data/styles
+      - ${GAMA_CHARTS_DIR:-/tmp}/tiles:/app/data/tiles
+      - ${GAMA_CHARTS_DIR:-/tmp}/config.json:/app/data/config.json
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+
+  gama_chart_api:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_chart_api
+    image: ghcr.io/greenroom-robotics/gr_chart_api:1.1.2
+    volumes:
+      - ${GAMA_CHARTS_DIR:-/tmp}/styles:/app/data/styles
+      - ${GAMA_CHARTS_DIR:-/tmp}/tiles:/app/data/tiles
+      - ${GAMA_CHARTS_DIR:-/tmp}/config.json:/app/data/config.json
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${GAMA_CHART_API_PORT:-3002}:3000"
+    networks:
+      - vessel
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+
+  gama_vessel:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_vessel
+    environment:
+      - DISPLAY
+      - ROS_DOMAIN_ID
+      - RMW_IMPLEMENTATION
+      - GAMA_VESSEL_CONFIG
+      - GAMA_CONFIG_DIR
+    ipc: host
+    volumes:
+      - /dev:/dev
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ~/.config/greenroom:/home/ros/.config/greenroom
+      - ${GAMA_LOG_DIR:-/tmp}:/home/ros/.ros/log
+      - ${GAMA_RECORDING_DIR:-/tmp}:/home/ros/rosbags
+    privileged: true
+    command: ${GAMA_VESSEL_COMMAND:-tail -f /dev/null}
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+
+  gama_greenstream:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_greenstream
+    image: ghcr.io/greenroom-robotics/gama_greenstream:${GAMA_VERSION:-latest}
+    ipc: host
+    volumes:
+      - /dev:/dev
+      - ~/.config/greenroom:/home/ros/.config/greenroom
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID
+      - RMW_IMPLEMENTATION
+      - GAMA_VESSEL_CONFIG
+      - GAMA_CONFIG_DIR
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+
+  gama_docs:
+    container_name: ${GAMA_CONTAINER_PREFIX}gama_docs
+    image: ghcr.io/greenroom-robotics/gama_docs:${GAMA_VERSION:-latest}
+    ports:
+      - "${GAMA_DOCS_PORT:-3003}:3000"
+    stop_signal: SIGINT
+    stop_grace_period: 15s
+
+networks:
+  vessel:
