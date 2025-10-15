@@ -1,0 +1,109 @@
+Metadata-Version: 2.4
+Name: authflow
+Version: 0.1.2
+Summary: Highly configurable authentication and authorization package wrapping Keycloak
+Author: AuthFlow Contributors
+License: MIT
+Project-URL: Homepage, https://github.com/authflow/authflow-stack
+Project-URL: Documentation, https://authflow.readthedocs.io
+Project-URL: Repository, https://github.com/authflow/authflow-stack
+Project-URL: Issues, https://github.com/authflow/authflow-stack/issues
+Keywords: authentication,authorization,keycloak,fastapi,rbac,multi-tenant
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Framework :: FastAPI
+Classifier: Topic :: Security
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi==0.115.9
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: pydantic[email]>=2.0.0
+Requires-Dist: pydantic-settings>=2.0.0
+Requires-Dist: python-keycloak>=3.9.0
+Requires-Dist: pyjwt[crypto]>=2.8.0
+Requires-Dist: redis>=5.0.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: pyyaml>=6.0.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: uvicorn[standard]>=0.27.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: black>=24.0.0; extra == "dev"
+Requires-Dist: ruff>=0.2.0; extra == "dev"
+Requires-Dist: mypy>=1.8.0; extra == "dev"
+Requires-Dist: pre-commit>=3.6.0; extra == "dev"
+Provides-Extra: build
+Requires-Dist: build>=1.0.0; extra == "build"
+Requires-Dist: twine>=4.0.0; extra == "build"
+
+# authflow - Backend Package
+
+Python/FastAPI backend for authflow-stack.
+
+## Installation
+
+```bash
+pip install authflow
+```
+
+## Quick Start
+
+```python
+from fastapi import FastAPI, Depends
+from authflow import AuthFlow, setup_auth
+from authflow.dependencies import get_current_user, require_permission
+
+app = FastAPI()
+
+# Initialize from config file
+auth = AuthFlow.from_config("authflow.config.yaml")
+setup_auth(app, auth, prefix="/api/v1/auth")
+
+# Protected route
+@app.get("/api/data")
+async def get_data(user = Depends(get_current_user)):
+    return {"message": f"Hello {user.username}"}
+
+# Permission-protected route
+@app.post("/api/contracts")
+@require_permission("contracts:write")
+async def create_contract(user = Depends(get_current_user)):
+    return {"status": "created"}
+```
+
+## Configuration
+
+Create `authflow.config.yaml`:
+
+```yaml
+provider:
+  type: keycloak
+  keycloak:
+    url: https://keycloak.example.com
+    realm: my-realm
+    client_id: authflow-client
+    client_secret: ${KEYCLOAK_SECRET}
+
+features:
+  organizations: true
+  teams: true
+  email_verification: true
+
+rbac:
+  model: role-based
+  scopes: [global, organization, team]
+```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
