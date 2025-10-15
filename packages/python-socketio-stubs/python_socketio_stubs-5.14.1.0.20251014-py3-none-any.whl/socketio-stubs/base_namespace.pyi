@@ -1,0 +1,23 @@
+from typing import Any, Generic, Literal
+
+from socketio.base_client import BaseClient
+from socketio.base_server import BaseServer
+from typing_extensions import TypeVar
+
+_IsAsyncio = TypeVar("_IsAsyncio", bound=bool, default=Literal[False])
+
+class BaseNamespace(Generic[_IsAsyncio]):
+    namespace: str
+    def __init__(self, namespace: str | None = ...) -> None: ...
+    def is_asyncio_based(self) -> _IsAsyncio: ...
+
+class BaseServerNamespace(BaseNamespace[_IsAsyncio], Generic[_IsAsyncio]):
+    server: BaseServer[_IsAsyncio, Any] | None
+    def __init__(self, namespace: str | None = ...) -> None: ...
+    def rooms(self, sid: str, namespace: str | None = ...) -> list[str]: ...
+    def _set_server(self, server: BaseServer[_IsAsyncio, Any]) -> None: ...
+
+class BaseClientNamespace(BaseNamespace[_IsAsyncio], Generic[_IsAsyncio]):
+    client: BaseClient[_IsAsyncio, Any] | None
+    def __init__(self, namespace: str | None = ...) -> None: ...
+    def _set_client(self, client: BaseClient[_IsAsyncio, Any]) -> None: ...
