@@ -1,0 +1,47 @@
+name: "Basic Data Processing Workflow"
+description: "A simple workflow demonstrating basic data filtering and aggregation"
+
+# Workflow-level variables that can be overridden via CLI
+variables:
+  input_file: "data/sales.parquet"
+  output_dir: "results"
+  min_amount: 100
+
+steps:
+  # Step 1: Read the input data
+  - name: "load_sales_data"
+    type: "read"
+    input: "${input_file}"
+    output: "sales"
+    # Optional: specify columns to read
+    # columns: ["date", "product", "amount", "region"]
+
+  # Step 2: Filter for high-value sales
+  - name: "filter_high_value"
+    type: "filter"
+    input: "sales"
+    query: "amount >= ${min_amount}"
+    output: "high_value_sales"
+
+  # Step 3: Select relevant columns
+  - name: "select_key_columns"
+    type: "select"
+    input: "high_value_sales"
+    columns: ["date", "product", "amount", "region"]
+    output: "clean_sales"
+
+  # Step 4: Group by region and calculate statistics
+  - name: "regional_summary"
+    type: "groupby"
+    input: "clean_sales"
+    by: ["region"]
+    agg:
+      amount: ["sum", "mean", "count"]
+      product: "nunique"
+    output: "region_stats"
+
+  # Step 5: Save the results
+  - name: "save_summary"
+    type: "save"
+    input: "region_stats"
+    output: "${output_dir}/regional_sales_summary.parquet"
