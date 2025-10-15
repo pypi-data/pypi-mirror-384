@@ -1,0 +1,128 @@
+Metadata-Version: 2.4
+Name: patchfm
+Version: 1.1.5
+Summary: a Foundation Model for Univariate Time Series Forecasting
+Author-email: Samy-Melwan Vilhes <samy-melwan.vilhes@insa-rouen.fr>
+License: MIT License
+        
+        Copyright (c) 2025 Samy-Melwan Vilhes
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+Project-URL: Repository, https://github.com/vilhess/PatchFM
+Project-URL: Issues, https://github.com/vilhess/PatchFM/issues
+Keywords: Transformer,LLM,Time Series,Zero-shot,Deep Learning
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.5.0
+Requires-Dist: einops>=0.8.1
+Requires-Dist: huggingface-hub>=0.35.1
+Requires-Dist: rotary-embedding-torch>=0.8.9
+Requires-Dist: numpy>=1.26.0
+Requires-Dist: safetensors==0.5.3
+Dynamic: license-file
+
+# A tutorial on how to build a Foundation Model for Univariate Time Series Forecasting
+
+[Huggingface Model Card](https://huggingface.co/vilhess/PatchFM)
+
+A transformer-based forecasting model for univariate time series. The approach mirrors Large Language Model (LLM) practices (next-token → next-patch) while remaining lightweight compared to a classic LLM and practical.
+
+## Highlights
+- Next-patch prediction objective (autoregressive, causal)
+- Patch-based representation of time series (tokens ↔ patches)
+- Causal masking self-attention with RoPE (relative positions)
+- RevIN (Reversible Instance Normalization) with causal statistics
+- SwiGLU feed-forward networks
+- Multi-quantile outputs (median + uncertainty bands)
+- Efficient rollout with KV caching
+
+## Installation
+```bash
+pip install patchfm
+```
+
+## Quick Start
+
+```python 
+import torch
+from patchfm import PatchFMConfig, Forecaster
+
+# --- Instantiate model ---
+config = PatchFMConfig()
+model = Forecaster(config)
+
+# --- Inference ---
+forecast_horizon = 64
+seq = torch.randn(1, 1024)  # (batch, time)
+pred_median, pred_quantiles = model(seq, forecast_horizon=forecast_horizon, quantiles=[0.1, 0.5, 0.9]) # (batch, forecast_horizon), (batch, forecast_horizon, quantiles)
+```
+
+We provide an extended quick start example in [notebooks/tutorial.ipynb](./notebooks/tutorial.ipynb).
+If you dont have suitable hardware you can run the the extended quick start example example also in Google Colab:
+
+<a target="_blank" href="https://colab.research.google.com/drive/17sdf-7luCkv5TaeLj3Z6kIaTDkwkz3VR?usp=share_link">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open Quick Start In Colab"/> 
+</a>
+
+## Method (TL;DR)
+- Patching: Split a context signal of length $w$ into $P_{num} = w / P_{len}$ patches of length $P_{len}$.
+- RevIN: Normalize patches using causal running mean/variance over past patches, and denormalize outputs to the original scale.
+- Architecture: Input residual MLP → stacked Transformer blocks (MHA + SwiGLU FFN, pre-norm, residual) → $|\mathcal{Q}|$ output heads mapping back to patch space.
+- Positional encoding: Rotary Position Embeddings (RoPE) applied to queries/keys.
+- Training: Multi-quantile (pinball) loss across positions, elements, and quantiles $\mathcal{Q}$.
+- Inference: Predict next patch; roll out autoregressively with KV caching for long horizons.
+
+## Problem Formulation
+Given context patches $x_{p_1}, \ldots, x_{p_n}$, predict the next patch $x_{p_{i+1}}$ for each position $i$ using only past patches (causality). The model outputs quantiles $\{\hat{x}_{p_{i+1}}^{(q)}: q \in \mathcal{Q}\}$ with median (q=0.5) as the point forecast.
+
+## Loss: Multi-Quantile (Pinball)
+For residual $u = x - \hat{x}^{(q)}$:
+$$\rho_q(u) = \begin{cases} q\,u, & u \ge 0,\\ (q-1)\,u, & u < 0. \end{cases}$$
+Aggregate over positions, patch elements, and quantiles.
+
+## Architecture
+- Input MLP: $\mathbb{R}^{P_{len}} \to \mathbb{R}^{dim}$ residual 2-layer MLP (ReLU)
+- Multi-Head Attention: causal mask, RoPE; queries/keys/values per head
+- FFN: SwiGLU (SiLU-gated), pre-norm + residual
+- Output heads: |Q| linear maps $\mathbb{R}^{dim} \to \mathbb{R}^{P_{len}}$ (one per quantile)
+
+### Model Details
+- Patch size: 32
+- Max context: 32 patches (1024 steps)
+- Forecast horizon: 32 steps per forward pass
+- Quantiles $\mathcal{Q}$: {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}
+- Layers: 6
+- Attention heads: 64 (head dim 32)
+- Model dim: 2048
+- Parameters: ~300M
+
+## Inference
+- Single step: predict next patch ($P_{len}$ values)
+- Long-horizon: append prediction to context and repeat (optionally drop oldest patch to keep window fixed)
+- KV caching: reuse cached keys/values for past patches; compute new Q/K/V only for the appended patch
+
+## Acknowledgements
+We thank the authors of the following repositories for inspiration and code snippets:
+- [TiRex](https://github.com/NX-AI/tirex)
+
+## Citation
+If you use this work, please cite the paper ...
