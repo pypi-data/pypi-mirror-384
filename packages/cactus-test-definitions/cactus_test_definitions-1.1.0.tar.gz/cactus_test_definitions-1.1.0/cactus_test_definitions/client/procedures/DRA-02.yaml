@@ -1,0 +1,64 @@
+Description: Disconnect Instruction
+Category: Demand Response
+Classes:
+  - DR-L
+  - DR-G
+
+TargetVersions:
+  - v1.2
+  - v1.3-beta/storage
+
+Criteria:
+  checks:
+    - type: all-steps-complete
+      parameters: {}
+
+Preconditions:
+  checks:
+    - type: end-device-contents
+      parameters: {}
+    - type: der-settings-contents
+      parameters: {}
+  instructions:
+    - The controlled device is connected to the grid and consuming/generating power of at least 50% of its nameplate rating
+      
+Steps:
+
+  # (a)
+  GET-DERC:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now)
+          duration_seconds: 60
+          opModConnect: false
+      - type: enable-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC
+
+  # (b)
+  PUT-DERSTATUS:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/ders
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-status-contents
+      parameters:
+        alarmStatus: 0
+        operationalModeStatus: 100
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS

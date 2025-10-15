@@ -1,0 +1,327 @@
+Description: Load operational instructions
+Category: Demand Response
+Classes:
+  - DR-L
+
+TargetVersions:
+  - v1.2
+  - v1.3-beta/storage
+
+Preconditions:
+  checks:
+    - type: end-device-contents
+      parameters: {}
+    - type: der-settings-contents
+      parameters: {}
+  actions:
+    - type: set-comms-rate
+      parameters:
+        der_list_poll_seconds: 60
+        derp_list_poll_seconds: 60
+  instructions:
+    - The controlled device should be connected to the grid and consuming 90% (+/- 5%) of its nameplate rating maximum.
+
+Criteria:
+  checks:
+    - type: all-steps-complete
+      parameters: {}
+    
+Steps:
+
+  # (a, b)
+  GET-DERC-1:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now + '60 seconds')
+          duration_seconds: 60
+          opModFixedW: -75
+      - type: enable-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-1
+            - PUT-DERSETTINGS-1
+            - WAIT-DERC-1
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-1
+
+  # (c)
+  PUT-DERSTATUS-1:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/ders
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-status-contents
+      parameters:
+        alarmStatus: 0
+        operationalModeStatus: 103
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-1
+
+  # (c)
+  PUT-DERSETTINGS-1:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/derg
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-settings-contents
+      parameters:
+        modesEnabled: 80 # bit 7
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSETTINGS-1
+
+
+  # (d) After the end of the previous control...
+  WAIT-DERC-1:
+    event:
+      type: wait
+      parameters:
+        duration_seconds: 120 # Wait for DERControls to fully complete
+    actions:
+      - type: enable-steps
+        parameters:
+          steps:
+            - GET-DERC-2
+      - type: remove-steps
+        parameters:
+          steps:
+            - WAIT-DERC-1
+
+  # (d) ... create a new DERControl
+  GET-DERC-2:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now + '60 seconds')
+          duration_seconds: 60
+          opModFixedW: -50
+      - type: enable-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-2
+            - PUT-DERSETTINGS-2
+            - WAIT-DERC-2
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-2
+
+
+  # (e, f)
+  PUT-DERSTATUS-2:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/ders
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-status-contents
+      parameters:
+        alarmStatus: 0
+        operationalModeStatus: 102
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-2
+
+  # (e, f)
+  PUT-DERSETTINGS-2:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/derg
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-settings-contents
+      parameters:
+        modesEnabled: 80 # bit 7
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSETTINGS-2
+
+  # (g) After the end of the previous control...
+  WAIT-DERC-2:
+    event:
+      type: wait
+      parameters:
+        duration_seconds: 120 # Wait for DERControls to fully complete
+    actions:
+      - type: enable-steps
+        parameters:
+          steps:
+            - GET-DERC-3
+      - type: remove-steps
+        parameters:
+          steps:
+            - WAIT-DERC-2
+
+
+  # (g) ... create a new DERControl
+  GET-DERC-3:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now + '60 seconds')
+          duration_seconds: 60
+          opModFixedW: -0.01
+      - type: enable-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-3
+            - PUT-DERSETTINGS-3
+            - WAIT-DERC-3
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-3
+
+  # (h, i)
+  PUT-DERSTATUS-3:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/ders
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-status-contents
+      parameters:
+        alarmStatus: 0
+        operationalModeStatus: 101
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-3
+
+  # (h, i)
+  PUT-DERSETTINGS-3:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/derg
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-settings-contents
+      parameters:
+        modesEnabled: 80 # bit 7
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSETTINGS-3
+
+  # (j) After the end of the previous control...
+  WAIT-DERC-3:
+    event:
+      type: wait
+      parameters:
+        duration_seconds: 120 # Wait for DERControls to fully complete
+    actions:
+      - type: enable-steps
+        parameters:
+          steps:
+            - GET-DERC-4
+      - type: remove-steps
+        parameters:
+          steps:
+            - WAIT-DERC-3
+
+  # (j) ... create a new DERControl
+  GET-DERC-4:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now + '60 seconds')
+          duration_seconds: 60
+          opModFixedW: -100
+      - type: enable-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-4
+            - PUT-DERSETTINGS-4
+            - WAIT-DERC-4
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-4
+
+  # (k, l)
+  PUT-DERSTATUS-4:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/ders
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-status-contents
+      parameters:
+        alarmStatus: 0
+        operationalModeStatus: 104
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSTATUS-4
+
+  # (k, l)
+  PUT-DERSETTINGS-4:
+    event:
+      type: PUT-request-received
+      parameters:
+        endpoint: /edev/1/der/1/derg
+        serve_request_first: true # Run this AFTER server receives the request
+    checks:
+      type: der-settings-contents
+      parameters:
+        modesEnabled: 80 # bit 7
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - PUT-DERSETTINGS-4
+
+  # Wait for the controls to finish
+  WAIT-DERC-4:
+    event:
+      type: wait
+      parameters:
+        duration_seconds: 120 # Wait for DERControls to fully complete
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - WAIT-DERC-4
+      - type: finish-test
+        parameters: {}
+
