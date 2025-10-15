@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{QUIZ_TITLE}}</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f5;
+            --container-bg: white;
+            --text-color: #333;
+            --border-color: #ddd;
+            --option-bg: white;
+            --option-border: #ccc;
+            --option-hover: #e8f4f8;
+            --option-selected: #e3f2fd;
+            --option-selected-border: #2196f3;
+            --question-bg: #fafafa;
+            --current-question-bg: #f8f9fa;
+            --stats-bg: #e7f3ff;
+            --progress-bg: #f0f0f0;
+            --shadow: rgba(0,0,0,0.1);
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --container-bg: #2d2d2d;
+            --text-color: #e0e0e0;
+            --border-color: #555;
+            --option-bg: #3a3a3a;
+            --option-border: #666;
+            --option-hover: #404040;
+            --option-selected: #1a3a52;
+            --option-selected-border: #2196f3;
+            --question-bg: #333;
+            --current-question-bg: #2a2a2a;
+            --stats-bg: #1e3a5f;
+            --progress-bg: #444;
+            --shadow: rgba(0,0,0,0.3);
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .container {
+            background: var(--container-bg);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px var(--shadow);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+        }
+        .top-right-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .theme-toggle {
+            background: var(--option-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            padding: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--text-color);
+            transition: all 0.3s ease;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .theme-toggle:hover {
+            background: var(--option-hover);
+        }
+        .question {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            background: var(--question-bg);
+            transition: all 0.3s ease;
+        }
+        .options {
+            margin: 10px 0;
+        }
+        .option {
+            margin: 5px 0;
+            padding: 10px;
+            background: var(--option-bg);
+            border: 1px solid var(--option-border);
+            border-radius: 3px;
+            cursor: pointer;
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+        .option:hover {
+            background: var(--option-hover);
+        }
+        .option.selected {
+            background: var(--option-selected);
+            border-color: var(--option-selected-border);
+        }
+
+        .option.feedback-correct {
+            background: #ffffff !important;
+            border-color: #2d731c !important;
+            border-width: 3px !important;
+            color: #155724 !important;
+            position: relative;
+        }
+
+        .option.feedback-correct::after {
+            content: '✓ Правильна відповідь';
+            position: absolute;
+            top: -25px;
+            right: 0;
+            background: #2d731c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .option.feedback-incorrect {
+            background: #f8d7da !important;
+            border-color: #dc3545 !important;
+            border-width: 3px !important;
+            color: #721c24 !important;
+            position: relative;
+        }
+
+        .option.feedback-incorrect::after {
+            content: '✗ Ваша відповідь';
+            position: absolute;
+            top: -25px;
+            right: 0;
+            background: #dc3545;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .option.feedback-missed {
+            background: #e3f2fd !important;
+            border-color: #1976d2 !important;
+            border-width: 3px !important;
+            border-style: dashed !important;
+            color: #0d47a1 !important;
+            position: relative;
+        }
+
+        .option.feedback-missed::after {
+            content: '✓ Теж правильна відповідь';
+            position: absolute;
+            top: -25px;
+            right: 0;
+            background: #1976d2;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .option.disabled {
+            cursor: not-allowed !important;
+            opacity: 0.6 !important;
+            pointer-events: none !important;
+        }
+
+        [data-theme="dark"] .option.feedback-correct {
+            background: #2d5a2d !important;
+            border-color: #4caf50 !important;
+            color: #a5d6a7 !important;
+        }
+
+        [data-theme="dark"] .option.feedback-correct.disabled {
+            background: #2d5a2d !important;
+            border-color: #4caf50 !important;
+            color: #a5d6a7 !important;
+            opacity: 1 !important;
+        }
+
+        [data-theme="dark"] .option.feedback-incorrect {
+            background: #c20909 !important;
+            border-color: #f44336 !important;
+            color: #ef9a9a !important;
+        }
+
+        [data-theme="dark"] .option.feedback-missed {
+            background: #1a237e !important;
+            border-color: #3f51b5 !important;
+            color: #9fa8da !important;
+        }
+        .question-image {
+            max-width: 100%;
+            height: auto;
+            margin: 15px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 8px var(--shadow);
+            display: block;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .question-image:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+        .option-image {
+            max-width: 300px;
+            height: auto;
+            margin: 5px 0;
+            border-radius: 3px;
+            box-shadow: 0 1px 4px var(--shadow);
+            display: block;
+        }
+        .option-content {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .button-container {
+            position: relative;
+            margin: 20px 0;
+            height: 50px;
+        }
+        #submit-answer-btn {
+            position: absolute;
+            left: 0;
+        }
+        #continue-btn {
+            position: absolute;
+            right: 0;
+        }
+        .hidden {
+            display: none;
+        }
+        .stats {
+            background: var(--stats-bg);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            transition: background-color 0.3s ease;
+        }
+        .correct {
+            color: #28a745;
+        }
+        .incorrect {
+            color: #dc3545;
+        }
+        .progress {
+            width: 100%;
+            background: var(--progress-bg);
+            border-radius: 10px;
+            margin: 20px 0;
+            position: relative;
+            height: 30px;
+            transition: background-color 0.3s ease;
+        }
+        #progress-fill {
+            height: 100%;
+            background: #007bff;
+            border-radius: 10px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        #progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--text-color);
+            font-weight: bold;
+        }
+        .current-question {
+            background: var(--current-question-bg);
+            padding: 30px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px solid #007bff;
+            transition: background-color 0.3s ease;
+        }
+        #loading {
+            text-align: center;
+            padding: 40px;
+        }
+        #loading p {
+            color: var(--text-color);
+            font-style: italic;
+        }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .results-table th {
+            background-color: var(--question-bg);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+        .results-table td {
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            vertical-align: top;
+            color: var(--text-color);
+        }
+        .results-table tr:nth-child(even) {
+            background-color: var(--question-bg);
+        }
+        .results-table tr:hover {
+            background-color: var(--option-hover);
+        }
+
+        /* Mobile responsive table */
+        @media screen and (max-width: 768px) {
+            .results-table {
+                font-size: 12px;
+                overflow-x: auto;
+                display: block;
+                white-space: nowrap;
+            }
+
+            /* Mobile responsive input */
+            #username {
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            /* Mobile responsive registration fields */
+            .registration-field {
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            /* Mobile responsive waiting approval fields */
+            .waiting-field, #waiting-username {
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            /* Make registration tables responsive on mobile */
+            #registration table, #waiting-registration-fields table {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            #registration table td, #waiting-registration-fields table td {
+                display: block !important;
+                width: 100% !important;
+                text-align: left !important;
+                padding: 5px 0 !important;
+            }
+
+            #registration table td:first-child, #waiting-registration-fields table td:first-child {
+                font-weight: bold;
+                margin-top: 10px;
+            }
+
+            /* Mobile spacing between top controls and H1 */
+            h1 {
+                margin-top: 60px !important;
+            }
+            .results-table thead,
+            .results-table tbody,
+            .results-table th,
+            .results-table td,
+            .results-table tr {
+                display: block;
+            }
+            .results-table thead tr {
+                position: absolute;
+                top: -9999px;
+                left: -9999px;
+            }
+            .results-table tr {
+                border: 1px solid var(--border-color);
+                margin-bottom: 10px;
+                padding: 10px;
+                border-radius: 5px;
+                white-space: normal;
+            }
+            .results-table td {
+                border: none;
+                padding: 5px 0;
+                position: relative;
+                padding-left: 50%;
+            }
+            .results-table td:before {
+                content: attr(data-label) ": ";
+                position: absolute;
+                left: 6px;
+                width: 45%;
+                padding-right: 10px;
+                white-space: nowrap;
+                font-weight: bold;
+            }
+        }
+        .answer-correct {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .answer-incorrect {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .correct-answer-hint {
+            color: var(--text-color);
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .user-info {
+            background: var(--option-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            color: var(--text-color);
+            transition: all 0.3s ease;
+            display: none;
+        }
+        .user-info.visible {
+            display: block;
+        }
+        .user-info:hover {
+            background: var(--option-hover);
+        }
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        [data-theme="dark"] .error-message {
+            background-color: #2d1b1b;
+            color: #f8d7da;
+            border-color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="top-right-controls">
+            <div class="user-info" id="user-info">
+                👤 <span id="username-display"></span>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" title="Перемкнути тему">🌙</button>
+        </div>
+        <h1>{{QUIZ_TITLE}}</h1>
+
+        <!-- Loading State -->
+        <div id="loading" class="section">
+            <h2>Завантаження...</h2>
+            <p>Перевірка ваших даних...</p>
+        </div>
+
+        <!-- Registration Form -->
+        <div id="registration" class="section hidden">
+            <h2>Зареєструйтеся для початку тесту</h2>
+            <div id="registration-error" class="error-message hidden"></div>
+            {{REGISTRATION_FIELDS}}
+            <div style="text-align: center; margin-top: 15px;">
+                <button class="register-btn" onclick="registerUser()">Зареєструватися</button>
+            </div>
+        </div>
+
+        <!-- Waiting for Approval Section -->
+        <div id="waiting-approval" class="section hidden">
+            <h2>Очікування підтвердження</h2>
+            <p style="text-align: center; color: var(--text-color); margin: 20px 0;">
+                Ваша реєстрація очікує підтвердження адміністратором.<br>
+                Ви можете змінити свої дані нижче та натиснути кнопку "Перевірити", щоб дізнатися чи вас підтвердили.
+            </p>
+            <div id="waiting-error" class="error-message hidden"></div>
+            <div id="waiting-registration-fields"></div>
+            <div style="text-align: center; margin-top: 20px;">
+                <button onclick="updateRegistrationData()" style="margin-right: 10px;">💾 Зберегти зміни</button>
+                <button onclick="checkApprovalStatus()">🔄 Перевірити</button>
+            </div>
+        </div>
+
+        <!-- Test Section -->
+        <div id="test-section" class="section hidden">
+            <div id="progress-bar" class="progress">
+                <div id="progress-fill"></div>
+                <span id="progress-text">Питання 1 з 5</span>
+            </div>
+            <div id="test-error" class="error-message hidden"></div>
+            <div id="current-question-container"></div>
+            <div class="button-container">
+                <button id="submit-answer-btn" onclick="submitCurrentAnswer()" disabled>Відправити відповідь</button>
+                <button id="continue-btn" onclick="continueToNextQuestion()" class="hidden">Продовжити</button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results" class="section hidden">
+            <div id="results-content"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentUsername = null;
+        let currentUserId = null;
+        let questions = {{QUESTIONS_DATA}};
+        let showRightAnswer = {{SHOW_RIGHT_ANSWER}};
+        let currentQuestionIndex = 0;
+        let selectedAnswer = null;
+        let selectedAnswers = []; // For multiple choice questions
+        let testResults = [];
+
+        // Notify server when question starts (for timing and live stats)
+        async function notifyQuestionStart(questionId) {
+            try {
+                await fetch('/api/question-start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: currentUserId,
+                        question_id: questionId
+                    })
+                });
+            } catch (error) {
+                console.log('Failed to notify question start:', error);
+            }
+        }
+
+        // Error message utilities
+        function showError(elementId, message) {
+            const errorElement = document.getElementById(elementId);
+            if (errorElement) {
+                errorElement.textContent = message;
+                errorElement.classList.remove('hidden');
+                setTimeout(() => {
+                    hideError(elementId);
+                }, 5000); // Auto-hide after 5 seconds
+            }
+        }
+
+        function hideError(elementId) {
+            const errorElement = document.getElementById(elementId);
+            if (errorElement) {
+                errorElement.classList.add('hidden');
+                errorElement.textContent = '';
+            }
+        }
+
+        // Theme management
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            if (savedTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+                document.querySelector('.theme-toggle').textContent = '☀️';
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const toggleButton = document.querySelector('.theme-toggle');
+
+            if (currentTheme === 'dark') {
+                document.body.removeAttribute('data-theme');
+                toggleButton.textContent = '🌙';
+                localStorage.setItem('theme', 'light');
+            } else {
+                document.body.setAttribute('data-theme', 'dark');
+                toggleButton.textContent = '☀️';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // Username display management
+        function showUsername(username) {
+            document.getElementById('username-display').textContent = username;
+            document.getElementById('user-info').classList.add('visible');
+        }
+
+        function hideUsername() {
+            document.getElementById('user-info').classList.remove('visible');
+        }
+
+        // Cookie management
+        function setCookie(name, value, days = 30) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+            document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+        }
+
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const ca = document.cookie.split(';');
+            for(let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+            }
+            return null;
+        }
+
+        // Question order management (for randomization)
+        function applyQuestionOrder(questionOrder) {
+            /**
+             * Reorder the questions array based on server-provided question order.
+             * questionOrder: array of question IDs in desired order
+             */
+            if (!questionOrder || questionOrder.length === 0) {
+                return;  // No reordering needed
+            }
+
+            console.log('Applying question order:', questionOrder);
+
+            // Create a new array with questions in the specified order
+            const reorderedQuestions = [];
+            for (const questionId of questionOrder) {
+                const question = questions.find(q => q.id === questionId);
+                if (question) {
+                    reorderedQuestions.push(question);
+                }
+            }
+
+            // Replace the questions array with the reordered one
+            if (reorderedQuestions.length === questions.length) {
+                questions = reorderedQuestions;
+                console.log('Questions reordered successfully');
+            } else {
+                console.warn('Question order mismatch - keeping original order');
+            }
+        }
+
+        // Initialize theme and check for stored user ID on page load
+        initializeTheme();
+        checkStoredUserId();
+
+        async function checkStoredUserId() {
+            const storedUserId = getCookie('user_id');
+
+            if (storedUserId) {
+                // User ID stored, verify it with server
+                try {
+                    const response = await fetch(`/api/verify-user/${storedUserId}`);
+                    const data = await response.json();
+
+                    if (response.ok && data.valid) {
+                        // Valid user ID, set user data
+                        currentUserId = data.user_id;
+                        currentUsername = data.username;
+
+                        // Apply question order if provided (for randomization)
+                        if (data.question_order) {
+                            applyQuestionOrder(data.question_order);
+                        }
+
+                        // Show username on page
+                        showUsername(currentUsername);
+
+                        // Check if user is waiting for approval
+                        if (data.requires_approval && !data.approved) {
+                            // User is waiting for approval
+                            document.getElementById('loading').classList.add('hidden');
+                            // Show waiting screen with user's data
+                            if (data.user_data) {
+                                showWaitingForApproval(data.user_data);
+                            }
+                        } else if (data.test_completed && data.final_results) {
+                            // Test is completed, show final results
+                            showCompletedTestResults(data.final_results);
+                        } else {
+                            // Approved or no approval required - resume test
+                            currentQuestionIndex = data.next_question_index;
+                            await hideLoadingShowTest();
+                            await notifyQuestionStart(questions[currentQuestionIndex].id);
+                        }
+                    } else {
+                        // Invalid user ID, need registration
+                        hideLoadingShowRegistration();
+                    }
+                } catch (error) {
+                    // Error verifying, need registration
+                    hideLoadingShowRegistration();
+                }
+            } else {
+                // No stored user ID, show registration form
+                hideLoadingShowRegistration();
+            }
+        }
+
+        function hideLoadingShowRegistration() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('registration').classList.remove('hidden');
+        }
+
+        async function hideLoadingShowTest() {
+            document.getElementById('loading').classList.add('hidden');
+            await startTest();
+        }
+
+
+
+        async function registerUser() {
+            const username = document.getElementById('username').value.trim();
+            if (!username) {
+                showError('registration-error', 'Будь ласка, введіть ім\'я користувача');
+                return;
+            }
+
+            // Collect registration data
+            const registrationData = { username: username };
+
+            // Collect additional registration fields
+            const additionalFields = document.querySelectorAll('.registration-field');
+            for (const field of additionalFields) {
+                const fieldName = field.getAttribute('data-field-name');
+                const fieldValue = field.value.trim();
+
+                // Get field label from the table TD
+                const fieldRow = field.closest('tr');
+                const fieldLabel = fieldRow ? fieldRow.querySelector('td:first-child')?.textContent.replace(':', '').trim() : fieldName;
+
+                if (!fieldValue) {
+                    showError('registration-error', `Будь ласка, заповніть поле "${fieldLabel}"`);
+                    return;
+                }
+                registrationData[fieldName] = fieldValue;
+            }
+
+            // Clear previous errors
+            hideError('registration-error');
+
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(registrationData)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    currentUsername = data.username;
+                    currentUserId = data.user_id;
+                    setCookie('user_id', currentUserId);
+
+                    // Show username on page
+                    showUsername(currentUsername);
+
+                    // Apply question order if provided (for randomization)
+                    if (data.question_order) {
+                        applyQuestionOrder(data.question_order);
+                    }
+
+                    // Check if approval is required
+                    if (data.requires_approval && !data.approved) {
+                        // Hide registration, show waiting for approval
+                        document.getElementById('registration').classList.add('hidden');
+                        showWaitingForApproval(registrationData);
+                    } else {
+                        // Approved or no approval required - start test
+                        currentQuestionIndex = 0; // New user starts from beginning
+                        document.getElementById('registration').classList.add('hidden');
+                        await startTest();
+                        await notifyQuestionStart(questions[currentQuestionIndex].id);
+                    }
+                } else {
+                    showError('registration-error', data.error || 'Помилка реєстрації');
+                }
+            } catch (error) {
+                showError('registration-error', 'Помилка: ' + error.message);
+            }
+        }
+
+        function showWaitingForApproval(registrationData) {
+            // Populate the waiting approval form with current registration data
+            const waitingFieldsContainer = document.getElementById('waiting-registration-fields');
+
+            // Create a table similar to registration form
+            let fieldsHTML = '<table style="margin: 20px auto; max-width: 500px; width: 100%;">';
+            fieldsHTML += `<tr><td style="padding: 8px; text-align: right; width: 200px;">{{USERNAME_LABEL}}:</td><td style="padding: 8px;"><input type="text" id="waiting-username" value="${registrationData.username || ''}" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 5px; box-sizing: border-box;" /></td></tr>`;
+
+            // Add additional registration fields if they exist
+            const additionalFields = document.querySelectorAll('.registration-field');
+            for (const field of additionalFields) {
+                const fieldName = field.getAttribute('data-field-name');
+                const fieldRow = field.closest('tr');
+                const fieldLabel = fieldRow ? fieldRow.querySelector('td:first-child')?.textContent.trim() : fieldName;
+                const fieldValue = registrationData[fieldName] || '';
+
+                fieldsHTML += `<tr><td style="padding: 8px; text-align: right;">${fieldLabel}</td><td style="padding: 8px;"><input type="text" class="waiting-field" data-field-name="${fieldName}" value="${fieldValue}" style="width: 100%; max-width: 250px; padding: 8px; border: 1px solid var(--border-color); border-radius: 5px; box-sizing: border-box;" /></td></tr>`;
+            }
+            fieldsHTML += '</table>';
+
+            waitingFieldsContainer.innerHTML = fieldsHTML;
+            document.getElementById('waiting-approval').classList.remove('hidden');
+        }
+
+        async function updateRegistrationData() {
+            const username = document.getElementById('waiting-username').value.trim();
+            if (!username) {
+                showError('waiting-error', 'Будь ласка, введіть ім\'я користувача');
+                return;
+            }
+
+            // Collect updated registration data
+            const updatedData = {
+                user_id: currentUserId,
+                username: username
+            };
+
+            // Collect additional fields
+            const waitingFields = document.querySelectorAll('.waiting-field');
+            for (const field of waitingFields) {
+                const fieldName = field.getAttribute('data-field-name');
+                updatedData[fieldName] = field.value.trim();
+            }
+
+            hideError('waiting-error');
+
+            try {
+                const response = await fetch('/api/update-registration', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updatedData)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    // Show success message
+                    const errorElement = document.getElementById('waiting-error');
+                    errorElement.textContent = '✓ Дані успішно оновлено!';
+                    errorElement.style.backgroundColor = '#d4edda';
+                    errorElement.style.color = '#155724';
+                    errorElement.style.borderColor = '#c3e6cb';
+                    errorElement.classList.remove('hidden');
+                    setTimeout(() => {
+                        hideError('waiting-error');
+                        errorElement.style.backgroundColor = '';
+                        errorElement.style.color = '';
+                        errorElement.style.borderColor = '';
+                    }, 3000);
+
+                    currentUsername = updatedData.username;
+                    showUsername(currentUsername);
+                } else {
+                    showError('waiting-error', data.error || 'Помилка оновлення даних');
+                }
+            } catch (error) {
+                showError('waiting-error', 'Помилка: ' + error.message);
+            }
+        }
+
+        async function checkApprovalStatus() {
+            if (!currentUserId) {
+                showError('waiting-error', 'User ID not found');
+                return;
+            }
+
+            hideError('waiting-error');
+
+            try {
+                const response = await fetch(`/api/verify-user/${currentUserId}`);
+                const data = await response.json();
+
+                if (response.ok && data.valid) {
+                    if (data.approved) {
+                        // User has been approved! Start the test
+
+                        // Apply question order if provided (for randomization)
+                        if (data.question_order) {
+                            applyQuestionOrder(data.question_order);
+                        }
+
+                        document.getElementById('waiting-approval').classList.add('hidden');
+                        currentQuestionIndex = 0;
+                        await startTest();
+                        await notifyQuestionStart(questions[currentQuestionIndex].id);
+                    } else {
+                        // Still waiting for approval
+                        showError('waiting-error', 'Ви ще не підтверджені. Будь ласка, зачекайте.');
+                    }
+                } else {
+                    showError('waiting-error', data.message || 'Помилка перевірки статусу');
+                }
+            } catch (error) {
+                showError('waiting-error', 'Помилка: ' + error.message);
+            }
+        }
+
+
+        async function startTest() {
+            selectedAnswer = null;
+            testResults = [];
+            document.getElementById('test-section').classList.remove('hidden');
+            await showCurrentQuestion();
+        }
+
+        async function showCurrentQuestion() {
+            if (currentQuestionIndex >= questions.length) {
+                // Test completed - fetch final results from server to ensure consistency
+                await fetchAndShowFinalResults();
+                return;
+            }
+
+            const question = questions[currentQuestionIndex];
+            selectedAnswer = null;
+            selectedAnswers = [];
+
+            // Update progress
+            const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
+            document.getElementById('progress-fill').style.width = progress + '%';
+            document.getElementById('progress-text').textContent = `Питання ${currentQuestionIndex + 1} з ${questions.length}`;
+
+            // Show current question
+            const container = document.getElementById('current-question-container');
+            container.innerHTML = `
+                <div class="current-question active-question">
+                    ${question.question ? `<h3 class="question-text">${question.question}</h3>` : ''}
+                    ${question.image ? `<a href="${question.image}" target="_blank"><img src="${question.image}" alt="Question image" class="question-image quiz-question-img"></a>` : ''}
+                    <div class="options">
+                        ${question.is_multiple_choice ? '<p class="multiple-choice-hint" style="font-size: 14px; color: var(--text-muted); margin-bottom: 10px;">📋 Можна обрати кілька відповідей</p>' : ''}
+                        ${question.options.map((option, optionIndex) => {
+                            const isImageOption = option.startsWith('/');
+
+                            if (isImageOption) {
+                                return `
+                                    <div class="option quiz-option" data-option-index="${optionIndex}" onclick="selectCurrentAnswer(${optionIndex})" id="option_${optionIndex}">
+                                        <div class="option-content">
+                                            <img src="${option}" alt="Option ${optionIndex + 1}" class="option-image">
+                                        </div>
+                                    </div>
+                                `;
+                            } else {
+                                return `
+                                    <div class="option quiz-option" data-option-index="${optionIndex}" onclick="selectCurrentAnswer(${optionIndex})" id="option_${optionIndex}">
+                                        ${option}
+                                    </div>
+                                `;
+                            }
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+
+            // Reset button states
+            const submitBtn = document.getElementById('submit-answer-btn');
+            const continueBtn = document.getElementById('continue-btn');
+
+            submitBtn.classList.remove('hidden');
+            submitBtn.disabled = true;
+            continueBtn.classList.add('hidden');
+        }
+
+        function selectCurrentAnswer(optionIndex) {
+            // Don't allow selection if already submitted
+            if (document.querySelector('.option.disabled')) {
+                return;
+            }
+
+            const question = questions[currentQuestionIndex];
+            const optionElement = document.getElementById(`option_${optionIndex}`);
+
+            if (question.is_multiple_choice) {
+                // Multiple choice logic - toggle selection
+                if (selectedAnswers.includes(optionIndex)) {
+                    // Deselect if already selected
+                    selectedAnswers = selectedAnswers.filter(idx => idx !== optionIndex);
+                    optionElement.classList.remove('selected');
+                } else {
+                    // Select if not selected
+                    selectedAnswers.push(optionIndex);
+                    optionElement.classList.add('selected');
+                }
+
+                // Enable submit button if at least one answer is selected
+                document.getElementById('submit-answer-btn').disabled = selectedAnswers.length === 0;
+            } else {
+                // Single choice logic - selecting new option deselects previous
+                if (selectedAnswer === optionIndex) {
+                    // Deselect if clicking the same option
+                    selectedAnswer = null;
+                    optionElement.classList.remove('selected');
+                    document.getElementById('submit-answer-btn').disabled = true;
+                } else {
+                    // Clear previous selections
+                    document.querySelectorAll('.option').forEach(option => {
+                        option.classList.remove('selected');
+                    });
+
+                    // Select current option
+                    selectedAnswer = optionIndex;
+                    optionElement.classList.add('selected');
+                    document.getElementById('submit-answer-btn').disabled = false;
+                }
+            }
+        }
+
+        async function submitCurrentAnswer() {
+            const question = questions[currentQuestionIndex];
+
+            // Validate selection based on question type
+            if (question.is_multiple_choice) {
+                if (selectedAnswers.length === 0) {
+                    showError('test-error', 'Будь ласка, оберіть хоча б одну відповідь');
+                    return;
+                }
+            } else {
+                if (selectedAnswer === null) {
+                    showError('test-error', 'Будь ласка, оберіть відповідь');
+                    return;
+                }
+            }
+
+            // Clear previous errors
+            hideError('test-error');
+
+            try {
+                const response = await fetch('/api/submit-answer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: currentUserId,
+                        question_id: question.id,
+                        selected_answer: question.is_multiple_choice ? selectedAnswers.slice().sort((a, b) => a - b) : selectedAnswer
+                    })
+                });
+
+                if (!response.ok) {
+                    // Try to parse error response as JSON
+                    const errorText = await response.text();
+                    try {
+                        const errorData = JSON.parse(errorText);
+                        throw new Error(errorData.error || errorText);
+                    } catch (parseError) {
+                        // If JSON parsing fails, use the raw text
+                        throw new Error(errorText);
+                    }
+                }
+
+                const responseText = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('JSON Parse Error:', parseError);
+                    console.error('Response text:', responseText);
+                    throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}`);
+                }
+                // Format selected answer for display
+                let selectedAnswerDisplay;
+                if (question.is_multiple_choice) {
+                    selectedAnswerDisplay = selectedAnswers.map(idx => question.options[idx]).join(' | ');
+                } else {
+                    selectedAnswerDisplay = question.options[selectedAnswer];
+                }
+
+                testResults.push({
+                    questionId: question.id,
+                    question: question.question,
+                    image: question.image,
+                    selectedAnswer: selectedAnswerDisplay,
+                    isCorrect: data.is_correct !== undefined ? data.is_correct : null,  // null when not provided
+                    timeTaken: data.time_taken || 0,
+                    isMultipleChoice: question.is_multiple_choice
+                });
+
+                // Show feedback on selected answer
+                showAnswerFeedback(data.is_correct, data.correct_answer);
+
+            } catch (error) {
+                showError('test-error', 'Помилка відправки відповіді: ' + error.message);
+            }
+        }
+
+        function showAnswerFeedback(isCorrect, correctAnswer) {
+            const question = questions[currentQuestionIndex];
+
+            // If isCorrect is undefined, don't show any feedback (show_right_answer is false)
+            if (isCorrect === undefined) {
+                // Disable all options to prevent further selection but don't show any visual feedback
+                document.querySelectorAll('.option').forEach(option => {
+                    option.classList.add('disabled');
+                });
+
+                // Hide submit button (no continue button needed - auto-advance)
+                const submitBtn = document.getElementById('submit-answer-btn');
+                submitBtn.classList.add('hidden');
+
+                // Auto-advance to next question immediately (no manual button click needed)
+                continueToNextQuestion();
+                return;
+            }
+
+            if (question.is_multiple_choice) {
+                // Multiple choice feedback
+                const correctAnswerArray = Array.isArray(correctAnswer) ? correctAnswer : [];
+
+                // First, mark all user's selected answers
+                selectedAnswers.forEach(answerIndex => {
+                    const optionElement = document.getElementById(`option_${answerIndex}`);
+                    if (correctAnswerArray.includes(answerIndex)) {
+                        // User selected a correct answer
+                        optionElement.classList.add('feedback-correct');
+                    } else {
+                        // User selected an incorrect answer
+                        optionElement.classList.add('feedback-incorrect');
+                    }
+                });
+
+                // Then, highlight any missed correct answers (always show all correct answers)
+                correctAnswerArray.forEach(correctIndex => {
+                    if (!selectedAnswers.includes(correctIndex)) {
+                        // This is a correct answer the user missed
+                        const correctOption = document.getElementById(`option_${correctIndex}`);
+                        if (correctOption) {
+                            correctOption.classList.add('feedback-missed');
+                        }
+                    }
+                });
+            } else {
+                // Single choice feedback
+                const selectedOption = document.querySelector('.option.selected');
+                if (selectedOption) {
+                    selectedOption.classList.add(isCorrect ? 'feedback-correct' : 'feedback-incorrect');
+                }
+
+                // If answer is incorrect and correctAnswer is provided, highlight the correct answer
+                if (!isCorrect && correctAnswer !== undefined && correctAnswer !== null) {
+                    const correctOption = document.getElementById(`option_${correctAnswer}`);
+                    if (correctOption) {
+                        correctOption.classList.add('feedback-correct');
+                    }
+                }
+            }
+
+            // Disable all options to prevent further selection
+            document.querySelectorAll('.option').forEach(option => {
+                option.classList.add('disabled');
+            });
+
+            // Hide submit button and show continue button
+            const submitBtn = document.getElementById('submit-answer-btn');
+            const continueBtn = document.getElementById('continue-btn');
+
+            submitBtn.classList.add('hidden');
+            continueBtn.classList.remove('hidden');
+        }
+
+        async function continueToNextQuestion() {
+            // Move to next question
+            currentQuestionIndex++;
+
+            // Check if we've reached the end before notifying server
+            if (currentQuestionIndex >= questions.length) {
+                // Test completed - go directly to results
+                await showCurrentQuestion();
+                return;
+            }
+
+            // Notify server that question is being displayed (for live stats and timing)
+            // This should ONLY happen when user clicks "Продовжити" to open next question
+            notifyQuestionStart(questions[currentQuestionIndex].id);
+
+            await showCurrentQuestion();
+        }
+
+        async function fetchAndShowFinalResults() {
+            try {
+                // Fetch final results from server to ensure consistency with page reload
+                const response = await fetch(`/api/verify-user/${currentUserId}`);
+                const data = await response.json();
+
+                if (response.ok && data.valid && data.test_completed && data.final_results) {
+                    // Use the same function as page reload to ensure identical display
+                    showCompletedTestResults(data.final_results);
+                } else {
+                    // Fallback to client-side results if server fetch fails
+                    showFinalResults();
+                }
+            } catch (error) {
+                console.error('Error fetching final results from server:', error);
+                // Fallback to client-side results
+                showFinalResults();
+            }
+        }
+
+        function formatQuestionForDisplay(questionText, questionImage) {
+            if (questionImage && questionImage.startsWith('/')) {
+                // Display image with optional text
+                let html = `<img src="${questionImage}" alt="Question image" style="max-width: 200px; max-height: 150px; border-radius: 5px;">`;
+                if (questionText) {
+                    html = `${questionText}<br>${html}`;
+                }
+                return html;
+            } else if (questionText) {
+                // Text only
+                return questionText;
+            } else {
+                // Fallback
+                return questionImage || 'Немає контенту питання';
+            }
+        }
+
+        function formatAnswerForDisplay(answerText) {
+            if (!answerText) return '';
+
+            // Check if it's multiple answers (contains | separator)
+            if (answerText.includes('|')) {
+                const answers = answerText.split('|');
+                return answers.map(answer => {
+                    const trimmedAnswer = answer.trim();
+                    if (trimmedAnswer.startsWith('/')) {
+                        // Image answer
+                        return `<div style="margin: 2px 0;"><img src="${trimmedAnswer}" alt="Answer option" style="max-width: 100px; max-height: 75px; border-radius: 3px;"></div>`;
+                    } else {
+                        // Text answer
+                        return `<div style="margin: 2px 0;">${trimmedAnswer}</div>`;
+                    }
+                }).join('');
+            } else {
+                // Single answer
+                if (answerText.startsWith('/')) {
+                    // Display image for answer option
+                    return `<img src="${answerText}" alt="Answer option" style="max-width: 100px; max-height: 75px; border-radius: 3px;">`;
+                } else {
+                    // Text answer
+                    return answerText;
+                }
+            }
+        }
+
+        function showFinalResults() {
+            document.getElementById('test-section').classList.add('hidden');
+
+            const container = document.getElementById('results-content');
+            container.innerHTML = '';
+
+            const correctCount = testResults.filter(r => r.isCorrect === true).length;  // Only count explicitly true values
+            const totalCount = testResults.length;
+            const percentage = Math.round((correctCount / totalCount) * 100);
+            const totalTime = testResults.reduce((sum, r) => sum + r.timeTaken, 0);
+            const avgTime = totalTime / totalCount;
+
+            // Build table with results using CSS classes
+            let tableContent = `
+                <p><strong>Результат:</strong> ${correctCount}/${totalCount} (${percentage}%)</p>
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Питання</th>
+                            <th>Ваша відповідь</th>
+                            <th style="text-align: center;">Зараховано</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            testResults.forEach((result, index) => {
+                // Note: testResults uses different property names than server data
+                const correctAnswer = (questions[index] && questions[index].correct_answer !== undefined) ? questions[index].options[questions[index].correct_answer] : null;
+                tableContent += `
+                    <tr>
+                        <td data-label="Питання">${formatQuestionForDisplay(result.question, result.image)}</td>
+                        <td data-label="Ваша відповідь">
+                            <span class="${result.isCorrect === true ? 'answer-correct' : (result.isCorrect === false ? 'answer-incorrect' : '')}">
+                                ${formatAnswerForDisplay(result.selectedAnswer)}
+                            </span>
+                            ${result.isCorrect === false && correctAnswer && showRightAnswer ? `<div class="correct-answer-hint">Правильна: ${formatAnswerForDisplay(correctAnswer)}</div>` : ''}
+                        </td>
+                        <td data-label="Правильно" style="text-align: center;">
+                            ${result.isCorrect !== null ? `<span class="${result.isCorrect ? 'correct' : 'incorrect'}" style="font-size: 18px;">${result.isCorrect ? '✓' : '✗'}</span>` : '<span style="color: #666;">—</span>'}
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableContent += `
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableContent;
+
+            document.getElementById('test-section').classList.add('hidden');
+            document.getElementById('results').classList.remove('hidden');
+        }
+
+        function showCompletedTestResults(finalResults) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('test-section').classList.add('hidden');
+
+            const container = document.getElementById('results-content');
+            container.innerHTML = '';
+
+            const correctCount = finalResults.correct_count;
+            const totalCount = finalResults.total_count;
+            const percentage = finalResults.percentage;
+
+            container.innerHTML = `
+                <p><strong>Результат:</strong> ${correctCount}/${totalCount} (${percentage}%)</p>
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Питання</th>
+                            <th>Ваша відповідь</th>
+                            <th style="text-align: center;">Правильно</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${finalResults.test_results.map((result, index) => `
+                            <tr>
+                                <td data-label="Питання">${formatQuestionForDisplay(result.question, result.image)}</td>
+                                <td data-label="Ваша відповідь">
+                                    <span class="${result.is_correct === true ? 'answer-correct' : (result.is_correct === false ? 'answer-incorrect' : '')}">
+                                        ${formatAnswerForDisplay(result.selected_answer)}
+                                    </span>
+                                    ${result.is_correct === false && result.correct_answer && showRightAnswer ? `<div class="correct-answer-hint">Правильна: ${formatAnswerForDisplay(result.correct_answer)}</div>` : ''}
+                                </td>
+                                <td data-label="Правильно" style="text-align: center;">
+                                    ${result.is_correct !== undefined ? `<span class="${result.is_correct ? 'correct' : 'incorrect'}" style="font-size: 18px;">${result.is_correct ? '✓' : '✗'}</span>` : '<span style="color: #666;">—</span>'}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            document.getElementById('results').classList.remove('hidden');
+        }
+    </script>
+
+    <div style="text-align: center; margin-top: 40px; padding: 20px; border-top: 1px solid var(--border-color); color: var(--text-color); font-size: 12px; opacity: 0.7;">
+        WebQuiz v{{WEBQUIZ_VERSION}}
+    </div>
+</body>
+</html>
