@@ -1,0 +1,77 @@
+# workday_tools_nosrednakram
+
+## Overview
+
+`workday_tools_nosrednakram` is a Python package for accessing Workday RaaS (Report-as-a-Service) endpoints. It provides:
+
+- `RaaSRest.py`: A class for authenticated RaaS REST API calls.
+- `rest.py`: A helper function for making RaaS calls with simplified parameters.
+
+## Installation
+
+Install via pip:
+
+```bash
+pip install workday_tools_nosrednakram
+```
+
+## Configuration
+
+### Authentication and Tenant Information
+
+Create a `workday.yaml` file with your Workday credentials and tenant details. Example (obfuscated values):
+
+```yaml
+account: my_user_123
+password: s3cr3tP@ssw0rd
+tenant: mytenant
+prod_url: https://wd5.myworkday.com
+devel_url: https://wd5-impl.myworkday.com
+environment: PROD
+```
+
+### Call-Specific Configuration
+
+Create a `config.yaml` file to specify ore or more configurations. In this example, we specify a report to call and its parameters:
+
+```yaml
+raas_config: workday.yaml
+raas_report: "CR_IHD001_Course_Search"
+raas_format: csv
+raas_extra_params: '&Last_Days=1&Academic_Level%21WID=f0acdfc60ce81008f822d325e5900001'
+```
+We could have multiple configurations in this file. One for production and one for development. Reports for different owners, etc. The reason for this break out is the credentials in workday.yaml are sensitive and should be protected. The config.yaml file can be checked into source control with the sensitive information in workday.yaml protected. Additionally, it allows for multiple configurations to be stored in one place.
+
+
+## Usage
+
+### Using `RaaSRest` Directly
+
+```python
+from workday_tools_nosrednakram.RaaSRest import RaaSRest
+
+raas = RaaSRest(config_file="workday.yaml")
+response = raas.report(report="My_Report", format="json")
+print(response.text)
+```
+
+### Using the Helper Function (`rest.py`)
+
+```python
+from workday_tools_nosrednakram.rest import rest_call
+
+result = rest_call(
+    report="My_Report",
+    extra_params="&param1=value1",
+    report_format="json",
+    raas_config="workday.yaml"
+)
+print(result)
+```
+
+## Notes
+
+- Ensure your YAML config files are correctly formatted and contain all required keys.
+- File paths can include spaces; no special escaping is needed for YAML loading.
+- Logging is used for error reporting; configure logging as needed for your environment.
+```
