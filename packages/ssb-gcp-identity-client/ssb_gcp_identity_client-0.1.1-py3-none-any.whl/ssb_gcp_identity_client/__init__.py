@@ -1,0 +1,55 @@
+"""ssb_gcp_identity_client package.
+
+Provides utilities for creating GCP-clients authenticated to Google Cloud using
+Workload Identity Federation with Maskinporten tokens.
+"""
+
+from google.cloud import storage  # type: ignore[import-untyped]
+
+from .credentials import _get_federated_credentials
+
+
+def get_federated_storage_client(
+    project_number: str,
+    workload_identity_pool_id: str,
+    provider_id: str,
+    maskinporten_token_file_path: str,
+) -> storage.Client:
+    """Creates a Google Cloud Storage client using Workload Identity Federation
+    with a Maskinporten token.
+
+    Args:
+        project_number: The numeric ID of the Google Cloud project which contains the Workload Identity Pool.
+        workload_identity_pool_id: The Workload Identity Pool ID.
+        provider_id: The Workload Identity Pool Provider ID.
+        maskinporten_token_file_path: Path to a file containing a Maskinporten JWT. Can be relative or absolute; `~` will be expanded.
+
+    Returns:
+        google.cloud.storage.Client: Authenticated via Workload Identity Federation.
+
+    Example:
+        ```python
+        from ssb_gcp_identity_client.storage import get_federated_storage_client
+
+        client = get_federated_storage_client(
+            project_number="1234567890",
+            workload_identity_pool_id="my-pool",
+            provider_id="maskinporten-provider",
+            maskinporten_token_file_path="~/maskinporten/jwt.txt"
+        )
+
+        # List buckets in the project
+        for bucket in client.list_buckets():
+            print(bucket.name)
+        ```
+    """
+    creds = _get_federated_credentials(
+        project_number,
+        workload_identity_pool_id,
+        provider_id,
+        maskinporten_token_file_path,
+    )
+    return storage.Client(credentials=creds)
+
+
+__all__ = ["get_federated_storage_client"]
