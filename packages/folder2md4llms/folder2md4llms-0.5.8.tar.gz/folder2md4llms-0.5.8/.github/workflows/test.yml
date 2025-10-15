@@ -1,0 +1,168 @@
+name: Test
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.11', '3.12', '3.13']
+        include:
+          # Add special job configurations for comprehensive testing
+          - os: ubuntu-latest
+            python-version: '3.11'
+            test_optional_deps: true
+            test_integration: true
+        exclude:
+          # Reduce matrix size by excluding 3.12 on macOS
+          - os: macos-latest
+            python-version: '3.12'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup build environment
+      uses: ./.github/actions/setup-build-environment
+      with:
+        python-version: ${{ matrix.python-version }}
+        install-groups: ${{ matrix.test_optional_deps && '--group dev --all-extras' || '--group dev' }}
+
+    - name: Run core tests
+      run: uv run pytest tests/ --cov=folder2md4llms --cov-report=xml --cov-report=term-missing -n auto --maxfail=10 --tb=short -v
+
+    - name: Test with optional dependencies
+      if: matrix.test_optional_deps
+      run: |
+        echo "::group::Testing converters with optional dependencies"
+        uv run pytest tests/test_converters.py -v
+        uv run pytest tests/test_processor.py -v
+        echo "::endgroup::"
+
+    - name: Integration tests
+      if: matrix.test_integration
+      run: |
+        echo "::group::Testing CLI help"
+        uv run folder2md --help
+        echo "::endgroup::"
+
+        echo "::group::Testing CLI version"
+        uv run folder2md --version
+        echo "::endgroup::"
+
+        echo "::group::Testing ignore file generation"
+        uv run folder2md --init-ignore --force
+        test -f .folder2md_ignore
+        echo "::endgroup::"
+
+        echo "::group::Testing basic functionality"
+        mkdir -p test_project/src
+        echo "print('Hello World')" > test_project/src/main.py
+        echo "# Test Project" > test_project/README.md
+        cd test_project
+        uv run folder2md . --output test_output.md
+        test -f test_output.md
+        grep -q "Hello World" test_output.md
+        grep -q "Test Project" test_output.md
+        echo "::endgroup::"
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Cleanup integration test files
+      if: always() && matrix.test_integration
+      run: |
+        rm -rf test_project .folder2md_ignore || true
+
+  build-test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.11', '3.13']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup build environment
+      uses: ./.github/actions/setup-build-environment
+      with:
+        python-version: ${{ matrix.python-version }}
+        install-groups: '--group dev'
+
+    - name: Build package
+      run: |
+        echo "::group::Building package"
+        uv build
+        echo "::endgroup::"
+
+        echo "::group::Validate package"
+        uv tool install twine
+        uv tool run twine check dist/*
+        echo "::endgroup::"
+
+    - name: Test wheel installation and functionality
+      run: |
+        echo "::group::Installing and testing package"
+        WHEEL_NAME=$(ls dist/*.whl | head -1 | xargs basename)
+        uv pip install --system "dist/$WHEEL_NAME"
+
+        # Test CLI functionality
+        folder2md --help
+        folder2md --version
+
+        # Test basic processing functionality
+        mkdir -p test_dir
+        echo "# Test Project" > test_dir/README.md
+        echo "print('hello world')" > test_dir/main.py
+        folder2md test_dir --output test_output.md
+
+        # Verify output
+        test -f test_output.md
+        grep -q "Test Project" test_output.md
+        grep -q "hello world" test_output.md
+        echo "✅ Package installation and functionality test passed"
+        echo "::endgroup::"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -rf test_dir test_output.md dist/ || true
