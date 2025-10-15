@@ -1,0 +1,97 @@
+Metadata-Version: 2.4
+Name: oracle-csv-creator
+Version: 0.1.1
+Summary: Parallel Oracle table to CSV writer using rowid ranges and optional SCN consistency.
+Project-URL: Homepage, https://pypi.org/project/oracle-csv-creator/
+Project-URL: Repository, https://example.com/your-repo
+Project-URL: Issues, https://example.com/your-repo/issues
+Author-email: Your Name <you@example.com>
+License: MIT License
+License-File: LICENSE
+Keywords: csv,database,etl,export,oracle,parallel,rowid
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Database
+Classifier: Topic :: Utilities
+Requires-Python: >=3.9
+Requires-Dist: oracledb>=2.0.0
+Description-Content-Type: text/markdown
+
+# oracle-csv-creator
+
+Oracle 테이블을 **병렬(멀티프로세스)** 로 CSV로 작성하는 도구입니다. `ROWID` 범위를 이용해
+익스텐트 단위로 나누어 읽고, 옵션에 따라 **AS OF SCN** 읽기 일관성을 제공합니다.
+
+## 설치
+```bash
+pip install oracle-csv-creator
+```
+
+## 요구 사항
+- Python 3.9+
+- Oracle DB 접속 권한 (해당 계정은 `DBA_EXTENTS`, `DBA_OBJECTS`, `V$DATABASE` 조회 권한이 필요합니다.)
+- Python 패키지: `oracledb` (자동 설치)
+
+## 사용법
+
+### 1) CLI
+```bash
+oracle-csv-creator   --db-host 10.0.0.1 --db-port 1521 --service-name ORCL   --db-user SCOTT --db-password tiger   --owner HR --table EMPLOYEES   --path ./output --filename HR.EMPLOYEES   --degree 8 --header   --date-format "YYYY-MM-DD HH24:MI:SS"   --timestamp-format "YYYY-MM-DD HH24:MI:SS.FF"   --delimiter "," --quotechar ""   --encoding euc-kr --consistent
+```
+
+주요 옵션
+- `--degree`: 병렬 프로세스 수
+- `--header/--no-header`: 헤더 기록 여부 (기본: 기록)
+- `--consistent`: **AS OF SCN** 읽기(트랜잭션 일관성) 활성화
+- `--delimiter`, `--quotechar`, `--encoding`: CSV 포맷 관련 옵션
+
+### 2) Python API
+```python
+from oracle_csv_creator import csv_writer
+
+db_info = {
+    "host": "10.0.0.1",
+    "user": "SCOTT",
+    "password": "tiger",
+    "port": 1521,
+    "service_name": "ORCL",
+}
+
+csv_writer(
+    db_info=db_info,
+    owner="HR",
+    table_name="EMPLOYEES",
+    path="./output",
+    filename="HR.EMPLOYEES",
+    degree=8,
+    header=True,
+    consistent=True,  # AS OF SCN
+    date_format="YYYY-MM-DD HH24:MI:SS",
+    timestamp_format="YYYY-MM-DD HH24:MI:SS.FF",
+    delimiter=",",
+    quotechar="",
+    encoding="euc-kr",
+)
+```
+
+> ※ 파이썬 import 경로에는 하이픈을 사용할 수 없으므로 모듈명은 `oracle_csv_creator`(언더바)로 유지됩니다.
+
+## 빌드 & 배포 (wheel 생성 및 TestPyPI/PyPI 업로드)
+
+```bash
+# 빌드 도구 설치
+python -m pip install --upgrade build twine
+
+# wheel/sdist 생성
+python -m build
+
+# TestPyPI 업로드 (권장, 사전 점검)
+python -m twine upload --repository testpypi dist/*
+
+# PyPI 업로드
+python -m twine upload dist/*
+```
+
+> **패키지명 중복** 시 TestPyPI/PyPI에서 거부될 수 있습니다. 필요 시 `pyproject.toml`의 `[project] name`을
+다른 고유한 이름으로 변경하세요.
