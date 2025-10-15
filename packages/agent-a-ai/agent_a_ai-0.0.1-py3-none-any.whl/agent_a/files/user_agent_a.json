@@ -1,0 +1,210 @@
+{
+  "default_user_tag": "gemini_general",
+  
+  "user_tags": {
+    "gemini_general": {
+      "ai": "gemini:gemini:gemini-2.5-flash",
+      "mode": "general"
+    },
+    "gflash_code": {
+      "ai": "gemini:gemini:gemini-2.5-flash",
+      "mode": "coding"
+    },
+    "gpro_general": {
+      "ai": "gemini:gemini:gemini-2.5-pro",
+      "mode": "general"
+    },
+    "claude_haiku": {
+      "ai": "claude:anthropic:claude-3-5-haiku-latest",
+      "mode": "general"
+    },
+    "claude_haiku_code": {
+      "ai": "claude:anthropic:claude-3-5-haiku-latest",
+      "mode": "coding"
+    },
+    "gpro_design": {
+      "ai": "gemini:gemini:gemini-2.5-pro",
+      "mode": "design"
+    },
+     "gpro_plan": {
+      "ai": "gemini:gemini:gemini-2.5-pro",
+      "mode": "plan"
+    },
+    "gpro_code": {
+      "ai": "gemini:gemini:gemini-2.5-pro",
+      "mode": "coding"
+    },
+
+    "claude_design": {
+      "ai": "claude:anthropic:claude-sonnet-4-5-20250929",
+      "mode": "design"
+    },
+     "claude_plan": {
+      "ai": "claude:anthropic:claude-sonnet-4-5-20250929",
+      "mode": "plan"
+    },
+    "claude_code": {
+      "ai": "claude:anthropic:claude-sonnet-4-5-20250929",
+      "mode": "coding"
+    },
+
+     "claude_hdesign": {
+      "ai": "claude:anthropic:claude-3-5-haiku-latest",
+      "mode": "design"
+    },
+     "claude_hplan": {
+      "ai": "claude:anthropic:claude-3-5-haiku-latest",
+      "mode": "plan"
+    },
+    "claude_hcode": {
+      "ai": "claude:anthropic:claude-3-5-haiku-latest",
+      "mode": "coding"
+    }
+
+  },
+  
+  "modes": [
+    {
+      "name": "general",
+      "description": "General conversation and question answering",
+      "prompts": [
+        {
+          "ai": "default",
+          "template": "Please provide a concise answer to: {prompt}\n\n{plain_text_guide}"
+        },
+        {
+          "ai": "claude:anthropic:*",
+          "template": "{prompt}\n\nProvide a clear, direct answer using the following formatting:\n\n{plain_text_guide}"
+        },
+        {
+          "ai": "gemini:*:*",
+          "template___": "Please provide a concise plain text answer to: {prompt}\n\nFormatting guidelines:\n{plain_text_guide}",
+          "template_file": "prompts/general.txt"
+        }
+      ]
+    },
+    {
+      "name": "coding",
+      "description": "Code modification and refactoring",
+      "requires_editable_files": true,
+      "prompts": [
+        {
+          "ai": "default",
+          "template_file":"prompts/coding.txt"
+        },
+        {
+          "ai": "claude:anthropic:*",
+          "template_file":"prompts/coding.txt"
+        },
+        {
+          "ai": "gemini:*:*",
+          "template__": "You are an expert programming assistant.\n\nTask: Modify the provided source code files based on the user's request.\n\nCONTEXT:\n{context}\n\nREFERENCE FILES (read-only):\n{reference_files}\n\nFILES TO MODIFY:\n{editable_files}\n\nUSER REQUEST:\n{prompt}\n\nProvide your response in this format:\n\nSUMMARY\n{escape_hash}\n<Description of what was changed and why>\n{escape_hash}\n\nOUTPUT FILE(S)\nfile_path: <exact/file/path>\nfile_content: {escape_hash}\n<complete updated file content>\n{escape_hash}\n\nfile_path: <another/exact/file/path>\nfile_content: {escape_hash}\n<complete updated file content>\n{escape_hash}\n\n...\n\nIMPORTANT:\n- Use the exact hash delimiter: {escape_hash}\n- Do not modify or escape the hash delimiter\n- Include complete file content between delimiters\n- Do not use markdown formatting",
+          "template_file":"prompts/coding.txt"
+        }
+      ]
+    },
+    {
+      "name": "design",
+      "description": "Solution Design",
+      "requires_editable_files": true,
+      "prompts": [
+        {
+          "ai": "default",
+          "template_file":"prompts/software-solution-architect-prompt.txt"
+        },
+        {
+          "ai": "claude:anthropic:*",
+          "template_file":"prompts/software-solution-architect-prompt.txt"
+        },
+        {
+          "ai": "gemini:*:*",
+          "template__": "Generate a technical design document for: {prompt}\n\nContext: {context}\n\nReference files:\n{reference_files}\n\nInclude:\n1. System overview\n2. Architecture design\n3. Component specifications\n4. Implementation approach\n5. Technical considerations\n\nFormatting:\n{plain_text_guide}",
+          "template_file":"prompts/software-solution-architect-prompt.txt"
+        }
+      ]
+    },
+    {
+      "name": "plan",
+      "description": "Implementation Plan",
+      "requires_editable_files": true,
+      "prompts": [
+        {
+          "ai": "default",
+          "template_file":"prompts/technical_implementation_planner.txt"
+        },
+        {
+          "ai": "claude:anthropic:*",
+          "template_file":"prompts/technical_implementation_planner.txt"
+        },
+        {
+          "ai": "gemini:*:*",
+          "template_file":"prompts/technical_implementation_planner.txt"
+        }
+      ]
+    }
+  ],
+  "workflows": [
+      {
+        "name": "dev_gemini",
+        "description": "Standard workflow: design, plan, then code.",
+        "steps": [
+          { 
+            "name": "design",
+            "user_tag": "gpro_design",
+            "auto_creates": [
+              { 
+                "path": "{BUNDLE_PATH}/design.txt",
+                "permissions": "design=e, plan=r, code=r"
+              }
+            ]
+          },
+          { 
+            "name": "plan",
+            "user_tag": "gpro_plan",
+            "auto_prompt":"create a plan based on the design in design.txt",
+            "auto_creates": [
+              {
+                "path": "{BUNDLE_PATH}/plan.txt",
+                "permissions": "plan=e, code=r"
+              }
+            ]
+          },
+          { "name": "code", 
+            "auto_prompt":"implement the code changes outlined in plan.txt",
+            "user_tag": "gpro_code" }
+        ]
+      },
+      {
+        "name": "dev_claude",
+        "description": "Standard workflow: design, plan, then code.",
+        "steps": [
+          { 
+            "name": "design",
+            "user_tag": "claude_design",
+            "auto_creates": [
+              { 
+                "path": "{BUNDLE_PATH}/design.txt",
+                "permissions": "design=e, plan=r, code=r"
+              }
+            ]
+          },
+          { 
+            "name": "plan",
+            "user_tag": "claude_plan",
+            "auto_prompt":"create a plan based on the design in design.txt",
+            "auto_creates": [
+              {
+                "path": "{BUNDLE_PATH}/plan.txt",
+                "permissions": "plan=e, code=r"
+              }
+            ]
+          },
+          { "name": "code", 
+            "auto_prompt":"implement the code changes outlined in plan.txt",
+            "user_tag": "claude_code" }
+        ]
+      }
+    ],
+  "additional_context": "",
+  "additional_references": []
+}

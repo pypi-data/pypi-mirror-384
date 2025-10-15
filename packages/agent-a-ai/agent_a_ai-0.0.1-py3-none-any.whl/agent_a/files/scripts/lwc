@@ -1,0 +1,125 @@
+
+#!/bin/bash
+# Copyright (C) 2025 The Agent A Open Source Project
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# lwc: List with Token Counts
+# This script generates a text tree diagram of a specified directory,
+# showing a human-readable file size and an approximate token count for each
+# file.
+
+# Function to calculate and format file size.
+# Uses B for bytes, K for kilobytes, M for megabytes, etc.
+format_file_size() {
+    local bytes=$1
+    if (( bytes < 1024 )); then
+        echo "${bytes}B"
+    elif (( bytes < 1024*1024 )); then
+        awk -v b="$bytes" 'BEGIN{printf "%.1fK", b/1024}'
+    elif (( bytes < 1024*1024*1024 )); then
+        awk -v b="$bytes" 'BEGIN{printf "%.1fM", b/(1024*1024)}'
+    else
+        awk -v b="$bytes" 'BEGIN{printf "%.1fG", b/(1024*1024*1024)}'
+    fi
+}
+
+# Function to calculate and format token count from bytes.
+# Approx token count is bytes/4. Uses K for thousands, M for millions.
+format_token_count() {
+    local bytes=$1
+    # Approx token count is bytes / 4
+    local tokens=$((bytes / 4))
+
+    if (( tokens < 1000 )); then
+        echo "${tokens} tokens"
+    elif (( tokens < 1000000 )); then
+        awk -v t="$tokens" 'BEGIN{printf "%.1fK tokens", t/1000}'
+    else
+        awk -v t="$tokens" 'BEGIN{printf "%.1fM tokens", t/1000000}'
+    fi
+}
+
+# Function to display tree structure with token counts
+# Arguments:
+#   $1: Current directory path
+#   $2: Indentation string for current level (e.g., "|   ")
+process_dir() {
+    local dir_path="$1"
+    local indent="$2"
+
+    # Get all entries (files and directories) in the current directory.
+    # -A: Do not list implicit . and ..
+    # -1: List one entry per line
+    # Sort them for consistent output.
+    local entries=()
+    while IFS= read -r line; do
+        entries+=("$line")
+    done < <(ls -1A "$dir_path" 2>/dev/null | sort)
+
+    local num_entries=${#entries[@]}
+    local i=0
+
+    for entry in "${entries[@]}"; do
+        i=$((i + 1))
+        local full_path="$dir_path/$entry"
+        local current_prefix=""
+        local next_indent=""
+
+        # Determine if it's the last item in the current directory
+        if [ "$i" -eq "$num_entries" ]; then
+            current_prefix="\-- "
+            next_indent="$indent    " # No vertical line for children
+        else
+            current_prefix="|-- "
+            next_indent="$indent|   " # Vertical line for children
+        fi
+
+        if [ -d "$full_path" ]; then
+            # It's a directory
+            echo "${indent}${current_prefix}${entry}/"
+            process_dir "$full_path" "$next_indent"
+        elif [ -f "$full_path" ]; then
+            # It's a regular file
+            local counts_formatted=""
+            # Use wc -c < "$full_path" to get byte count.
+            # If wc fails (e.g., permissions), bytes will be empty.
+            local bytes
+            bytes=$(wc -c < "$full_path" 2>/dev/null)
+            if [ -n "$bytes" ]; then
+                local size_str
+                size_str=$(format_file_size "$bytes")
+                local tokens_str
+                tokens_str=$(format_token_count "$bytes")
+                counts_formatted=" (${size_str}, ${tokens_str})"
+            fi
+            echo "${indent}${current_prefix}${entry}${counts_formatted}"
+        fi
+    done
+}
+
+# Determine the target path. Defaults to current directory if no argument.
+target_dir="${1:-.}"
+
+# Check if the target path exists and is a directory
+if [ ! -d "$target_dir" ]; then
+    echo "Error: Directory '$target_dir' not found or not a directory." >&2
+    exit 1
+fi
+
+# Print the root directory display name (e.g., '.', 'my_dir', or
+# '/path/to/dir')
+echo "$target_dir"
+
+# Call the recursive function to process the directory
+process_dir "$target_dir" ""
