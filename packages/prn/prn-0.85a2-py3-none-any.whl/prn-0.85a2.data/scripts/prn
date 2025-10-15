@@ -1,0 +1,487 @@
+#!python
+'''
+    Mike-rosoft™ Power File Rename © 2003-2020, by Mike Miller
+    A tool to rename large numbers of files, such as MP3s or images.
+
+    String modification operations are done in the order that they occur on the
+    command-line for each filename found.  This is done so that results are
+    consistent with expectations.
+'''
+import os
+import sys
+import re
+import logging
+
+from os.path import exists, join, split, splitext
+
+from console import fg, fx
+
+
+__version__ = '0.85a2'
+_column_width = 40  # default
+# split that preserves whitespace, https://stackoverflow.com/q/15579271
+_ws_preserving_split = re.compile(r'(\s+)').split
+_search_digits = re.compile(r'(\d+)').search
+_replace_digits = re.compile(r'(\d+)').sub
+
+_SEP = str(fx.dim('│'))
+_OK = str(fg.green + fx.bold + '✓' + fx.end)
+_WARN = str(fg.yellow + fx.bold + '⚠' + fx.end)
+_ERR = str(fg.red + fx.bold + '✗' + fx.end)
+_SP = ''
+_HEADER = '\nMike-rosoft™ Power Rename%s:\n'
+acronyms = [
+    'AB', 'ABBA', 'ABC', 'ACDC', 'ATB', 'BIG', 'BBC', 'BPM', 'CCCP', 'DJ',
+    "DJ's", 'DJs', 'DMC', 'EFX', 'EMF', 'INXS', 'KC', 'KLF', 'KWS', 'LL',
+    'MC', "MC's", 'MCs', 'MTV', 'NWA', 'OMC', 'PM', 'PYT', 'REM', 'SOS',
+    'TLC', 'UB40', 'US3', 'USA', 'USSR', 'VIP', 'XTC', 'YMCA', 'ZZ',
+    'LICENSE', 'README',
+]
+_EPILOG = '''Example:
+
+    prn -R --match '*.mp3' --replace _ ' ' --prepend 'Disc 1 - '
+
+Each text operation will be performed in the order it is listed. Try a few
+options, refine as necessary, then use -e/--execute to commit the changes.
+
+Recognized acronyms for Smart Capitalization:
+''' + str(acronyms)
+
+
+def filtered_files_generator(filter_arg, files_iterator):
+    ''' A filtered generator function, avoids loading all filenames at once. '''
+    from fnmatch import fnmatch
+
+    for fn in files_iterator:
+        if not fnmatch(split(fn)[1], filter_arg):   # didn't match
+            yield fn                                # allow it thru
+
+
+def fmt_display(text):
+    ''' Format a filename for column display, pad/truncate as necessary. '''
+    text_len = len(text)
+
+    if text_len > _column_width:
+        if args.align_right:
+            text = '…' + text[abs(len(text) - _column_width) + 1:] # trunc left
+        else:
+            text = text[:_column_width - 1] + '…'  # trunc right
+
+    elif text_len < _column_width:
+        text = text.ljust(_column_width, ' ')
+
+    return text  # else equal
+
+
+def fmt_index(text, i):
+    ''' Format a filename fragment with an index, if needed. '''
+    try:
+        text = text % i
+    except TypeError:
+        pass
+
+    return text
+
+
+def smartcap(text):
+    ''' Capitalize each word of passed in text.
+        nown acronyms are returned in the correct form.
+    '''
+    result = []
+    for word in _ws_preserving_split(text):
+        up = word.upper()
+        if up in acronyms:
+            result.append(up)
+        elif word in acronyms:      # not very efficient
+            result.append(word)
+        else:                       # cap it
+            up = word.title()
+            if up.endswith("'S"):   # Avoid capping possessives to 'S
+                up = up[:-1] + 's'
+            elif up.endswith("'T"): # can't don't  :-/
+                up = up[:-1] + 't'
+            result.append(up)
+
+    return ''.join(result)
+
+
+def select_files(args):
+    ''' Build and return an iterable/iterator of files to operate on. '''
+    if args.files:  # files passed on command-line
+        files = args.files
+
+    elif args.match:  # glob passed
+        from glob import iglob  # defer loading
+
+        files_sources = []
+        for match_arg in args.match:
+            if args.recursive:  # alleviate need to add **/ every time for glob
+                if (not match_arg.startswith(('**', os.sep))  # or /
+                    and match_arg[1:2] != ':'):  # abs path, windows
+                    new_arg = '**' + os.sep + match_arg
+                    logging.debug('recursive match %r updated to: %r',
+                                  match_arg, new_arg)
+                    match_arg = new_arg
+            files_sources.append(iglob(match_arg, recursive=args.recursive))
+
+        if len(args.match) > 1:  # chained iterators
+            from itertools import chain
+            files = chain.from_iterable(files_sources)
+        else:
+            files = files_sources[0]  # single iterator
+
+    else:  # no file specs given, look in current folder
+        from glob import iglob  # defer loading
+        match_arg = '*'
+        if args.recursive:  # alleviate need to add **/ every time for glob
+            new_arg = '**' + os.sep + match_arg
+            logging.debug('recursive match %r updated to: %r', match_arg, new_arg)
+            match_arg = new_arg
+        files = iglob(match_arg, recursive=args.recursive)
+
+    if args.filter:  # build filter pipeline
+        for filter_arg in args.filter:
+            files = filtered_files_generator(filter_arg, files)  # wrappen Sie
+
+    return sorted(files)  # renders generators  :-/
+
+
+def main(args):
+    status = os.EX_OK
+    if args.execute:
+        print(_HEADER % '')
+    else:
+        print(_HEADER % ' Preview')
+
+    files = select_files(args)
+    logging.debug('files: %s', files)
+    len_args = len(sys.argv)  # up
+
+    # Rename each file
+    # We will look at the cmd-line params again
+    # to perform the operations *in the given order*
+    # inefficient with huge num of files, but most useful in common cases
+    for i, orig_fn in enumerate(files):
+        if not orig_fn or orig_fn.isspace():
+            logging.warn('empty filename %r encountered, skipping.', orig_fn)
+            continue
+
+        pos = 1
+        rstat = _OK
+        new_fn = orig_fn
+        # need to modify filename only, remove folder before operations
+        if args.recursive:
+            _dirname, new_fn = split(new_fn)
+
+        while pos < len_args:
+            op = sys.argv[pos]  # operation
+            try:
+                param1 = sys.argv[pos+1]
+            except IndexError:
+                param1 = param2 = None
+            try:
+                param2 = sys.argv[pos+2]
+            except IndexError:
+                param2 = None
+
+            # whole line ops
+            if op in ('-r', '--replace'):
+                new_fn = new_fn.replace(param1, fmt_index(param2, i))
+                pos += 2  # skip two
+
+            elif op in ('-x', '--re-sub'):
+                try:
+                    new_fn = re.sub(param1, fmt_index(param2, i), new_fn)
+                    pos += 2  # skip two
+                except re.PatternError as err:
+                    print(
+                        f'Error: {err.__class__.__name__}: {err}',
+                        file=sys.stderr,
+                    )
+                    return os.EX_USAGE
+
+            elif op in ('-z', '--zfill'):
+                _match = _search_digits(new_fn)
+                if _match:
+                    group_text = _match.group(1)
+                    padded_digits = group_text.zfill(int(args.zfill))
+                    new_fn = _replace_digits(padded_digits, new_fn, count=1)
+                pos += 1  # skip one
+
+            elif op in ('-p', '--prepend'):
+                new_fn = param1 + new_fn
+                pos += 1  # skip one
+
+            elif op in ('-a', '--append'):
+                base, ext = splitext(new_fn)
+                new_fn = ''.join((base, param1, ext))
+                pos += 1  # skip one
+
+            elif op in ('-A', '--append-ext'):
+                ext = param1
+                new_fn = new_fn + (ext if ext.startswith('.') else '.' + ext)
+                pos += 1  # skip one
+
+            elif op in ('-i', '--insert'):
+                spos = int(param1)
+                newlist = list(new_fn)
+
+                newlist.insert(spos, param2)
+                new_fn = ''.join(newlist)
+                pos += 2  # skip two
+
+            elif op in ('-c', '--capitalize'):
+                # this is tricky, avoid capping ext w/o breaking names w/ dates
+                # needs test cases
+                try:
+                    if new_fn[-4] == '.' or new_fn[-5] == '.':
+                        base, ext = splitext(new_fn)
+                        new_fn = smartcap(base) + ext
+                    else:
+                        new_fn = smartcap(new_fn)
+                except IndexError:
+                    pass
+
+            elif op in ('-l', '--lower'):
+                new_fn = new_fn.lower()
+            elif op in ('-L', '--lower-ext'):
+                base, ext = splitext(new_fn)
+                new_fn = base + ext.lower()
+            elif op in ('-u', '--upper'):
+                new_fn = new_fn.upper()
+            elif op in ('-s', '--strip'):
+                base, ext = splitext(new_fn)
+                new_fn = base.strip() + ext.replace(' ', '')
+
+            elif op in ('-o', '--reorder'):
+                spos, dpos = int(param1), int(param2)
+                base, ext = splitext(new_fn)
+                newlist = base.split()
+                length = len(newlist)
+                # Make sure indexes are within bounds
+                if spos >= length:
+                    spos = length - 1
+                if dpos < 0:
+                    dpos = length + dpos + 1  # convert to pos index
+                token = newlist.pop(spos)
+
+                newlist.insert(dpos, token)
+                new_fn = ' '.join(newlist) + ext
+                pos = pos + 2  # skip two
+
+            elif op in ('-S', '--swap-on'):
+                base, ext = splitext(new_fn)
+                front, delim, back = base.partition(param1)
+                if delim:  # found
+                    # handle/fix spaces if necessary, only singles
+                    if front and front[-1].isspace():  # mv space to front
+                        front = front[-1] + front[:-1]
+                    if back and back[0].isspace():  # mv space to back
+                        back = back[1:] + back[0]
+
+                    new_fn = back + delim + front + ext
+                # else skip
+                pos += 1  # skip one
+            # done with ops
+
+            # if op not recognized, just skip, common args and files
+            pos += 1
+            if op != '-v':
+                logging.debug('new_fn: %s %s', op, new_fn)
+
+        if args.recursive:  # now add folder back
+            new_fn = join(_dirname, new_fn)
+
+        # unfortunately a bit of duplicated code here,
+        # needs to know early, then report after printing filenames
+        already_exists = exists(new_fn)
+        nothing_happened = (orig_fn == new_fn)
+        if already_exists:
+            rstat = _WARN
+        if nothing_happened:
+            rstat = ' '
+        else:
+            if args.execute and already_exists:
+                rstat = _ERR
+
+        print(f'{fmt_display(orig_fn)} {_SEP} {fmt_display(new_fn)}{_SP}{rstat}')
+
+        if nothing_happened:
+            logging.debug('%r is the same, nothing to do.', orig_fn)
+        else:
+            if args.execute:
+                if already_exists:
+                    status = os.EX_DATAERR
+                    logging.error('%r exists, skipping.' % new_fn)
+                else:
+                    try:
+                        os.rename(orig_fn, new_fn)
+                    except IOError:
+                        status = os.EX_IOERR
+                        logging.error('error: unable to rename: %r', orig_fn)
+            else:
+                if already_exists:
+                    logging.warning('%r exists.' % new_fn)
+    print()
+    if status:
+        logging.warning('An error occurred.')
+    elif args.execute:
+        logging.info('Operations executed w/o error.')
+
+    return status
+
+
+def setup():
+    ''' Parse, validate command-line, start logging. '''
+    from argparse import ArgumentParser, RawTextHelpFormatter
+
+    parser = ArgumentParser(
+                add_help=False,
+                description=__doc__,
+                epilog=_EPILOG,
+                formatter_class=lambda prog:
+                    RawTextHelpFormatter(prog, max_help_position=29)
+             )
+
+    group = parser.add_argument_group('Simple string operations')
+    group.add_argument('-l', '--lower',
+        action='store_true', help='To lower case.'
+    )
+    group.add_argument('-L', '--lower-ext',
+        action='store_true',
+        help='Lower extension only, e.g.: Foo.JPG → Foo.jpg.'
+    )
+    group.add_argument('-u', '--upper',
+        action='store_true', help='To UPPER case.'
+    )
+    group.add_argument('-s', '--strip',
+        action='store_true', help='Remove whitespace from ends.'
+    )
+
+    group = parser.add_argument_group('Advanced string manipulation')
+    group.add_argument('-r', '--replace',
+        metavar=('S', 'N'), nargs=2,
+        help='Replace a string with a new one.'
+    )
+    group.add_argument('-x', '--re-sub',
+        metavar=('R', 'N'), nargs=2,
+        help='Replace regular eXpression match w/ new string.'
+    )
+    group.add_argument('-p', '--prepend',
+        metavar='S', help='Insert a string before filename.'
+    )
+    group.add_argument('-a', '--append',
+        metavar='S', help='Append a string after *base* of filename.'
+    )
+    group.add_argument('-A', '--append-ext',
+        metavar='S', help='Append a string to end or extension of filename.'
+    )
+    group.add_argument('-i', '--insert',
+        metavar=('P', 'S'), nargs=2,
+        help='Insert a string at the given position (neg ok).'
+    )
+    group.add_argument('-o', '--reorder',
+        metavar=('SP', 'DP'), nargs=2, type=int,
+        help='Re-arrange word tokens in filename, given source-\n'
+        'position and dest-position (neg index ok).'
+    )
+    group.add_argument('-S', '--swap-on',
+        metavar='STR', nargs=1,
+        help='Swap two parts of base filename, split on a given\n'
+        'delimiter, e.g. "-".'
+    )
+    group.add_argument('-z', '--zfill',
+        metavar='N', help='Left-pad first group of digits with N zeros.'
+    )
+
+    group = parser.add_argument_group('Smart Capitalization')
+    group.add_argument('-c', '--capitalize',
+        action='store_true',
+        help='Capitalize Each Word, recognizing known acronyms.',
+    )
+    group.add_argument('--set-acronyms',
+        metavar='FOO,BAR',
+        type=lambda param: param.split(','),
+        help='Set known acronyms with CSV.',
+    )
+    group.add_argument('--append-acronyms',
+        metavar='FOO,BAR',
+        type=lambda param: param.split(','),
+        help='Append to known acronyms (see below) with CSV.',
+    )
+
+    group = parser.add_argument_group('File selection/view ops')
+    group.add_argument('-m', '--match',
+        action='append', default=[], metavar='"G"',
+        help='Select files with glob support, multiple allowed.\n'
+             'Use when files exceed command-line length.'
+    )
+    group.add_argument('-f', '--filter',
+        action='append', default=[], metavar='"G"',
+        help='Exclude these files from selection, (+glob, mult).'
+    )
+    group.add_argument('-R', '--recursive',
+        action='store_true', help='Select files in subfolders too.'
+    )
+    group.add_argument('--align-right', action='store_true',
+        help='Useful when end of filename is not visible,\n'
+             'shifts it left.'
+    )
+    group.add_argument('-e', '--execute',
+        action='store_true',
+        help='! Execute rename operations, defaults to preview.'
+    )
+    group.add_argument('files',
+        metavar='filename', nargs='*',
+        help='List of files, leave blank to search current dir.'
+    )
+
+    group = parser.add_argument_group('Common options')
+    group.add_argument('-h', '--help',
+        action='help', help='Show this help message and exit.'
+    )
+    group.add_argument('-v', '--verbose',
+        action='store_const', dest='loglvl',
+        default=logging.INFO, const=logging.DEBUG,
+        help='Emit additional debug log messages.',
+    )
+    group.add_argument('--version',
+        action='version', version='%(prog)s ' + __version__,
+    )
+
+    # parse and validate
+    args = parser.parse_args()
+    if args.set_acronyms:
+        acronyms.clear()  # operate on reference
+        acronyms.extend(args.set_acronyms)
+    if args.append_acronyms:
+        acronyms.extend(args.append_acronyms)
+
+    # start logging
+    logging.basicConfig(
+        level=args.loglvl, stream=sys.stdout, format='  %(levelname)-8.8s %(message)s'
+    )
+    logging.debug('args: %s', args)
+
+    return args
+
+
+if __name__ == '__main__':
+    # check size to expand view to available size:
+    from shutil import get_terminal_size
+
+    cols = get_terminal_size((80, 20)).columns
+    padding = 2  # minus column padding, border, ico
+    _column_width = int(cols / 2) - padding  # floor
+    if cols % 2:  # is odd
+        _SP = ' '
+
+    try:
+        args = setup()
+        sys.exit(main(args))
+    except Exception as err:
+        if args.loglvl == logging.DEBUG:
+            logging.exception('Unexpected:')
+        else:
+            print('Error:', err, file=sys.stderr)
+        sys.exit(os.EX_DATAERR)
