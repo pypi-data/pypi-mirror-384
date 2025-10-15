@@ -1,0 +1,153 @@
+{% extends 'fittings/base.html' %}
+
+{% load aa_i18n %}
+{% load i18n %}
+{% load filters %}
+{% load evelinks %}
+
+{% block page_title %}{{ doctrine.name }} {% translate "Doctrine" %}{% endblock %}
+
+{% block fittings_block %}
+    {# modal start #}
+    <div class="modal fade" id="deleteModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title fs-5" id="deleteModalLongTitle">
+                        {% translate "Are you sure?" %}
+                    </div>
+
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate 'Close' %}"></button>
+                </div>
+
+                <div class="modal-body">
+                    <p>
+                        {% translate "Are you sure you wish to delete this doctrine?" %}
+                        <br>
+                        <i><strong>{% translate "This action is permanent." %}</strong></i>
+                    </p>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "No - Close" %}</button>
+                    <a href="{% url 'fittings:delete_doctrine' doctrine.pk %}" type="button" class="btn btn-danger">{% translate "Yes - Delete" %}</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {# modal end #}
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card card-primary mb-3">
+                <div class="card-header">
+                    <div class="card-title mb-0">
+                        {% translate "Doctrine Information" %}
+
+                        {% if perms.fittings.manage %}
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-danger float-end ms-1"
+                                data-bs-toggle="modal"
+                                data-bs-target="#deleteModal"
+                                data-bs-tooltip="aa-fittings"
+                                title="{% translate 'Delete Doctrine' %}"
+                            >
+                                <span class="fa-solid fa-times"></span>
+                            </button>
+
+                            <a
+                                href="{% url 'fittings:edit_doctrine' doctrine.pk %}"
+                                class="btn btn-sm btn-warning float-end"
+                                data-bs-tooltip="aa-fittings"
+                                title="{% translate 'Edit Doctrine' %}"
+                            >
+                                <span class="fa-solid fa-pencil-alt"></span>
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <div class="text-center">
+                        <img src="{{ doctrine.icon_url }}" class="rounded" alt="{{ doctrine.name }}">
+                        <br>
+                        {{ doctrine.name }}
+                    </div>
+
+                    <div class="text-center">
+                        {% for cat in d_cats %}
+                            <span class="badge text-white" style="background-color: {{ cat.color }};">
+                                <a href="{% url 'fittings:view_category' cat.pk %}" class="nostyle">{{ cat.name }}</a>
+                            </span>
+                        {% endfor %}
+                    </div>
+
+                    <hr>
+
+                    <dl>
+                        {% if doctrine.description %}
+                            <dt>{% translate "Description" %}</dt>
+                            <dd>{{ doctrine.description|break_html_lines|striptags }}</dd>
+                        {% endif %}
+
+                        {% if doctrine.created %}
+                            <dt>{% translate "Created" %}</dt>
+
+                            {% if LANGUAGE_CODE == 'ko' or LANGUAGE_CODE == 'ja' %}
+                                <dd>{{ doctrine.created|date:'Y-m-d / H:i:s' }}</dd>
+                            {% else %}
+                                <dd>{{ doctrine.created|date:'d M Y H:i:s' }}</dd>
+                            {% endif %}
+                        {% endif %}
+
+                        {% if doctrine.last_updated %}
+                            <dt>{% translate "Last Updated" %}</dt>
+
+                            {% if LANGUAGE_CODE == 'ko' or LANGUAGE_CODE == 'ja' %}
+                                <dd>{{ doctrine.last_updated|date:'Y-m-d / H:i:s' }}</dd>
+                            {% else %}
+                                <dd>{{ doctrine.last_updated|date:'d M Y H:i:s' }}</dd>
+                            {% endif %}
+                        {% endif %}
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="card card-default mb-3">
+                <div class="card-header">
+                    <div class="card-title mb-0">{% translate "Doctrine Fittings" %}</div>
+                </div>
+
+                <div class="card-body">
+                    {% include "fittings/partials/fittings-list-table.html" with cats=f_cats %}
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    {% include 'bundles/datatables-js-bs5.html' %}
+
+    {% get_datatables_language_static LANGUAGE_CODE as DT_LANG_PATH %}
+
+    <script>
+        $(document).ready(() => {
+            {% if fits %}
+                $('#fitTable').DataTable({
+                    language: {
+                        url: '{{ DT_LANG_PATH }}'
+                    },
+                    paging: false,
+                    searching: false,
+                    order: [[0, 'asc']]
+                });
+            {% endif %}
+
+            $('[data-bs-tooltip="aa-fittings"]').tooltip();
+        });
+    </script>
+{% endblock %}

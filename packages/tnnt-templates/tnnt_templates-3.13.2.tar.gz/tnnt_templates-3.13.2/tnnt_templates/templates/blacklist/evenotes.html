@@ -1,0 +1,395 @@
+{% extends 'blacklist/base.html' %}
+
+{% load aa_i18n %}
+{% load evelinks %}
+{% load i18n %}
+{% load humanize %}
+
+{% block page_title %}{% trans "Pilot Log" %}{% endblock %}
+
+{% block tb_block %}
+    {% translate "Pilot Log" as translated_header %}
+{#    {% include "tnnt_templates/includes/header/page-header.html" with header_text=translated_header %}#}
+    {% include "framework/header/page-header.html" with title=translated_header %}
+
+    <div class="panel panel-default clearfix">
+        <div class="panel-heading">
+            <div class="panel-title">
+                {% translate "All Notes" %}
+
+                <div class="pull-right" style="margin-top: -7px;">
+                    {% if add_note %}
+                        <button class="btn btn-success modal-add-new" title="Add New">
+                            {% translate "Add New" %}
+                        </button>
+                    {% endif %}
+
+                    <button
+                        class="btn btn-default"
+                        title="{% translate 'Select Search Character' %}"
+                        href="{% url "blacklist:set" %}"
+                    >
+                        {% if search_char %}
+                            {{ search_char.character_name }}
+                        {% else %}
+                            {% translate "Select Search Character!" %}
+                        {% endif %}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-body clearfix" id="all-notes">
+            {% if notes %}
+                <table class="table table-striped" style="width: 100%;" id="notes-table">
+                    <thead>
+                        <tr>
+                            <th style="max-width: 64px;"></th>
+                            <th>{% translate "Name" %}</th>
+                            <th>{% translate "Date Added" %}</th>
+                            <th>{% translate "Added By" %}</th>
+                            <th>{% translate "Reason" %}</th>
+                            <th>{% translate "Added By" %}</th>
+                            <th>{% translate "Category" %}</th>
+                            <th>{% translate "Corporation" %}</th>
+                            <th>{% translate "Alliance" %}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for note in notes %}
+                            <tr>
+                                <td>
+                                    {% if note.eve_catagory == "character" %}
+                                        <img
+                                            src="{{ note.eve_id|character_portrait_url:64 }}"
+                                            alt="{{ note.eve_name }}"
+                                            title="{{ note.eve_name }}"
+                                        >
+                                    {% elif note.eve_catagory == "corporation" %}
+                                        <img
+                                            src="{{ note.eve_id|corporation_logo_url:64 }}"
+                                            alt="{{ note.eve_name }}"
+                                            title="{{ note.eve_name }}"
+                                        >
+                                    {% elif note.eve_catagory == "alliance" %}
+                                        <img
+                                            src="{{ note.eve_id|alliance_logo_url:64 }}"
+                                            alt="{{ note.eve_name }}"
+                                            title="{{ note.eve_name }}"
+                                        >
+                                    {% endif %}
+                                </td>
+
+                                <td>
+                                    <p>
+                                        {{ note.eve_name }}
+
+                                        {% if note.eve_catagory == 'character' %}
+                                            <br>
+                                            <span class="label label-default">
+                                                {{ note.corporation_name }}
+                                            </span>
+                                            <br>
+                                            <span class="label label-default">
+                                                {{ note.alliance_name|default_if_none:'' }}
+                                            </span>
+                                        {% endif %}
+
+                                        {% if note.blacklisted %}
+                                            <br>
+                                            <span class="label label-danger">
+                                                {% translate "BLACKLISTED" %}
+                                            </span>
+                                        {% endif %}
+
+                                        {% if note.restricted %}
+                                            <br>
+                                            <span class="label label-warning">
+                                                {% translate "RESTRICTED" %}
+                                            </span>
+                                        {% endif %}
+                                    </p>
+                                </td>
+
+                                <td>
+                                    <p>
+                                        {{ note.added_at|date:"Y-m-d H:i"}}
+                                        <br>
+                                        {{ note.added_at|naturaltime }}
+                                    </p>
+                                </td>
+
+                                <td>
+                                    <p>{{ note.added_by }}</p>
+                                </td>
+
+                                <td>
+                                    {{ note.reason|linebreaks }}
+                                </td>
+
+                                <!-- for filtering -->
+                                <td>{{ note.added_by }}</td>
+                                <td>{{ note.eve_catagory }}</td>
+                                <td>{{ note.corporation_name }}</td>
+                                <td>{{ note.alliance_name }}</td>
+                                <td>
+                                    <div class="text-right">
+                                        {% if view_comment or add_comment %}
+                                            <button
+                                                class="btn btn-primary btn-sm modal-comments-button"
+                                                id="{{ note.id }}"
+                                                title="Comments for: {{ note.eve_name }}"
+                                            >
+                                                <i class="fa fa-comments"></i>
+                                            </button>
+                                        {% endif %}
+
+                                        {% if edit_note %}
+                                            <button
+                                                class="btn btn-info btn-sm modal-edit-button"
+                                                id="{{ note.id }}"
+                                                title="Edit: {{ note.eve_name }}"
+                                            >
+                                                <i class="fa fa-edit"></i>
+                                            </button>
+                                        {% endif %}
+
+                                        {% if add_comment %}
+                                            <button
+                                                class="btn btn-primary btn-sm modal-add-comment-button"
+                                                id="{{ note.id }}"
+                                                title="Add Comment for: {{ note.eve_name }}"
+                                            >
+                                                <i class="fa fa-comment"></i>
+                                            </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="alert alert-warning text-center">
+                    {% translate "No notes have been added!" %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="modal fade" id="modal-main" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button
+                        type="button"
+                        class="close"
+                        data-dismiss="modal"
+                        aria-label="{% translate 'Close' %}"
+                    >
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+
+                    <div class="modal-title" id="main-modal-title"></div>
+                </div>
+
+                <div id="main-modal-body" class="modal-body" style="overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_javascript %}
+    {% include "bundles/datatables-js.html" %}
+    {% include "bundles/filterdropdown-js.html" %}
+
+    {% get_datatables_language_static LANGUAGE_CODE as DT_LANG_PATH %}
+
+    <script>
+        $('.modal-comments-button').on('click', function () {
+            const id = this.id;
+            const title = this.title;
+            const url = '{% url "blacklist:modal_comment" 123456 %}'.replace('123456', id);
+
+            $.get(url, (data) => {
+                const modal_body = $('#main-modal-body')[0];
+                const modal_title = $('#main-modal-title')[0];
+
+                modal_title.innerHTML = title;
+                modal_body.innerHTML = data;
+
+                $('#modal-main').modal();
+            });
+        });
+
+        $('.modal-edit-button').on('click', function () {
+            const id = this.id;
+            const title = this.title;
+            const url = '{% url "blacklist:modal_edit" 123456 %}'.replace('123456', id);
+
+            $.get(url, function (data) {
+                const modal_body = $('#main-modal-body')[0];
+                const modal_title = $('#main-modal-title')[0];
+
+                modal_title.innerHTML = title;
+                modal_body.innerHTML = data;
+
+                $('#modal-main').modal();
+            });
+        });
+
+        $('.modal-add-comment-button').on('click', function () {
+            const id = this.id;
+            const title = this.title;
+            const url = '{% url "blacklist:modal_add_comment" 123456 %}'.replace('123456', id);
+
+            $.get(url, (data) => {
+                const modal_body = $('#main-modal-body')[0];
+                const modal_title = $('#main-modal-title')[0];
+
+                modal_title.innerHTML = title;
+                modal_body.innerHTML = data;
+
+                $('#modal-main').modal();
+            });
+        });
+
+        $('.modal-add-new').on('click', function () {
+            const url = '{% url "blacklist:search_names" %}';
+            const title = this.title;
+
+            const search = () => {
+                const url = '{% url "blacklist:search_names" %}';
+                const search_data = {'name': $('#id_name').val()};
+                const token = document.getElementsByName('csrfmiddlewaretoken')[1].value;
+                const modal_body = $('#main-modal-body')[0];
+
+                modal_body.innerHTML = `<div class="text-center"><div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div></div>`;
+
+                $.ajax({
+                    headers: {'X-CSRFToken': token},
+                    method: 'POST',
+                    url: url,
+                    data: search_data,
+                    success: search_post
+                });
+            };
+
+            const search_post = (data) => {
+                let modal_body = $('#main-modal-body')[0];
+                const modal_title = $('#main-modal-title')[0];
+
+                modal_title.innerHTML = title;
+                modal_body.innerHTML = data;
+
+                $('#modal-main').modal();
+
+                $('#id_name').keypress((event) => {
+                    const keycode = (event.keyCode ? event.keyCode : event.which);
+
+                    if (keycode === '13') {
+                        event.preventDefault();
+
+                        search();
+                    }
+                });
+
+                $('.search-submit').on('click', () => {
+                    modal_body = $('#main-modal-body')[0];
+
+                    search();
+                });
+
+                $('.add-new-btn').on('click', function () {
+                    const id = this.id;
+                    const url = '{% url "blacklist:modal_add" 123456 %}'.replace('123456', id);
+                    const modal_body = $('#main-modal-body')[0];
+                    const token = document.getElementsByName('csrfmiddlewaretoken')[1].value;
+
+                    modal_body.innerHTML = `<div class="text-center"><div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div></div>`;
+
+                    $.ajax({
+                        headers: {'X-CSRFToken': token},
+                        method: 'POST',
+                        url: url,
+                        success: search_post
+                    });
+                });
+
+                $('#searched-names').DataTable({
+                    language: {
+                        url: '{{ DT_LANG_PATH }}'
+                    },
+                    filterDropDown: {
+                        columns: [{
+                            idx: 2
+                        }],
+                        bootstrap: true
+                    },
+                    columnDefs: [
+                        {
+                            searchable: false,
+                            targets: [0, 3]
+                        },
+                        {
+                            sortable: false,
+                            targets: [0, 3]
+                        }
+                    ],
+                    order: [
+                        [1, 'asc']
+                    ],
+                    pageLength: 10,
+                    responsive: true
+                });
+            };
+
+            $.get(url, search_post);
+        });
+
+        $('#modal-main').on('hide.bs.modal', () => {
+            const modal_body = $('#main-modal-body');
+
+            modal_body.html('');
+        });
+
+        $(document).ready(() => {
+            $('#notes-table').DataTable({
+                language: {
+                    url: '{{ DT_LANG_PATH }}'
+                },
+                filterDropDown: {
+                    columns: [
+                        {idx: 5},
+                        {idx: 6},
+                        {idx: 7},
+                        {idx: 8}
+                    ],
+                    bootstrap: true
+                },
+                columnDefs: [
+                    {
+                        searchable: false,
+                        targets: [0]
+                    },
+                    {
+                        sortable: false,
+                        targets: [0, 4, 9]
+                    },
+                    {
+                        visible: false,
+                        targets: [5, 6, 7, 8]
+                    }
+
+                ],
+                order: [
+                    [1, 'asc']
+                ],
+                pageLength: 25,
+                responsive: true
+            });
+        });
+    </script>
+{% endblock %}
