@@ -1,0 +1,1 @@
+etextedit plugins directory is placed here
