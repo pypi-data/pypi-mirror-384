@@ -1,0 +1,46 @@
+name: Python CI on Commit
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Step 1: Replace Poetry installation with uv setup
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+        cache-suffix: venv-${{ runner.os }}-${{ matrix.python-version }}
+
+    # Step 2: Install dependencies using uv
+    - name: Install dependencies
+      run: uv sync --dev
+
+    # Step 3: Run the linting and testing commands using uv
+    - name: Run Ruff Check
+      run: uv run ruff check .
+
+    - name: Run Ruff Format Check
+      run: uv run ruff format --check .
+
+    - name: Run Pytest
+      run: uv run pytest
+
+    - name: Run Pyright
+      run: uv run pyright .
+
+    - name: Run MyPy
+      run: uv run mypy .

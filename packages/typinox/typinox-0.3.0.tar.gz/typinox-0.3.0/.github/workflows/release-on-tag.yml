@@ -1,0 +1,38 @@
+name: Create Release on Tag
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1: Replace Poetry installation with uv setup
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-suffix: build-release
+
+      # Step 2: Build package using uv
+      - name: Build package
+        run: uv build
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.whl
+          body_path: docs/release_notes.md
+          # generate_release_notes: true
+          # append_body: true
