@@ -1,0 +1,922 @@
+
+{% extends "enap_designsystem/base.html" %}
+{% load static %}
+{% load wagtailcore_tags wagtailimages_tags %}
+
+{% block extra_css %}
+<style>
+    /* Estilos do Quiz */
+    .quiz-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px 20px;
+    }
+    
+    .quiz-header {
+        text-align: center;
+        margin-bottom: 60px;
+    }
+    
+    .quiz-header h1 {
+        font-size: 2.5rem;
+        color: #0066CC;
+        margin-bottom: 20px;
+    }
+    
+    .quiz-progress {
+        max-width: 600px;
+        margin: 0 auto 40px;
+    }
+    
+    .progress-bar {
+        height: 8px;
+        background: #e0e0e0;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 10px;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #0066CC, #00A3E0);
+        transition: width 0.3s ease;
+    }
+    
+    .progress-text {
+        text-align: center;
+        display: block;
+        color: #666;
+        font-size: 14px;
+    }
+    
+    .pergunta-card {
+        background: white;
+        border-radius: 12px;
+        padding: 40px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        margin-bottom: 30px;
+        animation: fadeIn 0.5s ease;
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .pergunta-texto {
+        font-size: 1.8rem;
+        color: #333;
+        margin-bottom: 10px;
+        font-weight: 600;
+    }
+    
+    .pergunta-ajuda {
+        color: #666;
+        font-size: 1rem;
+        margin-bottom: 30px;
+    }
+    
+    .opcoes-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-top: 30px;
+    }
+    
+    .opcao-card {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 24px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-align: left;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .opcao-card:hover {
+        border-color: #0066CC;
+        box-shadow: 0 6px 20px rgba(0,102,204,0.15);
+        transform: translateY(-4px);
+    }
+    
+    .opcao-card.selecionado {
+        border-color: #0066CC;
+        background: #f0f7ff;
+    }
+    
+    .opcao-card i {
+        font-size: 2rem;
+        color: #0066CC;
+        margin-bottom: 12px;
+        display: block;
+    }
+    
+    .opcao-card h3 {
+        font-size: 1.2rem;
+        color: #333;
+        margin: 0 0 8px 0;
+    }
+    
+    .opcao-card p {
+        color: #666;
+        font-size: 0.9rem;
+        margin: 0;
+        line-height: 1.5;
+    }
+    
+    .btn-selecionar {
+        display: inline-block;
+        margin-top: 12px;
+        color: #0066CC;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    
+    .escolhas-resumo {
+        background: #f8f9fa;
+        border-left: 4px solid #0066CC;
+        padding: 20px;
+        border-radius: 8px;
+        margin-top: 30px;
+    }
+    
+    .escolhas-resumo h4 {
+        margin: 0 0 15px 0;
+        color: #333;
+    }
+    
+    .escolhas-resumo ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .escolhas-resumo li {
+        padding: 8px 0;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .escolhas-resumo li:last-child {
+        border-bottom: none;
+    }
+    
+    .escolhas-resumo strong {
+        color: #0066CC;
+        text-transform: capitalize;
+    }
+    
+    .btn-recomecar {
+        display: inline-block;
+        padding: 10px 20px;
+        background: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        text-decoration: none;
+        transition: background 0.3s;
+        margin-top: 20px;
+    }
+    
+    .btn-recomecar:hover {
+        background: #5a6268;
+    }
+    
+    /* Estilos do Resultado */
+    .resultado-rotas {
+        padding: 40px 0;
+    }
+    
+    .resultado-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+    
+    .resultado-header h1 {
+        color: #0066CC;
+        font-size: 2.5rem;
+        margin-bottom: 20px;
+    }
+    
+    .badges-respostas {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+        list-style: none;
+        padding: 0;
+        margin: 20px 0;
+    }
+    
+    .badge {
+        background: #0066CC;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 500;
+    }
+    
+    .acoes-resultado {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        margin: 40px 0;
+        flex-wrap: wrap;
+    }
+    
+    .btn {
+        display: inline-block;
+        padding: 14px 28px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+    }
+    
+    .btn-primary {
+        background: #0066CC;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #0052a3;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,102,204,0.3);
+    }
+    
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background: #5a6268;
+    }
+    
+    .btn-lg {
+        padding: 16px 32px;
+        font-size: 18px;
+    }
+    
+    .capsulas-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 30px;
+        margin-top: 30px;
+    }
+    
+    .capsula-card {
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 24px;
+        transition: all 0.3s;
+        background: white;
+    }
+    
+    .capsula-card:hover {
+        box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+        border-color: #0066CC;
+        transform: translateY(-4px);
+    }
+    
+    .capsula-card.obrigatorio {
+        border-left: 6px solid #dc3545;
+    }
+    
+    .capsula-card.recomendado {
+        border-left: 6px solid #28a745;
+    }
+    
+    .badge-prioridade {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+    
+    .badge-obrigatorio {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .badge-recomendado {
+        background: #28a745;
+        color: white;
+    }
+    
+    .capsula-card h3 {
+        margin: 12px 0;
+        color: #333;
+        font-size: 1.3rem;
+    }
+    
+    .capsula-card h3 a {
+        text-decoration: none;
+        color: inherit;
+        transition: color 0.3s;
+    }
+    
+    .capsula-card h3 a:hover {
+        color: #0066CC;
+    }
+    
+    .capsula-resumo {
+        color: #666;
+        line-height: 1.6;
+        margin: 12px 0;
+    }
+    
+    .capsula-tags {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 12px 0;
+    }
+    
+    .tag {
+        background: #f0f0f0;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #666;
+    }
+    
+    .btn-ler-capsula {
+        display: inline-block;
+        margin-top: 12px;
+        color: #0066CC;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+    
+    .btn-ler-capsula:hover {
+        color: #0052a3;
+        text-decoration: underline;
+    }
+    
+    .sem-resultados {
+        text-align: center;
+        padding: 60px 20px;
+        background: #f8f9fa;
+        border-radius: 12px;
+        margin-top: 30px;
+    }
+    
+    .sem-resultados p {
+        font-size: 18px;
+        color: #666;
+        margin-bottom: 20px;
+    }
+    
+    /* CSS para impressão */
+    @media print {
+        @page {
+            margin: 2cm;
+            size: A4;
+        }
+        
+        .acoes-resultado,
+        nav,
+        footer,
+        .btn,
+        .quiz-progress,
+        .btn-recomecar {
+            display: none !important;
+        }
+        
+        .capsulas-grid {
+            display: block;
+        }
+        
+        .capsula-card {
+            page-break-inside: avoid;
+            border: 2px solid #333;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        
+        .badge-prioridade {
+            border: 2px solid #000;
+        }
+        
+        .resultado-header h1 {
+            font-size: 24pt;
+            margin-bottom: 20pt;
+        }
+        
+        a {
+            color: #000;
+            text-decoration: none;
+        }
+        
+        a[href]:after {
+            content: " (" attr(href) ")";
+            font-size: 10pt;
+            color: #666;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block title %}
+    <title>{{ page.page_title }}</title>
+{% endblock %}
+
+{%block govnavbar %}
+    <div style="background-color: #071E41;">
+        <div class="menu">
+            <div class="logo">
+                <img style="width: 51px; height: 18px;" src="{% static 'enap_designsystem/icons/logo-white.png' %}" alt="Passar pro lado esquerdo" alt="Logo GovBR" height="40">
+            </div>
+            <a href="https://www.gov.br/secom/pt-br/acesso-a-informacao/comunicabr">Comunica BR</a>
+            <div class="separator"></div>
+            <a href="https://www.gov.br/acessoainformacao/pt-br">Acesso à informação</a>
+            <div class="separator"></div>
+            <a href="https://www.gov.br/pt-br/participacao-social/">Participe</a>
+            <div class="separator"></div>
+            <a href="https://www4.planalto.gov.br/legislacao/">Legislação</a>
+            <div class="separator"></div>
+            <a href="https://www.gov.br/pt-br/orgaos-do-governo">Órgãos do Governo</a>
+        </div>
+    </div>
+{% endblock %}
+
+
+{% block navbar %}
+    {% if page.navbar %}
+        {% include "enap_designsystem/blocks/navbar/navbar_block.html" with navbar=page.navbar %}
+    {% else %}
+        <p style="color: red;">DEBUG: Nenhuma Navbar foi definida.</p>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if e_resultado %}
+    {# ========================================== #}
+    {# PÁGINA DE RESULTADO #}
+    {# ========================================== #}
+    
+    <div class="resultado-rotas">
+        <div class="container">
+            
+            <header class="resultado-header">
+                <h1>✅ Suas Recomendações Personalizadas</h1>
+                
+                <div class="resumo-respostas">
+                    <h3>Com base no seu perfil:</h3>
+                    <ul class="badges-respostas">
+                        {% for chave, resposta in respostas.items %}
+                            <li class="badge">
+                                {{ resposta.texto }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                
+                {% if page.texto_resultado %}
+                    <div class="texto-resultado">
+                        {{ page.texto_resultado|richtext }}
+                    </div>
+                {% endif %}
+            </header>
+            
+            {# Ações #}
+            <div class="acoes-resultado">
+                <button onclick="window.print()" class="btn btn-primary btn-lg">
+                    📄 Salvar / Imprimir como PDF
+                </button>
+                
+                <a href="{{ page.url }}" class="btn btn-secondary">
+                    🔄 Fazer novo quiz
+                </a>
+            </div>
+            
+            {# Grid de cápsulas #}
+            <section class="capsulas-recomendadas">
+                <h2 style="text-align: center; margin-bottom: 30px;">
+                    Encontramos {{ total_capsulas }} 
+                    {% if total_capsulas == 1 %}cápsula{% else %}cápsulas{% endif %}
+                    para você
+                </h2>
+                
+                {% if capsulas_recomendadas %}
+                    <div class="capsulas-grid">
+                        {% for capsula in capsulas_recomendadas %}
+                            <article class="capsula-card {% if capsula.prioridade == 'obrigatorio' %}obrigatorio{% else %}recomendado{% endif %}">
+                                
+                                <span class="badge-prioridade {% if capsula.prioridade == 'obrigatorio' %}badge-obrigatorio{% else %}badge-recomendado{% endif %}">
+                                    {% if capsula.prioridade == 'obrigatorio' %}
+                                        ⚠️ Obrigatório
+                                    {% else %}
+                                        ✨ Recomendado
+                                    {% endif %}
+                                </span>
+                                
+                                <h3>
+                                    <a href="{{ capsula.url }}">{{ capsula.title }}</a>
+                                </h3>
+                                
+                                {% if capsula.resumo_card %}
+                                    <p class="capsula-resumo">
+                                        {{ capsula.resumo_card }}
+                                    </p>
+                                {% endif %}
+                                
+                                {% if capsula.tipos_deficiencia %}
+                                    <div class="capsula-tags">
+                                        {% for tipo in capsula.tipos_deficiencia %}
+                                            <span class="tag">{{ tipo }}</span>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                
+                                <a href="{{ capsula.url }}" class="btn-ler-capsula">
+                                    Ler cápsula completa →
+                                </a>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="sem-resultados">
+                        <p>Não encontramos cápsulas específicas para este perfil ainda.</p>
+                        <a href="{{ page.url }}" class="btn btn-primary">Tentar novamente</a>
+                    </div>
+                {% endif %}
+            </section>
+            
+        </div>
+    </div>
+
+{% else %}
+    {# ========================================== #}
+    {# QUIZ INTERATIVO - PERGUNTAS FIXAS #}
+    {# ========================================== #}
+    
+    <div class="quiz-container">
+        
+        <header class="quiz-header">
+            <h1>{{ page.title }}</h1>
+            {% if page.introducao %}
+                {{ page.introducao|richtext }}
+            {% endif %}
+        </header>
+        
+        {# Barra de progresso #}
+        <div class="quiz-progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 33%"></div>
+            </div>
+            <span class="progress-text" id="progressText">Pergunta 1 de 3</span>
+        </div>
+        
+        {# Área das perguntas (dinâmica via JS) #}
+        <div id="quizArea">
+            
+            {# ========================================== #}
+            {# PERGUNTA 1: PERFIL PROFISSIONAL #}
+            {# ========================================== #}
+            <div class="pergunta-card" id="pergunta1" style="display: block;">
+                <h2 class="pergunta-texto">Qual é o seu perfil profissional?</h2>
+                <p class="pergunta-ajuda">Selecione a opção que melhor descreve sua função principal</p>
+                
+                <div class="opcoes-grid">
+                    <button class="opcao-card" onclick="responderPergunta1('designer_instrucional', 'Designer Instrucional')">
+                        <i>🎨</i>
+                        <h3>Designer Instrucional</h3>
+                        <p>Responsável por criar e estruturar conteúdos educacionais</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta1('designer_grafico', 'Designer Gráfico')">
+                        <i>🖼️</i>
+                        <h3>Designer Gráfico</h3>
+                        <p>Responsável pela criação de elementos visuais</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta1('docente', 'Docente')">
+                        <i>👨‍🏫</i>
+                        <h3>Docente</h3>
+                        <p>Professor(a) que ministra aulas e eventos educacionais</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta1('implementador_web', 'Implementador Web', true)">
+                        <i>💻</i>
+                        <h3>Implementador Web</h3>
+                        <p>Desenvolvedor responsável por implementar sistemas e plataformas</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta1('editor_video', 'Editor de Vídeo', true)">
+                        <i>🎬</i>
+                        <h3>Editor de Vídeo</h3>
+                        <p>Responsável pela edição e produção de conteúdos audiovisuais</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta1('curador_conteudo', 'Curador de Conteúdo')">
+                        <i>📁</i>
+                        <h3>Curador de Conteúdo</h3>
+                        <p>Responsável por selecionar e organizar conteúdos</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta1('conteudista', 'Conteudista')">
+                        <i>✍️</i>
+                        <h3>Conteudista</h3>
+                        <p>Responsável por criar textos e materiais didáticos</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                </div>
+            </div>
+            
+            {# ========================================== #}
+            {# PERGUNTA 2a: TIPO DE RECURSO #}
+            {# ========================================== #}
+            <div class="pergunta-card" id="pergunta2a" style="display: none;">
+                <h2 class="pergunta-texto">Com qual tipo de recurso você trabalha?</h2>
+                <p class="pergunta-ajuda">Escolha o tipo de material que você mais produz ou edita</p>
+                
+                <div class="opcoes-grid">
+                    <button class="opcao-card" onclick="responderPergunta2a('imagem', 'Imagem')">
+                        <i>🖼️</i>
+                        <h3>Imagem</h3>
+                        <p>Fotos, ilustrações e gráficos</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('video', 'Vídeo')">
+                        <i>▶️</i>
+                        <h3>Vídeo</h3>
+                        <p>Conteúdos em vídeo</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('tabela', 'Tabela')">
+                        <i>📊</i>
+                        <h3>Tabela</h3>
+                        <p>Dados tabulados e planilhas</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('grafico', 'Gráfico')">
+                        <i>📈</i>
+                        <h3>Gráfico</h3>
+                        <p>Visualizações de dados</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('texto', 'Texto')">
+                        <i>📝</i>
+                        <h3>Texto</h3>
+                        <p>Documentos e materiais escritos</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('audio', 'Áudio')">
+                        <i>🎧</i>
+                        <h3>Áudio</h3>
+                        <p>Podcasts e materiais sonoros</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('botao', 'Botão/Interface')">
+                        <i>🖱️</i>
+                        <h3>Botão/Interface</h3>
+                        <p>Elementos de interface</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('hiperlink', 'Hiperlink')">
+                        <i>🔗</i>
+                        <h3>Hiperlink</h3>
+                        <p>Links e navegação</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2a('videoconferencia', 'Videoconferência')">
+                        <i>📹</i>
+                        <h3>Videoconferência</h3>
+                        <p>Reuniões e aulas online</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                </div>
+            </div>
+            
+            {# ========================================== #}
+            {# PERGUNTA 2b: FORMATO DE AÇÃO #}
+            {# ========================================== #}
+            <div class="pergunta-card" id="pergunta2b" style="display: none;">
+                <h2 class="pergunta-texto">Qual formato de ação de desenvolvimento você trabalha?</h2>
+                <p class="pergunta-ajuda">Selecione a modalidade de ensino com a qual você trabalha</p>
+                
+                <div class="opcoes-grid">
+                    <button class="opcao-card" onclick="responderPergunta2b('distancia_sincrono', 'A distância síncrono')">
+                        <i>💻</i>
+                        <h3>A distância síncrono</h3>
+                        <p>Aulas e eventos online em tempo real</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2b('distancia_assincrono', 'A distância assíncrono')">
+                        <i>📚</i>
+                        <h3>A distância assíncrono</h3>
+                        <p>Conteúdos que os alunos acessam quando quiserem</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2b('presencial', 'Presencial')">
+                        <i>🏫</i>
+                        <h3>Presencial</h3>
+                        <p>Aulas e eventos presenciais</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                    
+                    <button class="opcao-card" onclick="responderPergunta2b('semipresencial', 'Semipresencial')">
+                        <i>🔀</i>
+                        <h3>Semipresencial</h3>
+                        <p>Combinação de presencial e online</p>
+                        <span class="btn-selecionar">Selecionar →</span>
+                    </button>
+                </div>
+            </div>
+            
+        </div>
+        
+        {# Resumo das escolhas #}
+        <aside class="escolhas-resumo" id="escolhasResumo" style="display: none;">
+            <h4>Suas escolhas:</h4>
+            <ul id="listaEscolhas"></ul>
+        </aside>
+        
+        <a href="{{ page.url }}" class="btn-recomecar" style="display: none;" id="btnRecomecar">
+            ← Recomeçar
+        </a>
+        
+    </div>
+
+{% endif %}
+<script>
+    // ==========================================
+    // JAVASCRIPT SIMPLIFICADO - USA URL PARAMS
+    // ==========================================
+    
+    let respostas = {};
+    
+    // Função para construir URL com parâmetros
+    function construirUrlResultado() {
+        let params = new URLSearchParams();
+        
+        if (respostas.perfil_profissional) {
+            params.append('perfil', respostas.perfil_profissional.valor);
+            params.append('perfil_texto', respostas.perfil_profissional.texto);
+        }
+        
+        if (respostas.tipo_recurso) {
+            params.append('recurso', respostas.tipo_recurso.valor);
+            params.append('recurso_texto', respostas.tipo_recurso.texto);
+        }
+        
+        if (respostas.formato_acao) {
+            params.append('formato', respostas.formato_acao.valor);
+            params.append('formato_texto', respostas.formato_acao.texto);
+        }
+        
+        params.append('resultado', '1');
+        
+        return '{{ page.url }}?' + params.toString();
+    }
+    
+    // Função para atualizar progresso
+    function atualizarProgresso(atual, total) {
+        const percentual = (atual / total) * 100;
+        document.getElementById('progressFill').style.width = percentual + '%';
+        document.getElementById('progressText').textContent = `Pergunta ${atual} de ${total}`;
+    }
+    
+    // Função para mostrar resumo
+    function atualizarResumo() {
+        const resumo = document.getElementById('escolhasResumo');
+        const lista = document.getElementById('listaEscolhas');
+        const btnRecomecar = document.getElementById('btnRecomecar');
+        
+        lista.innerHTML = '';
+        
+        if (Object.keys(respostas).length > 0) {
+            for (let [chave, resposta] of Object.entries(respostas)) {
+                const li = document.createElement('li');
+                const chaveFormatada = chave.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                li.innerHTML = `<strong>${chaveFormatada}:</strong> ${resposta.texto}`;
+                lista.appendChild(li);
+            }
+            resumo.style.display = 'block';
+            btnRecomecar.style.display = 'inline-block';
+        }
+    }
+    
+    // ==========================================
+    // RESPONDER PERGUNTA 1: PERFIL PROFISSIONAL
+    // ==========================================
+    function responderPergunta1(valor, texto, irParaResultado = false) {
+        // Salvar resposta
+        respostas['perfil_profissional'] = {
+            valor: valor,
+            texto: texto
+        };
+        
+        // Animar seleção
+        event.target.closest('.opcao-card').classList.add('selecionado');
+        
+        setTimeout(() => {
+            // Ocultar pergunta 1
+            document.getElementById('pergunta1').style.display = 'none';
+            
+            atualizarResumo();
+            
+            if (irParaResultado) {
+                // Implementador Web ou Editor de Vídeo - vai direto
+                window.location.href = construirUrlResultado();
+            } else if (valor === 'docente') {
+                // Docente vai para pergunta 2b (Formato de Ação)
+                atualizarProgresso(2, 2);
+                document.getElementById('pergunta2b').style.display = 'block';
+            } else {
+                // Designer Instrucional, Designer Gráfico, Curador, Conteudista
+                // vão para pergunta 2a (Tipo de Recurso)
+                atualizarProgresso(2, 2);
+                document.getElementById('pergunta2a').style.display = 'block';
+            }
+        }, 300);
+    }
+    
+    // ==========================================
+    // RESPONDER PERGUNTA 2a: TIPO DE RECURSO
+    // ==========================================
+    function responderPergunta2a(valor, texto) {
+        // Salvar resposta
+        respostas['tipo_recurso'] = {
+            valor: valor,
+            texto: texto
+        };
+        
+        // Animar seleção
+        event.target.closest('.opcao-card').classList.add('selecionado');
+        
+        setTimeout(() => {
+            atualizarResumo();
+            
+            // Ir para resultado
+            window.location.href = construirUrlResultado();
+        }, 300);
+    }
+    
+    // ==========================================
+    // RESPONDER PERGUNTA 2b: FORMATO DE AÇÃO
+    // ==========================================
+    function responderPergunta2b(valor, texto) {
+        // Salvar resposta
+        respostas['formato_acao'] = {
+            valor: valor,
+            texto: texto
+        };
+        
+        // Animar seleção
+        event.target.closest('.opcao-card').classList.add('selecionado');
+        
+        setTimeout(() => {
+            atualizarResumo();
+            
+            // Ir para resultado
+            window.location.href = construirUrlResultado();
+        }, 300);
+    }
+    
+    // Inicialização
+    document.addEventListener('DOMContentLoaded', function() {
+        atualizarProgresso(1, 2);
+    });
+</script>
+{% endblock %}
