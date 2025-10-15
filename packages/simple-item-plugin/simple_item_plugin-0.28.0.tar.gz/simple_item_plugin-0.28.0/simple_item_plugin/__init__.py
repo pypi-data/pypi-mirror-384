@@ -1,0 +1,1 @@
+from simple_item_plugin.plugin import beet_default
