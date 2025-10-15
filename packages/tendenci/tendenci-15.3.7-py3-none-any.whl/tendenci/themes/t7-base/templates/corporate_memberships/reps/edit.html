@@ -1,0 +1,143 @@
+{% extends "corporate_memberships/base.html" %}
+{% load bootstrap_pagination_tags %}
+{% load base_filters %}
+{% load perm_tags %}
+{% load corporate_memberships_tags %}
+{% load styled_forms %}
+
+{% block title %}{% trans "Corporate Membership Representatives" %}{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<link rel="stylesheet" href="//ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+<link rel="stylesheet" href="{% static 'css/corporate_memberships-edit_reps.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="t">
+<div class="corp-reps">
+     <h1>{% trans "Add/Edit Representatives " %}<br />
+     <small>&nbsp;&nbsp;&nbsp; <a href="{% url "corpmembership.view" corp_membership.id %}">{{ corp_membership.corp_profile.name }}</a></small></h1>
+     <i>{% blocktrans %}Adding an administrative representative does not grant membership benefits, <a href="{{ join_under_corp_url }}">join as a Member</a> instead.{% endblocktrans %}</i>
+     {% if reps %}
+     <table class="table">
+         <tr>
+             <td class="header" width="55%">{% trans "Rep." %}</td>
+             <td class="header" width="20%">{% trans "Is Dues Rep." %}</td>
+             <td class="header" width="20%">{% trans "Is Member Rep." %}</td>
+             <td class="header" width="5%">&nbsp;</td>
+         </tr>
+       {% for rep in reps %}
+           <tr class="corp-rep">
+           <td><a href="{% url "profile" rep.user.username %}">{{ rep.user.get_full_name }} ({{ rep.user.email  }})</a>
+
+           </td>
+           <td>{{ rep.is_dues_rep|yesno }}</td>
+           <td>{{ rep.is_member_rep|yesno }}</td>
+           <td><a href="{% url "corp_membership.delete_rep" rep.pk %}" style="text-wrap: nowrap;"><small class="delete">{% trans "Delete" %}</small></a>
+           <!-- delete-corp_memb form -->
+               <form name="corp-memb-rep-delete" method="POST" action="{% url "corp_membership.delete_rep" rep.pk %}">{% csrf_token %}
+                   <input type="hidden" name="action" value="delete">
+               </form>
+           </td>
+           </tr>
+       {% endfor %}
+     </table>
+     {% else %}
+        <div>{% trans "No representative designated yet." %}</div>
+     {% endif %}
+
+
+    <form action="" method="post">{% csrf_token %}
+    <div class="forms">
+   	{% if form.errors.values %}
+        <div class="alert alert-danger" role="alert">
+            <p>{% trans 'Unable to process your request, see below.' %}</p>
+            {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+            {% endfor %}
+
+            {% for field in form %}
+                {% if field.errors %}
+                      {% for error in field.errors %}
+                        <p><a href="{{ request.get_full_path }}#{{ field.auto_id }}">{{ field.label }} - {{ error }}</a></p>
+                      {% endfor %}
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% endif %}
+    
+    {% for field in form %}
+        {% if field.is_hidden %}
+            {{ field }}
+        {% elif field|is_header %}
+            <h3 class="section-header">{{ field.label }}</h3>
+        {% elif field|is_description %}
+            <p class="section-description">{{ field.label }}</p>
+        {% else %}
+            <div class="form-group{% if field.errors %} has-error{% endif %}{% if field.field.css_classes %} {{ field.field.css_classses }}{% endif %}">
+                <label for="{{ field.id_for_label }}" class="control-label col-sm-3{% if field.field.required %} required{% endif %}">{{ field.label }}</label>
+
+                <div class="col-sm-9">
+                    {% if field|is_checkbox %}
+                        <div class="checkbox">
+                            <label>{{ field }}</label>
+                        </div>
+                    {% else %}
+                        {{ field }}
+                    {% endif %}
+
+                    {% if field.errors %}
+                        {% for error in field.errors %}
+                            <span class="help-block">{{ error }}</span>
+                        {% endfor %}
+                    {% endif %}
+
+                    {% if field.help_text %}
+                        <span class="help-block">{{ field.help_text|safe }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    {% endfor %}
+    
+   	<div class="form-group">
+        <div class="col-sm-offset-3 col-sm-9">
+            <input class="btn btn-primary" type="submit" name="submit" value="{% trans 'Save and Continue Add Another' %}" />
+            <input class="btn btn-primary" type="submit" name="submit" value="{% trans 'Save' %}" />
+        </div>
+    </div>
+    
+    </div>
+
+    </form>
+
+</div>
+</div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+    if (!(window.jQuery)) {
+        var s = document.createElement('script');
+        s.setAttribute('src', 'https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js');
+        s.setAttribute('type', 'text/javascript');
+        document.getElementsByTagName('head')[0].appendChild(s);}
+</script>
+<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+
+
+ <script type="text/javascript">
+    $(document).ready(function(){
+
+        // delete confirmation
+        $('.delete').on("click", function(){
+            var delete_corp_memb_rep = confirm('Permenantly delete this corporate membership representative?'); // confirm
+            if(delete_corp_memb_rep) $(this).parents('.corp-rep').find('form[name="corp-memb-rep-delete"]').submit() // delete: if OK
+            return false;   // cancel
+        });
+
+    });
+   </script>
+
+ {% endblock %}

@@ -1,0 +1,294 @@
+{% extends "corporate_memberships/base-wide.html" %}
+{% load base_filters %}
+{% load corporate_memberships_tags %}
+{% load corporate_memberships_filters %}
+
+{% block title %}{{ block.super }}{% trans "Corporate Profile" %}{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<style>
+#t-corp-profile-view .corp-profile-detail{
+    margin: 10px 10px 30px 15px;
+}
+#t-corp-profile-view .profile-left{
+    background-color: #f7f7f9;
+    padding: 20px;
+}
+#t-corp-profile-view hr{
+    max-width: none;
+    border-width: thin;
+}
+#t-corp-profile-view i{
+    color: green;
+    font-size: 32px;
+    text-decoration: none;
+}
+.corp-active{
+	color: green;
+}
+.corp-expired{
+	color: red;
+}
+#corp-branches .row{
+	margin-bottom: 15px;
+}
+</style>
+
+{% endblock %}
+
+{% block content %}
+<div id="t-corp-profile-view">
+<h1>{{ corp_profile.name }}</h1>
+{% if corp_profile.logo %}
+  <div class="t-corp-membership-logo">
+      <img class="img-responsive" src="{{ corp_profile.get_logo_url }}" alt="{{ corp_profile.name }}" title="{{ corp_profile.name }}">
+  </div>
+{% endif %}
+<hr>
+
+<div class="row corp-profile-detail">
+    <div class="col-md-5 profile-left">
+        <h3>{% trans 'Company Details' %}</h3>
+        {% if request.user.is_superuser or is_rep %}
+        <div class="text-right"><a href="{% url 'corpmembership.edit' corp_membership.pk %}?next={{ request.path }}">{% trans 'Edit' %}</a></div>
+        {% endif %}
+        <div class="row">
+            <div class="col-xs-4">
+                {% trans 'Parent Entity' %}
+            </div>
+            <div class="col-xs-6">
+            {{ corp_profile.parent_entity }}
+            </div>
+        </div>
+        {% if corp_profile.account_id %}
+            <div class="row">
+                <div class="col-xs-4">
+                    {% trans 'Account ID' %}
+                </div>
+                <div class="col-xs-6">
+                {{ corp_profile.account_id }}
+                </div>
+            </div>
+        {% endif %}
+        <div class="row">
+            <div class="col-xs-4">
+                {% trans 'Company Name' %}
+            </div>
+            <div class="col-xs-6">
+            {{ corp_profile.name }}
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-xs-4">
+                {% trans 'Email' %}
+            </div>
+            <div class="col-xs-6">
+            {{ corp_profile.email }}
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-xs-4">
+                {% trans 'Phone' %}
+            </div>
+            <div class="col-xs-6">
+            {{ corp_profile.phone }}
+            </div>
+        </div>
+		{% if corp_profile.phone2 %}
+		<div class="row">
+            <div class="col-xs-4">
+                {% trans 'Phone2' %}
+            </div>
+            <div class="col-xs-6">
+            {{ corp_profile.phone2 }}
+            </div>
+        </div>
+		{% endif %}
+		{% if corp_profile.url %}
+        <div class="row">
+            <div class="col-xs-4">
+                {% trans 'Website' %}
+            </div>
+            <div class="col-xs-6" style="overflow-wrap: break-word;">
+            {{ corp_profile.url|urlize }}
+            </div>
+        </div>
+        {% endif %}
+        <div class="row">
+            <div class="col-xs-4">
+                {% trans 'Address' %}
+            </div>
+            <div class="col-xs-6">
+            {{ address_str }}
+            </div>
+        </div>
+
+        <h3>{% trans 'Membership Level' %}</h3>
+        <div>
+            {% trans 'Membership Type:' %} {{ corp_membership.corporate_membership_type }}
+            <br />
+            <small><em>{{ corp_membership.join_dt|date:"M j, Y" }}
+            {% if not corp_membership.is_pending %} - {% firstof corp_membership.expiration_dt|date:"M j, Y" "Forever" %} {% endif %}</em></small>
+           
+            {% include "corporate_memberships/action_options.html" %}
+        </div>
+
+        <h3>{% trans 'Payment Method' %}</h3>
+        <div>
+            {% trans 'Payment Method:' %}
+            {% if corp_membership.payment_method and corp_membership.invoice %}
+            {{ corp_membership.payment_method }}
+            - <a href="{% url 'invoice.view' corp_membership.invoice.id %}">{% trans 'View Invoice' %}</a>
+            {% else %}
+            {% trans 'N/A' %}
+            {% endif %}
+        </div>
+        {% if invoices|length > 1 %}
+        <br />
+        <div>
+        {% trans 'All Invoices:' %}
+        {% for inv in invoices  %}
+        <a href="{% url 'invoice.view' inv.id %}">{{ inv.total|format_currency }}</a>
+        {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-md-7">
+    <h3>{% trans 'Members' %}
+    {% if corp_membership.real_time_status_detail == 'active' %}
+    <a href="{% url 'membership_default.add_under_corp' corp_membership.id %}"><i class="fa fa-plus-circle" aria-hidden="true"></i></a>
+    {% endif %}
+    </h3>
+    {% if members_first10 %}
+    <table class="table table-stripped">
+        <thead>
+            <tr>
+                <th>{% trans 'Name' %}</th>
+                <th>{% trans 'Title' %}</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for member in members_first10 %}
+        <tr>
+            <td>{% if member.user.first_name or member.user.last_name  %}{{ member.user.first_name }} {{ member.user.last_name }}{% else %}{{ member.user.username }}{% endif %}</td>
+            <td>{{ member.user.profile.position_title }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% if members_count > 10 %}
+    <div><a href="{% url 'corpmembership.roster_search' %}?cm_id={{ corp_membership.id }}">{% trans 'View All Members' %}</a></div>
+    {% endif %}
+    
+    {% if members_count > 0 and MODULE_TRAININGS_ENABLED %}
+    {% if request.user.is_superuser or corp_profile|is_rep:request.user %}
+    <div>
+    	<a href="{% url 'trainings.transcripts_corp' corp_profile.id %}">{% trans "View Transcripts" %}</a>
+    </div>
+    {% endif %}
+    {% endif %}
+                        
+
+    {% else %}
+    <div><em>{% trans "No members joined yet" %}</em></div>
+    {% endif %}
+    
+    {% if MODULE_CORPORATE_MEMBERSHIPS_USEPRODUCTS %}
+    <h3>{% trans 'Products' %}</h3>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>{% trans "Name" %}</th>
+                <th>{% trans "Category" %}</th>
+            </tr>
+        </thead>
+
+        <tbody>
+        	{% with corp_profile.products.all as products %}
+            {% for product in products %}
+                <tr>
+                    <td>{{ product.name }}</td>
+                    <td>{{ product.category }}</td>
+                </tr>
+            {% endfor %}
+            {% endwith %}
+        </tbody>
+    </table>
+  {% endif %}
+  
+  {% with corp_profile.branches.all as branches %}
+  {% if branches %}
+  <h3>{% trans 'Branches' %}</h3>
+  <div id="corp-branches">
+	  {% for branch in branches %}
+	  {% if forloop.counter0|divisibleby:"2"%}
+	  	{% if not forloop.first %}
+	  	</div>
+	  	{% endif %}
+	  	<div class="row">
+	  {% endif %} 
+	  	<div class="col-xs-6">
+		  	<div><strong>{{ branch.name }}</strong></div>
+		  	<div>{{ branch.address }}</div>
+		  	<div>{{ branch.city_state_zip }} {{ branch.country }}</div>
+		  	{% if branch.phone %}
+		  	<div><strong>{% trans 'Phone:' %}</strong> {{ branch.phone }}</div>
+		  	{% endif %}
+		  	{% if branch.fax %} 
+		  	<div><strong>{% trans 'Fax:' %}</strong> {{ branch.fax }}</div>
+		  	{% endif %}
+	  	</div>
+	  {% endfor %}
+	  </div>
+  </div>
+  {% endif %} 
+  {% endwith %} 
+
+    <h3>{% trans 'Representatives' %}</h3>
+    {% if reps %}
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>{% trans "Name" %}</th>
+                <th>{% trans "Is Dues Rep." %}</th>
+                <th>{% trans "Is Member Rep." %}</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for rep in reps %}
+                <tr>
+                    <td><a href="{% url 'profile' rep.user.username %}">{% if rep.user.first_name or rep.user.last_name  %}{{ rep.user.first_name }} {{ rep.user.last_name }}{% else %}{{ rep.user.username }}{% endif %} {% if rep.user.email %}({{ rep.user.email }}){% endif %}</a></td>
+                    <td>{% if rep.is_dues_rep %}{% trans "True" %}{% endif %}</td>
+                    <td>{% if rep.is_member_rep %}{% trans "True" %}{% endif %}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+  {% else %}
+      <div><em>{% trans "No representatives available" %}</em></div>
+  {% endif %}
+  {% if corp_membership and corp_membership.status_detail != "archive" %}
+      <a href="{% url 'corpmembership.edit_corp_reps' corp_membership.id %}"><span class="glyphicon glyphicon-edit"></span> {% trans "Add/Edit Representatives" %}</a>
+  {% endif %}
+
+{% include "corporate_memberships/timeline.html" %}
+
+{% include "corporate_memberships/directory_link.html" %}
+
+  </div>
+</div> 
+  {% if request.user.is_superuser or is_rep %}
+  {% with corp_membership as corporate_membership %}
+  <p>
+  {% include "corporate_memberships/applications/meta.html" %} 
+  </p>
+  {% endwith %}
+  {% endif %}
+</div>
+
+
+{% endblock %}
