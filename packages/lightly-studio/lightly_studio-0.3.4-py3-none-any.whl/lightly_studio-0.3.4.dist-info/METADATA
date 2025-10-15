@@ -1,0 +1,879 @@
+Metadata-Version: 2.4
+Name: lightly-studio
+Version: 0.3.4
+Summary: LightlyStudio is a lightweight, fast, and easy-to-use data exploration tool for data scientists and engineers.
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: <3.13,>=3.8
+Requires-Dist: annotated-types==0.7.0
+Requires-Dist: duckdb-engine<0.17,>=0.15.0
+Requires-Dist: duckdb<1.3,>=1.2.2
+Requires-Dist: environs<12.0.0
+Requires-Dist: eval-type-backport>=0.2.2
+Requires-Dist: fastapi>=0.115.5
+Requires-Dist: faster-coco-eval>=1.6.5
+Requires-Dist: fsspec>=2023.1.0
+Requires-Dist: labelformat>=0.1.7
+Requires-Dist: lightly-mundig==0.1.4
+Requires-Dist: open-clip-torch>=2.20.0
+Requires-Dist: pyarrow>=17.0.0
+Requires-Dist: python-multipart>=0.0.20
+Requires-Dist: scikit-learn==1.3.2
+Requires-Dist: sqlmodel>=0.0.22
+Requires-Dist: tqdm>=4.65.0
+Requires-Dist: typing-extensions>=4.12.2
+Requires-Dist: uvicorn>=0.32.1
+Requires-Dist: xxhash>=3.5.0
+Provides-Extra: cloud-storage
+Requires-Dist: adlfs>=2023.1.0; extra == 'cloud-storage'
+Requires-Dist: gcsfs>=2023.1.0; extra == 'cloud-storage'
+Requires-Dist: s3fs>=2023.1.0; extra == 'cloud-storage'
+Provides-Extra: lightly-edge
+Requires-Dist: lightly-edge-sdk>=1.0.1b2; extra == 'lightly-edge'
+Requires-Dist: opencv-python; extra == 'lightly-edge'
+Description-Content-Type: text/markdown
+
+<div align="center">
+<p align="center">
+
+<!-- prettier-ignore -->
+<img src="https://cdn.prod.website-files.com/62cd5ce03261cba217188442/66dac501a8e9a90495970876_Logo%20dark-short-p-800.png" height="50px">
+
+**The open-source tool curating datasets**
+
+---
+
+[![PyPI python](https://img.shields.io/pypi/pyversions/lightly-studio)](https://pypi.org/project/lightly-studio)
+[![PyPI version](https://badge.fury.io/py/lightly-studio.svg)](https://pypi.org/project/lightly-studio)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+</p>
+</div>
+
+# 🚀 Welcome to LightlyStudio!
+
+We at **[Lightly](https://lightly.ai)** created **LightlyStudio**, an open-source tool
+designed to supercharge your data curation workflows for computer vision datasets. Explore
+your data, visualize captions, annotations and crops, tag samples, and export curated lists to improve
+your machine learning pipelines. And much more!
+
+LightlyStudio runs entirely locally on your machine, keeping your data private. It consists
+of a Python library for indexing your data and a web-based UI for visualization and curation.
+
+## ✨ Core Workflow
+
+Using LightlyStudio typically involves these steps:
+
+1.  **Index Your Dataset:** Run a Python script using the `lightly_studio` library to process your local dataset (images and annotations) and save metadata into a local `lightly_studio.db` file.
+2.  **Launch the UI:** The script then starts a local web server.
+3.  **Explore & Curate:** Use the UI to visualize images, annotations, captions, and object crops. Filter and search your data (experimental text search available). Apply tags to interesting samples (e.g., "mislabeled", "review").
+4.  **Export Curated Data:** Export information (like filenames) for your tagged samples from the UI to use downstream.
+5.  **Stop the Server:** Close the terminal running the script (Ctrl+C) when done.
+
+<p align="center">
+  <img alt="LightlyStudio Sample Grid View" src="https://storage.googleapis.com/lightly-public/studio/screenshot_grid_view.jpg" width="70%">
+  <br/>
+  <em>Visualize your dataset samples with annotations in the grid view.</em>
+</p>
+<p align="center">
+  <img alt="LightlyStudio Annotation Crop View" src="https://storage.googleapis.com/lightly-public/studio/screenshot_annotation_view.jpg" width="70%">
+  <br/>
+  <em>Switch to the annotation view to inspect individual object crops easily.</em>
+</p>
+<p align="center">
+  <img alt="LightlyStudio Sample Detail View" src="https://storage.googleapis.com/lightly-public/studio/screenshot_detail_view.jpg" width="70%">
+  <br/>
+  <em>Inspect individual samples in detail, viewing all annotations and metadata.</em>
+</p>
+
+## 🎯 Features
+
+- **Local Web GUI:** Explore and curate your dataset in your browser. Works completely
+  offline, your data never leaves your machine.
+- **Flexible Input Formats:** Load your image dataset from a folder, or with annotations from
+  a number of popular formats like e.g. COCO or YOLO.
+- **Metadata:** Attach your custom metadata to every sample.
+- **Tags:** Mark subsets of your dataset for later use.
+- **Embeddings:** Run similarity search queries on your data.
+- **Selection:** Run advanced selection algorithms to tag a subset of your data.
+
+## 💻 Installation
+
+Ensure you have **Python 3.8 or higher**. We strongly recommend using a virtual environment.
+
+The library is OS-independent and works on Windows, Linux, and macOS.
+
+```shell
+# 1. Create and activate a virtual environment (Recommended)
+# On Linux/MacOS:
+python3 -m venv venv
+source venv/bin/activate
+
+# On Windows:
+python -m venv venv
+.\venv\Scripts\activate
+
+# 2. Install LightlyStudio
+pip install lightly-studio
+```
+
+## **Quickstart**
+
+Download example datasets by cloning the example repository:
+
+```shell
+git clone https://github.com/lightly-ai/dataset_examples dataset_examples
+```
+
+### YOLO Object Detection
+
+To run an example using a YOLO dataset, create a file named `example_yolo.py` with the
+following contents in the same directory that contains the `dataset_examples/` folder:
+
+```python
+# example_yolo.py
+
+import lightly_studio as ls
+
+# Create a dataset and add the samples from the yolo format
+dataset = ls.Dataset.create()
+dataset.add_samples_from_yolo(
+    data_yaml="dataset_examples/road_signs_yolo/data.yaml",
+)
+
+# Start the UI application on the port 8001.
+ls.start_gui()
+```
+
+Run the script:
+
+```
+python example_yolo.py
+```
+
+When you are done, stop the app by pressing Ctrl+C in the terminal.
+
+<details>
+<summary>The YOLO format details:</summary>
+
+```
+road_signs_yolo/
+├── train/
+│   ├── images/
+│   │   ├── image1.jpg
+│   │   ├── image2.jpg
+│   │   └── ...
+│   └── labels/
+│       ├── image1.txt
+│       ├── image2.txt
+│       └── ...
+├── valid/  (optional)
+│   ├── images/
+│   │   └── ...
+│   └── labels/
+│       └── ...
+└── data.yaml
+```
+
+Each label file should contain YOLO format annotations (one per line):
+
+```
+<class> <x_center> <y_center> <width> <height>
+```
+
+Where coordinates are normalized between 0 and 1.
+
+</details>
+
+### COCO Instance Segmentation
+
+To run an instance segmentation example using a COCO dataset, create a file named
+`example_coco.py` with the following contents in the same directory that contains
+the `dataset_examples/` folder:
+
+```python
+# example_coco.py
+
+import lightly_studio as ls
+
+# Create a dataset and add the samples from the coco format
+dataset = ls.Dataset.create()
+dataset.add_samples_from_coco(
+    annotations_json="dataset_examples/coco_subset_128_images/instances_train2017.json",
+    images_path="dataset_examples/coco_subset_128_images/images",
+    annotation_type=ls.AnnotationType.INSTANCE_SEGMENTATION,
+)
+
+# Start the UI application on the port 8001.
+ls.start_gui()
+```
+
+Run the script:
+
+```
+python example_coco.py
+```
+
+When you are done, stop the app by pressing Ctrl+C in the terminal.
+
+<details>
+<summary>The COCO format details:</summary>
+
+```
+coco_subset_128_images/
+├── images/
+│   ├── image1.jpg
+│   ├── image2.jpg
+│   └── ...
+└── instances_train2017.json        # Single JSON file containing all annotations
+```
+
+COCO uses a single JSON file containing all annotations. The format consists of three main components:
+
+- Images: Defines metadata for each image in the dataset.
+- Categories: Defines the object classes.
+- Annotations: Defines object instances.
+
+</details>
+
+### COCO Captions
+
+To run a caption example using a COCO dataset, create a file named
+`example_coco_captions.py` with the following contents in the same directory that contains
+the `dataset_examples/` folder:
+
+```python
+# example_coco_captions.py
+
+import lightly_studio as ls
+
+# Create a dataset and add the samples from the coco format
+dataset = ls.Dataset.create()
+dataset.add_samples_from_coco_caption(
+    annotations_json="dataset_examples/coco_subset_128_images/captions_train2017.json",
+    images_path="dataset_examples/coco_subset_128_images/images",
+)
+
+# Start the UI application on the port 8001.
+ls.start_gui()
+```
+
+Run the script:
+
+```
+python example_coco_captions.py
+```
+
+Now you can inspect samples with their assigned captions in the app. When you are done,
+stop the app by pressing Ctrl+C in the terminal.
+
+<details>
+<summary>The COCO format details:</summary>
+
+```
+coco_subset_128_images/
+├── images/
+│   ├── image1.jpg
+│   ├── image2.jpg
+│   └── ...
+└── captions_train2017.json        # Single JSON file containing all captions
+```
+
+COCO uses a single JSON file containing all captions. The format consists of three main components:
+
+- Images: Defines metadata for each image in the dataset.
+- Annotations: Defines the captions.
+
+</details>
+
+## 🔍 How It Works
+
+1.  Your **Python script** uses the `lightly_studio` **Dataset**.
+2.  The `dataset.add_samples_from_<source>` reads your images and annotations, calculates embeddings, and saves metadata to a local **`lightly_studio.db`** file (using DuckDB).
+3.  `lightly_studio.start_gui()` starts a **local Backend API** server.
+4.  This server reads from `lightly_studio.db` and serves data to the **UI Application** running in your browser (`http://localhost:8001`).
+5.  Images are streamed directly from your disk for display in the UI.
+
+## 🎯 Python Interface
+
+### Dataset
+
+#### Load Images From A Folder
+
+```py
+import lightly_studio as ls
+
+dataset = ls.Dataset.create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+
+ls.start_gui()
+```
+
+#### ☁️ Cloud Storage Support
+
+#### Installation with Cloud Storage Support
+
+```shell
+pip install lightly-studio[cloud-storage]
+```
+
+#### Example: Loading Dataset from Cloud Storage
+
+```python
+import lightly_studio as ls
+
+dataset = ls.Dataset.create()
+
+# Load dataset from S3
+dataset.add_samples_from_path(path="s3://my-bucket/path/to/images/")
+
+# You can use glob pattern in the file path
+dataset.add_samples_from_path(path="s3://my-bucket/path/to/images/**/*.jpg") # matches all .jpg files recursively
+
+# Load dataset from gcs
+dataset.add_samples_from_path(path="gs://path/to/images/")
+
+ls.start_gui()
+```
+
+**Note**: Currently, cloud storage support is limited to loading images only. Annotation files (YOLO labels, COCO JSON files, etc.) cannot be loaded directly from cloud storage paths.
+
+#### Authentication
+
+**Important**: Cloud storage authentication must be configured before running LightlyStudio. The application relies on your existing cloud storage credentials and will not prompt for authentication.
+
+#### AWS S3
+
+You can use either of the following two options:
+
+- **Set environment variables manually**: Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (LightlyStudio uses `s3fs` under the hood to connect to S3)
+- **Authenticate using AWS CLI**: Run `aws configure` (this will automatically set the environment variables that LightlyStudio can access)
+
+#### Google Cloud Storage
+
+You can use either of the following two options:
+
+- **Set environment variable manually**: Set `GOOGLE_APPLICATION_CREDENTIALS` pointing to your service account key file (LightlyStudio uses `gcsfs` under the hood to connect to GCS)
+- **Authenticate using gcloud CLI**: Run `gcloud auth application-default login` (this will automatically set the environment variables that LightlyStudio can access)
+
+#### Load Images With Annotations
+
+The `Dataset` currently supports:
+
+- **YOLOv8 Object Detection:** Reads `.yaml` file. Supports bounding boxes.
+- **COCO Object Detection:** Reads `.json` annotations. Supports bounding boxes.
+- **COCO Instance Segmentation:** Reads `.json` annotations. Supports instance masks in RLE (Run-Length Encoding) format.
+
+```py
+# Load a dataset in YOLO format
+import lightly_studio as ls
+
+dataset = ls.Dataset.create()
+dataset.add_samples_from_yolo(
+    data_yaml="my_yolo_dataset/data.yaml",
+)
+
+ls.start_gui()
+```
+
+```py
+# Load an object detection/instance segmentation dataset in COCO format
+import lightly_studio as ls
+
+dataset = ls.Dataset.create()
+dataset.add_samples_from_coco(
+    annotations_json="my_coco_dataset/detections_train.json",
+    images_path="my_coco_dataset/images",
+    # If using instance segmentation, uncomment the next line.
+    # annotation_type=ls.AnnotationType.INSTANCE_SEGMENTATION,
+)
+
+ls.start_gui()
+```
+
+#### Load an Existing Dataset
+
+It is also possible to load an existing dataset by
+
+```py
+import lightly_studio as ls
+
+dataset = ls.Dataset.load_or_create()
+```
+
+This will load the dataset if it does exist in the `.db` file, else it will create a new dataset.
+
+### Samples
+
+The dataset consists of samples. Every sample corresponds to an image.
+Dataset samples can be fetched and accessed as follows,
+for a full list of attributes see [sample](src/lightly_studio/core/sample.py).
+
+```py
+# Get all dataset samples
+samples = list(dataset)
+
+# Access sample attributes
+s = samples[0]
+s.sample_id        # Sample ID
+s.file_name        # Image file name
+s.file_path_abs    # Full image file path
+s.tags             # The list of sample tags
+s.metadata["key"]  # dict-like access for metadata
+
+# Set sample attributes
+s.tags = {"tag1", "tag2"}
+s.metadata["key"] = 123
+
+# Adding/removing tags
+s.add_tag("some_tag")
+s.remove_tag("some_tag")
+
+...
+```
+
+### Dataset Query
+
+You can efficiently fetch filtered dataset samples with a `DatasetQuery()` object. To get a query for a existing `dataset`:
+
+```py
+query = dataset.query()
+```
+
+By defining the `match`, `order_by`, and `slice` for a query, the intended filtering is set. If one of them is not required, they can be skipped.
+
+When the query is used to fetch samples, the order of execution is:
+
+1. `match`
+2. `order_by`
+3. `slice`
+
+#### Example Query Usage
+
+```py
+from lightly_studio.core.dataset_query.boolean_expression import OR
+from lightly_studio.core.dataset_query.order_by import OrderByField
+from lightly_studio.core.dataset_query.sample_field import SampleField
+
+query = dataset.match(
+        OR(
+            SampleField.file_name == "a",
+            SampleField.file_name == "b",
+        )
+    ).order_by(
+        OrderByField(SampleField.width).desc()
+    ).slice(offset=10, limit=10)
+
+query.add_tag("query_result")
+
+```
+
+<details>
+<summary>Advanced Example:</summary>
+
+```py
+from lightly_studio.core.dataset_query.boolean_expression import AND, OR, NOT
+from lightly_studio.core.dataset_query.order_by import OrderByField
+from lightly_studio.core.dataset_query.sample_field import SampleField
+
+query = dataset.match(
+    OR(
+        SampleField.file_name == "a",
+        SampleField.file_name == "b",
+        AND(
+            SampleField.width > 10,
+            SampleField.width < 20,
+            NOT(SampleField.tags.contains("dog")),
+        ),
+    )
+).order_by(
+    OrderByField(SampleField.width).desc()
+).slice(offset=10, limit=10)
+
+query.add_tag("query_result")
+
+for sample in query:
+    print(sample.tags)
+
+```
+
+</details>
+
+#### Define the Query: `match`
+
+The filtering for a query can be set by:
+
+```py
+query = query.match(expression)
+```
+
+To create an expression for filtering on certain sample fields, the `SampleField.<field_name> <operator> <value>` syntax can be used. Available field names can be seen in [`SampleField`](src/lightly_studio/core/dataset_query/sample_field.py).
+
+<details>
+<summary>SampleField Examples:</summary>
+
+```py
+from lightly_studio.core.dataset_query.sample_field import SampleField
+
+# Ordinal fields: <, <=, >, >=, ==, !=
+
+expr = SampleField.height >= 10            # All samples with images that are taller than 9 pixels
+expr = SampleField.width == 10             # All samples with images that are exactly 10 pixels wide
+expr = SampleField.created_at > datetime   # All samples created after datetime (actual datetime object)
+
+# String fields: ==, !=
+expr = SampleField.file_name == "some"     # All samples with "some" as file name
+expr = SampleField.file_path_abs != "other" # All samples that are not having "other" as file_path
+
+# Tags: contains()
+expr = SampleField.tags.contains("dog")    # All samples that contain the tag "dog"
+
+# Assign any of the previous expressions to a query:
+query = query.match(expr)
+```
+
+</details>
+
+The filtering on individual fields can flexibly be combined to create more complex match expression. For this, the boolean operators [`AND`](src/lightly_studio/core/dataset_query/boolean_expression.py), [`OR`](src/lightly_studio/core/dataset_query/boolean_expression.py), and [`NOT`](src/lightly_studio/core/dataset_query/boolean_expression.py) are available. Boolean operators can arbitrarily be nested.
+
+<details>
+<summary>Boolean Examples:</summary>
+
+```py
+from lightly_studio.core.dataset_query.boolean_expression import AND, OR, NOT
+from lightly_studio.core.dataset_query.sample_field import SampleField
+
+# All samples with images that are between 10 and 20 pixels wide
+expr = AND(
+    SampleField.width > 10,
+    SampleField.width < 20
+)
+
+# All samples with file names that are either "a" or "b"
+expr = OR(
+    SampleField.file_name == "a",
+    SampleField.file_name == "b"
+)
+
+# All samples which do not contain a tag "dog"
+expr = NOT(SampleField.tags.contains("dog"))
+
+# All samples for a nested expression
+expr = OR(
+    SampleField.file_name == "a",
+    SampleField.file_name == "b",
+    AND(
+        SampleField.width > 10,
+        SampleField.width < 20,
+        NOT(
+            SampleField.tags.contains("dog")
+        ),
+    ),
+)
+
+# Assign any of the previous expressions to a query:
+query = query.match(expr)
+```
+
+</details>
+
+#### Define the Query: `order_by`
+
+Setting the sorting of a query can done by
+
+```py
+query = query.order_by(expression)
+```
+
+The order expression can be defined by `OrderByField(SampleField.<field_name>).<order_direction>()`.
+
+<details>
+<summary>OrderByField Examples:</summary>
+
+```py
+from lightly_studio.core.dataset_query.order_by import OrderByField
+from lightly_studio.core.dataset_query.sample_field import SampleField
+
+# Sort the query by the width of the image in ascending order
+expr = OrderByField(SampleField.width)
+expr = OrderByField(SampleField.width).asc()
+
+# Sort the query by the height of the image in descending order
+expr = OrderByField(SampleField.file_name).desc()
+
+# Assign any of the previous expressions to a query:
+query = query.order_by(expr)
+```
+
+</details>
+
+#### Define the Query: `slice`
+
+Setting the slicing of a query can done by:
+
+```py
+query = query.slice(offset, limit)
+# OR
+query = query[offset:stop]
+```
+
+Both are different syntax for the same operation.
+
+<details>
+<summary>Slice Examples:</summary>
+
+```py
+# Slice 2:5
+query = query.slice(offset=2, limit=3)
+query = query[2:5]
+
+# Slice :5
+query = query.slice(limit=5)
+query = query[:5]
+
+# Slice 5:
+query = query.slice(offset=5)
+query = query[5:]
+```
+
+</details>
+
+#### Access the Samples
+
+To access the filtered samples two possibilities are available: iterating over the query object or calling the `to_list()` method.
+
+**Iterating over the query:**
+
+```py
+query = dataset.query().match(match_expression).order_by(order_by_expression).slice(offset,limit)
+
+samples = []
+for sample in query:
+    samples.append(sample)
+```
+
+**Get all samples as list:**
+
+```py
+query = dataset.query().match(match_expression).order_by(order_by_expression).slice(offset,limit)
+
+samples = query.to_list()
+```
+
+In some use cases, one might want to assign a tag to the samples that are the result of a query:
+
+```py
+query.add_tag("tag_name")
+```
+
+#### Export Samples
+
+Currently, exporting to the COCO object detection format is supported and only annotations
+of type object detection are exported. The following example exports the samples in the query
+to a COCO JSON file named `coco_export.json`:
+
+```py
+query.export().to_coco_object_detections()
+```
+
+### Examples
+
+#### Add Custom Metadata
+
+Attach values to custom fields for every sample.
+
+```py
+import lightly_studio as ls
+
+# Load your dataset
+dataset = ls.Dataset.create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+
+# Attach metadata
+for sample in dataset:
+    sample.metadata["my_metadata"] = f"Example metadata field for {sample.file_name}"
+    sample.metadata["my_dict"] = {"my_int_key": 10, "my_bool_key": True}
+
+# View metadata in GUI
+ls.start_gui()
+```
+
+#### Tags
+
+You can easily mark subsets of your data with tags.
+
+```py
+import lightly_studio as ls
+
+# Load your dataset
+dataset = ls.Dataset.create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+
+# Tag the first 10 samples:
+query = dataset.query()[:10]
+query.add_tag("some_tag")
+```
+
+Find existing tags and tagged samples as follows.
+
+```py
+import lightly_studio as ls
+
+# Load your dataset
+dataset = ls.Dataset.create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+
+# Get all samples that contain the tag "dog"
+query = dataset.query().match(SampleField.tags.contains("dog"))
+samples = query.to_list()
+```
+
+### Selection
+
+LightlyStudio offers as a premium feature advanced methods for subselecting dataset
+samples.
+
+**Prerequisites:** The selection functionality requires a valid LightlyStudio license key.
+Set the `LIGHTLY_STUDIO_LICENSE_KEY` environment variable before using selection features:
+
+```bash
+# On Linux/MacOS
+export LIGHTLY_STUDIO_LICENSE_KEY="license_key_here"
+
+# On Windows (PowerShell)
+$env:LIGHTLY_STUDIO_LICENSE_KEY="license_key_here"
+```
+
+Alternatively, set it inside your Python script:
+
+```py
+import os
+os.environ["LIGHTLY_STUDIO_LICENSE_KEY"] = "license_key_here"
+```
+
+Or in a `.env` file:
+
+```
+LIGHTLY_STUDIO_LICENSE_KEY="license_key_here"
+```
+
+#### Diversity Selection
+
+Diversity selection can be configured directly from a `DatasetQuery`. The example below showcases a simple case of selecting diverse samples.
+
+```py
+import lightly_studio as ls
+
+# Load your dataset
+dataset = ls.Dataset.load_or_create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+
+# Select a diverse subset of 10 samples.
+dataset.query().selection().diverse(
+    n_samples_to_select=10,
+    selection_result_tag_name="diverse_selection",
+)
+
+ls.start_gui()
+```
+
+#### Metadata Weighting Selection
+
+You can select samples based on the values of a metadata field. The example below showcases a simple case of selecting samples with the highest metadata value.
+
+```py
+import lightly_studio as ls
+
+# Load your dataset
+dataset = ls.Dataset.load_or_create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+# Compute and store 'typicality' metadata.
+dataset.compute_typicality_metadata(metadata_name="typicality")
+
+# Select the 5 samples with the highest 'typicality' scores.
+dataset.query().selection().metadata_weighting(
+    n_samples_to_select=5,
+    selection_result_tag_name="metadata_weighting_selection",
+    metadata_key="typicality",
+)
+```
+
+#### Selection Based on Multiple Strategies
+
+You can configure multiple strategies, the selection takes into account all of them at the same time, weighted by the `strength` parameter.
+
+```py
+import lightly_studio as ls
+from lightly_studio.selection.selection_config import (
+    MetadataWeightingStrategy,
+    EmbeddingDiversityStrategy,
+)
+
+# Load your dataset
+dataset = ls.Dataset.load_or_create()
+dataset.add_samples_from_path(path="/path/to/image_dataset")
+# Compute typicality and store it as `typicality` metadata
+dataset.compute_typicality_metadata(metadata_name="typicality")
+
+# Select 10 samples by combining typicality and diversity, diversity having double the strength.
+dataset.query().selection().multi_strategies(
+    n_samples_to_select=10,
+    selection_result_tag_name="multi_strategy_selection",
+    selection_strategies=[
+        MetadataWeightingStrategy(metadata_key="typicality", strength=1.0),
+        EmbeddingDiversityStrategy(embedding_model_name="my_model_name", strength=2.0),
+    ],
+)
+```
+
+#### Exporting Selected Samples
+
+The selected sample paths can be exported via the GUI, or by a script:
+
+```py
+import lightly_studio as ls
+from lightly_studio.core.dataset_query.sample_field import SampleField
+
+dataset = ls.Dataset.load("my-dataset")
+selected_samples = (
+    dataset.match(SampleField.tags.contains("diverse_selection")).to_list()
+)
+
+with open("export.txt", "w") as f:
+    for sample in selected_samples:
+        f.write(f"{sample.file_path_abs}\n")
+```
+
+## 📚 **FAQ**
+
+### Does LightlyStudio persist the datasets?
+
+Yes, the information about datasets is persisted in a database file. You can see inspect
+it after the dataset is processed. Use `Dataset.load()` to load a dataset from a pre-existing
+database.
+
+### Can I change the database path?
+
+Yes, the database can be selected as follows:
+```py
+import lightly_studio as ls
+
+ls.db_manager.connect(db_file="custom.db")
+```
+
+### Can I use LightlyStudio from two scripts in parallel?
+
+Only one script can be run at one time as the app uses a database lock for data integrity.
+
+### Can I change the API backend host and port?
+
+Yes, by setting environment variables. For the host set the LIGHTLY_STUDIO_HOST variable,
+to change the port set the LIGHTLY_STUDIO_PORT variable. Note that if the port is unavailable
+at runtime the app uses a random port number.

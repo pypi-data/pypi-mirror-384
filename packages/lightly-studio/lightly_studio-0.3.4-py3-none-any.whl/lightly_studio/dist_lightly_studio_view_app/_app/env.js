@@ -1,0 +1,1 @@
+export const env={"PUBLIC_SAMPLES_URL":"/images","PUBLIC_LIGHTLY_STUDIO_API_URL":"/"}
