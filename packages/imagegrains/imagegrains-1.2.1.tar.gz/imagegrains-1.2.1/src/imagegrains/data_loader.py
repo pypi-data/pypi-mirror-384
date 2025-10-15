@@ -1,0 +1,516 @@
+import os,pickle
+import pandas as pd
+import urllib.request
+import requests
+
+from pathlib import Path
+from glob import glob
+from natsort import natsorted
+from tqdm import tqdm
+from imagegrains import __cp_version__
+from cellpose.utils import download_url_to_file
+
+def download_files(tar_path = None,cp_version=__cp_version__):
+    """
+    Downloads the demo data and notebooks from the imagegrains repository.
+    
+    Parameters:
+    ------------
+    tar_path (str, Path (optional, default None)) - Path to the directory where the files should be downloaded. If None, the files will be downloaded to the home directory.
+    
+    Returns:
+    ------------
+    homepath (str) - Path to the directory where the files were downloaded.
+    """
+
+    if not tar_path:
+        homepath = Path.home().joinpath('imagegrains')
+    else:
+        homepath = Path(tar_path)
+
+    nb_list = ['1_image_segmentation.ipynb',
+                '2_grain_sizes.ipynb',
+                '3_gsd_analysis.ipynb',
+                '4_train_cellpose_model.ipynb',
+                'complete_imagegrains_analysis.ipynb']
+    fh_test_list = ['4_P1060348_3.jpg', '4_P1060348_3_mask.tif']
+    fh_train_list = ['1_P1060330_1.jpg',
+                    '1_P1060330_1_mask.tif',
+                    '2_P1060338_0.jpg',
+                    '2_P1060338_0_mask.tif',
+                    '3_P1060343_3.jpg',
+                    '3_P1060343_3_mask.tif',
+                    '5_P1060351_2.jpg',
+                    '5_P1060351_2_mask.tif',
+                    '6_P1060355_0.jpg',
+                    '6_P1060355_0_mask.tif',
+                    '7_P1060359_3.jpg',
+                    '7_P1060359_3_mask.tif']
+    dem_dat_list = ['FH_resolutions.csv', 'OM_err.csv', 'SI_err.csv','K1/K1_C2_385.jpg','K1/K1_C3_0449.jpg','K1_field_measurement.csv', 'res_tSNE.pkl']
+    #model_list = ['fh_boosted_1.170223', 'full_set_1.170223']
+
+    os.makedirs(Path(homepath).as_posix(), exist_ok=True)
+    url = "https://raw.githubusercontent.com/dmair1989/imagegrains/main/"
+    print(f'>> Downloading demo data to {Path(homepath).as_posix()} ...')
+    os.makedirs(homepath.joinpath('notebooks'), exist_ok=True)
+    for nb in nb_list:
+        try:
+            urllib.request.urlretrieve(f'{url}/notebooks/{nb}', homepath.joinpath('notebooks',nb))
+        except:
+            continue
+    os.makedirs(homepath.joinpath('demo_data','FH','test'), exist_ok=True)
+    for file in fh_test_list:
+        try:
+            urllib.request.urlretrieve(f'{url}/demo_data/FH/test/{file}', homepath.joinpath('demo_data','FH','test',file))
+        except:
+            continue
+    os.makedirs(homepath.joinpath('demo_data','FH','train'), exist_ok=True)
+    for file in fh_train_list:
+        try:
+            urllib.request.urlretrieve(f'{url}/demo_data/FH/train/{file}', homepath.joinpath('demo_data','FH','train',file))
+        except:
+            continue
+    os.makedirs(homepath.joinpath('demo_data','K1'), exist_ok=True)
+    for file in dem_dat_list:
+        try:
+            urllib.request.urlretrieve(f'{url}/demo_data/{file}', homepath.joinpath('demo_data',file))
+        except:
+            continue 
+    os.makedirs(homepath.joinpath('models'), exist_ok=True)    
+    ## depreceated: load models from github; keep '/models' on github for older versions
+    #for model in model_list:
+    #    try:
+    #        urllib.request.urlretrieve(f'{url}/models/{model}', homepath.joinpath('models',model))
+    #    except:
+    #        continue
+
+    ## zenodo archive for IG2 models
+    url = 'https://zenodo.org/records/15728186/files/'
+    if cp_version > 3: # only download working models
+        model_list2 = ['IG2_full_set_cp_SAM']
+        for moid in model_list2:
+            source_path = f'{url}{moid}'
+            downloadpath = homepath.joinpath('models',moid)
+            if os.path.isfile(Path(downloadpath).as_posix()) == True:
+                print(f'>> Using cached model weights from: {Path(downloadpath).as_posix()}')
+            else:
+                print(f'>> Downloading model weights to: {Path(homepath).as_posix()}/models')
+                download_url_to_file(source_path,downloadpath)
+    else:
+        model_list2 = ['IG2_full_set.200525','IG2_coarse_grains.220425','IG2_baseline.260424','IG1_old_set.170223']
+        for moid in tqdm(model_list2,desc=f'>> Downloading model weights to: {Path(homepath).as_posix()}/models', unit='file(s)'):
+            source_path = f'{url}{moid}'
+            content_in_bytes = requests.get(str(source_path)).content
+            assert type(content_in_bytes) is bytes
+            downloadpath = homepath.joinpath('models',moid)
+            with open(str(Path(downloadpath.as_posix())), 'wb') as f_out:
+                f_out.write(content_in_bytes)
+    return Path(homepath).as_posix()
+
+def find_data(image_path, mask_str='mask', im_str='', im_format='jpg', mask_format='tif'):
+    """
+    This function loads images and masks from a directory. The directory can contain a 'train' and 'test' subfolder.
+
+    Parameters:
+    ------------
+    image_path (str, Path) - Path to the directory containing the images and masks
+    mask_str (str(optional, default 'mask')) - A string used to filter the masks in `image_path`
+    im_str (str(optional, default '')) - A string used to filter the images in `image_path`
+    im_format (str(optional, default 'jpg')) - Image format of the images in `image_path`
+    mask_format (str(optional, default 'tif')) - Image format of the masks in `image_path`
+
+    Returns:
+    ------------
+    train_images (list) - List of paths to the training images
+    train_masks (list) - List of paths to the training masks
+    test_images (list) - List of paths to the test images
+    test_masks (list) - List of paths to the test masks
+    """
+
+    try:
+        dirs = next(os.walk(Path(image_path)))[1]
+    except StopIteration:
+        dirs=[]
+
+    working_directory = []
+
+    if not dirs:
+        working_directory = Path(image_path)
+        train_images = find_imgs_masks(working_directory,format=im_format,filter_str=im_str)
+        train_masks = find_imgs_masks(working_directory,format=mask_format,filter_str=mask_str)
+        test_images,test_masks = [],[]
+    else:
+        for dir in dirs:
+            if 'test' in dir:
+                working_directory = f'{Path(image_path)}/test/'
+                test_images = find_imgs_masks(working_directory,format=im_format,filter_str=im_str)
+                test_masks = find_imgs_masks(working_directory,format=mask_format,filter_str=mask_str)
+            if 'train' in dir:
+                working_directory = f'{Path(image_path)}/train/'
+                train_images = find_imgs_masks(working_directory,format=im_format,filter_str=im_str)
+                train_masks = find_imgs_masks(working_directory,format=mask_format,filter_str=mask_str)
+
+    return train_images,train_masks,test_images,test_masks
+
+def find_imgs_masks(image_path, format='', filter_str=''):
+    """
+    This function loads images and masks from a directory.
+
+    Parameters:
+    ------------
+    image_path (str, Path) - Path to the directory containing the images and masks
+    format (str) - Image format of the images in `image_path`
+    filter_str (str) - A string used to filter the images in `image_path`
+
+    Returns:
+    ------------
+    ret_list (list) - List of paths to the images
+    """
+
+    ret_list = natsorted(glob(f'{Path(image_path)}/*{filter_str}*.{format}'))
+    return ret_list
+
+def dataset_loader(image_directories, image_format='jpg', label_format='tif',
+                   pred_format='tif', label_str='', pred_str=''):
+    """
+    Loads images, labels, and predictions from a folder or list of folders.
+
+    Parameters:
+    ------------
+    image_directories (str, Path or list of str,Path) - image directory or list of image directories.
+    image_format (str (optional, default='jpg')) - The file format of the images.
+    label_format (str (optional, default='tif')) - The file format of the labels.
+    pred_format (str (optional, default='tif')) - The file format of the predictions.
+    label_str (str (optional, default='')) - A string to search for in label file name.
+    pred_str (str (optional, default='')) - A string to search for in prediction file name.
+
+    Returns
+    ------------
+    imgs (list) - list of images
+    lbls (list) - list of labels
+    preds (list) - list of predictions      
+    """
+
+    imgs,lbls,preds = [],[],[]
+
+    if type(image_directories) == list:
+        dirs = []
+        for x in range(len(image_directories)):
+            try:
+                dirs += next(os.walk(Path(image_directories[x])))[1]
+            except StopIteration:
+                continue
+    else:
+        try:
+            dirs = next(os.walk(Path(image_directories)))[1]
+        except StopIteration:
+            dirs=[]
+
+    image_directory = []
+    
+    if dirs:
+        for dir in dirs:
+            if 'test' in dir:
+                image_directory += [f'{Path(image_directories)}/test/']
+            if 'train' in dir:
+                image_directory += [f'{Path(image_directories)}/train/']
+            if 'predictions' in dir:
+                image_directory += [f'{Path(image_directories)}/predictions/']
+        for dir in image_directory:
+            imgs1,lbls1,preds1 = load_from_folders(dir,image_format=image_format,label_format=label_format,pred_format=pred_format,label_str=label_str,pred_str=pred_str)
+            imgs += imgs1
+            lbls += lbls1
+            preds += preds1
+            if not imgs:
+                image_directory = image_directories
+                imgs1,lbls1,preds1 = load_from_folders(image_directory,image_format=image_format,label_format=label_format,pred_format=pred_format,label_str=label_str,pred_str=pred_str)
+                imgs += imgs1
+                lbls += lbls1
+    
+    if not image_directory:
+        image_directory = image_directories
+        imgs1,lbls1,preds1 = load_from_folders(image_directory,image_format=image_format,label_format=label_format,pred_format=pred_format,label_str=label_str,pred_str=pred_str)
+        imgs += imgs1
+        lbls += lbls1
+        preds += preds1
+    
+    return imgs,lbls,preds
+
+def load_from_folders(image_directory, label_directory='', pred_directory='',
+                      image_format='jpg', label_format='tif', pred_format='tif',
+                      label_str='', pred_str=''):
+    """
+    Loads images, labels, and predictions from separate folders.
+
+    Parameters:
+    ------------
+    image_directory (str,Path) - image directory.
+    label_directory (str,Path (optional, default='')) - label directory.
+    pred_directory (str,Path (optional, default='')) - prediction directory.
+    image_format (str (optional, default='jpg')) - The file format of the images.
+    label_format (str (optional, default='tif')) - The file format of the labels.
+    pred_format (str (optional, default='tif')) - The file format of the predictions.
+    label_str (str (optional, default='')) - A string to search for in label file name.
+    pred_str (str (optional, default='')) - A string to search for in prediction file name.
+
+    Returns
+    ------------    
+    imgs (list) - list of images
+    lbls (list) - list of labels
+    preds (list) - list of predictions
+    """
+
+    if label_directory:
+        lbls = natsorted(glob(f'{label_directory}/*{label_str}*.{label_format}'))
+    else:
+        lbls = natsorted(glob(f'{image_directory}/*{label_str}*.{label_format}'))
+    
+    if pred_directory:
+        preds = natsorted(glob(f'{pred_directory}/*{pred_str}*.{pred_format}'))
+    else:
+        preds = natsorted(glob(f'{image_directory}/*{pred_str}*.{pred_format}'))
+        if not preds:
+            preds = natsorted(glob(f'{image_directory}/predictions/*{pred_str}*.{pred_format}'))
+    
+    imgs = natsorted(glob(f'{image_directory}/*.{image_format}'))
+    
+    if not any(imgs) and not any(preds) and not any(lbls):
+        print('Could not load any images and/or masks.')
+    return imgs,lbls,preds
+
+def assert_work_dirs(data_dir, do_subfolders=False):
+    working_directories = []
+
+    try:
+        dirs = next(os.walk(Path(data_dir)))[1]
+    except StopIteration:
+        dirs=[Path(f'{data_dir}/')]
+
+    if not dirs:
+        dirs=[Path(f'{data_dir}/')]
+
+    for dir in dirs:
+        if dir=='train':
+            working_directories.append(Path(data_dir).joinpath(dir))
+        elif dir=='test':
+            working_directories.append(Path(data_dir).joinpath(dir))
+        elif do_subfolders == True:
+            working_directories.append(Path(data_dir).joinpath(dir))
+        if not working_directories:
+            working_directories= [Path(data_dir)]
+
+    return working_directories
+
+def load_eval_res(name, file_path=''):
+    """
+    Loads evaluation results from a pkl file.
+    
+    Parameters:
+    ------------
+    name (str) - name of the pkl file
+    file_path (str, Path (optional, default='')) - Path to the pkl file
+    
+    Returns
+    ------------
+    eval_results (dict) - Dictionary of evaluation results
+    """
+
+    with open(f'{Path(file_path)}/{name}.pkl', 'rb') as f:
+        eval_results = pickle.load(f)
+
+    return eval_results
+
+def load_grain_set(file_dir, gsd_format='csv', gsd_str='grains', return_dataframe = False):
+    """
+    Loads a list of grain size distributions from a directory.
+
+    Parameters
+    ----------
+    file_dir (str, Path) - directory of the grain size distributions
+    gsd_format (str (optional, default = 'csv')) - format of the grain size distributions
+    gsd_str (str (optional, default = 'grains')) - string to filter the grain size distributions
+
+    Returns
+    -------
+    gsds (list) - list of grain size distributions   
+    """
+
+    if type(file_dir) == list:
+        dirs = []
+        for x in range(len(file_dir)):
+            try:
+                dirs += next(os.walk(Path(file_dir[x])))[1]
+            except StopIteration:
+                continue
+    else:
+        try:
+            dirs = next(os.walk(Path(file_dir)))[1]
+        except StopIteration:
+            dirs=[]
+
+    active_file_dir = []
+
+    if dirs:
+        gsds=[]
+
+        for dir in dirs:
+            if 'test' in dir:
+                    active_file_dir += [f'{Path(file_dir)}/test/predictions/']
+            if 'train' in dir:
+                    active_file_dir += [f'{Path(file_dir)}/train/predictions/']
+            if 'predictions' in dir:
+                    active_file_dir += [f'{Path(file_dir)}/predictions/']
+
+        for path in active_file_dir:
+            gsds += gsds_from_folder(path,gsd_format=gsd_format,gsd_str=gsd_str)
+
+            if not gsds:
+                active_file_dir = [file_dir]
+
+                for path in active_file_dir:
+                    gsds += gsds_from_folder(path,gsd_format=gsd_format,gsd_str=gsd_str)
+    
+    if not active_file_dir:
+        gsds=[]
+        active_file_dir = [file_dir]
+
+        for path in active_file_dir:
+            gsds += gsds_from_folder(path,gsd_format=gsd_format,gsd_str=gsd_str)
+    
+    if return_dataframe == True:
+        gsds_dfs = []
+        [gsds_dfs.append(pd.read_csv(gsd)) for gsd in gsds];
+        
+        return gsds, gsds_dfs
+
+    return gsds
+
+def read_grains(file_path, sep=',', column_name='ell: b-axis (px)'):
+    """
+    Reads a grain size distribution file and returns the grain sizes.
+
+    Parameters
+    ------------
+    file_path (str, Path) - Path to the grain size distribution file
+    sep (str (optional, default=',')) - Separator used in the file
+    column_name (str (optional, default='ell: b-axis (px)')) - Name of the column containing the grain sizes
+
+    Returns
+    ------------
+    grains (numpy array) - Array of grain sizes
+    """
+
+    df = pd.read_csv(Path(file_path),sep=sep)
+    grains = df[column_name].values
+
+    return grains
+    
+def gsds_from_folder(file_path, gsd_format='csv', gsd_str='grains'):
+    """
+    Find grain size files in a folder.
+    
+    Parameters
+    ------------
+    file_path (str, Path) - Path to the folder containing the grain size distributions
+    gsd_format (str (optional, default='csv')) - format of the grain size distributions
+    gsd_str (str (optional, default='grains')) - string to filter the grain size distributions
+    
+    Returns
+    ------------
+    gsds (list) - list of grain size distributions files
+    """
+
+    gsds_raw = natsorted(glob(f'{Path(file_path)}/*{gsd_str}*.{gsd_format}'))
+    gsds = []
+    [gsds.append(gsd) for gsd in gsds_raw]
+
+    return gsds
+
+def read_set_unc(file_path, unc_str='_perc_uncert', file_format='txt'):
+    """
+    Returns a filtered list of all uncertainty files and a list of all IDs.
+
+    Parameters
+    ------------
+    file_path (str, Path) - Path to the folder containing the uncertainty files
+    unc_str (str (optional, default='_perc_uncert')) - A string used to filter the uncertainty files in `file_path`
+    file_format (str (optional, default='txt')) - The file format of the uncertainty files
+    
+    Returns
+    ------------
+    mcs (list) - list of uncertainty files
+    ids (list) - list of IDs (file names) for the uncertainty files
+    """
+
+    try:
+        dirs = next(os.walk(Path(file_path)))[1]
+    except StopIteration:
+        dirs = []
+
+    active_file_dir = []
+
+    if dirs:
+        if 'test' in dirs:
+            active_file_dir = [f'{Path(file_path)}/test/']
+        if 'train' in dirs:
+            active_file_dir = [f'{Path(file_path)}/train/']
+        if 'predictions' in dirs:
+            active_file_dir = [f'{Path(file_path)}/predictions/']
+
+    if not active_file_dir:
+        active_file_dir = [Path(file_path)]
+
+    mcs,ids=[],[]
+
+    for path in active_file_dir:
+        mc= natsorted(glob(f'{Path(path)}/*{unc_str}*.{file_format}'))
+        id_i = [Path(mc[idx]).stem for idx in range(len(mc))]
+        mcs+=mc
+        ids+=id_i
+
+    return mcs, ids
+
+def read_unc(path,sep=',',file_format='txt'):
+    """
+    Reads uncertainty file and returns a dataframe.
+
+    Parameters
+    ------------
+    path (str, Path) - Path to the uncertainty file
+    sep (str (optional, default=',')) - Separator used in the file
+    file_format (str (optional, default='txt')) - The file format of the uncertainty file
+
+    Returns
+    ------------
+    df (pandas DataFrame) - Dataframe containing the uncertainty data
+    """
+
+    df = pd.read_csv(Path(path),sep=sep, header=None)
+
+    if file_format == 'txt':
+        df = df.T
+
+    df.columns = ['data','med','uci','lci']
+    df = df.round(decimals=2)
+
+    return df
+
+def get_img_name_for_summary(file_path, imgs = None, p_string= '_full',overwrite = True):
+    """
+    Function needs documentation. Unclear role.
+    """
+
+    df = pd.read_csv(Path(file_path))
+    imgs_stem = [Path(img).stem for img in imgs]
+    imgs_name = [Path(img).name for img in imgs]
+
+    for i in range(len(df)):
+        a=Path(df['Image/Masks'][i]).stem.split(p_string)[0]
+        for j,b in enumerate(imgs_stem):
+            if a==b:
+                df.at[i,'Image_Name'] = imgs_name[j]
+
+    if overwrite == True:
+        df.to_csv(Path(file_path), index = False)
+        
+    return df

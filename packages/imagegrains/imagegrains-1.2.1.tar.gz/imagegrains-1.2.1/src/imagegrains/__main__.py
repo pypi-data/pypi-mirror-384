@@ -1,0 +1,463 @@
+import os, argparse
+from pathlib import Path
+import torch
+import matplotlib.pyplot as plt
+import pandas as pd
+from numpy.random import default_rng
+from imagegrains import segmentation_helper, grainsizing, gsd_uncertainty
+from imagegrains import data_loader, plotting, __cp_version__
+from cellpose import io
+
+def main():
+    parser = argparse.ArgumentParser(description='ImageGrains')
+    parser.add_argument('--download_data', default=None, type=bool, help='Download models and example data')
+    parser.add_argument('--img_dir', default=None, type=str, help='Input directory for images to segment')
+    parser.add_argument('--skip_plots', default=False, type=bool, help='Skip the overview plots')
+    parser.add_argument('--keep_crs', default=True, type=bool, help='If True, keep georeferencing in case of tif/tiff files for sgementation.')
+
+    seg_args=parser.add_argument_group('Segmentation')
+    seg_args.add_argument('--mute_output', default=None, type=bool, help='Mute console output. If True, example plots will not be saved.')
+    seg_args.add_argument('--out_dir', default=None, type=str, help='Output directory for segmented images; if not specified, the images will be saved in the same directory as the input images')
+    seg_args.add_argument('--img_type', default='jpg', type=str, help='Image type to segment; by default the the script will look for .jpg files. Alternatively, .tif, .tiff or .png files can be segmented. Please ensure that no previous result files are present in the input directory.')
+    seg_args.add_argument('--model_dir', default=None, type=str, help='Segemntation model to use; if not specified, the default model is used')
+    seg_args.add_argument('--gpu', default=True, type=bool, help='use GPU')
+    seg_args.add_argument('--diameter', default=None, type=float, help='Mean grain diameter in pixels to rescale images to; default is None, which leads to automated size estimation')
+    seg_args.add_argument('--min_size', default=0, type=float, help='Minimum object diameter in pixels to segement; default is 15 pixels')
+    seg_args.add_argument('--skip_segmentation', default=False, type=bool, help='Skip segmentation and only calculate grain size distributions for already existing masks.')
+    seg_args.add_argument('--save_composites', default=True, type=bool, help='Save a composite of all images and segmentation masks as .png files.')
+    seg_args.add_argument('--second_diameter', default=None, type=float, help='Enables a two-step segmentation that will combine predictions at two different scales. It will use `diameter` (default: None) and expects the `second_diameter` to be >> `diamter`. Predictions are combined on a pixel basis.')
+    seg_args.add_argument('--comb_threshold',default=None, type=float, help='If predictions from two scales are combined, this threshold (default=150) defines the cutoff above which grains from predictions with `second_diameter` will be used. Larger grains are prioritized.')
+    seg_args.add_argument('--max_size_fraction',default=0.4, type=float, help='Masks larger than max_size_fraction of total image size are removed.(default=0.4) defines the cutoff above which grains from predictions with `second_diameter` will be used. Larger grains are prioritized.')
+
+    gs_args=parser.add_argument_group('Grain size estimation')
+    gs_args.add_argument('--skip_grainsize', type=bool, default=False, help='Skip grain size estimation and only segment grains.')
+    gs_args.add_argument('--filter_str', type=str, default=None, help='Filter mask files with optional string (default: None.')
+    gs_args.add_argument('--min_grain_size', type=float, default=None, help='Minimum grain size in pixels to consider for grain size estimation (default: None); grains with a fitted ellipse smaller than this size will be ignored.')
+    gs_args.add_argument('--edge_filter', type=float, default=None, help = 'Edge filter to remove grains close to the image boundary (default: None).')
+    gs_args.add_argument('--switch_filters_off', type=bool, default=False, help = 'Switch off all filters for grain sizing (default: False).')
+    gs_args.add_argument('--fit', type=str, default=None, help='Additional approximation for grains (default: None); options are convex hull (convex_hull) or outline (mask_outline).')
+    gs_args.add_argument('--grid_resample', default=None, help = 'Resample images with a grid with a given resolution in pixel (default: None). Equivalent to a digital Wolman grid.')
+    gs_args.add_argument('--random_resample', default=None, help = 'Resample image with a random number of points (default: None).')
+    gs_args.add_argument('--centerpoint_resample', default=None, help = 'Set to True for resampling grains for grain at image centers (default: None).')
+    gs_args.add_argument('--resample_snapping', default=None, help = 'If grains are resampled, snapping to the closest grain can be enabled, i.e., by using the "nearest_outline" (default = None).')
+    gs_args.add_argument('--resolution', default=None, help = 'Image resolution to scale grain sizes to in mm/px (default: None). If a value is provided, the grain sizes will be scaled to the given resolution. Alternatively, can provided as path to a csv file with image_specific resolutions (see template). For estimating the image resolution from camera parameters see the preprocessing notebook.')
+
+    gsd_args=parser.add_argument_group('GSD analysis')
+    gsd_args.add_argument('--unc_method', type = str, default = 'bootstrapping', help = 'Method to estimate uncertainty of grain size distribution (default: bootstrap). Options are bootstraping (bootstrapping), simpple Monte Carlo (MC), or advanced Monte Carlo for SfM data (MC_SfM_OM or MC_SfM_SI).')
+    gsd_args.add_argument('--n', type = int, default = 1000, help = 'Number of iterations for uncertainty estimation (default: 1000).')
+    gsd_args.add_argument('--scale_err', default=0.1, help='Scale error for MC uncertainty estimation in fractions (default: 0.1).')
+    gsd_args.add_argument('--length_err', default=0.1, help='Length error for MC uncertainty estimation in pixel or mm (default: 1); whether it is interpreted as py or mm value depends resolution was provided or not.')
+    gsd_args.add_argument('--SfM_file', default = None, help = 'Path to SfM uncertainty file (default: None). See template for details.')
+
+    try:
+        args = parser.parse_args()
+    except:
+        print('>> Error parsing arguments. Please check the help for more information.')
+        parser.print_help()
+        exit()
+
+    mute = False if args.mute_output else True
+
+    if args.download_data:
+        print('>> Downloading example data and models...')
+        install_path = data_loader.download_files()
+        print(f'>> Download to {install_path} successful.')
+        exit()
+
+    tar_dir = '' if args.out_dir == None else args.out_dirs
+
+    if args.img_dir == None or os.path.exists(args.img_dir) == False:
+        print('>> Please specify a valid input directory for images to segment.')
+        exit()
+    
+    skip_segmentation = True if args.skip_segmentation else False
+    if mute == False and skip_segmentation == True:
+        print('>> Skipping segmentation and only measuring grains for already existing masks.')
+    
+    skip_grainsize = True if args.skip_grainsize else False
+    if mute == False and skip_grainsize == True:
+        print('>> Skipping grain size estimation and only segmenting images.')
+
+    if args.model_dir == None and skip_segmentation==False:
+        print('>> No model specified. Using default model.')
+        parent = Path(Path.home() / 'imagegrains')
+        if __cp_version__ > 3:
+            args.model_dir = Path(parent / 'models' / 'IG2_full_set_cp_SAM')
+        else:
+            args.model_dir = Path(parent / 'models' / 'IG2_full_set.200525')
+        if os.path.exists(args.model_dir) == False:
+            print('>> Default model not found. Please provide a valid model path or re-download the default models.')
+            exit()
+
+    #segmentation
+    if skip_segmentation == False:
+        segmentation_step(args,mute=mute,tar_dir=tar_dir)
+    
+    if skip_grainsize == True:
+        print('>> Skipping grain size estimation.')
+        exit()
+    
+    #grain size estimation
+    ## catch out_dir here by replacing img_dir with out_dir if provided
+    if args.out_dir:
+        img_dir = args.out_dir
+    else:
+        img_dir = args.img_dir
+
+    #set filters
+    filters = {'edge':[True,.1],'px_cutoff':[True,12]}
+    if args.min_grain_size:
+        filters['px_cutoff'] = [True,args.min_grain_size]
+    if args.edge_filter:
+        filters['edge'] = [True,args.edge_filter]
+    if args.switch_filters_off:
+        filters= {'edge':[False,.1],'px_cutoff':[False,12]}
+    if mute == False:
+        print(f'Filter configuratiuon: {filters}')
+
+    print(f'>> ImageGrains: Measuring grains for masks in {img_dir}...')
+
+    #optional resampling (if done, sub-directory with resampled masks will be created)
+    resampled = None
+    if args.grid_resample or args.random_resample or args.centerpoint_resample:
+        resample_path = resampling_step(args,filters,mute=mute,tar_dir=tar_dir)
+        resampled = True 
+        print(resample_path)
+    #add additional approximation (convh, outl)
+    fit_method = args.fit
+    mask_str = args.filter_str if args.filter_str else ''
+    grain_size_step(img_dir,filters,fit_method=fit_method,mute=mute,tar_dir=tar_dir,mask_str=mask_str)    
+    if resampled == True:
+        grain_size_step(resample_path,filters,fit_method=fit_method,mute=True,tar_dir=tar_dir,mask_str=mask_str,resampled=True)
+    
+    #optional scaling of grains
+    if args.resolution:
+        scaling_step(img_dir,args.resolution,mute=mute,tar_dir=tar_dir)
+        if resampled == True:
+            scaling_step(resample_path,args.resolution,gsd_str='resampled_grains',mute=True,tar_dir=tar_dir)
+
+    #gsd analysis
+    print ('>> ImageGrains: Calculating grain size distributions and uncertainties for ',img_dir)
+    gsd_step(img_dir,args,mute=mute,tar_dir=tar_dir)
+    if resampled == True:
+        print('>> Calculating grain size distributions and uncertainties for ',resample_path)
+        gsd_step(resample_path,args,mute=mute,tar_dir=tar_dir,resampled=resampled)
+
+
+def segmentation_step(args,mute=False,tar_dir=''):
+    keep_crs = True if args.keep_crs else False
+    if args.gpu == True:
+        if torch.cuda.is_available() == True and mute == False:
+            print('>> Using GPU: ',torch.cuda.get_device_name(0))
+        elif torch.backends.mps.is_available() == True and mute == False:
+            print('>> Using GPU: mps')
+        elif torch.cuda.is_available() == False and mute== False:
+            print('>> GPU not available - check if correct pytorch version is installed. Using CPU instead.')
+        
+        
+    
+    if __cp_version__ >3:
+        if Path(args.model_dir).suffix == '' and 'cp_SAM' in str(args.model_dir):
+            model_ids = [Path(args.model_dir).stem]
+        else:
+            _,model_ids = segmentation_helper.models_from_zoo(args.model_dir)
+    else:
+        if '.' in str(args.model_dir):
+            model_ids = [Path(args.model_dir).stem]
+        else:
+            _,model_ids = segmentation_helper.models_from_zoo(args.model_dir)
+
+    imgs,_,_ = data_loader.dataset_loader(Path(args.img_dir),image_format=args.img_type)
+    second_diameter = None if not args.second_diameter else args.second_diameter
+    config = {'max_size_fraction': args.max_size_fraction} if args.max_size_fraction != 0.4 else None
+
+    if not second_diameter:
+        print('>> ImageGrains: Segmenting ',args.img_type,' images in ',args.img_dir,'GPU:',args.gpu)
+        _ = segmentation_helper.batch_predict(args.model_dir,args.img_dir,tar_dir=tar_dir,
+                                        image_format=args.img_type,use_GPU=args.gpu,diameter=args.diameter, min_size=args.min_size,
+                                            mute=mute,return_results=False,save_masks=True,configuration=config)
+    else:
+        print('>> ImageGrains: Segmenting ',args.img_type,' images in ',args.img_dir,'with diameter =',args.second_diameter,args.img_dir,'GPU:',args.gpu)
+        path1 = f'{args.out_dir}/diam{int(second_diameter)}' if args.out_dir else f'{args.img_dir}/diam{int(second_diameter)}'
+        os.makedirs(path1,exist_ok=True)
+        _ = segmentation_helper.batch_predict(args.model_dir,args.img_dir,tar_dir=path1,
+                                        image_format=args.img_type,use_GPU=args.gpu,diameter=args.second_diameter, min_size=args.min_size,
+                                            mute=mute,return_results=False,save_masks=True,configuration=config)
+        print('>> ... and with diameter =',args.diameter)
+        path2 = f'{args.out_dir}/diam{args.diameter}' if args.out_dir else f'{args.img_dir}/diam{args.diameter}'
+        os.makedirs(path2,exist_ok=True)
+        _ = segmentation_helper.batch_predict(args.model_dir,args.img_dir,tar_dir=path2,
+                                            image_format=args.img_type,use_GPU=args.gpu,diameter=args.diameter, min_size=args.min_size,
+                                                mute=mute,return_results=False,save_masks=True,configuration=config)
+        #Combine scales
+        print('>> ImageGrains: Combining predictions...')
+        _,_,preds_large= data_loader.dataset_loader(path1)
+        _,_,preds_small= data_loader.dataset_loader(path2)
+        threshold = 150 if not args.comb_threshold else args.comb_threshold
+        for model_id in model_ids:
+            segmentation_helper.combine_preds(preds_small,preds_large,imgs,model_id=model_id,threshold=threshold)    
+    
+    #keep Georeferencing
+    if keep_crs == True:
+        if any(x in args.img_type for x in ['tif','tiff']):
+            if args.out_dir:
+                img_dir = args.out_dir
+            else:
+                img_dir = args.img_dir
+            for model_id in model_ids:
+                _,_,preds = data_loader.dataset_loader(Path(img_dir),pred_str=f'{model_id}',image_format=args.img_type)
+                if len(imgs) != len(preds):
+                    imgs_new= []
+                    for i in imgs:
+                        if not 'pred' in i:
+                            imgs_new.append(i)
+                    imgs = imgs_new
+                    preds = segmentation_helper.map_preds_to_imgs(preds,imgs,p_string=f'_{model_id}')
+                segmentation_helper.keep_tif_crs(imgs,preds)
+
+    #segmentation example/Composite plot
+    if not args.skip_plots:
+        img_dir = args.out_dir if args.out_dir else args.img_dir
+        if not args.save_composites:
+            do_composites = True
+        else:
+            do_composites = args.save_composites
+        for model_id in model_ids:
+            _,_,preds = data_loader.dataset_loader(Path(img_dir),pred_str=f'{model_id}',image_format=args.img_type)
+            if len(imgs) != len(preds):
+                preds_sorted = segmentation_helper.map_preds_to_imgs(preds,imgs,p_string=f'_{model_id}')
+                if preds_sorted:
+                    preds = preds_sorted 
+            if len(imgs) == 0:
+                print('>> No valid images found. Please review image file format.')
+                exit()
+            if do_composites != True:
+                if len(imgs) == 1:
+                    pred_plot = plt.figure(figsize=(10,10))
+                    plotting.plot_single_img_pred(imgs[0],preds[0])
+                elif len(imgs) > 6:
+                    rng = default_rng()
+                    numbers = rng.choice(len(imgs), size=6, replace=False)
+                    imgs_rand = [imgs[x] for x in numbers]
+                    preds_rand = [preds[x] for x in numbers]
+                    pred_plot = plotting.inspect_predictions(imgs_rand,preds_rand,title=f"Segmentation examples for {model_id}")
+                else:
+                    pred_plot = plotting.inspect_predictions(imgs,preds,title=f"Segmentation examples for {model_id}")
+                if tar_dir != '':
+                    out_dir = Path(tar_dir)/ f'{model_id}_prediction_examples.png'
+                else:
+                    out_dir = Path(img_dir)/ f'/predictions/{model_id}_prediction_examples.png'
+                pred_plot.savefig(out_dir,dpi=300)
+            if do_composites == True:
+                print('>> Saving composite images...')
+                for img,pred in zip(imgs,preds):
+                    pred_plot_i = plt.figure(figsize=(10,10))
+                    file_id = Path(img).stem
+                    plotting.plot_single_img_pred(img,pred,file_id=file_id)
+                    if tar_dir != '':
+                        out_dir2 = Path(tar_dir)
+                        os.makedirs(out_dir2,exist_ok=True)
+                    else:
+                        out_dir2 = f'{Path(img_dir)}/predictions/'
+                    pred_plot_i.savefig(f'{out_dir2}/{file_id}_{model_id}_composite.png',dpi=300,bbox_inches='tight',pad_inches = 0)
+                    plt.clf()
+                    plt.close(pred_plot_i)
+    return
+
+def resampling_step(args,filters,mute=False,tar_dir=''):
+    if args.out_dir:
+        img_dir = args.out_dir
+    else:
+        img_dir = args.img_dir    
+    if args.grid_resample:
+        method = 'wolman'
+        grid_size= int(args.grid_resample)
+        if mute == False:
+            print('>> Resampling grains with a grid with a resolution of ',args.grid_resample,' pixels.')
+    elif args.random_resample:
+        method = 'random'
+        n_rand = args.random_resample
+        if mute == False:
+            print('>> Resampling grains with a random number of points with a maximum of ',args.random_resample,' points.')
+    elif args.centerpoint_resample:
+        method = 'centerpoint'
+        if mute == False:
+            print('>> Resampling grains for grain at image centers.')
+    resample_snapping = None if not args.resample_snapping else args.resample_snapping
+    _,_,masks_raw= data_loader.dataset_loader(img_dir)
+    #filter for predictions
+    masks = []
+    for mask_i in masks_raw:
+        if any(x in mask_i for x in ['pred','preds']):
+            masks.append(mask_i)
+    #resample
+    for mask in masks:
+        #get ID from file name
+        mask_id = Path(mask).stem
+        if 'flow' in mask_id: #catch flow representations from potentially present from training
+            continue
+        else:
+            #load masks from file
+            mask = io.imread(str(mask))
+            #resample mask to grid
+            if method == 'wolman':
+                grid_resampled,_,_ = grainsizing.resample_masks(mask,filters=filters,method = method, grid_size=grid_size,mute=True,snapping=resample_snapping)
+            elif method == 'random':
+                grid_resampled,_,_ = grainsizing.resample_masks(mask,filters=filters,mute=True,method=method,n_rand=n_rand,snapping=resample_snapping)
+            else:
+                grid_resampled,_,_ = grainsizing.resample_masks(mask,filters=filters,mute=True,method=method,snapping=resample_snapping)
+            #save resampled mask to file
+            if not tar_dir:
+                resampled_dir = Path(img_dir)/'predictions/Resampled_grains/'
+            else:
+                resampled_dir = Path(tar_dir)/'Resampled_grains/' 
+            os.makedirs(resampled_dir, exist_ok=True)
+            filepath = resampled_dir / f'{mask_id}_{method}_resampled.tif'
+            io.imsave(str(filepath),grid_resampled)
+    return resampled_dir
+
+def grain_size_step(img_dir,filters,fit_method=None,mute=False,tar_dir='',mask_str='',resampled=False):
+    if not fit_method:
+        _,_,_ = grainsizing.batch_grainsize(img_dir,filters=filters,mute=True,tar_dir=tar_dir,mask_str=mask_str,resampled=resampled)
+    else:
+        if mute== False:
+            print('>> Adding additional approximation for grains: ',fit_method)
+        _,_,_ = grainsizing.batch_grainsize(img_dir,filters=filters,fit_method=fit_method,mute=True,tar_dir=tar_dir,mask_str=mask_str,resampled=resampled)
+    return
+
+def scaling_step(img_dir,resolution,mute=False,gsd_str='_grains',tar_dir=''):
+    try:
+        res = float(resolution)
+        if type(res) == float:
+            _ = grainsizing.re_scale_dataset(img_dir,resolution=res,gsd_str=gsd_str,save_gsds=True, tar_dir=tar_dir)
+        if mute == False:
+                print('>> Scaled grains with a resolution of',res,'mm/px.')
+    except ValueError:
+        pass
+    if os.path.exists(resolution) == True:        
+        #load names and resolutions
+        df = pd.read_csv(resolution)
+        names = df['name']
+        resolutions = df['resolution']
+        #load grains from files
+        grains = data_loader.load_grain_set(img_dir)
+        #find matching names
+        new_res = []
+        for kk in range(len(grains)):
+            gr_id = Path(grains[kk]).stem
+            for namei, resi in zip(names, resolutions):
+                if namei in gr_id:
+                    new_res.append(resi)    
+        _ = grainsizing.re_scale_dataset(img_dir,resolution=new_res,gsd_str=gsd_str,save_gsds=True, tar_dir=tar_dir)
+        if mute == False:
+            print('>> Rescaled grains image-specific resolutions from',resolution,'.')
+        return
+
+def gsd_step(file_path,args,mute=False,tar_dir='',resampled=False):
+    grains= data_loader.load_grain_set(file_path,gsd_str='grains_re_scaled')
+    scaled = True
+    sfm_err = None
+    sfm_type = None
+    if not grains:
+        grains = data_loader.load_grain_set(file_path,gsd_str='grains')
+        scaled = False
+        if mute == False:
+            print('No scaled grains found. Loading unscaled grains.')
+    #configure columns, uncertainty method and input for uncertainty estimation
+    if scaled == True:
+        columns = ['ell: a-axis (mm)','ell: b-axis (mm)']
+        if args.fit == 'convex_hull':
+            columns += ['convex hull: a axis (mm)','convex hull: b axis (mm)']
+        if args.fit == 'mask_outline':
+            columns += ['mask outline: a axis (mm)','mask outline: b axis (mm)']
+        method = args.unc_method
+        if 'MC_SfM' in method:
+            if 'OM' in method:
+                sfm_type = 'OM'
+            if 'SI' in method:
+                sfm_type = 'SI'
+            method = 'MC_SfM'
+            if not args.SfM_file:
+                print('No SfM file provided. Please provide a SfM file for uncertainty estimation with the MC_SfM method.')
+            else:
+                sfm_err = gsd_uncertainty.compile_sfm_error(args.SfM_file)
+        else: 
+            sfm_err = None
+            sfm_type = None
+    else:
+        columns = ['ell: a-axis (px)','ell: b-axis (px)']
+        if args.fit == 'convex_hull':
+            columns += ['convex hull: a axis (px)','convex hull: b axis (px)']
+        if args.fit == 'mask_outline':
+            columns += ['mask outline: a axis (px)','mask outline: b axis (px)']
+        method = 'bootstrapping'
+    ids = [str(Path(x).stem) for x in grains]
+    df_list = []
+
+    #assert output directory 
+    if tar_dir != '':
+        out_dir = Path(tar_dir)/'GSD_uncertainty/'
+    else:
+        if resampled == True:
+            out_dir = Path(file_path)/'GSD_uncertainty/'
+        else:
+            out_dir = Path(file_path)/'predictions/GSD_uncertainty/'
+    os.makedirs(out_dir,exist_ok=True)
+
+    #estimate uncertainty on a column-by-column basis
+    try:
+        for i,column in enumerate(columns):
+            if mute == False:
+                print(column)
+            #call uncertainty estimation function
+            column_unc = gsd_uncertainty.dataset_uncertainty(gsds=grains,gsd_id=ids,return_results=True,
+                                                    save_results=False,method=method,column_name=column,
+                                                    num_it=args.n,scale_err=args.scale_err,length_err=args.length_err,
+                                                    sfm_error=sfm_err,sfm_type=sfm_type,mute=True)        
+            #save results to dataframe and update it for each column
+            for j,idi in enumerate(ids):
+                if i == 0:
+                    df = pd.DataFrame({f'{column}_perc_lower_CI':column_unc[idi][2],
+                                    f'{column}_perc_median':column_unc[idi][0],
+                                    f'{column}_perc_upper_CI':column_unc[idi][1],
+                                    f'{column}_perc_value':column_unc[idi][3]})
+                    df_list.append(df)
+                else:
+                    df_list[j]=pd.concat([df_list[j],pd.DataFrame({f'{column}_perc_lower_CI':column_unc[idi][2],
+                                    f'{column}_perc_median':column_unc[idi][0],
+                                    f'{column}_perc_upper_CI':column_unc[idi][1],
+                                    f'{column}_perc_value':column_unc[idi][3]})],axis=1)
+
+            #call key percentile summary function and save results for each column
+
+            axis = 'b_axis' if 'b-axis' in column else 'a_axis'
+            approx = 'convex_hull' if 'convex hull' in column else 'mask_outline' if 'mask outline' in column else 'ellipse'
+            unit = 'mm' if 'mm' in column else 'px'
+
+            sum_df = grainsizing.summary_statistics(grains,ids,res_dict=column_unc, save_summary=False, column_name = column,
+                                    method=method,approximation=approx,axis=axis,unit=unit,data_id='')
+            if tar_dir != '':
+                out_dir2 = Path(tar_dir)
+            else:
+                if resampled == True:
+                    out_dir2 = Path(file_path)
+                else:
+                    out_dir2 = Path(file_path)/'predictions/'
+            out_path = out_dir2/f'{axis}_{unit}_{approx}_{method}.csv'
+            sum_df.to_csv(out_path,index=False)
+    except KeyboardInterrupt:
+        print('Uncertainty estimation interrupted. Saving results so far.')
+        pass
+
+    #save full GSD+uncertainty dataframe to csv for each grain set
+    for idx,(idi, dfi) in enumerate(zip(ids,df_list)):
+        if idx < len(df_list):
+            idi = idi.replace('grains','')
+            dfi = dfi.round(decimals=2)
+            out_path = Path(out_dir)/f'{idi}_{method}_full_uncertainty.csv'
+            dfi.to_csv(out_path)
+    print(f'>> ImageGrains successfully created results for {len(df_list)} GSDs.')
+    return 
+
+if __name__ == '__main__':
+    main()
