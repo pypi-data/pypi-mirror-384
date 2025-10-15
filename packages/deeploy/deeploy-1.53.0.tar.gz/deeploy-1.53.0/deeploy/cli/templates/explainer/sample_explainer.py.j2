@@ -1,0 +1,40 @@
+import logging
+from typing import Callable, List
+
+import kserve # To enable logging
+import numpy as np
+
+from deeploy.cli.interface import Explanation
+from deeploy.cli.wrappers.explainer_wrapper import ExplainerWrapper
+from deeploy.cli.utils import convert_to_model
+
+## To enable logging
+logging.basicConfig(level=kserve.constants.KSERVE_LOGLEVEL)
+
+class SampleExplainer(ExplainerWrapper):
+    def __init__(self,
+        predict_fn: Callable,
+        explainer,
+        **kwargs):
+
+        super().__init__(predict_fn, explainer, **kwargs) ## sets self.predict_fn, self.kwarks, self.explainer
+        ## Set any configurations needed for the explainer
+        self.explainer.model = convert_to_model(self.predict_fn) #sets predict function in the explainer object
+
+    def explain(self, inputs: List, explain_image: bool = False) -> Explanation:
+        # Look up definitions in ExplainerWrapper for more information on method.
+        # Your explainer object is available as self.explainer. You are provided with payload input, the explainer need to use this and generate explanation.
+        arr = np.array(inputs)
+        prediction = self.predict_fn(arr)
+        shap_values = self.explainer.shap_values(arr[0], **self.kwargs)
+
+        #return in json serializable format.
+        #use key explanations
+        explanation = {
+            "predictions": prediction.tolist(),
+            "explanations": [{
+                "shap_values": shap_values.tolist()
+            }]
+        }
+        # Upon generating explanation the function must return the result in the required format.
+        return explanation

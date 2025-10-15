@@ -1,0 +1,37 @@
+import logging
+from typing import Dict, Union
+
+import kserve # To enable logging
+import numpy as np
+import pandas as pd
+from kserve.protocol.infer_type import InferRequest
+
+from deeploy.cli.wrappers.model_wrapper import ModelWrapper
+
+##user defined model specific
+import xgboost
+
+## To enable logging
+logging.basicConfig(level=kserve.constants.KSERVE_LOGLEVEL)
+
+class SampleModel(ModelWrapper):
+    def __init__(
+        self,
+        model_path: object,
+        nthreads: int
+        ):
+        super().__init__(model_path, nthreads) #sets self.model_path and self.nthreads
+
+        # You need to load model object as per your approach and assign it to self.model
+        logging.info("Loading Model")
+        with open(model_path, "rb") as f:
+            self.model = xgboost.Booster(params={"nthread": self.nthread},
+                                    model_file=model_path)
+        logging.info("Loaded Model")
+
+    def _predict(self, payload: Union[np.ndarray, pd.DataFrame]) -> Union[Dict, InferRequest]:
+        # Look up definitions in ModelWrapper for more information on method.
+        # Your model object is available as self.model. You are provided with payload input, the model need to use this and make a prediction.
+        # Upon prediction the function must return the result in the format like in a dictionary format.
+        dmatrix = xgboost.DMatrix(payload, nthread=self.nthread)
+        return self.model.predict(dmatrix)
