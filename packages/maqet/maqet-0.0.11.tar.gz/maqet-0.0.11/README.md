@@ -1,0 +1,197 @@
+# MAQET
+
+**Warning:** Most of the code was written using AI. This product is a work in progress and should not be used in production environments under any circumstances.
+
+**MAQET** (M4x0n's QEMU Tool) is a VM management system that implements unified API generation. Methods decorated with `@api_method` automatically become CLI commands, Python API methods, and configuration-driven calls.
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install maqet
+```
+
+**Optional Dependencies:**
+
+- `psutil` - Enhanced process management and validation (recommended)
+
+  ```bash
+  pip install psutil
+  ```
+
+  Without psutil, basic PID tracking still works but ownership validation is skipped.
+
+### Core Concept
+
+Write once, use everywhere. A single method becomes a CLI command, Python API, and configuration option:
+
+```python
+@api_method(cli_name="start", description="Start a virtual machine", category="vm")
+def start(self, vm_id: str, detach: bool = False):
+    """Start a virtual machine."""
+    # Single implementation
+```
+
+This automatically creates:
+
+- **CLI**: `maqet start myvm --detach`
+- **Python API**: `maqet.start("myvm", detach=True)`
+- **Config**: VM settings only (no commands in YAML)
+
+## Usage
+
+### Command Line Interface
+
+```bash
+# Create a VM
+maqet add --config config.yaml --name myvm
+
+# Start VM
+maqet start myvm
+
+# List all VMs
+maqet ls
+
+# Check VM status
+maqet status myvm
+
+# Execute QMP command
+maqet qmp myvm system_powerdown
+
+# Remove VM
+maqet rm myvm --force
+```
+
+### Python API
+
+```python
+from maqet import Maqet
+
+maqet = Maqet()
+
+# Create and start VM
+vm_id = maqet.add(name='myvm', memory='4G', cpu=2)
+maqet.start(vm_id)
+
+# Manage VM
+status = maqet.status(vm_id)
+maqet.qmp(vm_id, 'system_powerdown')
+maqet.rm(vm_id, force=True)
+```
+
+### Configuration Files
+
+```yaml
+# config.yaml - VM configuration only
+name: myvm
+binary: /usr/bin/qemu-system-x86_64
+memory: 4G
+cpu: 2
+storage:
+  - name: hdd
+    size: 20G
+    type: qcow2
+    interface: virtio
+```
+
+```bash
+# Use configuration file
+maqet add --config config.yaml
+maqet start myvm --detach
+```
+
+**Configuration Features:**
+
+- Deep-merge multiple config files
+- Lists are concatenated (storage, network)
+- Command-line args override config values
+- Full QEMU argument support
+
+See [Configuration Guide](docs/user-guide/configuration.md) for details.
+
+## Core Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `add` | Create new VM | `maqet add --config config.yaml --name myvm` |
+| `start` | Start VM | `maqet start myvm` |
+| `stop` | Stop VM | `maqet stop myvm --force` |
+| `rm` | Remove VM | `maqet rm myvm --force` |
+| `ls` | List VMs | `maqet ls --status running` |
+| `status` | Show VM status | `maqet status myvm` |
+| `apply` | Apply configuration | `maqet apply myvm --memory 8G` |
+| `snapshot` | Manage snapshots | `maqet snapshot myvm create hdd snap1` |
+
+### QMP Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `qmp keys` | Send key combination | `maqet qmp keys myvm ctrl alt f2` |
+| `qmp type` | Type text to VM | `maqet qmp type myvm "hello world"` |
+| `qmp screendump` | Take screenshot | `maqet qmp screendump myvm screenshot.ppm` |
+| `qmp pause` | Pause VM | `maqet qmp pause myvm` |
+| `qmp resume` | Resume VM | `maqet qmp resume myvm` |
+| `qmp device-add` | Hot-plug device | `maqet qmp device-add myvm usb-storage` |
+| `qmp device-del` | Hot-unplug device | `maqet qmp device-del myvm usb1` |
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `-v, --verbose` | Increase verbosity (-v, -vv, -vvv) |
+| `-q, --quiet` | Suppress non-error output |
+| `--data-dir` | Override data directory |
+| `--log-file` | Enable file logging |
+
+## Documentation
+
+### Full Documentation
+
+- **[Documentation Index](docs/README.md)** - Complete documentation portal
+- **[Architecture](docs/architecture/)** - Internal architecture and design
+- **[Development](docs/development/)** - Contributing and development guides
+- **[Deployment](docs/deployment/)** - Production deployment
+- **[Reference](docs/reference/)** - Technical references
+
+### Architecture
+
+- **Unified API System** - Single methods generate CLI, Python API, and config
+- **State Management** - SQLite backend with XDG compliance
+- **QEMU Integration** - Full QMP protocol support
+- **Storage System** - QCOW2, Raw, VirtFS support with snapshots
+
+See [QEMU Internal Architecture](docs/architecture/QEMU_INTERNAL_ARCHITECTURE.md) for details.
+
+### Development
+
+```bash
+# Run tests
+python tests/run_tests.py
+
+# Run pre-commit checks
+pre-commit run --all-files
+```
+
+See [Testing Guide](docs/development/TESTING.md) for details on running tests and contributing.
+
+### Roadmap
+
+See [Roadmap](docs/development/ROADMAP.md) and [Future Features](docs/development/FUTURE_FEATURES.md) for planned improvements.
+
+## Features
+
+- **Write Once, Use Everywhere** - Single method for CLI, API, and config
+- **XDG Compliant** - Follows Linux directory standards
+- **Production Ready** - Security hardened, tested, robust error handling
+- **Full QMP Support** - Complete QEMU Machine Protocol integration
+- **Snapshot Management** - Create, load, list, and delete snapshots
+- **Hot-plug Support** - Add/remove devices while VM is running
+
+## Contributing
+
+Contributions welcome! See [Development Guide](docs/development/) for contributing guidelines.
+
+## License
+
+GNU General Public License v2.0 - see [LICENSE](LICENSE) file for details.
