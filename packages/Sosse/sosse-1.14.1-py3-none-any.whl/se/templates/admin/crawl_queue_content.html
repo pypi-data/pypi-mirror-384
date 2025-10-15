@@ -1,0 +1,113 @@
+{% load static %}
+<div style="padding: 8px 0px 5px 0px">
+{% if 'se.change_crawlerstats' in perms %}
+  <span class="chart card{% if pause %} green_bg"{% endif %}" onclick="document.getElementById('start_pause_button').submit()">
+    <div class="card_text">
+      <form id="start_pause_button" method="POST" style="padding-top: 15px">
+        {% csrf_token %}
+        {% if pause %}
+          <input type="hidden" name="pause" value="⏵ Running">
+          ⏵ Running
+        {% else %}
+          <input type="hidden" name="resume" value="⏸ Paused">
+          ⏸ Paused
+        {% endif %}
+      </form>
+    </div>
+  </span>
+{% endif %}
+
+  <span class="chart card">
+    <a href="{% url 'admin:se_document_changelist' %}?queued=new&o=8">
+      <div id="queue_new_count" class="card_text" title="{{ queue_new_count }} new document{{ queue_new_count|pluralize }}">
+        {{ queue_new_count }}<br/>
+        🌟 New
+      </div>
+    </a>
+  </span>
+
+  <span class="chart card">
+    <a href="{% url 'admin:se_document_changelist' %}?queued=pending&o=8">
+      <div id="queue_pending_count" class="card_text" title="{{ queue_pending_count }} document{{ queue_pending_count|pluralize }} pending">
+        {{ queue_pending_count }}<br/>
+        ⌛ Pending
+      </div>
+    </a>
+  </span>
+
+  <span class="chart card">
+    <a href="{% url 'admin:se_document_changelist' %}?queued=recurring&o=8">
+      <div id="queue_recurring_count" class="card_text" title="{{ queue_recurring_count }} document{{ queue_recurring_count|pluralize }} recurring">
+        {{ queue_recurring_count }}<br/>
+        🕑 Recurring
+      </div>
+    </a>
+  </span>
+</div>
+
+{% if queue %}
+  <div class="results">
+    <table id="result_list" style="width: 100%">
+      <thead>
+        <th class="favicon"></th>
+        <th><div class="text">Url</div></th>
+        <th><div class="text">Title</div></th>
+        <th><div class="text">Status</div></th>
+        <th><div class="text">Crawl next</div></th>
+        <th><div class="text">Crawled last</div></th>
+      </thead>
+      <tbody>
+        {% for doc in queue %}
+          <tr {% if doc.pending %}class="{% if doc.worker_no is not None %}running{% elif doc.crawl_last is None or doc.crawl_next < now %}pending{% endif %}"{% endif %}>
+            <td class="favicon">
+              <a href="{% url 'admin:se_document_change' doc.id %}">
+                {% if doc.favicon and not doc.favicon.missing %}
+                    <img src="{% url 'favicon' doc.favicon.id %}" alt="icon">
+                {% endif %}
+              </a>
+            </td>
+            <td>
+              <a href="{% url 'admin:se_document_change' doc.id %}">
+                {{ doc.url }}
+              </a>
+            </td>
+            <td>
+              <a href="{% url 'admin:se_document_change' doc.id %}">
+                {{ doc.get_title_label }}
+              </a>
+            </td>
+            <td {% if not doc.in_history %}style="opacity: 0.3"{% endif %}>
+                {% if doc.error %}
+                    <img src="{% static "admin/img/icon-no.svg" %}">
+                {% else %}
+                    {% if doc.webhook_in_error %}
+                        <span title="Webhook {{ doc.webhook_in_error }} failed">📡</span>
+                    {% elif doc.robotstxt_rejected %}
+                        <span title="Rejected by robots.txt">🤖</span>
+                    {% else %}
+                        <img src="{% static "admin/img/icon-yes.svg" %}">
+                    {% endif %}
+                {% endif %}
+            </td>
+            {% if doc.worker_no is not None %}
+               <td>In progress</td>
+            {% elif doc.crawl_last is None or doc.crawl_next < now %}
+               <td {% if doc.in_history %}style="opacity: 0.3"{% endif %}>Pending</td>
+            {% elif doc.crawl_next %}
+               <td title="{{ doc.crawl_next }}" {% if doc.in_history %}style="opacity: 0.3"{% endif %}>{{ doc.crawl_next_human }}</td>
+            {% else %}
+              <td {% if doc.in_history %}style="opacity: 0.3"{% endif %}>Never</td>
+            {% endif %}
+            {% if doc.crawl_last %}
+              <td {% if not doc.in_history %}style="opacity: 0.3"{% endif %} title="{{ doc.crawl_last }}">{{ doc.crawl_last_human }}</td>
+            {% else %}
+              <td {% if not doc.in_history %}style="opacity: 0.3"{% endif %}>Never</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  No document
+{% endif %}
