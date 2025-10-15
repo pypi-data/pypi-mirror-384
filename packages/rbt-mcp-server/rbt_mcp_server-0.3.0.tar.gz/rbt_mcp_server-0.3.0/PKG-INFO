@@ -1,0 +1,286 @@
+Metadata-Version: 2.4
+Name: rbt-mcp-server
+Version: 0.3.0
+Summary: MCP Server for Graphiti memory and document chunking with intelligent Markdown processing.
+Project-URL: Homepage, https://github.com/yourusername/KnowledgeSmith
+Project-URL: Repository, https://github.com/yourusername/KnowledgeSmith
+Project-URL: Issues, https://github.com/yourusername/KnowledgeSmith/issues
+Author-email: Devin Lai <leo7nel23@gmail.com>
+License: MIT
+Keywords: document-editor,llm,mcp,rbt,token-optimization
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.10
+Requires-Dist: graphiti-core>=0.3.0
+Requires-Dist: jsonschema>=4.0.0
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: pyyaml>=6.0.0
+Requires-Dist: referencing>=0.30.0
+Requires-Dist: rpds-py>=0.20.0
+Provides-Extra: dev
+Requires-Dist: pytest-cov>=4.0.0; extra == 'dev'
+Requires-Dist: pytest>=7.0.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# KnowledgeSmith MCP Server
+
+MCP Server for **Graphiti memory and document chunking**. Previously included RBT document editing tools (now archived).
+
+## 📦 Archive Notice
+
+### RBT Document Editor Tools (Archived 2025-10-09)
+
+The RBT document editing功能已於 2025-10-09 封存，改用原生 Claude Code Read/Edit/Write 工具以降低維護成本和 token 使用。
+
+**封存內容：**
+- document_service.py - 文件服務
+- document_parser.py - 文件解析器
+- 11 個 editor MCP 工具（get_outline, read_content, update_block 等）
+- templates/ - 文件模板
+- cache.py - 文件快取
+
+**保留功能：**
+- ✅ chunking/ - 文件分塊與同步功能
+- ✅ graphiti_tools.py - Graphiti 記憶體功能（8 個工具）
+
+**如何恢復封存的代碼：**
+```bash
+# 查看封存版本
+git show v-with-editor
+
+# 恢復特定檔案
+git checkout v-with-editor -- rbt_mcp_server/document_service.py
+
+# 或建立分支使用完整封存版本
+git checkout -b restore-editor v-with-editor
+```
+
+## 🎯 Current Features
+
+### Graphiti Knowledge Graph Integration
+- **Intelligent Chunking**: Automatically split documents into semantic chunks based on document structure (sections for RBT, H3 headings for Markdown)
+- **Incremental Sync**: Only update changed chunks, preserving unchanged content
+- **Neo4j Backend**: Store document chunks as episodes in Graphiti knowledge graph
+- **graphiti-memory Compatible**: Drop-in replacement with same search_nodes/search_facts API
+- **8 MCP Tools**: add_document, search_memory_nodes, search_memory_facts, get_episodes, delete_episode, get_entity_edge, delete_entity_edge, clear_graph
+
+## 📦 Installation
+
+### Prerequisites
+
+**1. Setup Neo4j Database**
+
+Using Docker (recommended):
+```bash
+docker run \
+  -p 7474:7474 \
+  -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/your-password \
+  --name neo4j \
+  neo4j:latest
+```
+
+Verify at: http://localhost:7474
+
+**2. Get OpenAI API Key**
+
+Required for Graphiti embeddings and graph operations.
+
+### Install MCP Server
+
+**Option 1: Install from source (uv)**
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/KnowledgeSmith.git
+cd KnowledgeSmith
+
+# Install with uv
+uv pip install -e .
+```
+
+**Option 2: Direct installation**
+
+```bash
+uv pip install rbt-mcp-server
+```
+
+## 🚀 Quick Start
+
+### 1. Configure Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "graphiti-memory-server": {
+      "type": "stdio",
+      "command": "rbt-mcp-server",
+      "env": {
+        "RBT_ROOT_DIR": "/path/to/your/document/root",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "your-password",
+        "OPENAI_API_KEY": "your-openai-api-key"
+      }
+    }
+  }
+}
+```
+
+**Required Environment Variables**:
+- `RBT_ROOT_DIR`: Root directory for document comparison (required for add_document tool)
+- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`: Neo4j database connection
+- `OPENAI_API_KEY`: OpenAI API key for Graphiti embeddings
+
+Or use full uv command:
+
+```json
+{
+  "mcpServers": {
+    "graphiti-memory-server": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "rbt-mcp-server"],
+      "env": {
+        "RBT_ROOT_DIR": "/path/to/your/document/root",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "your-password",
+        "OPENAI_API_KEY": "your-openai-api-key"
+      }
+    }
+  }
+}
+```
+
+### 2. Set Environment Variables (Optional - if not using Claude Desktop)
+
+```bash
+# Required for add_document tool
+export RBT_ROOT_DIR=/path/to/your/document/root
+
+# Required for Graphiti integration
+export NEO4J_URI=bolt://localhost:7687
+export NEO4J_USER=neo4j
+export NEO4J_PASSWORD=your-password
+export OPENAI_API_KEY=your-openai-api-key
+```
+
+### 3. Test the Server
+
+```bash
+rbt-mcp-server
+```
+
+## 📚 Available MCP Tools
+
+### Document Management
+
+1. **add_document** - Sync documents to knowledge graph with automatic chunking
+   - Supports Markdown (chunked by H3 headings) and RBT documents
+   - Incremental sync: only updates changed chunks
+
+### Knowledge Graph Query
+
+2. **search_memory_nodes** - Search knowledge graph nodes (entities, preferences, procedures)
+3. **search_memory_facts** - Search knowledge graph facts (relationships)
+4. **get_episodes** - Retrieve recent memory episodes
+
+### Data Management
+
+5. **delete_episode** - Delete specific episode
+6. **get_entity_edge** - Get entity relationship edge by UUID
+7. **delete_entity_edge** - Delete entity relationship edge
+8. **clear_graph** - Clear all data from knowledge graph (⚠️ irreversible)
+
+## 🔗 Graphiti Integration Usage
+
+### Adding Documents to Knowledge Graph
+
+**General Markdown Documents:**
+```python
+add_document(
+    new_file_path="/absolute/path/to/document.md",
+    project_id="my-project",
+    file_path="docs/guide.md"  # relative path for general docs
+)
+```
+
+**RBT Documents (REQ/BP/TASK):**
+```python
+add_document(
+    new_file_path="/absolute/path/to/TASK-001.md",
+    project_id="knowledge-smith",
+    feature_id="my-feature",
+    rbt_type="TASK",
+    file_path="001"  # task number for TASK documents
+)
+```
+
+### Searching Knowledge
+
+```python
+# Search for nodes (entities, preferences, procedures)
+results = await search_nodes(
+    query="documentation preferences",
+    group_ids=["knowledge-smith"],
+    entity="Preference",
+    max_nodes=10
+)
+
+# Search for facts (relationships)
+facts = await search_facts(
+    query="task dependencies",
+    group_ids=["knowledge-smith"],
+    max_facts=10
+)
+```
+
+### Difference from graphiti-memory MCP
+
+This MCP server extends the original `graphiti-memory` MCP with document chunking capabilities:
+
+- **Original graphiti-memory**: Stores entire documents as single episodes
+- **This MCP (graphiti-chunk-mcp)**: Automatically chunks documents into semantic sections
+  - RBT documents: Split by section (sec-*)
+  - Markdown documents: Split by H3 headings (###)
+  - Incremental updates: Only sync changed chunks
+
+**API Compatibility**: All `search_nodes`, `search_facts`, `get_episodes` functions maintain the same interface as graphiti-memory.
+
+## 📖 Documentation
+
+- **[Markdown Writing Guide](docs/guides/markdown-writing-guide.md)** - How to write Markdown documents that work well with the chunker
+- **[MCP Installation Guide](docs/guides/mcp-installation-guide.md)** - Detailed installation and usage instructions
+
+## 🧪 Development
+
+Install development dependencies:
+```bash
+uv sync --dev
+```
+
+Run tests:
+```bash
+RBT_ROOT_DIR=/test/root uv run pytest -v
+```
+
+Test coverage:
+```bash
+RBT_ROOT_DIR=/test/root uv run pytest --cov=rbt_mcp_server --cov-report=html
+```
+
+## 📝 License
+
+MIT License
+
+## 🤝 Contributing
+
+Contributions welcome! Please open an issue or submit a pull request.
