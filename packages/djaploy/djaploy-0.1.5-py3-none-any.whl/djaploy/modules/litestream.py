@@ -1,0 +1,166 @@
+"""
+Litestream backup module for djaploy
+"""
+
+from pathlib import Path
+from typing import Dict, Any, List
+
+from pyinfra import host
+from pyinfra.operations import apt, server, files, systemd
+
+from .base import BaseModule
+
+
+class LitestreamModule(BaseModule):
+    """Module for Litestream database replication and backups"""
+    
+    name = "litestream"
+    description = "Litestream continuous SQLite replication"
+    version = "0.1.0"
+    
+    def configure_server(self, host_data: Dict[str, Any], project_config: Any):
+        """Install Litestream if backup is configured"""
+        
+        backup_config = getattr(host_data, 'backup', None)
+        if not backup_config or backup_config.get("type") != "litestream":
+            return  # Not using litestream backup
+        
+        # Check if litestream deb file is provided
+        ssh_user = getattr(host_data, 'ssh_user', 'deploy')
+        litestream_deb_path = f"/home/{ssh_user}/debs/litestream.deb"
+        
+        # Look for litestream deb in project
+        project_litestream_deb = None
+        possible_paths = [
+            project_config.project_dir / "litestream.deb",
+            project_config.project_dir / "debs" / "litestream.deb",
+            project_config.project_dir / "infra" / "debs" / "litestream.deb",
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                project_litestream_deb = str(path)
+                break
+        
+        if project_litestream_deb:
+            # Upload litestream deb if not already present
+            files.put(
+                name="Upload Litestream deb package",
+                src=project_litestream_deb,
+                dest=litestream_deb_path,
+                _sudo=False,
+            )
+            
+            # Install litestream from deb
+            apt.deb(
+                name="Install Litestream",
+                src=litestream_deb_path,
+                _sudo=True,
+            )
+        else:
+            # Try installing from repository (if available)
+            server.shell(
+                name="Install Litestream from repository",
+                commands=[
+                    "wget -qO- https://repo.litestream.io/GPG-KEY-litestream | apt-key add -",
+                    "echo 'deb https://repo.litestream.io/debian/ /' | tee /etc/apt/sources.list.d/litestream.list",
+                    "apt update",
+                    "apt install -y litestream"
+                ],
+                _sudo=True,
+            )
+    
+    def deploy(self, host_data: Dict[str, Any], project_config: Any, artifact_path: Path):
+        """Deploy Litestream configuration"""
+        
+        backup_config = getattr(host_data, "backup", None)
+        if not backup_config or backup_config.get("type") != "litestream":
+            return
+        
+        app_user = getattr(host_data, 'app_user', 'app')
+        
+        # Create database backup directory
+        backup_dir = backup_config.get("backup_dir", f"/home/{app_user}/db_backups")
+        files.directory(
+            name="Create database backup directory",
+            path=backup_dir,
+            user=app_user,
+            group=app_user,
+            _sudo=True,
+        )
+        
+        # Generate litestream config
+        litestream_config = self._generate_litestream_config(backup_config, app_user, project_config)
+        
+        # Deploy litestream configuration
+        files.put(
+            name="Create Litestream configuration",
+            dest="/etc/litestream.yml",
+            content=litestream_config,
+            user="root",
+            group="root",
+            mode="644",
+            _sudo=True,
+        )
+        
+        # Start and enable litestream service
+        systemd.service(
+            name="Start and enable Litestream service",
+            service="litestream",
+            running=True,
+            restarted=True,
+            enabled=True,
+            _sudo=True,
+        )
+    
+    def _generate_litestream_config(self, backup_config: Dict[str, Any], 
+                                  app_user: str, project_config: Any) -> str:
+        """Generate Litestream configuration file"""
+        
+        # Get database paths
+        db_path = backup_config.get("db_path", f"/home/{app_user}/dbs")
+        databases = backup_config.get("databases", ["default.db"])
+        
+        if isinstance(databases, str):
+            databases = [databases]
+        
+        # Get backup destination
+        destination = backup_config.get("destination", "")
+        
+        # Generate config for each database
+        db_configs = []
+        for db in databases:
+            db_name = db.replace(".db", "")
+            db_configs.append(f"""
+- path: {db_path}/{db}
+  replicas:
+    - type: sftp
+      url: {destination}/{db_name}
+      sync-interval: 10s
+      snapshot-interval: 24h
+      retention: 72h""")
+        
+        config = f"""# Litestream configuration
+# Generated by djaploy litestream module
+
+dbs:{''.join(db_configs)}
+
+# Logging
+log:
+  level: info
+  path: /home/{app_user}/logs/litestream.log
+"""
+        
+        return config
+    
+    def get_required_packages(self) -> List[str]:
+        """Get required system packages"""
+        return []  # Litestream is installed from deb or repository
+    
+    def get_services(self) -> List[str]:
+        """Get services managed by this module"""
+        return ["litestream"]
+
+
+# Make the module class available for the loader
+Module = LitestreamModule
