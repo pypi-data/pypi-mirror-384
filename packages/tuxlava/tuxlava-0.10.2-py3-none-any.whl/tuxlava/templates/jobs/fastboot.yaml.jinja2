@@ -1,0 +1,223 @@
+{% set prefix_len = 'fastboot-'|length %}
+device_type: "{{ device.name[prefix_len:] }}"
+
+{% if tests %}
+job_name: "tuxlava@{{ device.name }}: {{ tests|map(attribute="name")|join(", ")}}"
+{% else %}
+job_name: "tuxlava@{{ device.name }}: boot"
+{% endif %}
+priority: {{ LAVA_JOB_PRIORITY }}
+visibility: "{{ visibility }}"
+
+reboot_to_fastboot: {{ reboot_to_fastboot|default("false") }}
+
+{% block tags %}
+{% if tags is defined and tags is sequence and tags is not string %}
+tags:
+{% for tag in tags %}
+{% if tag|length %}
+  - {{ tag }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endblock tags %}
+
+context:
+    test_character_delay: 10
+
+{%- set deploy_download_timeout = timeouts.deploy|default(25) %}
+{%- set deploy_timeout = timeouts.deploy|default(30) %}
+{%- set boot_timeout = timeouts.boot|default(25) %}
+
+{% block timeouts %}
+timeouts:
+  job:
+    minutes: {{ deploy_download_timeout + deploy_timeout + boot_timeout + tests_timeout }}
+  connection:
+    minutes: 2
+  actions:
+    power-off:
+      seconds: 60
+    finalize:
+      seconds: 120
+{% if LAVA_QUEUE_TIMEOUT is defined %}
+  queue:
+    hours: {{ LAVA_QUEUE_TIMEOUT }}
+{% endif %}
+{% endblock %}
+
+actions:
+- deploy:
+    to: downloads
+    timeout:
+      minutes: {{ deploy_download_timeout }}
+    os: {{ deploy_os|default(debian) }}
+    images:
+{% if bios and device.name in ['fastboot-dragonboard-845c', 'fastboot-qrb5165-rb5'] %}
+      partition:0:
+        url: "{{ bios }}"
+{% endif %}
+{% if ramdisk and device.name in ['fastboot-dragonboard-845c', 'fastboot-qrb5165-rb5'] %}
+      ramdisk:
+        url: "{{ ramdisk }}"
+{% endif %}
+      kernel:
+        url: "{{ kernel }}"
+{% if compression(kernel)[1] is not none %}
+        compression: {{ compression(kernel)[1] }}
+        type: image
+{% endif %}
+{% if dtb %}
+      dtb:
+        url: "{{ dtb }}"
+{% endif %}
+{% if modules %}
+      modules:
+        url: "{{ modules[0] }}"
+        path: {{ modules[1] }}
+{% if compression(modules[0])[1] is not none %}
+        compression: {{ compression(modules[0])[1] }}
+{% endif %}
+{% endif %}
+{% if device.name == 'fastboot-e850-96' %}
+      userdata:
+{% elif device.name == 'fastboot-x15' %}
+      super:
+{% else %}
+      rootfs:
+{% endif %}
+        url: "{{ rootfs }}"
+{% if compression(rootfs)[1] is not none %}
+        compression: {{ compression(rootfs)[1] }}
+{% endif %}
+        format: ext4
+{% if overlays %}
+        overlays:
+{% if tests or device.name == 'fastboot-x15' %}
+          lava: true
+{% endif %}
+{% for name, overlay, dst in overlays %}
+          {{ name }}:
+            url: "{{ overlay }}"
+            path: "{{ dst }}"
+            format: tar
+            compression: {{ compression(overlay)[1] }}
+{% endfor %}
+{% elif tests or device.name == 'fastboot-x15' %}
+        overlays:
+          lava: true
+{% endif %}
+    postprocess:
+      docker:
+        image: "{{ deploy_docker_image|default('linaro/kir:20250728') }}"
+        local: true
+        steps:
+        - /kir/lava/board_setup.sh {{ device.name[9:] }} rootfs "/usr/"
+- deploy:
+    to: fastboot
+    os: {{ deploy_os|default(debian) }}
+    timeout:
+      minutes: {{ deploy_timeout }}
+    docker:
+      image: "{{ deploy_fastboot_docker_image|default('linaro/kir:20250728') }}"
+      local: true
+    images:
+{% if device.name in ['fastboot-dragonboard-845c', 'fastboot-qrb5165-rb5'] %}
+      partition:0:
+        url: downloads://gpt_both0.bin
+        reboot: hard-reset
+{% endif%}
+{% if device.name in ['fastboot-dragonboard-845c', 'fastboot-gs101-oriole', 'fastboot-qrb5165-rb5'] %}
+      boot:
+        url: downloads://boot.img
+        reboot: hard-reset
+{% endif%}
+{% if device.name in ['fastboot-e850-96', 'fastboot-dragonboard-410c'] %}
+      boot:
+        url: downloads://boot.img
+{% endif %}
+{% if device.name == 'fastboot-gs101-oriole' %}
+      vendor_boot:
+        url: downloads://vendor_boot.img
+{% endif %}
+{% if device.name in ['fastboot-dragonboard-845c', 'fastboot-dragonboard-410c', 'fastboot-qrb5165-rb5'] %}
+      rootfs:
+{% elif device.name in ['fastboot-e850-96' , 'fastboot-gs101-oriole'] %}
+      userdata:
+{% else %}
+      super:
+{% endif %}
+        url: downloads://rootfs.img
+
+{% if device.name in ['fastboot-dragonboard-410c', 'fastboot-dragonboard-845c', 'fastboot-qrb5165-rb5'] %}
+- command:
+    name: pre_os_command
+- command:
+    name: pre_power_command
+{% endif %}
+{% if device.name == 'fastboot-e850-96' %}
+- command:
+    name: pre_power_command
+{% endif %}
+- boot:
+{% if device.name == 'fastboot-x15' %}
+    commands:
+    - setenv fdtfile am57xx-beagle-x15.dtb
+    - setenv console ttyS2,115200n8
+    - setenv mmcdev 1
+    - part number mmc 1 super part_num
+    - setenv bootpart 1:${part_num}
+    - run mmcboot
+    method: u-boot
+{% else %}
+    docker:
+      image: "{{ boot_docker_image|default('linaro/kir:20250728') }}"
+{% if device.name == 'fastboot-dragonboard-845c' %}
+      local: true
+{% endif %}
+    method: fastboot
+{% endif %}
+    timeout:
+      minutes: {{ boot_timeout }}
+    auto_login:
+      login_prompt: 'login:'
+      username: root
+    prompts:
+    - 'root@(.*):[/~]#'
+{% if device.name == 'fastboot-dragonboard-845c' %}
+    - 'dragonboard-845c:'
+{% endif %}
+{% for prompt in tux_prompt %}
+    - "{{ prompt }}"{% endfor %}
+{% if device.name == 'fastboot-e850-96' %}
+- command:
+    name: pre_os_command
+{% endif %}
+{% if device.name == 'fastboot-gs101-oriole' %}
+    commands:
+      - erase dtbo
+{% endif %}
+
+{% if device.name == 'fastboot-x15' %}
+- test:
+    timeout:
+      minutes: 5
+    definitions:
+    - from: inline
+      repository:
+        metadata:
+          format: Lava-Test Test Definition 1.0
+          name: prep-tmp-disk
+          description: "Mount local disk for tmp space"
+        run:
+          steps:
+          - export STORAGE_DEV=$(lava-target-storage SATA || lava-target-storage USB)
+          - test -n "${STORAGE_DEV}" || lava-test-raise "STORAGE_DEV not found; job exit"
+          - echo "y" | mkfs.ext4 ${STORAGE_DEV} || lava-test-raise "mkfs.ext4 ${STORAGE_DEV} failed; job exit"
+          - mkdir -p /scratch
+          - mount ${STORAGE_DEV} /scratch && echo "mounted" || lava-test-raise "mount ${STORAGE_DEV} failed; job exit"
+          - df -h
+          - mount
+      name: prep-tmp-disk
+      path: inline/prep.yaml
+{% endif %}
