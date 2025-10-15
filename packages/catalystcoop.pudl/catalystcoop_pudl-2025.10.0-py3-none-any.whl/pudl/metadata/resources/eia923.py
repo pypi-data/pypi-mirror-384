@@ -1,0 +1,968 @@
+"""Definitions of data tables primarily coming from EIA-923."""
+
+from typing import Any
+
+TABLE_DESCRIPTIONS: dict[str, dict[str, Any]] = {
+    "_core_eia923__yearly_fgd_operation_maintenance": {
+        "additional_summary_text": "flue gas desulfurization (FGD) operation and maintenance expenses at generation facilities.",
+        "additional_source_text": "(Schedule 8C)",
+        "usage_warnings": ["irregular_years"],
+        "additional_details_text": (
+            """From 2008-2011 this table also reported operational
+characteristics that are now reported in 923 Air Emissions Control Info.
+
+Note: This table has been cleaned, but not harvested with other EIA 923 or 860 data.
+The same variables present in this table may show up in other _core tables in other
+years. Once this table has been harvested, it will be removed from the PUDL database."""
+        ),
+    },
+    "_core_eia923__monthly_cooling_system_information": {
+        "additional_summary_text": "cooling system information at generation facilities - mainly water volumes and temperatures.",
+        "additional_source_text": "(Schedule 8D)",
+        "usage_warnings": ["irregular_years"],
+        "additional_details_text": (
+            """In 2008 and 2009, EIA only reports annual averages, but in later years all data is monthly.
+
+Note: This table has been cleaned, but not harvested with other EIA 923 or 860
+data. The same variables present in this table may show up in other _core
+tables in other years. Once this table has been harvested, it will be removed
+from the PUDL database."""
+        ),
+    },
+    "core_eia923__monthly_boiler_fuel": {
+        "additional_summary_text": "boiler fuel consumption and emissions.",
+        "additional_source_text": "(Schedule 3)",
+        "usage_warnings": [
+            "month_as_date",
+            {
+                "type": "custom",
+                "description": "A small number of respondents only report annual fuel consumption, and all of it is reported in December.",
+            },
+        ],
+        "additional_details_text": (
+            """Reports the quantity of each type of fuel consumed by each boiler on a monthly basis, as
+well as the sulfur and ash content of those fuels. Fuel quantity is reported in standard
+EIA fuel units (tons, barrels, Mcf). Heat content per unit of fuel is also reported,
+making this table useful for calculating the thermal efficiency (heat rate) of various
+generation units.
+
+This table provides better coverage of the entire fleet of generators than the
+``core_eia923__monthly_generation_fuel`` table, but the fuel consumption reported here is not directly
+associated with a generator. This complicates the heat rate calculation, since the
+associations between individual boilers and generators are incomplete and can be
+complex."""
+        ),
+    },
+    "core_eia923__monthly_fuel_receipts_costs": {
+        "additional_summary_text": "fuel deliveries to power plants.",
+        "additional_source_text": "(Schedule 2 - Part A)",
+        "usage_warnings": [
+            "month_as_date",
+            "redacted_values",
+            {
+                "type": "custom",
+                "description": "Time of fuel deliveries is not necessarily connected with time of fuel consumption.",
+            },
+        ],
+        "additional_primary_key_text": "Each record describes an individual fuel delivery. There can be multiple deliveries of the same type of fuel from the same supplier to the same plant in a single month, so the table has no natural primary key.",
+        "additional_details_text": (
+            """There can be a significant delay between the receipt of fuel and its consumption, so
+using this table to infer monthly attributes associated with power generation may not be
+entirely accurate. However, this is the most granular data we have describing fuel
+costs, and we use it in calculating the marginal cost of electricity for individual
+generation units.
+
+Under some circumstances utilities are allowed to treat the price of fuel as proprietary
+business data, meaning it is redacted from the publicly available spreadsheets. It's
+still reported to EIA and influences the aggregated (state, region, annual, etc.) fuel
+prices they publish. From 2009-2021 about 1/3 of all prices are redacted. The missing
+data is not randomly distributed. Deregulated markets dominated by merchant generators
+(independent power producers) redact much more data, and natural gas is by far the most
+likely fuel to have its price redacted. This means, for instance, that the entire
+Northeastern US reports essentially no fine-grained data about its natural gas prices.
+
+Additional data which we haven't yet integrated is available in a similar format from
+2002-2008 via the EIA-423, and going back as far as 1972 from the FERC-423."""
+        ),
+    },
+    "core_eia923__monthly_generation": {
+        "additional_summary_text": "net electricity generated by power plant generators.",
+        "additional_source_text": "(Schedule 3)",
+        "usage_warnings": [
+            "month_as_date",
+            "incomplete_id_coverage",
+            "low_coverage",
+            {
+                "type": "custom",
+                "description": "A small number of respondents only report annual fuel consumption, and all of it is reported in December.",
+            },
+        ],
+        "additional_details_text": (
+            """This is the most granular information we have about how much electricity individual
+generators are producing, but only about half of all the generation reported in the
+``core_eia923__monthly_generation_fuel`` appears in this table due to the different reporting
+requirements imposed on different types and sizes of generators.
+
+Whenever possible, we use this generator-level net generation to estimate the heat rates
+of generation units and the marginal cost of electricity on a per-generator basis, but
+those calculations depend on plant-level fuel costs and sometimes uncertain or
+incomplete boiler-generator associations."""
+        ),
+    },
+    "core_eia923__monthly_generation_fuel": {
+        "additional_summary_text": "generation and fuel consumption by fuel and prime mover.",
+        "additional_source_text": "(Schedule 3)",
+        "usage_warnings": [
+            "month_as_date",
+            {
+                "type": "custom",
+                "description": "A small number of respondents only report annual fuel consumption, and all of it is reported in December.",
+            },
+        ],
+        "additional_details_text": (
+            """This data can't be easily linked to individual boilers, generators, and
+generation units, but it is provides the most complete coverage
+of fuel consumption and electricity generation for the entire generation fleet. We use
+the primary fuels and prime movers reported for each generator along with their
+capacities to attribute fuel consumption and generation when it isn't directly reported
+in the ``core_eia923__monthly_generation`` and ``core_eia923__monthly_boiler_fuel`` tables in order to calculate
+capacity factors, heat rates, and the marginal cost of electricity.
+
+The table makes a distinction between all fuel consumed and fuel consumed for
+electricity generation because some units are also combined heat and power (CHP) units,
+and also provide high temperature process heat at the expense of net electricity
+generation."""
+        ),
+    },
+    "core_eia923__monthly_generation_fuel_nuclear": {
+        "additional_summary_text": "generation and fuel consumption of nuclear generation units by fuel and prime mover.",
+        "additional_source_text": "(Schedule 3)",
+        "usage_warnings": [
+            "month_as_date",
+            {
+                "type": "custom",
+                "description": "A small number of respondents only report annual fuel consumption, and all of it is reported in December.",
+            },
+        ],
+        "additional_details_text": (
+            """This data is originally reported
+alongside similar information for fossil fuel plants, but the nuclear data is reported
+by (nuclear) generation unit rather than fuel type and prime mover, and so has a
+different primary key."""
+        ),
+    },
+    "generation_fuel_combined_eia923": {
+        "additional_summary_text": "generation and fuel consumption of all generation units.",
+        "additional_source_text": "(Schedule 3)",
+        "usage_warnings": [
+            "month_as_date",
+            {
+                "type": "custom",
+                "description": "A small number of respondents only report annual fuel consumption, and all of it is reported in December.",
+            },
+        ],
+        "additional_details_text": (
+            """Denormalized, combined data from the ``core_eia923__monthly_generation_fuel`` and
+``core_eia923__monthly_generation_fuel_nuclear`` with nuclear generation aggregated from the nuclear
+generation unit level up to the plant prime mover level, so as to be compatible with
+fossil fuel generation data.
+
+This data can't be easily linked to individual boilers, generators, and
+generation units, but it is provides the most complete coverage
+of fuel consumption and electricity generation for the entire generation fleet. We use
+the primary fuels and prime movers reported for each generator along with their
+capacities to attribute fuel consumption and generation when it isn't directly reported
+in the ``core_eia923__monthly_generation`` and ``core_eia923__monthly_boiler_fuel`` tables in order to calculate
+capacity factors, heat rates, and the marginal cost of electricity.
+
+The table makes a distinction between all fuel consumed and fuel consumed for
+electricity generation because some units are also combined heat and power (CHP) units,
+and also provide high temperature process heat at the expense of net electricity
+generation.
+"""
+        ),
+    },
+}
+
+RESOURCE_METADATA: dict[str, dict[str, Any]] = {
+    "core_eia923__monthly_boiler_fuel": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_boiler_fuel"],
+        "schema": {
+            "fields": [
+                "plant_id_eia",
+                "boiler_id",
+                "energy_source_code",
+                "prime_mover_code",
+                "fuel_type_code_pudl",
+                "report_date",
+                "fuel_consumed_units",
+                "fuel_mmbtu_per_unit",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "boiler_id",
+                "energy_source_code",
+                "prime_mover_code",
+                "report_date",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "out_eia923__boiler_fuel": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_boiler_fuel"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "boiler_id",
+                "unit_id_pudl",
+                "energy_source_code",
+                "prime_mover_code",
+                "fuel_type_code_pudl",
+                "fuel_consumed_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "boiler_id",
+                "energy_source_code",
+                "prime_mover_code",
+                "report_date",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__yearly_boiler_fuel": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_boiler_fuel"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "boiler_id",
+                "unit_id_pudl",
+                "energy_source_code",
+                "prime_mover_code",
+                "fuel_type_code_pudl",
+                "fuel_consumed_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "boiler_id",
+                "energy_source_code",
+                "prime_mover_code",
+                "report_date",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__monthly_boiler_fuel": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_boiler_fuel"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "boiler_id",
+                "unit_id_pudl",
+                "energy_source_code",
+                "prime_mover_code",
+                "fuel_type_code_pudl",
+                "fuel_consumed_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "boiler_id",
+                "energy_source_code",
+                "prime_mover_code",
+                "report_date",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "core_eia923__entity_coalmine": {
+        "description": {
+            "additional_summary_text": "coal mines reporting deliveries in the Fuel Receipts and Costs table.",
+            "additional_source_text": "(Schedule 2, Part C)",
+            "usage_warnings": [
+                {
+                    "type": "custom",
+                    "description": "Mine ID's are not as well defined and consistent as other EIA ID's.",
+                }
+            ],
+            "additional_details_text": (
+                """This table is produced during the transformation of fuel delivery data, in order to
+produce a better normalized database. The same coalmines report many individual
+deliveries, and repeating their attributes many times in the fuel receipts and costs
+table is duplicative. Unfortunately the coalmine attributes do not generally use a
+controlled vocabulary or well defined IDs and so in practice there are many distinct
+records in this table that correspond to the same mines in reality.
+
+We have not yet taken the time to rigorously clean this data, but it could be linked
+with both Mining Safety and Health Administration (MSHA) and USGS data to provide more
+insight into where coal is coming from, and what the employment and geological context
+is for those supplies."""
+            ),
+        },
+        "schema": {
+            "fields": [
+                "mine_id_pudl",
+                "mine_name",
+                "mine_type_code",
+                "state",
+                "county_id_fips",
+                "mine_id_msha",
+                "data_maturity",
+            ],
+            "primary_key": ["mine_id_pudl"],
+            "foreign_key_rules": {"fields": [["mine_id_pudl"]]},
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "core_eia923__monthly_fuel_receipts_costs": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_fuel_receipts_costs"],
+        "schema": {
+            "fields": [
+                "plant_id_eia",
+                "report_date",
+                "contract_type_code",
+                "contract_expiration_date",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "fuel_group_code",
+                "mine_id_pudl",
+                "supplier_name",
+                "fuel_received_units",
+                "fuel_mmbtu_per_unit",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "mercury_content_ppm",
+                "fuel_cost_per_mmbtu",
+                "primary_transportation_mode_code",
+                "secondary_transportation_mode_code",
+                "natural_gas_transport_code",
+                "natural_gas_delivery_contract_type_code",
+                "moisture_content_pct",
+                "chlorine_content_ppm",
+                "data_maturity",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "out_eia923__fuel_receipts_costs": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_fuel_receipts_costs"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "state",
+                "contract_type_code",
+                "contract_expiration_date",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "fuel_group_code",
+                "supplier_name",
+                "fuel_received_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_cost_per_mmbtu",
+                "bulk_agg_fuel_cost_per_mmbtu",
+                "fuel_consumed_mmbtu",
+                "total_fuel_cost",
+                "fuel_cost_per_mmbtu_source",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "mercury_content_ppm",
+                "primary_transportation_mode_code",
+                "secondary_transportation_mode_code",
+                "natural_gas_transport_code",
+                "natural_gas_delivery_contract_type_code",
+                "moisture_content_pct",
+                "chlorine_content_ppm",
+                "data_maturity",
+                "mine_id_msha",
+                "mine_name",
+                "mine_state",
+                "coalmine_county_id_fips",
+                "mine_type_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__yearly_fuel_receipts_costs": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_fuel_receipts_costs"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "state",
+                "fuel_type_code_pudl",
+                "fuel_received_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_cost_per_mmbtu",
+                "fuel_consumed_mmbtu",
+                "total_fuel_cost",
+                "fuel_cost_per_mmbtu_source",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "mercury_content_ppm",
+                "moisture_content_pct",
+                "chlorine_content_ppm",
+                "data_maturity",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__monthly_fuel_receipts_costs": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_fuel_receipts_costs"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "state",
+                "fuel_type_code_pudl",
+                "fuel_received_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_cost_per_mmbtu",
+                "fuel_consumed_mmbtu",
+                "total_fuel_cost",
+                "fuel_cost_per_mmbtu_source",
+                "sulfur_content_pct",
+                "ash_content_pct",
+                "mercury_content_ppm",
+                "moisture_content_pct",
+                "chlorine_content_ppm",
+                "data_maturity",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "core_eia923__monthly_generation": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_generation"],
+        "schema": {
+            "fields": [
+                "plant_id_eia",
+                "generator_id",
+                "report_date",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": ["plant_id_eia", "generator_id", "report_date"],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "out_eia923__generation": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_generation"],
+        # TODO: Remove this table in favor of out_eia923__monthly_generation. See #2857
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "generator_id",
+                "unit_id_pudl",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": ["plant_id_eia", "generator_id", "report_date"],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__monthly_generation": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_generation"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "generator_id",
+                "unit_id_pudl",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": ["plant_id_eia", "generator_id", "report_date"],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__yearly_generation": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_generation"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "generator_id",
+                "unit_id_pudl",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": ["plant_id_eia", "generator_id", "report_date"],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "core_eia923__monthly_generation_fuel": {
+        "description": TABLE_DESCRIPTIONS["core_eia923__monthly_generation_fuel"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "fuel_type_code_agg",
+                "prime_mover_code",
+                "fuel_consumed_units",
+                "fuel_consumed_for_electricity_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "fuel_consumed_for_electricity_mmbtu",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "prime_mover_code",
+                "energy_source_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "out_eia923__generation_fuel_combined": {
+        "description": TABLE_DESCRIPTIONS["generation_fuel_combined_eia923"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "fuel_type_code_agg",
+                "prime_mover_code",
+                "fuel_consumed_units",
+                "fuel_consumed_for_electricity_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "fuel_consumed_for_electricity_mmbtu",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "prime_mover_code",
+                "energy_source_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__yearly_generation_fuel_combined": {
+        "description": TABLE_DESCRIPTIONS["generation_fuel_combined_eia923"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "prime_mover_code",
+                "fuel_consumed_units",
+                "fuel_consumed_for_electricity_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "fuel_consumed_for_electricity_mmbtu",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "prime_mover_code",
+                "energy_source_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "out_eia923__monthly_generation_fuel_combined": {
+        "description": TABLE_DESCRIPTIONS["generation_fuel_combined_eia923"],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "plant_id_pudl",
+                "plant_name_eia",
+                "utility_id_eia",
+                "utility_id_pudl",
+                "utility_name_eia",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "prime_mover_code",
+                "fuel_consumed_units",
+                "fuel_consumed_for_electricity_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "fuel_consumed_for_electricity_mmbtu",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "prime_mover_code",
+                "energy_source_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "outputs",
+    },
+    "core_eia923__monthly_generation_fuel_nuclear": {
+        "description": TABLE_DESCRIPTIONS[
+            "core_eia923__monthly_generation_fuel_nuclear"
+        ],
+        "schema": {
+            "fields": [
+                "plant_id_eia",
+                "report_date",
+                "nuclear_unit_id",
+                "energy_source_code",
+                "fuel_type_code_pudl",
+                "fuel_type_code_agg",
+                "prime_mover_code",
+                "fuel_consumed_units",
+                "fuel_consumed_for_electricity_units",
+                "fuel_mmbtu_per_unit",
+                "fuel_consumed_mmbtu",
+                "fuel_consumed_for_electricity_mmbtu",
+                "net_generation_mwh",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "nuclear_unit_id",
+                "energy_source_code",
+                "prime_mover_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "_core_eia923__monthly_cooling_system_information": {
+        "description": TABLE_DESCRIPTIONS[
+            "_core_eia923__monthly_cooling_system_information"
+        ],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "cooling_id_eia",
+                "cooling_status_code",
+                "cooling_type",
+                "monthly_total_cooling_hours_in_service",
+                "flow_rate_method",
+                "temperature_method",
+                "annual_maximum_intake_summer_temperature_fahrenheit",
+                "annual_maximum_intake_winter_temperature_fahrenheit",
+                "monthly_average_intake_temperature_fahrenheit",
+                "monthly_maximum_intake_temperature_fahrenheit",
+                "annual_maximum_outlet_summer_temperature_fahrenheit",
+                "annual_maximum_outlet_winter_temperature_fahrenheit",
+                "monthly_average_discharge_temperature_fahrenheit",
+                "monthly_maximum_discharge_temperature_fahrenheit",
+                "annual_average_consumption_rate_gallons_per_minute",
+                "monthly_average_consumption_rate_gallons_per_minute",
+                "monthly_total_consumption_volume_gallons",
+                "annual_average_discharge_rate_gallons_per_minute",
+                "monthly_average_discharge_rate_gallons_per_minute",
+                "monthly_total_discharge_volume_gallons",
+                "monthly_average_diversion_rate_gallons_per_minute",
+                "monthly_total_diversion_volume_gallons",
+                "annual_average_withdrawal_rate_gallons_per_minute",
+                "monthly_average_withdrawal_rate_gallons_per_minute",
+                "monthly_total_withdrawal_volume_gallons",
+                "annual_total_chlorine_lbs",
+                "monthly_total_chlorine_lbs",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "cooling_id_eia",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "_core_eia923__yearly_fgd_operation_maintenance": {
+        "description": TABLE_DESCRIPTIONS[
+            "_core_eia923__yearly_fgd_operation_maintenance"
+        ],
+        "schema": {
+            "fields": [
+                "report_date",
+                "plant_id_eia",
+                "so2_control_id_eia",
+                "opex_fgd_feed_materials_chemical",
+                "opex_fgd_labor_supervision",
+                "opex_fgd_land_acquisition",
+                "opex_fgd_maintenance_material_other",
+                "opex_fgd_waste_disposal",
+                "opex_fgd_total_cost",
+                "fgd_control_flag",
+                "fgd_operational_status_code",
+                "fgd_hours_in_service",
+                "fgd_electricity_consumption_mwh",
+                "fgd_sorbent_consumption_1000_tons",
+                "so2_removal_efficiency_tested",
+                "so2_removal_efficiency_annual",
+                "so2_test_date",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "so2_control_id_eia",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "core_eia923__monthly_energy_storage": {
+        "description": {
+            "additional_summary_text": """energy consumed and discharged ("generated") by energy storage units.""",
+            "additional_source_text": "(Schedule 3)",
+            "usage_warnings": ["month_as_date"],
+            "additional_details_text": (
+                """The total MWh discharged from the energy storage unit during the
+reporting period is the gross generation and the difference between gross generation
+and consumption is the net generation."""
+            ),
+        },
+        "schema": {
+            "fields": [
+                "plant_id_eia",
+                "report_date",
+                "prime_mover_code",
+                "energy_source_code",
+                "data_maturity",
+                "fuel_units",
+                "fuel_consumed_for_electricity_units",
+                "fuel_consumed_units",
+                "gross_generation_mwh",
+                "net_generation_mwh",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_date",
+                "prime_mover_code",
+                "energy_source_code",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "_core_eia923__yearly_byproduct_disposition": {
+        "description": {
+            "additional_summary_text": (
+                "by-products reported by thermoelectric power "
+                "plants with total steam turbine capacity of 100 megawatts or greater."
+            ),
+            "additional_source_text": "(Schedule 8A)",
+            "additional_details_text": (
+                "All by-products other than steam sales are reported in thousand tons and "
+                "are rounded to whole numbers. Steam sales are reported in MMBTu."
+            ),
+        },
+        "schema": {
+            "fields": [
+                "report_year",
+                "plant_id_eia",
+                "byproduct_description",
+                "byproduct_units",
+                "disposal_landfill_units",
+                "disposal_offsite_units",
+                "disposal_ponds_units",
+                "sold_units",
+                "stored_offsite_units",
+                "stored_onsite_units",
+                "used_offsite_units",
+                "used_onsite_units",
+                "total_disposal_units",
+                "no_byproducts_to_report",
+                "data_maturity",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_year",
+                "byproduct_description",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+    "_core_eia923__yearly_byproduct_expenses_and_revenues": {
+        "description": {
+            "additional_summary_text": (
+                "financial information related to combustion by-products reported by "
+                "thermoelectric power plants with total steam turbine capacity of 100 "
+                "megawatts or greater and that produced combustion by-products during the reporting year."
+            ),
+            "additional_source_text": "(Schedule 8B)",
+            "additional_details_text": (
+                "Cost data must be entered for all entries on Schedule 8A. "
+                "Financial information includes operational and maintenance expenditures (opex), "
+                "capital expenditures (capex), and by-products sales revenue."
+            ),
+        },
+        "schema": {
+            "fields": [
+                "plant_id_eia",
+                "report_year",
+                "data_maturity",
+                "capex_air_abatement",
+                "capex_other_abatement",
+                "capex_solid_waste",
+                "capex_water_abatement",
+                "opex_bottom_ash_collection",
+                "opex_bottom_ash_disposal",
+                "opex_bottom_ash_other",
+                "opex_fgd_byproduct_collection",
+                "opex_fgd_byproduct_disposal",
+                "opex_fgd_byproduct_other",
+                "opex_fly_ash_collection",
+                "opex_fly_ash_disposal",
+                "opex_fly_ash_other",
+                "opex_other_abatement_collection",
+                "opex_other_abatement_disposal",
+                "opex_other_abatement_other",
+                "opex_total_collection_abatement",
+                "opex_total_disposal_abatement",
+                "opex_total_other_abatement",
+                "opex_water_abatement_collection",
+                "opex_water_abatement_disposal",
+                "opex_water_abatement_other",
+                "revenues_bottom_ash",
+                "revenues_fgd_byproducts",
+                "revenues_fly_ash",
+                "revenues_fly_bottom_ash_intermingled",
+                "revenues_other_byproducts",
+                "revenues_total_byproduct",
+            ],
+            "primary_key": [
+                "plant_id_eia",
+                "report_year",
+            ],
+        },
+        "field_namespace": "eia",
+        "sources": ["eia923"],
+        "etl_group": "eia923",
+    },
+}
+"""EIA-923 resource attributes organized by PUDL identifier (``resource.name``).
+
+Keys are in alphabetical order.
+
+See :func:`pudl.metadata.helpers.build_foreign_keys` for the expected format of
+``foreign_key_rules``.
+"""
