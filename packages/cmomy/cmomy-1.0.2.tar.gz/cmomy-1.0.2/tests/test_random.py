@@ -1,0 +1,34 @@
+import numpy as np
+import pytest
+
+from cmomy import random
+
+
+def test_set_rng() -> None:
+    rng = np.random.default_rng()
+
+    random.set_internal_rng(rng)
+
+    assert random.default_rng() is rng
+
+    assert random.get_internal_rng() is rng
+
+    random._DATA = {}  # pylint: disable=protected-access
+
+    with pytest.raises(ValueError):
+        random.get_internal_rng()
+
+
+def test_default_rng() -> None:
+    rng = random.default_rng()
+
+    assert rng is random.get_internal_rng()
+
+    rng2 = np.random.default_rng()
+
+    assert random.default_rng(rng2) is rng2
+    assert random.default_rng() is rng
+
+
+def test_validate_rng() -> None:
+    assert random.validate_rng(None) is random.default_rng()
