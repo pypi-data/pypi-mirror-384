@@ -1,0 +1,130 @@
+{# 处理器需求检测模块 - 分析动作序列并确定需要包含的处理器 #}
+
+{# 收集需要的操作类型，避免重复包含 #}
+{% set required_handlers = [] %}
+{% for step in context.action_sequence %}
+    {% if step %}
+        {% set step_type = (step.step_type | default('action') | string).lower() %}
+        
+        {% if step_type == 'control_flow' %}
+            {# 控制流步骤需要特殊处理 #}
+            {% if 'control_flow' not in required_handlers %}
+                {% set _ = required_handlers.append('control_flow') %}
+            {% endif %}
+            
+            {# 🔄 递归检查控制流内部的循环体步骤 #}
+            {% if step.control_flow_config and step.control_flow_config.loop_body %}
+                {% for loop_step in step.control_flow_config.loop_body %}
+                    {% if loop_step %}
+                        {% set loop_operation_type = (loop_step.operation_type | default('unknown') | string).lower() %}
+                        {% set loop_is_manual = (loop_step.mode | default('agent')) == 'manual' %}
+                        
+                        {% if loop_is_manual and 'manual' not in required_handlers %}
+                            {% set _ = required_handlers.append('manual') %}
+                        {% endif %}
+                        
+                        {% if loop_operation_type in ['click', 'tap', 'long_click', 'double_click'] and 'click' not in required_handlers %}
+                            {% set _ = required_handlers.append('click') %}
+                        {% elif loop_operation_type in ['type', 'input'] and 'type' not in required_handlers %}
+                            {% set _ = required_handlers.append('type') %}
+                        {% elif loop_operation_type in ['swipe', 'drag'] and 'swipe' not in required_handlers %}
+                            {% set _ = required_handlers.append('swipe') %}
+                        {% elif loop_operation_type == 'scroll' and 'scroll' not in required_handlers %}
+                            {% set _ = required_handlers.append('scroll') %}
+                        {% elif loop_operation_type == 'can_send' and 'can' not in required_handlers %}
+                            {% set _ = required_handlers.append('can') %}
+                        {% elif loop_operation_type not in ['click', 'tap', 'long_click', 'double_click', 'type', 'input', 'swipe', 'drag', 'scroll', 'can_send'] and 'default' not in required_handlers %}
+                            {% set _ = required_handlers.append('default') %}
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            
+            {# 🔄 递归检查控制流内部的分支步骤 (if-else) #}
+            {% if step.control_flow_config and step.control_flow_config.branches %}
+                {% for branch in step.control_flow_config.branches %}
+                    {% if branch.steps %}
+                        {% for branch_step in branch.steps %}
+                            {% if branch_step %}
+                                {% set branch_operation_type = (branch_step.operation_type | default('unknown') | string).lower() %}
+                                {% set branch_is_manual = (branch_step.mode | default('agent')) == 'manual' %}
+                                
+                                {% if branch_is_manual and 'manual' not in required_handlers %}
+                                    {% set _ = required_handlers.append('manual') %}
+                                {% endif %}
+                                
+                                {% if branch_operation_type in ['click', 'tap', 'long_click', 'double_click'] and 'click' not in required_handlers %}
+                                    {% set _ = required_handlers.append('click') %}
+                                {% elif branch_operation_type in ['type', 'input'] and 'type' not in required_handlers %}
+                                    {% set _ = required_handlers.append('type') %}
+                                {% elif branch_operation_type in ['swipe', 'drag'] and 'swipe' not in required_handlers %}
+                                    {% set _ = required_handlers.append('swipe') %}
+                                {% elif branch_operation_type == 'scroll' and 'scroll' not in required_handlers %}
+                                    {% set _ = required_handlers.append('scroll') %}
+                                {% elif branch_operation_type == 'can_send' and 'can' not in required_handlers %}
+                                    {% set _ = required_handlers.append('can') %}
+                                {% elif branch_operation_type not in ['click', 'tap', 'long_click', 'double_click', 'type', 'input', 'swipe', 'drag', 'scroll', 'can_send'] and 'default' not in required_handlers %}
+                                    {% set _ = required_handlers.append('default') %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% else %}
+            {# 普通动作步骤 - 基于operation_type选择处理器 #}
+            {% set operation_type = (step.operation_type | default('unknown') | string).lower() %}
+            
+            {# 专用处理器需求检测 #}
+            {% if operation_type in ['click', 'tap', 'long_click', 'double_click'] and 'click' not in required_handlers %}
+                {% set _ = required_handlers.append('click') %}
+            {% elif operation_type in ['type', 'input'] and 'type' not in required_handlers %}
+                {% set _ = required_handlers.append('type') %}
+            {% elif operation_type in ['swipe', 'drag'] and 'swipe' not in required_handlers %}
+                {% set _ = required_handlers.append('swipe') %}
+            {% elif operation_type == 'scroll' and 'scroll' not in required_handlers %}
+                {% set _ = required_handlers.append('scroll') %}
+            {% elif operation_type == 'can_send' and 'can' not in required_handlers %}
+                {% set _ = required_handlers.append('can') %}
+            {% elif operation_type == 'error' and 'error' not in required_handlers %}
+                {% set _ = required_handlers.append('error') %}
+            {% else %}
+                {# 通用处理器需求检测 - 所有其他操作类型 #}
+                {% if 'default' not in required_handlers %}
+                    {% set _ = required_handlers.append('default') %}
+                {% endif %}
+            {% endif %}
+        {% endif %}
+    {% endif %}
+{% endfor %}
+
+{# ==================== 处理器模板包含 ==================== #}
+{# 专用处理器 - 复杂操作，需要特殊逻辑 #}
+{% if 'click' in required_handlers %}
+{% include 'handlers/click_handler.j2' %}
+{% endif %}
+{% if 'type' in required_handlers %}
+{% include 'handlers/type_handler.j2' %}
+{% endif %}
+{% if 'swipe' in required_handlers %}
+{% include 'handlers/swipe_handler.j2' %}
+{% endif %}
+{% if 'scroll' in required_handlers %}
+{% include 'handlers/scroll_handler.j2' %}
+{% endif %}
+{% if 'can' in required_handlers %}
+{% include 'handlers/can_handler.j2' %}
+{% endif %}
+{% if 'control_flow' in required_handlers %}
+{% include 'handlers/control_flow_handler.j2' %}
+{% endif %}
+
+{# 特殊处理器 #}
+{% if 'error' in required_handlers %}
+{% include 'handlers/error_handler.j2' %}
+{% endif %}
+
+{# 通用处理器 - 简单操作，标准流程即可 #}
+{% if 'default' in required_handlers %}
+{% include 'handlers/default_handler.j2' %}
+{% endif %}

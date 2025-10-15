@@ -1,0 +1,115 @@
+{# 任务初始化模块 - 处理任务开始时的初始化逻辑 #}
+
+{% macro initialize_task() %}
+    task_id = "{{ context.script_id }}"
+    description = "{{ context.description }}"
+    workspace_root = Path("{{ context.execution_config.workspace_root | escape_path_for_python }}")
+
+    # 开始任务追踪
+    logging.info(f"任务开始: {task_id} - {description}")
+    start_time = time.time()
+    
+    # 创建任务级别的状态追踪
+    task_status = {
+        "task_id": task_id,
+        "description": description,
+        "status": "初始化",
+        "start_time": datetime.now().isoformat(),
+        "current_step": 0,
+        "total_steps": 0,
+        "progress_percentage": 0.0,
+        "phase_history": []
+    }
+
+    # 设置日志系统
+    # 设置独立日志文件
+    # 使用已定义的变量而不是context
+    log_dir = workspace_root / task_id / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # 配置日志文件
+    log_file = log_dir / f"script_{task_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+    # 设置日志格式
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+
+    # 清除任何已有的日志配置
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # 配置日志处理器 - 确保文件写入优先级和Windows兼容性
+    file_handler = logging.FileHandler(str(log_file), encoding='utf-8', mode='w')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter(log_format))
+    
+    # Windows兼容性：确保控制台输出编码正确
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter(log_format))
+    
+    # 配置根日志器
+    logging.root.setLevel(logging.INFO)
+    logging.root.addHandler(file_handler)
+    logging.root.addHandler(console_handler)
+
+    # 强制刷新日志
+    logging.getLogger().handlers[0].flush()
+
+    logging.info(f"日志系统初始化完成，日志文件: {log_file}")
+    logging.info(f"任务ID: {task_id}")
+    logging.info(f"当前时间: {datetime.now().isoformat()}")
+    logging.info(f"Python版本: {sys.version}")
+    logging.info(f"工作目录: {workspace_root}")
+    
+    # 强制刷新确保初始化日志被写入
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    
+    # 连接设备
+    device = u2.connect()
+    logging.info("✨ 设备连接成功")
+    
+    # 设置工作目录
+    runner_dir = workspace_root / task_id / "runner"
+    runner_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 初始化变量
+    action_sequence = [
+        {% for step in context.action_sequence %}
+        {{ step.to_dict() | to_python_dict }}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+    screenshot_count = 0
+    
+    logging.info(f"任务开始: {description}")
+    logging.info(f"步骤总数: {len(action_sequence)}")
+    
+    # 更新任务状态
+    task_status["total_steps"] = len(action_sequence)
+    task_status["status"] = "执行中"
+    task_status["action_sequence"] = action_sequence  # 保存动作序列
+    
+    # 保存初始任务状态
+    task_status_file = runner_dir / "task_status.json"
+    with open(task_status_file, 'w', encoding='utf-8') as f:
+        json.dump(task_status, f, ensure_ascii=False, indent=2, default=str)
+    
+    # 预处理：标记每个任务的第一个步骤（优化CAN采集启动判断）
+    task_first_step_map = {}  # {task_id: first_step_index}
+    for idx, step in enumerate(action_sequence):
+        task_id = step.get('source_task_id')
+        if task_id and task_id not in task_first_step_map:
+            task_first_step_map[task_id] = idx
+    
+    logging.info(f"📋 预处理完成，发现 {len(task_first_step_map)} 个任务的首步信息")
+    
+    {% if context is defined and context.expected_results %}
+    # 初始化预期结果配置（全局可用）
+    all_expected_results = {{ context.expected_results | to_python_dict }}
+    {% else %}
+    all_expected_results = {}
+    {% endif %}
+    
+    return (device, runner_dir, screenshot_count, action_sequence, task_status, 
+            task_status_file, start_time, task_first_step_map, all_expected_results)
+{% endmacro %}

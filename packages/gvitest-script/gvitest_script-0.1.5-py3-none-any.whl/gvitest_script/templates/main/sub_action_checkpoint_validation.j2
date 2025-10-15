@@ -1,0 +1,206 @@
+{# 控制流子步骤检查点验证模板 - 专门用于控制流中的子动作检查点验证 #}
+
+{% macro execute_sub_action_checkpoint_validation(step_data, device, runner_dir, screenshot_count, previous_after_screenshot) %}
+        {# 控制流子步骤检查点验证宏 - 使用8空格缩进适配控制流处理器函数 #}
+        step_number = step_data.get('step_number', 0)
+        operation_type = step_data.get('operation_type', 'unknown')
+        operation_mode = step_data.get('mode', 'agent')
+        
+        # 获取检查点配置
+        checkpoint_config = step_data.get("checkpoint", {})
+        checkpoint_type = checkpoint_config.get("type", "none")
+        expected_value = checkpoint_config.get("expected", "")
+        target_bbox = checkpoint_config.get("target_bbox", [])
+        description = checkpoint_config.get("description", "")
+        
+        logging.info(f"开始执行子步骤 {step_number} 的检查点前置验证")
+        
+        # 定义无检查点的操作类型规则
+        camera_ops = {"black_open", "black_close", "flower_open", "flower_close", "lag_open", "lag_close", "flash_open", "flash_close"}
+
+        # 检查点参数充足性判断
+        def is_checkpoint_params_sufficient():
+            """判断检查点参数是否充足"""
+            if checkpoint_type == "none":
+                return False
+            elif checkpoint_type == "text":
+                # text类型需要expected存在
+                return bool(expected_value)
+            elif checkpoint_type == "image":
+                # image类型需要expected和target_bbox都存在
+                return bool(expected_value) and bool(target_bbox) and len(target_bbox) == 4
+            else:
+                # 其他类型需要expected存在
+                return bool(expected_value)
+
+        # 新规则：
+        # 1) can_send 与摄像头操作：从不产生检查点
+        # 2) 检查点类型为none：跳过验证
+        # 3) 检查点参数不充足：跳过验证
+        no_checkpoint = (
+            operation_type == "can_send" or
+            operation_type in camera_ops or
+            checkpoint_type == "none" or
+            not is_checkpoint_params_sufficient()
+        )
+
+        if no_checkpoint:
+            # 确定跳过原因
+            skip_reason = ""
+            if operation_type == "can_send":
+                skip_reason = "can_send操作不支持检查点"
+            elif operation_type in camera_ops:
+                skip_reason = "摄像头操作不支持检查点"
+            elif checkpoint_type == "none":
+                skip_reason = "检查点类型为none"
+            elif not is_checkpoint_params_sufficient():
+                if checkpoint_type == "text" and not expected_value:
+                    skip_reason = "text类型检查点缺少expected参数"
+                elif checkpoint_type == "image" and (not expected_value or not target_bbox or len(target_bbox) != 4):
+                    skip_reason = "image类型检查点缺少expected或target_bbox参数"
+                else:
+                    skip_reason = "检查点参数不充足"
+            else:
+                skip_reason = "未知原因"
+            
+            logging.info(f"跳过子步骤检查点验证: {skip_reason}")
+            checkpoint_result = {
+                "type": checkpoint_type,
+                "description": description,
+                "screenshot_path": None,
+                "is_pass": True,
+                "detail": f"跳过子步骤检查点验证: {skip_reason}",
+                "similarity_score": None,
+                "status": "跳过",
+                "execution_time": 0,
+                "executed_at": datetime.now().isoformat(),
+                "error_message": None
+            }
+            checkpoint_passed = True
+        else:
+            # 执行检查点验证
+            validation_start_time = time.time()
+            
+            try:
+                # 先截图获取当前界面状态
+                if previous_after_screenshot:
+                    # 使用前一步的后截图作为当前的前截图
+                    before_screenshot = previous_after_screenshot
+                    logging.info(f"📸 复用前一步截图作为子步骤检查点验证截图: {before_screenshot}")
+                else:
+                    # 拍摄新的截图
+                    before_screenshot = take_screenshot_and_save(
+                        device, runner_dir, f"sub_checkpoint_before_step{step_number}", "子步骤检查点前置验证截图"
+                    )
+                
+                # 使用统一的validation_utils算法进行验证
+                if checkpoint_type in ["image", "text"] and expected_value:
+                    logging.info(f"执行子步骤{checkpoint_type}检查点验证: 期望值 {expected_value}")
+                    
+                    # 构造ValidationModel格式的数据，复用validation_utils.j2的统一算法
+                    validation_model = {
+                        "id": f"sub_checkpoint_step_{step_number}",
+                        "description": f"子步骤{step_number}检查点验证",
+                        "mode": "agent",  # checkpoint固定使用agent模式
+                        "data_source": "adb_screenshot",  # checkpoint固定使用ADB截图
+                        "validation_type": checkpoint_type,
+                        "expect_exists": True,  # checkpoint默认期望存在
+                    }
+            
+                    # 根据验证类型设置不同参数
+                    if checkpoint_type == "image":
+                        # reference_image_path应该是录制时的大图，即screenshot_path
+                        reference_image_path = step_data.get('screenshot_path')
+                        if not reference_image_path:
+                            # 如果录制时没有截图，使用当前截图作为参考
+                            reference_image_path = before_screenshot
+                            logging.info(f"录制时无截图，使用当前截图作为参考: {reference_image_path}")
+                        else:
+                            logging.info(f"使用录制时截图作为参考: {reference_image_path}")
+                        
+                        validation_model.update({
+                            "target_image_path": expected_value,
+                            "reference_image_path": reference_image_path,
+                            "target_bbox": target_bbox,
+                            "roi_coordinates": None  # 不限制ROI
+                        })
+                    elif checkpoint_type == "text":
+                        validation_model.update({
+                            "target_text": expected_value
+                        })
+            
+                    # 调用统一的验证函数
+                    validation_result = validate_validation_model(
+                        validation_model=validation_model,
+                        device=device,
+                        runner_dir=runner_dir,
+                        screenshot_count=screenshot_count
+                    )
+                    
+                    # 将validation结果转换为checkpoint结果格式
+                    is_pass = validation_result.get('is_pass', False)
+                    
+                    if is_pass:
+                        logging.info(f"✅ 子步骤{checkpoint_type}检查点验证通过")
+                        checkpoint_result = {
+                            "type": checkpoint_type,
+                            "description": description,
+                            "screenshot_path": before_screenshot,
+                            "is_pass": True,
+                            "detail": f"子步骤{checkpoint_type}检查点验证通过: {validation_result.get('details', '')}",
+                            "similarity_score": validation_result.get('similarity_score'),
+                            "status": "通过",
+                            "execution_time": time.time() - validation_start_time,
+                            "executed_at": datetime.now().isoformat(),
+                            "error_message": None
+                        }
+                        checkpoint_passed = True
+                    else:
+                        logging.warning(f"❌ 子步骤{checkpoint_type}检查点验证失败")
+                        checkpoint_result = {
+                            "type": checkpoint_type,
+                            "description": description,
+                            "screenshot_path": before_screenshot,
+                            "is_pass": False,
+                            "detail": f"子步骤{checkpoint_type}检查点验证失败: {validation_result.get('details', '')}",
+                            "similarity_score": validation_result.get('similarity_score'),
+                            "status": "失败",
+                            "execution_time": time.time() - validation_start_time,
+                            "executed_at": datetime.now().isoformat(),
+                            "error_message": None
+                        }
+                        checkpoint_passed = False
+
+                else:
+                    # 其他类型或无期望值，默认通过
+                    logging.info(f"子步骤检查点类型 {checkpoint_type} 无需验证或无期望值，默认通过")
+                    checkpoint_result = {
+                        "type": checkpoint_type,
+                        "description": description,
+                        "screenshot_path": before_screenshot,
+                        "is_pass": True,
+                        "detail": f"子步骤检查点类型 {checkpoint_type} 无需验证，默认通过",
+                        "similarity_score": None,
+                        "status": "通过",
+                        "execution_time": time.time() - validation_start_time,
+                        "executed_at": datetime.now().isoformat(),
+                        "error_message": None
+                    }
+                    checkpoint_passed = True
+            
+            except Exception as e:
+                logging.error(f"子步骤检查点前置验证异常: {e}")
+                checkpoint_result = {
+                    "type": checkpoint_type,
+                    "description": description,
+                    "screenshot_path": None,
+                    "is_pass": False,
+                    "detail": f"子步骤检查点前置验证异常: {str(e)}",
+                    "similarity_score": None,
+                    "status": "错误",
+                    "execution_time": time.time() - validation_start_time,
+                    "executed_at": datetime.now().isoformat(),
+                    "error_message": str(e)
+                }
+                checkpoint_passed = False
+{% endmacro %}

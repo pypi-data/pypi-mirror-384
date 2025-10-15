@@ -1,0 +1,104 @@
+{# 动作分发器模块 - 根据操作类型调用对应的处理函数 #}
+
+# ==================== 通用辅助函数 ====================
+
+def create_handler_missing_error(handler_name):
+    """创建处理器缺失错误"""
+    return {"status": "failed", "message": f"{handler_name}处理器未包含"}
+
+def get_step_info(step_data, step_index=None):
+    """获取步骤基本信息"""
+    step_number = step_data.get('step_number', step_index if step_index is not None else 0)
+    step_name = step_data.get('step_name', f'步骤{step_number}')
+    operation_type = step_data.get('operation_type', 'unknown')
+    return step_number, step_name, operation_type
+
+def log_step_result(step_number, step_name, success, message):
+    """记录步骤执行结果"""
+    if success:
+        logging.info(f"✅ 步骤 {step_number} ({step_name}) 执行成功: {message}")
+    else:
+        logging.error(f"❌ 步骤 {step_number} ({step_name}) 执行失败: {message}")
+
+# ==================== 动作分发器 ====================
+def execute_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    动作分发器 - 根据操作类型调用对应的处理函数
+    
+    分发逻辑：
+    1. 控制流步骤：使用 control_flow_handler
+    2. 专用操作：根据 operation_type 选择专用处理器
+    3. 通用操作：使用 default_handler
+    
+    Args:
+        step_data: 步骤数据
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径，用于优化截图性能
+    
+    Returns:
+        Dict: 执行结果
+    """
+    step_type = step_data.get('step_type', 'action').lower()
+    operation_type = step_data.get('operation_type', '').lower()
+    
+    try:
+        # 1. 控制流步骤处理
+        if step_type == 'control_flow':
+            try:
+                return handle_control_flow_action(step_data, device, runner_dir, screenshot_count)
+            except NameError:
+                return create_handler_missing_error("控制流")
+        
+        # 2. 专用操作处理（基于operation_type）
+        elif operation_type in ['click', 'tap', 'long_click', 'double_click']:
+            try:
+                return handle_click_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("点击操作")
+        
+        elif operation_type in ['type', 'input']:
+            try:
+                return handle_type_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("输入操作")
+        
+        elif operation_type in ['swipe', 'drag']:
+            try:
+                return handle_swipe_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("滑动操作")
+        
+        elif operation_type == 'scroll':
+            try:
+                return handle_scroll_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("滚动操作")
+        
+        elif operation_type == 'can_send':
+            try:
+                return handle_can_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("CAN操作")
+        
+        elif operation_type == 'error':
+            try:
+                return handle_error_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("错误操作")
+        
+        # 3. 通用操作处理（使用default_handler）
+        else:
+            try:
+                return handle_default_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+            except NameError:
+                return create_handler_missing_error("默认操作")
+            
+    except Exception as e:
+        logging.error(f"动作执行异常: {e}")
+        return {
+            "status": "failed",
+            "message": f"动作执行异常: {e}",
+            "operation_type": operation_type
+        }

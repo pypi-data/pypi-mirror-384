@@ -1,0 +1,463 @@
+{# 输入动作处理模板 - 专注于操作执行 #}
+
+{# 输入动作处理函数 #}
+def handle_type_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    处理文本输入动作 - 专注于操作执行
+    
+    Args:
+        step_data: 步骤上下文对象
+        device: uiautomator2设备对象
+        runner_dir: 运行目录路径
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径，用于优化截图性能
+    
+    Returns:
+        Dict: 执行结果
+    """
+    logging.info("开始执行步骤 %s: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤')))
+
+    step_name = step_data.get('step_name', '文本输入')
+    operation_type = step_data.get('operation_type', 'type')
+    # 兼容两种数据结构：直接在根级别的element_info和在parameters中的element_info
+    element_info = step_data.get('element_info', {}) or step_data.get('parameters', {}).get('element_info', {})
+    
+    # 获取要输入的文本
+    input_text = element_info.get('text', '')
+    if not input_text:
+        error_msg = "缺少输入文本内容"
+        logging.error(error_msg)
+        logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), error_msg))
+        return {
+            "status": "failed", 
+            "message": error_msg,
+
+        }
+    
+    logging.info(f"开始执行文本输入: {step_name}, 文本: '{input_text}'")
+    
+    try:
+        # 执行前无需等待UI稳定，直接进行操作
+        
+        # 优化截图逻辑：如果有前一步的截图，就复用它
+        step_number = step_data.get('step_number', 0)
+        
+        if previous_after_screenshot:
+            # 使用前一步的后截图作为当前步骤的前截图，避免重复截图
+            before_execution_screenshot_path = previous_after_screenshot
+            logging.info(f"📸 复用前一步截图作为执行前截图: {before_execution_screenshot_path}")
+        else:
+            # 第一步或没有前一步截图时，需要新截图
+            before_execution_screenshot_path = take_screenshot_and_save(
+                device, runner_dir, f"before_step{step_number}", "执行前截图 - 用于输入框定位"
+            )
+        
+        # 更新步骤执行前截图信息
+        step_data['before_execution_screenshot_path'] = before_execution_screenshot_path
+        
+
+        
+        # 智能查找输入框
+        input_found, input_coordinates, search_method = find_input_field_smart(device, element_info)
+        
+        if not input_found:
+            logging.warning(f"智能查找输入框失败: {search_method}")
+            # 回退到基本的激活方法
+            input_field_activated = activate_input_field(device, element_info, before_execution_screenshot_path)
+        else:
+            logging.info(f"智能查找输入框成功: {search_method}, 坐标: {input_coordinates}")
+            # 使用智能查找到的坐标进行激活
+            element_info['start_x'] = input_coordinates[0]
+            element_info['start_y'] = input_coordinates[1]
+            input_field_activated = activate_input_field(device, element_info, before_execution_screenshot_path)
+        
+        # 清空现有内容（可选）
+        clear_existing = element_info.get('clear_existing', True)
+        clear_success = True
+        if clear_existing:
+            logging.info("清空现有内容...")
+            try:
+                device.send_keys("", clear=True)
+                time.sleep(0.2)
+            except Exception as clear_error:
+                logging.warning(f"清空内容失败: {clear_error}")
+                clear_success = False
+        
+
+        
+        # 执行文本输入
+        logging.info(f"输入文本: '{input_text}'")
+        device.send_keys(input_text)
+        time.sleep(0.5)  # 等待输入完成
+        
+        # 等待UI稳定后进行执行后截图
+        logging.info("等待动作执行完成后UI稳定...")
+        ui_stable = wait_for_ui_stability(device, timeout=1.0)
+        if not ui_stable:
+            logging.warning("执行后UI稳定检查超时，继续截图")
+        
+        # 执行后截图（用于响应验证）
+        after_execution_screenshot_path = take_screenshot_and_save(
+            device, runner_dir, f"after_step{step_number}", "执行后截图 - 用于验证输入结果"
+        )
+        step_data['after_execution_screenshot_path'] = after_execution_screenshot_path
+        
+
+        
+        # 验证输入结果
+        verification_result = verify_text_input(device, input_text, tolerance=0.8)
+        
+        # 记录执行状态
+        activation_method = "已激活" if input_field_activated['success'] else f"激活失败({input_field_activated['method']})"
+        search_info = f"查找方法: {search_method}" if input_found else "未找到输入框"
+        verification_info = f"验证: {verification_result['reason']}" if verification_result['success'] else f"验证失败: {verification_result['reason']}"
+        
+        execution_detail = f"文本输入执行完成: '{input_text}', 输入框状态: {activation_method}, {search_info}, {verification_info}"
+        
+        logging.info("步骤 %s 完成: %s, 成功: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), True))
+        
+        logging.info(f"✅ 文本输入操作执行完成: {step_name}")
+        return {
+            "status": "success",
+            "message": f"文本输入执行成功: '{input_text}'",
+            "input_activated": input_field_activated['success'],
+            "activation_method": input_field_activated['method'],
+            "input_found": input_found,
+            "search_method": search_method,
+            "verification_result": verification_result,
+            "text": input_text,
+            "execution_detail": execution_detail,
+            "screenshots": {
+                "before_execution": step_data.get('before_execution_screenshot_path'),
+                "after_execution": after_execution_screenshot_path
+            },
+
+        }
+        
+    except Exception as e:
+        error_msg = "文本输入执行失败: " + str(e)
+        logging.error(error_msg)
+        
+
+        
+        # 确保有截图记录错误状态
+        if not step_data.get('before_execution_screenshot_path'):
+            try:
+                error_screenshot_path = take_screenshot_and_save(
+                    device, runner_dir, f"error_{operation_type}", "错误截图 - 记录输入操作失败时的界面状态"
+                )
+                step_data['before_execution_screenshot_path'] = error_screenshot_path
+            except Exception as screenshot_error:
+                logging.error(f"错误截图失败: {screenshot_error}")
+        
+        logging.error("步骤 %s 执行错误: %s, 错误: %s" % (step_data.get('step_number', 0), step_data.get('step_name', '未知步骤'), error_msg))
+        
+        return {
+            "status": "failed",
+            "message": error_msg,
+            "text": input_text,
+
+        }
+
+
+{# 输入框激活函数 - 优化版本 #}
+def activate_input_field(device, element_info, screenshot_path):
+    """
+    尝试激活输入框
+    
+    Args:
+        device: 设备对象
+        element_info: 元素信息
+        screenshot_path: 当前截图路径
+    
+    Returns:
+        Dict: 激活结果 {"success": bool, "method": str}
+    """
+    try:
+        # 检查是否已经激活
+        input_state = check_text_input_state(device)
+        if input_state.get('is_input_active', False):
+            logging.info("✅ 输入框已处于激活状态")
+            return {"success": True, "method": "已激活"}
+        
+        # 方法1：通过坐标点击激活
+        target_x = element_info.get('start_x')
+        target_y = element_info.get('start_y')
+        width = element_info.get('width', 0)
+        height = element_info.get('height', 0)
+        
+        if target_x is not None and target_y is not None:
+            if width > 0 and height > 0:
+                click_x = target_x + width / 2
+                click_y = target_y + height / 2
+            else:
+                click_x = target_x
+                click_y = target_y
+            
+            logging.info(f"尝试坐标点击激活: ({click_x}, {click_y})")
+            device.click(click_x, click_y)
+            time.sleep(0.5)
+            
+            # 检查激活结果
+            state_after_click = check_text_input_state(device)
+            if state_after_click.get('is_input_active', False):
+                return {"success": True, "method": "坐标点击"}
+        
+        # 方法2：智能定位点击激活 - 使用文件路径
+        icon_path = element_info.get('icon_path')
+        # reference_image_path应该是录制时的大图，即screenshot_path
+        # 注意：这里无法直接访问step_data，需要从element_info中获取录制时的截图路径
+        reference_screenshot_path = element_info.get('screenshot_path')  # 录制时的截图路径
+        # 使用传入的执行前截图路径
+        
+        if icon_path and reference_screenshot_path and screenshot_path:
+            logging.info("尝试智能定位激活...")
+            try:
+                bbox = element_info.get('bbox', [])
+                if bbox and len(bbox) == 4:
+                    found_coords = locate_small_via_dynamic_medium(
+                        reference_image_data=reference_screenshot_path,
+                        target_image_data=icon_path,
+                        target_bbox=bbox,
+                        detect_image_data=screenshot_path
+                    )
+                    
+                    if found_coords:
+                        x1, y1, x2, y2 = found_coords
+                        click_x = (x1 + x2) / 2
+                        click_y = (y1 + y2) / 2
+                        
+                        logging.info(f"智能定位点击激活: ({click_x:.1f}, {click_y:.1f})")
+                        device.click(click_x, click_y)
+                        time.sleep(0.5)
+                        
+                        state_after_smart = check_text_input_state(device)
+                        if state_after_smart.get('is_input_active', False):
+                            return {"success": True, "method": "智能定位"}
+                    else:
+                        logging.info("智能定位未找到目标元素")
+                else:
+                    logging.warning("缺少有效的边界框信息")
+                        
+            except Exception as smart_error:
+                logging.warning(f"智能定位激活失败: {smart_error}")
+        
+        # 方法3：查找可编辑元素
+        logging.info("尝试查找可编辑元素...")
+        try:
+            editable_elements = device(editable=True)
+            if editable_elements.exists:
+                first_editable = editable_elements[0]
+                first_editable.click()
+                time.sleep(0.5)
+                
+                state_after_editable = check_text_input_state(device)
+                if state_after_editable.get('is_input_active', False):
+                    return {"success": True, "method": "可编辑元素"}
+                    
+        except Exception as editable_error:
+            logging.warning(f"查找可编辑元素失败: {editable_error}")
+        
+        # 方法4：尝试常见输入框类名
+        input_classes = ['EditText', 'TextField', 'TextInputLayout']
+        for class_name in input_classes:
+            try:
+                element = device(className=class_name)
+                if element.exists:
+                    element.click()
+                    time.sleep(0.5)
+                    
+                    state_after_class = check_text_input_state(device)
+                    if state_after_class.get('is_input_active', False):
+                        return {"success": True, "method": f"类名: {class_name}"}
+                        
+            except Exception as class_error:
+                logging.debug(f"类名 {class_name} 激活失败: {class_error}")
+                continue
+        
+        logging.warning("所有输入框激活方法都失败")
+        return {"success": False, "method": "所有方法失败"}
+        
+    except Exception as e:
+        logging.error(f"输入框激活异常: {e}")
+        return {"success": False, "method": f"激活异常: {e}"}
+
+
+{# 智能输入框查找函数 #}
+def find_input_field_smart(device, element_info):
+    """
+    智能查找输入框
+    
+    Args:
+        device: 设备对象
+        element_info: 元素信息
+    
+    Returns:
+        Tuple: (found, coordinates, method)
+    """
+    try:
+        # 方法1：通过坐标查找
+        target_x = element_info.get('start_x')
+        target_y = element_info.get('start_y')
+        
+        if target_x is not None and target_y is not None:
+            width = element_info.get('width', 0)
+            height = element_info.get('height', 0)
+            
+            if width > 0 and height > 0:
+                center_x = target_x + width / 2
+                center_y = target_y + height / 2
+            else:
+                center_x = target_x
+                center_y = target_y
+            
+            return True, (center_x, center_y), "坐标定位"
+        
+        # 方法2：通过文本查找输入框
+        placeholder_text = element_info.get('placeholder', '')
+        hint_text = element_info.get('hint', '')
+        
+        if placeholder_text:
+            try:
+                element = device(text=placeholder_text)
+                if element.exists:
+                    bounds = element.info['bounds']
+                    center_x = (bounds['left'] + bounds['right']) / 2
+                    center_y = (bounds['top'] + bounds['bottom']) / 2
+                    return True, (center_x, center_y), f"占位符文本: {placeholder_text}"
+            except:
+                pass
+        
+        if hint_text:
+            try:
+                element = device(description=hint_text)
+                if element.exists:
+                    bounds = element.info['bounds']
+                    center_x = (bounds['left'] + bounds['right']) / 2
+                    center_y = (bounds['top'] + bounds['bottom']) / 2
+                    return True, (center_x, center_y), f"提示文本: {hint_text}"
+            except:
+                pass
+        
+        # 方法3：查找可编辑元素
+        try:
+            editable_elements = device(editable=True)
+            if editable_elements.exists:
+                first_editable = editable_elements[0]
+                bounds = first_editable.info['bounds']
+                center_x = (bounds['left'] + bounds['right']) / 2
+                center_y = (bounds['top'] + bounds['bottom']) / 2
+                return True, (center_x, center_y), "可编辑元素"
+        except:
+            pass
+        
+        # 方法4：查找输入框类元素
+        input_classes = ['EditText', 'TextField', 'TextInputLayout']
+        for class_name in input_classes:
+            try:
+                element = device(className=class_name)
+                if element.exists:
+                    bounds = element.info['bounds']
+                    center_x = (bounds['left'] + bounds['right']) / 2
+                    center_y = (bounds['top'] + bounds['bottom']) / 2
+                    return True, (center_x, center_y), f"类名: {class_name}"
+            except:
+                continue
+        
+        return False, None, "未找到输入框"
+        
+    except Exception as e:
+        logging.error(f"智能查找输入框异常: {e}")
+        return False, None, f"查找异常: {e}"
+
+
+{# 输入验证函数 #}
+def verify_text_input(device, expected_text, tolerance=0.8):
+    """
+    验证文本输入结果
+    
+    Args:
+        device: 设备对象
+        expected_text: 期望的文本
+        tolerance: 容错率
+    
+    Returns:
+        Dict: 验证结果
+    """
+    try:
+        # 获取当前焦点元素的文本
+        current_text = ""
+        
+        try:
+            focused_element = device(focused=True)
+            if focused_element.exists:
+                current_text = focused_element.get_text()
+        except:
+            pass
+        
+        # 如果没有焦点元素，尝试获取所有可编辑元素的文本
+        if not current_text:
+            try:
+                editable_elements = device(editable=True)
+                if editable_elements.exists:
+                    for element in editable_elements:
+                        text = element.get_text()
+                        if text and expected_text in text:
+                            current_text = text
+                            break
+            except:
+                pass
+        
+        # 验证文本匹配
+        if not current_text:
+            return {
+            "success": False,
+            "reason": "无法获取输入框文本",
+                "expected": expected_text,
+                "actual": ""
+            }
+        
+        # 完全匹配
+        if current_text == expected_text:
+            return {
+                "success": True,
+                "reason": "文本完全匹配",
+                "expected": expected_text,
+                "actual": current_text
+            }
+        
+        # 包含匹配
+        if expected_text in current_text:
+            return {
+                "success": True,
+                "reason": "文本包含匹配",
+                "expected": expected_text,
+                "actual": current_text
+            }
+        
+        # 相似度匹配
+        similarity = len(set(expected_text) & set(current_text)) / len(set(expected_text) | set(current_text))
+        if similarity >= tolerance:
+            return {
+                "success": True,
+                "reason": f"文本相似度匹配 ({similarity:.2f})",
+                "expected": expected_text,
+                "actual": current_text,
+                "similarity": similarity
+            }
+        
+        return {
+            "success": False,
+            "reason": f"文本不匹配 (相似度: {similarity:.2f})",
+            "expected": expected_text,
+            "actual": current_text,
+            "similarity": similarity
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "reason": f"验证异常: {e}",
+            "expected": expected_text,
+            "actual": ""
+        } 

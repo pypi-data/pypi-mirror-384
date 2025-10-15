@@ -1,0 +1,489 @@
+{# 主执行循环模块 - 处理动作序列的主要执行逻辑 #}
+{% from 'main/checkpoint_validation.j2' import execute_checkpoint_validation %}
+
+{% macro execute_main_loop(device, runner_dir, screenshot_count, action_sequence, task_status, task_status_file, start_time, task_first_step_map, all_expected_results) %}
+        # 执行动作序列
+        previous_after_screenshot = None  # 用于存储前一步的执行后截图路径
+        
+        for step_index, step_data in enumerate(action_sequence):
+            step_number, step_name, operation_type = get_step_info(step_data, step_index)
+            
+            logging.info(f"{'='*50}")
+            logging.info(f"执行步骤 {step_number}: {step_name} ({operation_type})")
+            logging.info(f"{'='*50}")
+            
+            # 强制刷新日志确保步骤开始被记录
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            
+            # 更新任务进度
+            task_status["current_step"] = step_number
+            task_status["progress_percentage"] = round((step_index / len(action_sequence)) * 100, 1)
+            task_status["current_step_name"] = step_name
+            task_status["current_operation_type"] = operation_type
+            
+            # 初始化当前步骤的检查点状态
+            task_status["current_checkpoint_status"] = {
+                "step_number": step_number,
+                "step_name": step_name,
+                "current_phase": "准备执行",
+                "status": "待执行",
+                "last_update": datetime.now().isoformat()
+            }
+            
+            # 实时保存任务状态
+            with open(task_status_file, 'w', encoding='utf-8') as f:
+                json.dump(task_status, f, ensure_ascii=False, indent=2, default=str)
+            
+            step_start_time = time.time()
+            
+            try:
+                # ==================== 阶段0: CAN 采集启动检查 ====================
+                source_task_id = step_data.get('source_task_id', '')
+                if source_task_id:
+                    # 检查该任务是否需要CAN采集且尚未启动
+                    task_expected_results = all_expected_results.get(source_task_id, {})
+                    can_capture_config = task_expected_results.get('can_capture')
+                    conditions = task_expected_results.get('conditions', []) or []
+
+                    # 仅当任务存在can_capture配置，且条件中包含CAN相关（data_source=='can_signal' 或 validation_type=='can'）时才允许启动
+                    has_can_condition = False
+                    try:
+                        for cond in conditions:
+                            ds = (cond.get('data_source') or '').lower()
+                            vt = (cond.get('validation_type') or '').lower()
+                            if ds == 'can_signal' or vt == 'can':
+                                has_can_condition = True
+                                break
+                    except Exception as _:
+                        has_can_condition = False
+
+                    if can_capture_config and has_can_condition and not is_can_capture_running(source_task_id):
+                        # 使用预处理的映射表快速判断是否为任务第一步
+                        is_first_step_of_task = (task_first_step_map.get(source_task_id) == step_index)
+                        
+                        if is_first_step_of_task:
+                            logging.info(f"🎯 检测到任务 {source_task_id} 的第一个步骤，正在启动CAN采集...")
+                            try:
+                                can_file_path = start_can_capture(source_task_id, can_capture_config, str(runner_dir))
+                                logging.info(f"✅ 任务 {source_task_id} CAN采集已启动，文件路径: {can_file_path}")
+                            except Exception as can_start_error:
+                                logging.error(f"❌ 启动CAN采集失败: {can_start_error}")
+                                # CAN采集启动失败不应阻止步骤执行，记录错误继续
+                        else:
+                            logging.debug(f"📋 任务 {source_task_id} 的CAN采集已在之前步骤启动或未满足条件，跳过启动检查")
+                
+                # ==================== 阶段1: 检查点前置验证 ====================
+                logging.info("阶段1: 执行检查点前置验证...")
+                
+                # 更新动作状态为准备中
+                step_data['status'] = 'running'
+                
+                # 执行检查点前置验证 - 使用检查点验证宏
+                {{ execute_checkpoint_validation(step_data, device, runner_dir, screenshot_count, previous_after_screenshot) }}
+                
+                if not checkpoint_passed:
+                    # 检查点验证失败，跳过动作执行
+                    logging.error(f"❌ 检查点验证失败: {checkpoint_result.get('detail', '未知原因')}")
+                    step_data['status'] = 'failed'
+                    step_data['checkpoint'] = checkpoint_result
+                    step_data['execution_result'] = {
+                        "message": f"检查点验证失败，跳过动作执行: {checkpoint_result.get('detail', '未知原因')}",
+                        "screenshots": {
+                            "before_execution": checkpoint_result.get('screenshot_path', ''),
+                            "after_execution": ""
+                        },
+                        "duration": 0
+                    }
+                    continue  # 跳过当前步骤，继续下一个步骤
+                
+                # ==================== 阶段2: 动作执行 ====================
+                logging.info("阶段2: 检查点验证通过，执行动作操作...")
+                
+                # 使用动作分发器执行（handlers内部会进行详细的实时状态更新）
+                execution_result = execute_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+                
+                # 更新前一步的截图路径，用于下一步优化
+                if execution_result and execution_result.get('screenshots'):
+                    previous_after_screenshot = execution_result['screenshots'].get('after_execution')
+                
+                # 判断执行结果状态
+                execution_success = execution_result.get('status') == 'success'
+                
+                # 更新动作状态
+                if execution_success:
+                    step_data['status'] = 'success'
+                else:
+                    step_data['status'] = 'failed'
+                
+                # 使用统一的日志记录函数
+                log_step_result(step_number, step_name, execution_success, execution_result.get('message', ''))
+                
+                # 清理execution_result，保留核心字段和控制流子步骤
+                cleaned_execution_result = {
+                    "message": execution_result.get('message', ''),
+                    "screenshots": execution_result.get('screenshots', {
+                        "before_execution": "",
+                        "after_execution": ""
+                    }),
+                    "duration": execution_result.get('duration', 0)
+                }
+                
+                # 🎯 保留控制流的executed_sub_steps字段
+                if execution_result.get('executed_sub_steps'):
+                    cleaned_execution_result['executed_sub_steps'] = execution_result.get('executed_sub_steps')
+                
+                # 记录清理后的执行结果
+                step_data['execution_result'] = cleaned_execution_result
+                
+                # 检查点已在阶段1完成，记录结果
+                step_data['checkpoint'] = checkpoint_result
+                
+                # ==================== 阶段3: 执行结果处理 ====================
+                logging.info("阶段3: 处理执行结果...")
+                   
+                # 检查点验证已在阶段1完成，这里只需要处理其他逻辑
+                step_number, step_name, operation_type = get_step_info(step_data)
+
+                logging.info(f"处理步骤 {step_number} 的执行结果")
+                
+                # 其他执行结果处理逻辑
+                # 例如：统计、日志记录等
+                
+                # 更新截图计数
+                screenshot_count += 1
+                
+            except Exception as step_error:
+                # 使用统一的日志记录函数
+                log_step_result(step_number, step_name, False, f"步骤执行异常: {step_error}")
+                import traceback
+                logging.error(traceback.format_exc())
+                
+                # 构造错误执行结果用于检查点状态更新
+                error_execution_result = {
+                    "status": "failed",
+                    "message": f"步骤执行异常: {step_error}",
+                    "checkpoint_context": {
+                        "operation_completed": False,
+                        "operation_mode": "unknown",
+                        "error_occurred": True,
+                        "error_message": str(step_error)
+                    }
+                }
+                
+                # 记录错误状态
+                step_data['execution_result'] = error_execution_result
+                step_data['status'] = 'failed'
+                
+                # 错误截图
+                try:
+                    error_screenshot_path = take_screenshot_and_save(
+                        device, runner_dir, screenshot_count, f"error_step_{step_number}"
+                    )
+                    step_data['execution_screenshot_path'] = error_screenshot_path
+                except Exception as screenshot_error:
+                    logging.error(f"错误截图失败: {screenshot_error}")
+                
+                # 使用检查点验证宏更新错误状态
+                try:
+                    if 'checkpoint' not in step_data:
+                        step_data['checkpoint'] = {}
+                    step_data['checkpoint']['is_pass'] = False
+                    step_data['checkpoint']['status'] = '异常'
+                    step_data['checkpoint']['detail'] = f"步骤执行异常: {step_error}"
+                except Exception as checkpoint_error:
+                    logging.error(f"检查点状态更新失败: {checkpoint_error}")
+            
+            finally:
+                # ==================== 阶段3: verify_after 验证 ====================
+                # 检查是否需要执行 verify_after 验证
+                verify_after = step_data.get('verify_after', False)
+                source_task_id = step_data.get('source_task_id', '')
+                
+                if verify_after and source_task_id:
+                    logging.info(f"阶段3: 执行 verify_after 验证 (任务ID: {source_task_id})")
+                    try:
+                        # ==================== verify_after 验证内联逻辑 ====================
+                        logging.info(f"{'='*20} 开始验证任务 {source_task_id} 的预期结果 {'='*20}")
+
+                        # 获取当前任务的预期结果
+                        current_task_results = []
+                        task_validation_results = []
+                        
+                        # 获取指定任务的验证配置
+                        task_validation_config = all_expected_results.get(source_task_id, {})
+                        
+                        if task_validation_config:
+                            expression = task_validation_config.get('expression', '')
+                            conditions = task_validation_config.get('conditions', [])
+                            
+                            logging.info(f"找到任务 {source_task_id} 的预期结果配置:")
+                            logging.info(f"  表达式: {expression}")
+                            logging.info(f"  条件数量: {len(conditions)}")
+                            
+                            if expression and conditions:
+                                # 有表达式和条件：使用表达式验证逻辑
+                                logging.info("执行表达式验证模式")
+                                
+                                try:
+                                    # 获取当前任务的 CAN 文件路径
+                                    current_can_file_path = get_current_can_file_path(source_task_id)
+                                    
+                                    if current_can_file_path:
+                                        logging.info(f"🚗 使用CAN文件路径: {current_can_file_path}")
+                                    
+                                    # 评估表达式，直接传递CAN文件路径参数
+                                    expression_is_pass = evaluate_condition_expression(
+                                        condition=conditions,
+                                        expression=expression,
+                                        can_file_path=current_can_file_path
+                                    )
+                                    
+                                    # 创建表达式验证结果
+                                    result_data = {
+                                        "id": source_task_id,
+                                        "description": f"任务 {source_task_id} 表达式验证",
+                                        "task_id": source_task_id,
+                                        "validation_type": "expression",
+                                        "expression": expression,
+                                        "conditions_count": len(conditions),
+                                        "is_pass": expression_is_pass,
+                                        "details": f"表达式验证{'通过' if expression_is_pass else '失败'}: {expression}",
+                                        "execution_timestamp": datetime.now().isoformat(),
+                                        "execution_duration": round(time.time() - start_time, 3)
+                                    }
+                                    
+                                    task_validation_results.append(result_data)
+                                    
+                                    # 输出验证结果
+                                    result_status = "[PASS]" if result_data['is_pass'] else "[FAIL]"
+                                    logging.info(f"{result_status} 表达式验证: {result_data['details']}")
+                                    
+                                except Exception as expr_error:
+                                    logging.error(f"表达式验证异常: {expr_error}")
+                                    result_data = {
+                                        "id": source_task_id,
+                                        "description": f"任务 {source_task_id} 表达式验证",
+                                        "task_id": source_task_id,
+                                        "validation_type": "expression",
+                                        "expression": expression,
+                                        "is_pass": False,
+                                        "details": f"表达式验证异常: {expr_error}",
+                                        "execution_timestamp": datetime.now().isoformat(),
+                                        "execution_duration": 0
+                                    }
+                                    task_validation_results.append(result_data)
+                                    
+                            elif conditions:
+                                # 只有条件没有表达式：验证所有条件，并生成任务级汇总结果
+                                logging.info("执行条件验证模式（任务级汇总）")
+                                
+                                conditions_start_time = time.time()
+                                condition_results = []  # 收集每个条件的结果，但不直接输出到expected_results
+
+                                # 处理所有条件（包括CAN条件）
+                                for condition_index, condition in enumerate(conditions):
+                                    logging.info(f"{'='*50}")
+                                    logging.info(f"验证条件 {condition_index + 1}: {condition.get('description', condition.get('id', '未知'))}")
+                                    logging.info(f"条件ID: {condition.get('id', '未知')}")
+                                    logging.info(f"验证模式: {condition.get('mode', 'unknown')}")
+                                    
+                                    # 强制刷新日志
+                                    for handler in logging.getLogger().handlers:
+                                        handler.flush()
+
+                                    start_time = time.time()
+
+                                    try:
+                                        # 获取CAN文件路径（如果是CAN条件需要）
+                                        current_can_file_path = get_current_can_file_path(source_task_id) if condition.get('data_source') == 'can_signal' else None
+                                        
+                                        # 使用 validate_validation_model 验证单个条件
+                                        validation_result = validate_validation_model(
+                                            validation_model=condition,
+                                            device=device,
+                                            runner_dir=runner_dir,
+                                            screenshot_count=screenshot_count + condition_index,
+                                            can_file_path=current_can_file_path
+                                        )
+                                        
+                                        # 收集条件验证结果（不直接输出到expected_results）
+                                        condition_result_data = {
+                                            "id": condition.get('id', f'{source_task_id}_condition_{condition_index + 1}'),
+                                            "description": condition.get('description', f'任务 {source_task_id} 条件验证'),
+                                            "task_id": source_task_id,
+                                            "validation_type": "condition",
+                                            "condition_index": condition_index,
+                                            "is_pass": validation_result.get('is_pass', False),
+                                            "details": validation_result.get('message', '条件验证完成'),
+                                            "validation_result": validation_result,
+                                            "execution_timestamp": datetime.now().isoformat()
+                                        }
+                                        condition_results.append(condition_result_data)
+                                        
+                                        # 输出验证结果日志
+                                        result_status = "[PASS]" if condition_result_data['is_pass'] else "[FAIL]"
+                                        logging.info(f"{result_status} 条件验证: {condition_result_data['details']}")
+                                        
+                                    except Exception as condition_error:
+                                        logging.error(f"条件验证异常: {condition_error}")
+                                        condition_result_data = {
+                                            "id": condition.get('id', f'{source_task_id}_condition_{condition_index + 1}'),
+                                            "description": condition.get('description', f'任务 {source_task_id} 条件验证'),
+                                            "task_id": source_task_id,
+                                            "validation_type": "condition",
+                                            "condition_index": condition_index,
+                                            "is_pass": False,
+                                            "details": f"条件验证异常: {condition_error}",
+                                            "execution_timestamp": datetime.now().isoformat()
+                                        }
+                                        condition_results.append(condition_result_data)
+
+                                # 条件验证完成后，生成任务级别的汇总结果
+                                total_conditions = len(condition_results)
+                                passed_conditions = sum(1 for r in condition_results if r.get('is_pass', False))
+                                failed_conditions = total_conditions - passed_conditions
+                                overall_pass = (failed_conditions == 0)
+
+                                summary_details = f"条件验证{'通过' if overall_pass else '失败'}: 通过={passed_conditions}, 失败={failed_conditions}"
+                                task_result_data = {
+                                    "id": source_task_id,
+                                    "description": f"任务 {source_task_id} 条件验证汇总",
+                                    "task_id": source_task_id,
+                                    "validation_type": "conditions",
+                                    "conditions_count": total_conditions,
+                                    "passed_conditions": passed_conditions,
+                                    "failed_conditions": failed_conditions,
+                                    "is_pass": overall_pass,
+                                    "details": summary_details,
+                                    "execution_timestamp": datetime.now().isoformat(),
+                                    "execution_duration": round(time.time() - conditions_start_time, 3)
+                                }
+                                task_validation_results.append(task_result_data)
+                                        
+                            else:
+                                logging.warning(f"任务 {source_task_id} 既没有表达式也没有条件，跳过验证")
+                                    
+                        else:
+                            logging.info(f"任务 {source_task_id} 没有配置预期结果，跳过 verify_after 验证")
+
+                        # 将验证结果添加到全局结果列表
+                        global verify_after_results
+                        if 'verify_after_results' not in globals():
+                            verify_after_results = []
+                        verify_after_results.extend(task_validation_results)
+
+                        # 输出验证摘要
+                        if task_validation_results:
+                            total_results = len(task_validation_results)
+                            passed_results = sum(1 for r in task_validation_results if r["is_pass"])
+                            failed_results = total_results - passed_results
+                            
+                            logging.info(f"任务 {source_task_id} verify_after 验证完成: 总数={total_results}, 通过={passed_results}, 失败={failed_results}")
+                            
+                            if failed_results > 0:
+                                logging.warning(f"任务 {source_task_id} verify_after 验证有{failed_results}个失败项")
+                        else:
+                            logging.info(f"任务 {source_task_id} 无需 verify_after 验证")
+
+                        logging.info(f"{'='*20} 任务 {source_task_id} verify_after 验证结束 {'='*20}")
+                        
+                        # ==================== 阶段4: CAN 采集停止检查 ====================
+                        # 检查是否需要停止CAN采集
+                        if is_can_capture_running(source_task_id):
+                            # 检查是否还有后续的验证步骤
+                            has_remaining_steps = check_remaining_verify_steps(action_sequence, step_index, source_task_id)
+                            
+                            if not has_remaining_steps:
+                                logging.info(f"🔄 任务 {source_task_id} 没有后续验证步骤，正在停止CAN采集...")
+                                try:
+                                    stop_success = stop_can_capture(source_task_id)
+                                    if stop_success:
+                                        logging.info(f"✅ 任务 {source_task_id} CAN采集已成功停止")
+                                    else:
+                                        logging.warning(f"⚠️ 任务 {source_task_id} CAN采集停止失败")
+                                except Exception as can_stop_error:
+                                    logging.error(f"❌ 停止CAN采集异常: {can_stop_error}")
+                            else:
+                                logging.info(f"📋 任务 {source_task_id} 还有后续验证步骤，继续保持CAN采集")
+                        
+                        # 更新截图计数（验证过程中可能产生新的截图）
+                        screenshot_count += 2  # 预留空间给验证截图
+                        
+                    except Exception as verify_error:
+                        logging.error(f"verify_after 验证异常: {verify_error}")
+                        import traceback
+                        logging.error(traceback.format_exc())
+                elif verify_after and not source_task_id:
+                    logging.warning(f"步骤 {step_number} 设置了 verify_after=true 但缺少 source_task_id，跳过验证")
+                elif source_task_id and not verify_after:
+                    logging.debug(f"步骤 {step_number} 有 source_task_id 但 verify_after=false，跳过验证")
+                
+                # 记录步骤耗时
+                step_duration = time.time() - step_start_time
+                logging.info(f"步骤 {step_number} 耗时: {step_duration:.3f}秒")
+                
+                # 更新execution_result中的duration字段
+                if 'execution_result' in step_data:
+                    step_data['execution_result']['duration'] = round(step_duration, 3)
+                
+                # 更新任务状态中的步骤完成信息
+                task_status["last_completed_step"] = step_number
+                task_status["last_step_duration"] = step_duration
+                task_status["last_step_success"] = (step_data.get('status') == 'success')
+                
+                # 更新任务状态中的检查点完成信息
+                checkpoint_info = step_data.get('checkpoint', {})
+                task_status["current_checkpoint_status"] = {
+                    "step_number": step_number,
+                    "step_name": step_name,
+                    "current_phase": "已完成",
+                    "status": checkpoint_info.get("status", "未知"),
+                    "is_pass": checkpoint_info.get("is_pass", False),
+                    "detail": checkpoint_info.get("detail", ""),
+                    "last_update": datetime.now().isoformat(),
+                    "execution_duration": step_duration,
+                    "checkpoint_type": checkpoint_info.get("type", "unknown"),
+                    "operation_mode": checkpoint_info.get("operation_mode", "unknown"),
+                    "validation_duration": checkpoint_info.get("validation_duration", 0)
+                }
+                
+                # 更新执行历史记录
+                if "execution_history" not in task_status:
+                    task_status["execution_history"] = []
+                
+                # 添加当前步骤执行结果到历史记录
+                execution_history_entry = {
+                    "step_number": step_number,
+                    "step_name": step_name,
+                    "operation_type": operation_type,  # 添加operation_type字段
+                    "is_pass": checkpoint_info.get("is_pass", False),
+                    "status": checkpoint_info.get("status", "未知"),
+                    "detail": checkpoint_info.get("detail", ""),
+                    "checkpoint_type": checkpoint_info.get("type", "unknown"),
+                    "operation_mode": checkpoint_info.get("operation_mode", "unknown"),
+                    "validation_duration": checkpoint_info.get("validation_duration", 0),
+                    "completed_at": checkpoint_info.get("completed_at", datetime.now().isoformat()),
+                    "screenshot_available": bool(checkpoint_info.get("screenshot_path"))
+                }
+                task_status["execution_history"].append(execution_history_entry)
+                
+                # 更新检查点统计信息
+                total_checkpoints = len(task_status["execution_history"])
+                passed_checkpoints = sum(1 for cp in task_status["execution_history"] if cp.get("is_pass", False))
+                failed_checkpoints = total_checkpoints - passed_checkpoints
+                
+                task_status["checkpoint_summary"] = {
+                    "total_checkpoints": total_checkpoints,
+                    "passed_checkpoints": passed_checkpoints,
+                    "failed_checkpoints": failed_checkpoints,
+                    "success_rate": round((passed_checkpoints / total_checkpoints * 100), 2) if total_checkpoints > 0 else 0,
+                    "last_checkpoint_result": checkpoint_info.get("is_pass", False)
+                }
+                
+                # 实时保存更新后的任务状态
+                with open(task_status_file, 'w', encoding='utf-8', newline='') as f:
+                    json.dump(task_status, f, ensure_ascii=False, indent=2, default=str)
+    
+    # 宏执行完成，变量已更新
+{% endmacro %}

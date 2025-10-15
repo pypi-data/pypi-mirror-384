@@ -1,0 +1,643 @@
+{# 控制流处理器模板 - 支持if/for/while控制结构 #}
+
+{# 导入子步骤检查点验证宏 #}
+{% from 'main/sub_action_checkpoint_validation.j2' import execute_sub_action_checkpoint_validation %}
+
+{# validate_validation_model函数已在base/validation_utils.j2中定义，无需重复导入 #}
+
+def handle_control_flow_action(step_data, device, runner_dir, screenshot_count):
+    """
+    控制流处理器 - 处理if/for/while等控制结构
+    
+    Args:
+        step_data: 步骤数据
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+    
+    Returns:
+        Dict: 执行结果
+    """
+    try:
+        control_flow_config = step_data.get('control_flow_config', {})
+        control_type = control_flow_config.get('control_type', '').lower()
+        
+        logging.info(f"执行控制流: {control_type} - {step_data.get('step_name', '未知步骤')}")
+        
+        if control_type == 'if_elseif_else':
+            return handle_if_elseif_else_control_flow(step_data, device, runner_dir, screenshot_count)
+        elif control_type == 'for':
+            return handle_for_control_flow(step_data, device, runner_dir, screenshot_count)
+        elif control_type == 'while':
+            return handle_while_control_flow(step_data, device, runner_dir, screenshot_count)
+        else:
+            return {
+                "status": "failed",
+                "message": f"不支持的控制流类型: {control_type}",
+                "step_name": step_data.get('step_name', '未知步骤'),
+                "screenshots": {
+                    "before_execution": None,
+                    "after_execution": None
+                }
+            }
+    except Exception as e:
+        logging.error(f"控制流执行异常: {e}")
+        return {
+            "status": "failed",
+            "message": f"控制流执行异常: {e}",
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            }
+        }
+
+
+def handle_if_elseif_else_control_flow(step_data, device, runner_dir, screenshot_count):
+    """
+    处理if-elseif-else条件分支逻辑
+    
+    Args:
+        step_data: 步骤数据
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+    
+    Returns:
+        Dict: 执行结果
+    """
+    try:
+        control_flow_config = step_data.get('control_flow_config', {})
+        branches = control_flow_config.get('branches', [])
+        
+        logging.info(f"执行if_elseif_else控制流: {step_data.get('step_name', '未知步骤')}")
+        
+        # 遍历所有分支，找到第一个满足条件的分支
+        for i, branch in enumerate(branches):
+            expression = branch.get('expression', '')
+            conditions = branch.get('conditions', [])  # 修复：使用'conditions'以保持一致性
+            steps = branch.get('steps', [])
+            
+            logging.info(f"检查分支 {i+1}: {expression}")
+            logging.info(f"分支 {i+1} 条件详情:")
+            for j, condition in enumerate(conditions):
+                condition_id = condition.get('id', f'condition_{j+1}')
+                target_text = condition.get('target_text', '')
+                expect_exists = condition.get('expect_exists', True)
+                validation_type = condition.get('validation_type', 'text')
+                data_source = condition.get('data_source', 'adb_screenshot')
+                logging.info(f"  条件 {j+1} [{condition_id}]: 检测'{target_text}' (类型:{validation_type}, 来源:{data_source}, 期望存在:{expect_exists})")
+            
+            # ========== CAN 采集启动 ==========
+            try:
+                source_task_id = step_data.get('source_task_id', '')
+                # 判断是否包含 CAN 条件
+                has_can_condition = False
+                for cond in conditions:
+                    ds = (cond.get('data_source') or '').lower()
+                    vt = (cond.get('validation_type') or '').lower()
+                    if ds == 'can_signal' or vt in ('can', 'signal'):
+                        has_can_condition = True
+                        break
+
+                # 读取 can_capture 配置
+                can_capture_config = None
+                try:
+                    can_capture_config = branch.get('can_capture') if isinstance(branch, dict) else None
+                except Exception:
+                    can_capture_config = None
+                if not can_capture_config:
+                    try:
+                        can_capture_config = getattr(branch, 'can_capture', None)
+                    except Exception:
+                        can_capture_config = None
+
+                if source_task_id and has_can_condition and can_capture_config and not is_can_capture_running(source_task_id):
+                    logging.info(f"🎯 控制流(分支)检测到 CAN 条件，启动任务 {source_task_id} 的 CAN 采集...")
+                    try:
+                        start_can_capture(source_task_id, can_capture_config, str(runner_dir))
+                        logging.info(f"✅ 已调用启动 CAN 采集: task={source_task_id}")
+                    except Exception as can_start_error:
+                        logging.error(f"❌ 控制流分支启动 CAN 采集失败: {can_start_error}")
+                elif source_task_id and has_can_condition and not can_capture_config:
+                    logging.warning(f"⚠️ 检测到 CAN 条件但未提供 can_capture 配置（分支级），无法启动采集")
+            except Exception as _can_prepare_err:
+                logging.warning(f"控制流分支 CAN 采集准备异常: {_can_prepare_err}")
+
+            # 评估条件表达式
+            logging.info(f"开始评估分支 {i+1} 的条件表达式: {expression}")
+            # 获取当前 CAN 文件路径并随评估传入
+            current_can_file_path = None
+            try:
+                source_task_id = step_data.get('source_task_id', '')
+                if source_task_id:
+                    current_can_file_path = get_current_can_file_path(source_task_id)
+                    if current_can_file_path:
+                        logging.info(f"🚗 控制流分支使用 CAN 文件: {current_can_file_path}")
+            except Exception:
+                current_can_file_path = None
+
+            condition_result = evaluate_control_flow_condition(
+                expression, conditions, device, runner_dir, screenshot_count, can_file_path=current_can_file_path
+            )
+            logging.info(f"分支 {i+1} 条件评估结果: {condition_result}")
+            
+            if condition_result:
+                logging.info(f"分支 {i+1} 条件满足，执行步骤")
+                
+                # 执行分支中的步骤 - 使用统一的子步骤执行函数
+                branch_previous_after_screenshot = None  # 分支内的截图优化
+                executed_sub_steps = []  # 收集实际执行的子步骤
+                
+                for step_index, step in enumerate(steps):
+                    # 为分支中的子步骤创建副本并更新步骤编号
+                    branch_step = step.copy()
+                    original_step_number = step.get('step_number', step_index)
+                    branch_step['step_number'] = f"{original_step_number}_branch{i}"
+                    
+                    result = execute_sub_action_with_checkpoint(
+                        branch_step, device, runner_dir, screenshot_count, branch_previous_after_screenshot
+                    )
+                    
+                    if result.get('status') == 'error':
+                        return result
+                    
+                    # 更新分支内的截图优化参数
+                    if result and result.get('screenshots'):
+                        branch_previous_after_screenshot = result['screenshots'].get('after_execution')
+                    
+                    # 收集已执行的子步骤（包含执行后的状态）
+                    executed_sub_steps.append(branch_step)
+                
+                return {
+                    "status": "success",
+                    "message": f"if_elseif_else分支 {i+1} 执行成功",
+                    "branch_index": i,
+                    "step_name": step_data.get('step_name', '未知步骤'),
+                    "screenshots": {
+                        "before_execution": None,
+                        "after_execution": None
+                    },
+                    "executed_sub_steps": executed_sub_steps  # 保存实际执行的子步骤
+                }
+        
+        # 没有分支满足条件
+        logging.info("没有分支满足条件")
+        return {
+            "status": "success",
+            "message": "没有分支满足条件",
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            },
+            "executed_sub_steps": []  # 没有执行的子步骤
+        }
+        
+    except Exception as e:
+        logging.error(f"if_elseif_else控制流执行异常: {e}")
+        return {
+            "status": "failed",
+            "message": f"if_elseif_else控制流执行异常: {e}",
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            },
+
+        }
+
+
+def handle_for_control_flow(step_data, device, runner_dir, screenshot_count):
+    """
+    处理for循环逻辑 - 简化版，只支持count
+    
+    Args:
+        step_data: 步骤数据
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+    
+    Returns:
+        Dict: 执行结果
+    """
+    try:
+        control_flow_config = step_data.get('control_flow_config', {})
+        for_config = control_flow_config.get('for_config', {})
+        loop_body = control_flow_config.get('loop_body', [])
+        
+        variable = for_config.get('variable', 'count')
+        
+        # 简单的配置优先级：values > count > 默认
+        values = for_config.get('values', [])
+        count_config = for_config.get('count', 0)
+        
+        if values:
+            # 使用values方式
+            range_values = values
+            count = len(range_values)
+            logging.info(f"使用values配置: {range_values}")
+        elif count_config > 0:
+            # 使用count方式
+            count = count_config
+            range_values = list(range(1, count + 1))
+            logging.info(f"使用count配置: 循环{count}次 → {range_values}")
+        else:
+            # 默认执行1次
+            count = 1
+            range_values = [1]
+            logging.info(f"使用默认配置: {range_values}")
+        
+        logging.info(f"执行for循环: {step_data.get('step_name', '未知步骤')} - 循环{count}次, 取值: {range_values}")
+        
+        # 执行循环体
+        loop_previous_after_screenshot = None  # 循环内的截图优化
+        executed_sub_steps = []  # 收集所有实际执行的子步骤
+        
+        for i, loop_value in enumerate(range_values):
+            logging.info(f"for循环第 {i+1}/{count} 次迭代, {variable}={loop_value}")
+            
+            # 设置循环变量
+            loop_context = {
+                'index': i,
+                'iteration': i + 1,
+                'count': count,
+                'current_value': loop_value,
+                variable: loop_value  # 动态设置变量名
+            }
+            
+            # 执行循环体中的步骤 - 使用统一的子步骤执行函数
+            for step_index, step in enumerate(loop_body):
+                # 为每次迭代的子步骤创建副本并更新步骤编号
+                iteration_step = step.copy()
+                original_step_number = step.get('step_number', step_index)
+                iteration_step['step_number'] = f"{original_step_number}_iter{i+1}"
+                
+                result = execute_sub_action_with_checkpoint(
+                    iteration_step, device, runner_dir, screenshot_count, loop_previous_after_screenshot
+                )
+                
+                if result.get('status') == 'error':
+                    return result
+                
+                # 更新循环内的截图优化参数
+                if result and result.get('screenshots'):
+                    loop_previous_after_screenshot = result['screenshots'].get('after_execution')
+                
+                # 收集已执行的子步骤（包含执行后的状态）
+                executed_sub_steps.append(iteration_step)
+        
+        return {
+            "status": "success",
+            "message": f"for循环执行完成，共执行{count}次",
+            "iterations": count,
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            },
+            "executed_sub_steps": executed_sub_steps  # 保存所有实际执行的子步骤
+        }
+        
+    except Exception as e:
+        logging.error(f"for控制流执行异常: {e}")
+        return {
+            "status": "failed",
+            "message": f"for控制流执行异常: {e}",
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            },
+
+        }
+
+
+def handle_while_control_flow(step_data, device, runner_dir, screenshot_count):
+    """
+    处理while循环逻辑
+    
+    Args:
+        step_data: 步骤数据
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+    
+    Returns:
+        Dict: 执行结果
+    """
+    try:
+        control_flow_config = step_data.get('control_flow_config', {})
+        while_config = control_flow_config.get('while_config', {})
+        loop_body = control_flow_config.get('loop_body', [])
+        
+        # 🔍 调试：打印数据结构
+        logging.info(f"🔍 调试while循环数据结构:")
+        logging.info(f"   control_flow_config keys: {list(control_flow_config.keys()) if control_flow_config else 'None'}")
+        logging.info(f"   while_config keys: {list(while_config.keys()) if while_config else 'None'}")
+        logging.info(f"   while_config内容: {while_config}")
+        
+        expression = while_config.get('expression', '')
+        conditions = while_config.get('conditions', [])
+        max_iterations = while_config.get('max_iterations')  # 可选参数
+        
+        logging.info(f"   解析结果 - expression: '{expression}', conditions数量: {len(conditions)}")
+        if max_iterations is not None:
+            logging.info(f"   最大迭代次数: {max_iterations}")
+        else:
+            logging.info(f"   最大迭代次数: 无限制")
+        
+        logging.info(f"执行while循环: {step_data.get('step_name', '未知步骤')}")
+        
+        iteration_count = 0
+        
+        # 循环前：若有 CAN 条件
+        try:
+            source_task_id = step_data.get('source_task_id', '')
+            has_can_condition = False
+            for cond in conditions:
+                ds = (cond.get('data_source') or '').lower()
+                vt = (cond.get('validation_type') or '').lower()
+                if ds == 'can_signal' or vt in ('can', 'signal'):
+                    has_can_condition = True
+                    break
+
+            # 读取 can_capture 配置
+            can_capture_config = while_config.get('can_capture')
+            if source_task_id and has_can_condition and can_capture_config and not is_can_capture_running(source_task_id):
+                logging.info(f"🎯 控制流(while)检测到 CAN 条件，启动任务 {source_task_id} 的 CAN 采集...")
+                try:
+                    start_can_capture(source_task_id, can_capture_config, str(runner_dir))
+                except Exception as can_start_error:
+                    logging.error(f"❌ 控制流 while 启动 CAN 采集失败: {can_start_error}")
+        except Exception as _can_prepare_err:
+            logging.warning(f"控制流 while CAN 采集准备异常: {_can_prepare_err}")
+
+        # 执行while循环
+        loop_previous_after_screenshot = None  # 循环内的截图优化
+        executed_sub_steps = []  # 收集所有实际执行的子步骤
+        while True:
+            # 检查是否达到最大迭代次数
+            if max_iterations is not None and iteration_count >= max_iterations:
+                logging.warning(f"while循环达到最大迭代次数: {max_iterations}")
+                break
+            
+            # 🔄 先检查循环条件，条件不满足则退出
+            logging.info(f"检查while循环条件: {expression}")
+            logging.info(f"检查while循环条件: {conditions}")
+            # 获取当前 CAN 文件路径并随评估传入
+            current_can_file_path = None
+            try:
+                source_task_id = step_data.get('source_task_id', '')
+                if source_task_id:
+                    current_can_file_path = get_current_can_file_path(source_task_id)
+                    if current_can_file_path:
+                        logging.info(f"🚗 控制流 while 使用 CAN 文件: {current_can_file_path}")
+            except Exception:
+                current_can_file_path = None
+
+            condition_satisfied = evaluate_control_flow_condition(
+                expression, conditions, device, runner_dir, screenshot_count, can_file_path=current_can_file_path
+            )
+            
+            if not condition_satisfied:
+                logging.info(f"while循环条件不满足，退出循环 (已执行{iteration_count}次)")
+                break
+            
+            iteration_count += 1
+            logging.info(f"while循环第 {iteration_count} 次迭代 (条件满足: {expression})")
+            
+            # 执行循环体中的步骤 - 使用统一的子步骤执行函数
+            for step_index, step in enumerate(loop_body):
+                # 为每次迭代的子步骤创建副本并更新步骤编号
+                iteration_step = step.copy()
+                original_step_number = step.get('step_number', step_index)
+                iteration_step['step_number'] = f"{original_step_number}_while_iter{iteration_count+1}"
+                
+                result = execute_sub_action_with_checkpoint(
+                    iteration_step, device, runner_dir, screenshot_count, loop_previous_after_screenshot
+                )
+                
+                if result.get('status') == 'error':
+                    logging.error(f"while循环体步骤执行失败: {result.get('message', '')}")
+                    return result
+                
+                # 更新循环内的截图优化参数
+                if result and result.get('screenshots'):
+                    loop_previous_after_screenshot = result['screenshots'].get('after_execution')
+                
+                # 收集已执行的子步骤（包含执行后的状态）
+                executed_sub_steps.append(iteration_step)
+            
+            # 短暂等待，避免无限循环
+            time.sleep(0.1)
+        
+        return {
+            "status": "success",
+            "message": f"while循环执行完成，共执行{iteration_count}次",
+            "iterations": iteration_count,
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            },
+            "executed_sub_steps": executed_sub_steps  # 保存所有实际执行的子步骤
+        }
+        
+    except Exception as e:
+        logging.error(f"while控制流执行异常: {e}")
+        return {
+            "status": "failed",
+            "message": f"while控制流执行异常: {e}",
+            "step_name": step_data.get('step_name', '未知步骤'),
+            "screenshots": {
+                "before_execution": None,
+                "after_execution": None
+            },
+
+        }
+
+
+def execute_sub_action_with_checkpoint(step_data, device, runner_dir, screenshot_count, previous_after_screenshot=None):
+    """
+    执行控制流中的子步骤 - 使用统一的检查点验证宏
+    
+    直接复用main_execution_loop.j2中的检查点验证逻辑，确保一致性
+    
+    Args:
+        step_data: 步骤数据
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+        previous_after_screenshot: 前一步的执行后截图路径
+    
+    Returns:
+        Dict: 执行结果
+    """
+    step_number = step_data.get('step_number', 0)
+    step_name = step_data.get('step_name', '未知子步骤')
+    operation_type = step_data.get('operation_type', 'unknown')
+    
+    logging.info(f"执行控制流子步骤 {step_number}: {step_name} ({operation_type})")
+    
+    # 设置子步骤为运行状态
+    step_data['status'] = 'running'
+    
+    try:
+        # ==================== 子步骤检查点验证 ====================
+        # 使用专门的子步骤检查点验证宏
+        {{ execute_sub_action_checkpoint_validation(step_data, device, runner_dir, screenshot_count, previous_after_screenshot) }}
+        
+        if not checkpoint_passed:
+            # 检查点验证失败，跳过动作执行
+            logging.error(f"❌ 子步骤 {step_number} 检查点验证失败: {checkpoint_result.get('detail', '未知原因')}")
+            step_data['status'] = 'failed'
+            step_data['checkpoint'] = checkpoint_result
+            step_data['execution_result'] = {
+                "message": f"检查点验证失败，跳过动作执行: {checkpoint_result.get('detail', '未知原因')}",
+                "screenshots": {
+                    "before_execution": checkpoint_result.get('screenshot_path', ''),
+                    "after_execution": ""
+                },
+                "duration": 0
+            }
+            
+            # 返回失败结果，但不是error（允许控制流继续）
+            return {
+                "status": "failed",
+                "message": f"子步骤检查点验证失败: {checkpoint_result.get('detail', '未知原因')}",
+                "step_name": step_name,
+                "checkpoint_failed": True
+            }
+        
+        # 检查点验证通过，执行动作
+        logging.info(f"子步骤 {step_number} 检查点验证通过，执行动作...")
+        result = execute_action(step_data, device, runner_dir, screenshot_count, previous_after_screenshot)
+        
+        # 判断执行结果状态
+        execution_success = result.get('status') == 'success'
+        
+        # 更新子步骤状态和检查点信息
+        if execution_success:
+            step_data['status'] = 'success'
+        else:
+            step_data['status'] = 'failed'
+        
+        # 更新检查点信息
+        step_data['checkpoint'] = checkpoint_result
+        
+        return result
+    
+    except Exception as step_error:
+        logging.error(f"子步骤 {step_number} 执行异常: {step_error}")
+        step_data['status'] = 'failed'
+        step_data['checkpoint'] = {
+            "type": step_data.get("checkpoint", {}).get("type", "none"),
+            "is_pass": False,
+            "detail": f"子步骤执行异常: {step_error}",
+            "screenshot_path": "",
+            "executed_at": ""
+        }
+        
+        return {
+            "status": "error",
+            "message": f"子步骤执行异常: {step_error}",
+            "step_name": step_name,
+            "exception": True
+        }
+
+
+def evaluate_control_flow_condition(expression, conditions, device=None, runner_dir=None, screenshot_count=0, can_file_path=None):
+    """
+    评估控制流条件表达式
+    
+    Args:
+        expression: 表达式字符串
+        conditions: 条件列表
+        device: 设备对象
+        runner_dir: 运行目录
+        screenshot_count: 截图计数
+    
+    Returns:
+        bool: 条件是否满足
+    """
+    try:
+        # evaluate_condition_expression函数已在base/expression_utils.j2中定义
+        
+        # 如果有表达式和条件，使用表达式评估函数
+        if expression and conditions:
+            logging.info(f"🔍 开始评估条件表达式: {expression}")
+            logging.info(f"📋 条件数量: {len(conditions)}")
+            
+            # 详细记录每个条件的信息
+            for i, condition in enumerate(conditions):
+                condition_id = condition.get('id', f'condition_{i+1}')
+                target_text = condition.get('target_text', '')
+                expect_exists = condition.get('expect_exists', True)
+                validation_type = condition.get('validation_type', 'text')
+                data_source = condition.get('data_source', 'adb_screenshot')
+                timeout = condition.get('timeout', 0)
+                wait_time = condition.get('wait_time', 0)
+                
+                logging.info(f"  📝 条件 {i+1} [{condition_id}]:")
+                logging.info(f"     - 检测文本: '{target_text}'")
+                logging.info(f"     - 验证类型: {validation_type}")
+                logging.info(f"     - 数据来源: {data_source}")
+                logging.info(f"     - 期望存在: {expect_exists}")
+                logging.info(f"     - 超时时间: {timeout}秒")
+                logging.info(f"     - 等待时间: {wait_time}秒")
+            
+            logging.info(f"🔄 调用条件表达式评估函数...")
+            result = evaluate_condition_expression(
+                condition=conditions,
+                expression=expression,
+                can_file_path=can_file_path
+            )
+            # result已经是布尔值，直接使用
+            logging.info(f"✅ 条件评估完成，结果: {result}")
+            return result
+        
+        # 如果只有条件列表，验证所有条件
+        elif conditions:
+            logging.info(f"验证条件列表，条件数量: {len(conditions)}")
+            for i, condition in enumerate(conditions):
+                target_text = condition.get('target_text', '')
+                expect_exists = condition.get('expect_exists', True)
+                logging.info(f"  验证条件{i+1}: 检测文本'{target_text}' expect_exists={expect_exists}")
+                
+                # 针对 CAN 条件传入 CAN 文件路径
+                per_condition_can_file = can_file_path if (condition.get('data_source') == 'can_signal' or (condition.get('validation_type', '').lower() in ('can', 'signal'))) else None
+
+                result = validate_validation_model(
+                    validation_model=condition,
+                    device=device,
+                    runner_dir=runner_dir,
+                    screenshot_count=screenshot_count,
+                    can_file_path=per_condition_can_file
+                )
+                
+                is_pass = result.get('is_pass', False)
+                details = result.get('details', '无详细信息')
+                logging.info(f"  条件{i+1}检测结果: is_pass={is_pass}, 详情={details}")
+                
+                if not is_pass:
+                    logging.info(f"条件{i+1}不满足，返回False")
+                    return False
+            logging.info("所有条件都满足，返回True")
+            return True
+        
+        # 如果只有表达式字符串，进行简单评估
+        elif expression:
+            # TODO: 实现更复杂的表达式解析
+            # 当前使用简单的字符串匹配
+            return bool(expression.strip())
+        
+        return True
+        
+    except Exception as e:
+        logging.error(f"控制流条件表达式评估异常: {e}")
+        return False
+
+
+ 
+ 
