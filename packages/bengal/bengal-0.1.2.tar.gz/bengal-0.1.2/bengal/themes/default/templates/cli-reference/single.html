@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from 'partials/reference-components.html' import reference_header, reference_metadata %}
+{% from 'partials/navigation-components.html' import breadcrumbs, page_navigation, toc with context %}
+{% from 'partials/content-components.html' import tag_list %}
+
+{#
+  CLI Reference Single Page Template
+
+  Three-column layout for individual CLI command documentation:
+  - Left sidebar: Command navigation tree
+  - Center: Content with command details, usage, options
+  - Right sidebar: TOC for quick navigation
+
+  Usage: Automatically applied to pages in cli-reference sections
+  Or set `template: cli-reference/single.html` in frontmatter
+#}
+
+{% block content %}
+{# Three-column documentation layout #}
+<div class="docs-layout">
+  {# Left Sidebar: CLI Navigation #}
+  <aside class="docs-sidebar" id="docs-sidebar" role="navigation" aria-label="CLI navigation">
+    {% include 'partials/docs-nav.html' %}
+  </aside>
+
+  {# Main Content #}
+  <div class="docs-main">
+    {# Breadcrumbs #}
+    {{ breadcrumbs(page) }}
+
+    {# Article Content #}
+    <article class="prose cli-reference-page reference-page--cli {% if page.metadata.get('css_class') %}{{ page.metadata.get('css_class') }}{% endif %}">
+      <header class="docs-header">
+        {# Reference header with icon and title #}
+        {{ reference_header(
+          icon=page.metadata.get('emoji', '⌨️'),
+          title=page.title,
+          description=page.metadata.get('description', ''),
+          type='cli'
+        ) }}
+
+        {# Reference metadata box (source) #}
+        {% set source_with_line = page.metadata.get('source_file', '') %}
+        {% if page.metadata.get('source_line') %}
+          {% set source_with_line = page.metadata.get('source_file', '') ~ ':' ~ page.metadata.get('source_line') %}
+        {% endif %}
+        {{ reference_metadata({
+          'Source': source_with_line
+        }) }}
+
+        {# Command usage #}
+        {% if page.metadata.get('usage') %}
+        <div class="cli-usage-header">
+          <strong>Usage:</strong>
+          <pre><code>{{ page.metadata.get('usage') }}</code></pre>
+        </div>
+        {% endif %}
+
+        {# Document metadata (last updated, etc) #}
+        {% include 'partials/docs-meta.html' %}
+      </header>
+
+      {# Main content #}
+      <div class="docs-content reference-content cli-content">
+        {{ content | safe }}
+      </div>
+
+      {# Tags #}
+      {% if page.tags %}
+      <footer class="docs-footer">
+        {{ tag_list(page.tags) }}
+      </footer>
+      {% endif %}
+    </article>
+
+    {# Page navigation (prev/next command) at bottom #}
+    {{ page_navigation(page) }}
+  </div>
+
+  {# Right Sidebar: TOC #}
+  {% if toc_items %}
+  <aside class="docs-toc" role="complementary" aria-label="Table of contents">
+    {{ toc(toc_items=toc_items, toc=toc, page=page) }}
+  </aside>
+  {% endif %}
+</div>
+
+{# Mobile sidebar toggle button #}
+<button
+  class="docs-sidebar-toggle"
+  aria-label="Toggle navigation sidebar"
+  aria-expanded="false"
+  aria-controls="docs-sidebar">
+  <svg viewBox="0 0 24 24">
+    <line x1="3" y1="12" x2="21" y2="12"></line>
+    <line x1="3" y1="6" x2="21" y2="6"></line>
+    <line x1="3" y1="18" x2="21" y2="18"></line>
+  </svg>
+</button>
+
+{# Sidebar overlay for mobile #}
+<div class="docs-sidebar-overlay" aria-hidden="true"></div>
+{% endblock %}
+
+{# Sidebar toggle functionality is handled by interactive.js #}

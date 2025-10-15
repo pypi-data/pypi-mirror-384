@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{#
+Blog Post Single Page Template
+
+Used for individual blog post pages. Optimized for reading with
+author information, sharing options, and related posts.
+
+Usage: Set `type: blog` in frontmatter or use cascade from section
+
+Context variables:
+- page: Blog post page object
+- content: Rendered post content
+- toc: Table of contents
+#}
+
+{% from 'partials/navigation-components.html' import breadcrumbs, page_navigation %}
+{% from 'partials/content-components.html' import tag_list %}
+
+{% block content %}
+{{ breadcrumbs(page) }}
+
+<div class="blog-post-layout {% if toc %}blog-with-toc{% endif %}">
+    <article
+        class="blog-post prose {% if page.metadata.get('css_class') %}{{ page.metadata.get('css_class') }}{% endif %}">
+        <header class="blog-post-header">
+            {# Featured Image #}
+            {% if page.metadata.get('image') or page.metadata.get('cover') %}
+            <div class="blog-post-image">
+                <img src="{{ page.metadata.get('image') | default(page.metadata.get('cover')) }}"
+                    alt="{{ page.title }}">
+            </div>
+            {% endif %}
+
+            <h1>{{ page.title }}</h1>
+
+            {% if page.metadata.get('description', '') %}
+            <p class="lead">{{ page.metadata.get('description', '') }}</p>
+            {% endif %}
+
+            {# Post Metadata #}
+            <div class="blog-post-meta">
+                {# Author Info #}
+                {% if page.metadata.get('author') %}
+                <div class="blog-post-author">
+                    {% if page.metadata.get('author_avatar') %}
+                    <img src="{{ page.metadata.get('author_avatar') }}" alt="{{ page.metadata.get('author') }}"
+                        class="author-avatar">
+                    {% endif %}
+                    <div class="author-info">
+                        <strong>{{ page.metadata.get('author') }}</strong>
+                        {% if page.metadata.get('author_title') %}
+                        <span class="author-title">{{ page.metadata.get('author_title') }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="blog-post-details">
+                    {# Publication Date #}
+                    {% if page.date %}
+                    <time datetime="{{ page.date | date_iso }}"
+                        title="{{ page.date | dateformat('%B %d, %Y at %I:%M %p') }}">
+                        {{ page.date | dateformat('%B %d, %Y') }}
+                    </time>
+                    {% endif %}
+
+                    {# Reading Time #}
+                    {% if page.content %}
+                    <span class="reading-time">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        {{ (page.content | wordcount / 200) | round }} min read
+                    </span>
+                    {% endif %}
+
+                    {# View Count (if tracked) #}
+                    {% if page.metadata.get('views') %}
+                    <span class="view-count">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        {{ page.metadata.get('views') | default(0) }} views
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# Tags #}
+            {% if page.tags %}
+            <div class="blog-post-tags">
+                {{ tag_list(page.tags) }}
+            </div>
+            {% endif %}
+        </header>
+
+        {# Main Post Content #}
+        <div class="blog-post-content">
+            {{ content | safe }}
+        </div>
+
+        {# Post Footer #}
+        <footer class="blog-post-footer">
+            {# Updated Date #}
+            {% if page.metadata.get('updated') and page.metadata.get('updated') != page.date %}
+            <p class="blog-updated">
+                <em>Last updated: {{ page.metadata.get('updated') | dateformat('%B %d, %Y') }}</em>
+            </p>
+            {% endif %}
+
+            {# Author Bio #}
+            {% if page.metadata.get('author') and page.metadata.get('author_bio') %}
+            <div class="author-bio">
+                <div class="author-bio-header">
+                    {% if page.metadata.get('author_avatar') %}
+                    <img src="{{ page.metadata.get('author_avatar') }}" alt="{{ page.metadata.get('author') }}"
+                        class="author-avatar-large">
+                    {% endif %}
+                    <div>
+                        <h3>About {{ page.metadata.get('author') }}</h3>
+                        {% if page.metadata.get('author_title') %}
+                        <p class="author-title">{{ page.metadata.get('author_title') }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <p class="author-bio-text">{{ page.metadata.get('author_bio') }}</p>
+                {% if page.metadata.get('author_links') %}
+                <div class="author-links">
+                    {% for link in page.metadata.get('author_links') %}
+                    <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.text }}</a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {# Social Sharing #}
+            <div class="blog-social-share">
+                <h4>Share this post</h4>
+                <div class="share-buttons">
+                    <a href="https://twitter.com/intent/tweet?url={{ page.url | urlencode }}&text={{ page.title | urlencode }}"
+                        target="_blank" rel="noopener noreferrer" class="share-button share-twitter"
+                        aria-label="Share on Twitter">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path
+                                d="M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z">
+                            </path>
+                        </svg>
+                        Twitter
+                    </a>
+                    <a href="https://www.linkedin.com/sharing/share-offsite/?url={{ page.url | urlencode }}"
+                        target="_blank" rel="noopener noreferrer" class="share-button share-linkedin"
+                        aria-label="Share on LinkedIn">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path
+                                d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z">
+                            </path>
+                            <circle cx="4" cy="4" r="2"></circle>
+                        </svg>
+                        LinkedIn
+                    </a>
+                    <a href="https://www.facebook.com/sharer/sharer.php?u={{ page.url | urlencode }}" target="_blank"
+                        rel="noopener noreferrer" class="share-button share-facebook" aria-label="Share on Facebook">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"></path>
+                        </svg>
+                        Facebook
+                    </a>
+                    <button class="share-button share-copy"
+                        onclick="navigator.clipboard.writeText('{{ page.url }}'); this.innerHTML = '✓ Copied!'"
+                        aria-label="Copy link">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"></path>
+                        </svg>
+                        Copy Link
+                    </button>
+                </div>
+            </div>
+        </footer>
+    </article>
+
+    {# Right Sidebar: TOC #}
+    {% if toc %}
+    <aside class="blog-sidebar">
+        <nav class="toc" aria-label="Table of contents">
+            <h2 class="toc-title">In This Post</h2>
+            <div class="toc-content">
+                {{ toc | safe }}
+            </div>
+        </nav>
+
+        {# Newsletter CTA (Optional) #}
+        {% if page.metadata.get('show_newsletter') %}
+        <div class="newsletter-cta">
+            <h3>Stay Updated</h3>
+            <p>Get notified when we publish new content.</p>
+            <form class="newsletter-form" data-newsletter-target>
+                <input type="email" placeholder="Your email" required>
+                <button type="submit">Subscribe</button>
+            </form>
+        </div>
+        {% endif %}
+    </aside>
+    {% endif %}
+</div>
+
+{# Page Navigation (Prev/Next Posts) #}
+{{ page_navigation(page) }}
+
+{# Related Posts #}
+{% set related = page.related_posts[:3] %}
+{% if related %}
+<aside class="related-posts">
+    <div class="container">
+        <h2>Related Posts</h2>
+        <div class="blog-featured-grid">
+            {% for post in related %}
+            <article class="blog-post-card">
+                {% if post.metadata.get('image') or post.metadata.get('cover') %}
+                <div class="blog-card-image">
+                    <a href="{{ url_for(post) }}">
+                        <img src="{{ post.metadata.get('image') | default(post.metadata.get('cover')) }}" alt="{{ post.title }}">
+                    </a>
+                </div>
+                {% endif %}
+                <div class="blog-card-content">
+                    <h3 class="blog-card-title">
+                        <a href="{{ url_for(post) }}">{{ post.title }}</a>
+                    </h3>
+                    {% if post.metadata.get('description') or post.excerpt %}
+                    <p class="blog-card-excerpt">{{ post.metadata.get('description') | default(post.excerpt) | truncate(120) }}
+                    </p>
+                    {% endif %}
+                    {% if post.date %}
+                    <time datetime="{{ post.date | date_iso }}">{{ post.date | time_ago }}</time>
+                    {% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+    </div>
+</aside>
+{% endif %}
+
+{# Comments Section (Integration Point) #}
+{% if page.metadata.get('comments') != false %}
+<div class="comments-section">
+    <div class="container">
+        <h2>Comments</h2>
+        {# Integration point for comments systems (Disqus, utterances, etc) #}
+        <div id="comments" data-comments-target></div>
+        <p class="comments-placeholder">
+            <em>Comments are loaded dynamically. Configure your comments system in the theme.</em>
+        </p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
