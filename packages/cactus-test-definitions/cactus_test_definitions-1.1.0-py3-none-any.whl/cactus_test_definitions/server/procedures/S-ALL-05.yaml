@@ -1,0 +1,111 @@
+Description: Authorisation
+Category: Registration
+Classes:
+ - A
+
+TargetVersions:
+ - v1.2
+
+Preconditions:
+  required_clients:
+    - id: CLIENT-A
+      client_type: device
+    - id: CLIENT-B
+      client_type: device
+  
+Steps:
+  - id: (A) PRECONDITION
+    repeat_until_pass: true
+    client: CLIENT-A
+    instructions:
+      - Create an EndDevice registration for CLIENT-A (or rerun S-ALL-02 / S-ALL-03).
+    action: 
+      type: discovery
+      parameters:
+        resources:
+          - EndDevice
+          - DERControlList
+          - DER
+    checks:
+      - type: end-device 
+        parameters:
+          matches_client: true 
+
+  - id: (B) PRECONDITION
+    repeat_until_pass: true
+    client: CLIENT-B
+    instructions:
+      - Create an EndDevice registration for CLIENT-B (or rerun S-ALL-02 / S-ALL-03).
+    action: 
+      type: discovery
+      parameters:
+        resources:
+          - EndDevice
+          - DERControlList
+          - DER
+    checks:
+      - type: end-device 
+        parameters:
+          matches_client: true 
+
+  - id: (A-B) AUTH EndDeviceList
+    client: CLIENT-A
+    use_client_context: CLIENT-B 
+    action: 
+      type: refresh-resource
+      parameters:
+        resource: EndDeviceList
+        expect_rejection: true
+
+  - id: (A-B) AUTH DerControlList
+    client: CLIENT-A
+    use_client_context: CLIENT-B 
+    action: 
+      type: refresh-resource
+      parameters:
+        resource: DERControlList
+        expect_rejection: true
+
+  - id: (A-B) AUTH DERStatus
+    client: CLIENT-A
+    use_client_context: CLIENT-B 
+    action: 
+      type: upsert-der-status
+      parameters:
+        genConnectStatus: 1
+        expect_rejection: true
+
+  - id: (A-B) AUTH MirrorUsagePoint
+    client: CLIENT-A
+    use_client_context: CLIENT-B 
+    action: 
+      type: upsert-mup
+      parameters:
+        expect_rejection: true
+        mup_id: mupa
+        location: Device
+        reading_types: 
+          - ActivePowerAverage
+          - VoltageSinglePhaseAverage
+
+  - id: (A) OK EndDeviceList
+    client: CLIENT-A
+    action: 
+      type: refresh-resource
+      parameters:
+        resource: EndDeviceList
+    checks:
+      - type: end-device 
+        parameters:
+          matches_client: true 
+
+  - id: (A) DISALLOW ACCESS
+    repeat_until_pass: true
+    instructions:
+      - Remove EndDevice entry for ClientA (or disallow access).
+    client: CLIENT-A
+    action: 
+      type: refresh-resource
+      parameters:
+        resource: EndDeviceList
+        expect_rejection_or_empty: true

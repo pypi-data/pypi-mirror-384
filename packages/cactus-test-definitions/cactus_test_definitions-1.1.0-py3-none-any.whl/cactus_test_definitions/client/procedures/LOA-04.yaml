@@ -1,0 +1,161 @@
+Description: Default Control – Load Limit
+Category: Control
+Classes:
+  - G
+
+TargetVersions:
+  - v1.2
+  - v1.3-beta/storage
+
+Criteria:
+  checks:
+    - type: all-steps-complete
+      parameters: {}
+
+
+Preconditions:
+  init_actions:
+    - type: set-comms-rate
+      parameters:
+        dcap_poll_seconds: 60
+        edev_list_poll_seconds: 60
+        fsa_list_poll_seconds: 60
+        der_list_poll_seconds: 60
+        derp_list_poll_seconds: 60
+        mup_post_seconds: 60
+  checks:
+    - type: end-device-contents
+      parameters: {}
+    - type: der-settings-contents
+      parameters: {}
+  actions:
+    - type: create-der-control
+      parameters:
+        start: $(now)
+        duration_seconds: 900
+        opModLoadLimW: $(setMaxW * 2)
+  instructions:
+    - DER shall be importing at least 50% of its active power rating.
+    
+Steps:
+
+  # (a, b)
+  GET-DEFAULT-DERC:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/dderc
+    actions:
+      - type: set-default-der-control
+        parameters:
+          opModLoadLimW: $(setMaxW * 0.3)
+      - type: enable-steps
+        parameters:
+          steps:
+            - GET-DERC-1
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DEFAULT-DERC
+
+  # (b, c, d) This will be the first poll after client has received the defaults
+  # the client will see the existing control but it will be cancelled immediately after
+  GET-DERC-1:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+        serve_request_first: true # Run this AFTER server receives the request
+    actions:
+      - type: cancel-active-der-controls
+        parameters: {}
+      - type: enable-steps
+        parameters:
+          steps:
+            - GET-DERC-2
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-1
+
+  # (d, e) On this poll, client will discover control was cancelled and a new control will be added at 200% of setMaxW
+  GET-DERC-2:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+        serve_request_first: true # Run this AFTER server receives the request
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now)
+          duration_seconds: 600
+          opModLoadLimW: $(setMaxW * 2)
+      - type: enable-steps
+        parameters:
+          steps:
+            - WAIT-CONTROL-END
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-2
+      
+  # (f, g) Waits for the new control to finish (with a bit of overtime)
+  WAIT-CONTROL-END:
+    event:
+      type: wait
+      parameters:
+        duration_seconds: 660
+    actions:
+      - type: enable-steps
+        parameters:
+          steps:
+            - GET-DERC-3
+      - type: remove-steps
+        parameters:
+          steps:
+            - WAIT-CONTROL-END
+    instructions:
+    - DER should ramp down import to 30% at the rate of setGradW (default 0.27%/s)
+    - DER should then discover a new control and then ramp up to unconstrained at the rate of setGradW (default 0.27%/s)
+    - Upon control completion, DER should then ramp down to 30% at the rate of setGradW (default 0.27%/s)
+  
+  # (h) On this poll, client will discover control the DefaultDERControl is cancelled and a new 0W control is in place
+  GET-DERC-3:
+    event:
+      type: GET-request-received
+      parameters:
+        endpoint: /edev/1/derp/1/derc
+    actions:
+      - type: create-der-control
+        parameters:
+          start: $(now)
+          duration_seconds: 600
+          opModLoadLimW: 0
+      - type: set-default-der-control
+        parameters:
+          cancelled: true
+      - type: enable-steps
+        parameters:
+          steps:
+            - WAIT-TEST-END
+      - type: remove-steps
+        parameters:
+          steps:
+            - GET-DERC-3
+
+
+  WAIT-TEST-END:
+    event:
+      type: wait
+      parameters:
+        duration_seconds: 120
+    actions:
+      - type: remove-steps
+        parameters:
+          steps:
+            - WAIT-TEST-END
+      - type: finish-test
+        parameters: {}
+    instructions:
+    - DER shall ramp down import to 0W at the rate of setGradW (default 0.27%/s)
