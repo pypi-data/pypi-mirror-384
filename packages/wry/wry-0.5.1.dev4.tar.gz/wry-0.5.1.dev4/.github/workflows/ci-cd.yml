@@ -1,0 +1,218 @@
+name: CI/CD
+
+on:
+  push:  # Run on all pushes
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC/trusted publishing
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for setuptools-scm
+        # Don't fetch tags on main branch builds to avoid version conflicts
+        fetch-tags: ${{ !startsWith(github.ref, 'refs/heads/main') }}
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run pre-commit checks
+      run: |
+        pre-commit run --all-files --show-diff-on-failure
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
+        flags: unittests
+        name: codecov-${{ matrix.python-version }}
+        fail_ci_if_error: false
+
+  build:
+    name: Build distribution 📦
+    needs: [test]
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for setuptools-scm
+        # Don't fetch tags on main branch builds to avoid version conflicts
+        fetch-tags: ${{ !startsWith(github.ref, 'refs/heads/main') }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install build setuptools-scm
+
+    - name: Build a binary wheel and a source tarball
+      run: python -m build
+
+    - name: Check build artifacts
+      run: |
+        python3 -m pip install twine
+        twine check dist/*
+
+    - name: Store distribution packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+
+  publish-to-testpypi:
+    name: Publish to TestPyPI
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/wry
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+    steps:
+    - name: Download dists
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        skip-existing: true
+
+  publish-to-pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'push' && !contains(github.ref, 'pull')
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/wry
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+    steps:
+    - name: Download dists
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        skip-existing: true
+
+
+  github-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [publish-to-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # For creating releases
+      id-token: write  # For sigstore signing
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          CHANGELOG.md
+          scripts/extract_release_notes.py
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+
+    - name: Sign with Sigstore
+      uses: sigstore/gh-action-sigstore-python@v3.0.0
+      with:
+        inputs: >-
+          ./dist/*.tar.gz
+          ./dist/*.whl
+
+    - name: Get previous tag
+      id: previous_tag
+      run: |
+        # Get the previous tag (excluding the current one)
+        PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v '${{ github.ref_name }}' | head -n 1)
+        echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+        echo "Previous tag: $PREVIOUS_TAG"
+
+    - name: Extract release notes from CHANGELOG
+      id: release_notes
+      run: |
+        # Make script executable
+        chmod +x scripts/extract_release_notes.py
+
+        # Extract release notes and save to file
+        python scripts/extract_release_notes.py '${{ github.ref_name }}' > release_notes.md
+
+        # Add comparison link if we have a previous tag
+        if [ -n "${{ steps.previous_tag.outputs.previous_tag }}" ]; then
+          echo "" >> release_notes.md
+          echo "---" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.previous_tag.outputs.previous_tag }}...${{ github.ref_name }}" >> release_notes.md
+        fi
+
+        # Read the content for the release body
+        echo 'RELEASE_NOTES<<EOF' >> $GITHUB_ENV
+        cat release_notes.md >> $GITHUB_ENV
+        echo 'EOF' >> $GITHUB_ENV
+
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        gh release create '${{ github.ref_name }}' \
+          --repo '${{ github.repository }}' \
+          --title '${{ github.ref_name }}' \
+          --notes "$RELEASE_NOTES"
+
+    - name: Upload release artifacts
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        gh release upload '${{ github.ref_name }}' dist/** \
+          --repo '${{ github.repository }}'
