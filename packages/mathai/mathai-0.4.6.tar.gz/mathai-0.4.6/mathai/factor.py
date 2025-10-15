@@ -1,0 +1,221 @@
+import itertools
+from .parser import parse
+from .structure import transform_formula
+from .base import *
+from .simplify import simplify,solve
+from .expand import expand
+import math
+
+from collections import Counter
+def multiset_intersection(*lists):
+    counters = list(map(Counter, lists))
+    common = counters[0]
+    for c in counters[1:]:
+        common = common & c
+    return list(common.elements())
+def subtract_sublist(full_list, sublist):
+    c_full = Counter(full_list)
+    c_sub = Counter(sublist)
+    result = c_full - c_sub
+    tmp = list(result.elements())
+    if tmp == []:
+        return [tree_form("d_1")]
+    return tmp
+def term_common2(eq):
+    if eq.name != "f_add":
+        return eq
+    s = []
+    arr = [factor_generation(child) for child in eq.children]
+    s = multiset_intersection(*arr)
+    return product(s)*summation([product(subtract_sublist(factor_generation(child), s)) for child in eq.children])
+def term_common(eq):
+    if eq.name == "f_add":
+        return solve(term_common2(eq))
+    return solve(product([term_common2(item) for item in factor_generation(eq)]))
+def take_common(eq):
+    if eq.name == "f_add":
+        eq = term_common(eq)
+        if eq.name == "f_add":
+            for i in range(len(eq.children)-1,1,-1):
+                for item in itertools.combinations(range(len(eq.children)), i):
+                    eq2 = summation([item2 for index, item2 in enumerate(eq.children) if index in item])
+                    eq2 = term_common(eq2)
+                    if eq2.name == "f_mul":
+                        return take_common(solve(summation([item2 for index, item2 in enumerate(eq.children) if index not in item]) + eq2))
+        return eq
+    return term_common(eq)
+def take_common2(eq):
+    eq = take_common(eq)
+    return TreeNode(eq.name, [take_common2(child) for child in eq.children])
+
+def _factorconst(eq):
+    def hcf_list(numbers):
+        if not numbers:
+            return None  # empty list
+        hcf = numbers[0]
+        for num in numbers[1:]:
+            hcf = math.gcd(hcf, num)
+        return hcf
+    def extractnum(eq):
+        lst = factor_generation(eq)
+        for item in lst:
+            if item.name[:2] == "d_":
+                return int(item.name[2:])
+        return 1
+    n = 1
+    if eq.name == "f_add":
+        n = hcf_list([extractnum(child) for child in eq.children])
+        eq = TreeNode(eq.name, [child/tree_form("d_"+str(n)) for child in eq.children])
+    if n != 1:
+        return tree_form("d_"+str(n))*eq
+    return TreeNode(eq.name, [factorconst(child) for child in eq.children])
+
+def _merge_sqrt(eq):
+    lst= []
+    eq2 = []
+    for child in factor_generation(eq):
+        if frac(child) is not None and frac(child).denominator==1:
+            if frac(child)>0:
+                eq2.append(child**2)
+            elif frac(child)!=-1:
+                eq2.append((-child)**2)
+                lst.append(tree_form("d_-1"))
+            else:
+                lst.append(tree_form("d_-1"))
+        elif child.name == "f_pow" and frac(child.children[1]) == Fraction(1,2):
+            eq2.append(child.children[0])
+        else:
+            lst.append(child)
+            
+    if len(eq2)>1:
+        if lst == []:
+            lst= [tree_form("d_1")]
+        return simplify(product(eq2)**(tree_form("d_2")**-1)*product(lst))
+    return TreeNode(eq.name, [_merge_sqrt(child) for child in eq.children])
+def sqrt_to_a_sqrt_b(n):
+    if n == 0:
+        return 0, 0
+    sign = 1
+    if n < 0:
+        sign = -1
+        m = -n
+    else:
+        m = n
+
+    a = 1
+    b = 1
+    p = 2
+    while p * p <= m:
+        exp = 0
+        while m % p == 0:
+            m //= p
+            exp += 1
+        if exp:
+            a *= p ** (exp // 2)
+            if exp % 2 == 1:
+                b *= p
+        p += 1 if p == 2 else 2
+
+    if m > 1:
+        b *= m
+
+    return sign * a, b
+def merge_sqrt(eq):
+    def helper(eq):
+        if eq.name == "f_pow" and frac(eq.children[1]) == Fraction(1,2):
+            if eq.children[0].name[:2] == "d_":
+                n = int(eq.children[0].name[2:])
+                a, b =sqrt_to_a_sqrt_b(n)
+                return tree_form("d_"+str(b))**(tree_form("d_2")**-1)*tree_form("d_"+str(a))
+        return TreeNode(eq.name, [helper(child) for child in eq.children])
+    return helper(_merge_sqrt(eq))
+def rationalize_sqrt(eq):
+    if eq.name== "f_pow" and frac(eq.children[1]) == Fraction(-1,2):
+        eq = eq.children[0]**(tree_form("d_2")**-1)/eq.children[0]
+    def term(eq):
+        if eq.name == "f_add":
+            output = []
+            for child in eq.children:
+                if any(child2.name == "f_pow" and frac(child2.children[1]) == Fraction(1,2) for child2 in factor_generation(child)):
+                    output.append(simplify(-child))
+                else:
+                    output.append(child)
+            return summation(output)
+        return None
+    n, d=num_dem(eq)
+    n,d=simplify(n), simplify(d)
+   
+    if d != 1:
+        t = term(d)
+        if t is not None and t!=1:
+            
+            n,d=simplify(expand(simplify(n*t))),simplify(expand(simplify(d*t)))
+            tmp= simplify(n/d)
+            
+            tmp = _merge_sqrt(tmp)
+            
+            return tmp
+    return TreeNode(eq.name, [rationalize_sqrt(child) for child in eq.children])
+def factorconst(eq):
+    return simplify(_factorconst(eq))
+def factor_quad_formula_init():
+    var = ""
+    formula_list = [(f"(A*D^2+B*D+C)", f"A*(D-(-B+(B^2-4*A*C)^(1/2))/(2*A))*(D-(-B-(B^2-4*A*C)^(1/2))/(2*A))")]
+    formula_list = [[simplify(parse(y)) for y in x] for x in formula_list]
+    expr = [[parse("A"), parse("1")], [parse("B"), parse("0"), parse("1")], [parse("C"), parse("0")]]
+    return [formula_list, var, expr]
+
+def factor_quar_formula_init():
+    var = ""
+    formula_list = [(f"(A^4+B*A^2+C)", f"(A^2 + sqrt(2*sqrt(C) - B)*A + sqrt(C))*(A^2 - sqrt(2*sqrt(C) - B)*A + sqrt(C))")]
+    formula_list = [[simplify(parse(y)) for y in x] for x in formula_list]
+    expr = [[parse("A")], [parse("B"), parse("0"), parse("1")], [parse("C"), parse("0")]]
+    return [formula_list, var, expr]
+def factor_cube_formula_init():
+    var = ""
+    formula_list = [(f"D^3+E", f"(D+E^(1/3))*(D^2-D*E^(1/3)+E^(2/3))"), (f"D^3-E", f"(D-E^(1/3))*(D^2+D*E^(1/3)+E^(2/3))"),\
+                    (f"-D^3+E", f"(-D+E^(1/3))*(D^2+D*E^(1/3)+E^(2/3))")]
+    formula_list = [[simplify(parse(y)) for y in x] for x in formula_list]
+    expr = [[parse("A")], [parse("B")]]
+    return [formula_list, var, expr]
+formula_gen2 = factor_quad_formula_init()
+formula_gen3 = factor_cube_formula_init()
+formula_gen9 = factor_quar_formula_init()
+def factor_helper(equation, complexnum, power=2):
+    global formula_gen2, formula_gen3, formula_gen9
+    maxnum = 1
+    def high(eq):
+        nonlocal maxnum
+        if eq.name == "f_pow" and eq.children[1].name[:2] == "d_":
+            n = int(eq.children[1].name[2:])
+            if n>power and n % power == 0:
+                 maxnum = max(maxnum, n)
+        for child in eq.children:
+            high(child)
+    def helper(eq):
+        nonlocal maxnum
+        if eq.name == "f_pow" and eq.children[1].name[:2] == "d_":
+            n = int(eq.children[1].name[2:])
+            sgn = round(abs(n)/n)
+            n = abs(n)
+            if n>power and n % power == 0 and maxnum==n:
+                out= (eq.children[0]**tree_form("d_"+str(sgn*int(n/power))))**power
+                return out
+        return TreeNode(eq.name, [helper(child) for child in eq.children])
+    high(equation)
+    out = None
+    if power == 2:
+        out = transform_formula(helper(equation), "v_0", formula_gen2[0], formula_gen2[1], formula_gen2[2])
+    elif power == 3:
+        out = transform_formula(helper(equation), "v_0", formula_gen3[0], formula_gen3[1], formula_gen3[2])
+    elif power == 4:
+        out = transform_formula(helper(equation), "v_0", formula_gen9[0], formula_gen9[1], formula_gen9[2])
+    if out is not None:
+        out = simplify(solve(out))
+    if out is not None and (complexnum or (not complexnum and not contain(out, tree_form("s_i")))):
+        return out
+    return TreeNode(equation.name, [factor_helper(child, complexnum, power) for child in equation.children])
+def factor(equation, complexnum=False):
+    return solve(take_common2(simplify(factor_helper(simplify(equation), complexnum, 2))))
+def factor2(equation, complexnum=False):
+    return solve(factor_helper(solve(factor_helper(simplify(factor_helper(simplify(equation), complexnum, 2)), complexnum, 3)), complexnum, 4))
