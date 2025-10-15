@@ -1,0 +1,129 @@
+type account = {
+  customer : string;
+  name : string;
+  currency : int;
+  account_type : int;
+  account_number : string;
+  balance : real;
+}
+
+type transaction = {
+  from_account : string;
+  to_account : string;
+  amount : real;
+  transaction_type : string;
+}
+
+type ledger = unit
+
+type bank = {
+  ledger : ledger;
+  accounts : account list;
+}
+
+let init_ledger () : ledger = ()
+
+let init_bank () : bank = {
+  ledger = init_ledger ();
+  accounts = [];
+}
+
+let get_transactions (bank : bank) : transaction list =
+  []
+
+let create_account (customer : string) (name : string) (currency : int) (account_type : int) (account_number : string) (starting_balance : real) : account =
+  {
+    customer = customer;
+    name = name;
+    currency = currency;
+    account_type = account_type;
+    account_number = account_number;
+    balance = starting_balance;
+  }
+
+let add_account (acc : account) (accounts : account list) : account list =
+  List.append accounts [acc]
+
+let rec get_account_by_id (acc_number : string) (accounts : account list) : account option =
+  match accounts with
+  | [] -> None
+  | acc :: rest ->
+    if acc.account_number = acc_number then
+      Some acc
+    else
+      get_account_by_id acc_number rest
+
+let rec update_account_in_list (target_number : string) (new_acc : account) (accounts : account list) : account list =
+  match accounts with
+  | [] -> []
+  | acc :: rest ->
+    if acc.account_number = target_number then
+      new_acc :: rest
+    else
+      acc :: (update_account_in_list target_number new_acc rest)
+
+let apply_transaction_to_account (acc : account) (t : transaction) : account =
+  if acc.account_number = t.from_account then
+    { acc with balance = acc.balance -. t.amount }
+  else if acc.account_number = t.to_account then
+    { acc with balance = acc.balance +. t.amount }
+  else
+    acc
+
+let add_transaction (t : transaction) (accounts : account list) : account list =
+  let from_acc_opt = get_account_by_id t.from_account accounts in
+  let to_acc_opt = get_account_by_id t.to_account accounts in
+  
+  let updated_accounts = 
+    match from_acc_opt with
+    | None -> accounts
+    | Some from_acc ->
+      let updated_from_acc = apply_transaction_to_account from_acc t in
+      update_account_in_list t.from_account updated_from_acc accounts
+  in
+  
+  match to_acc_opt with
+  | None -> updated_accounts
+  | Some to_acc ->
+    let updated_to_acc = apply_transaction_to_account to_acc t in
+    update_account_in_list t.to_account updated_to_acc updated_accounts
+
+let create_debit_transaction (from_acc : string) (to_acc : string) (amount : real) : transaction =
+  {
+    from_account = from_acc;
+    to_account = to_acc;
+    amount = amount;
+    transaction_type = "debit";
+  }
+
+let create_credit_transaction (from_acc : string) (to_acc : string) (amount : real) : transaction =
+  {
+    from_account = from_acc;
+    to_account = to_acc;
+    amount = amount;
+    transaction_type = "credit";
+  }
+
+let main () : bank =
+  let bank = init_bank () in
+  let accounts = [] in
+  
+  let acc1 = create_account "John Doe" "Savings Account" 1 1 "123456789" 1000.0 in
+  let accounts = add_account acc1 accounts in
+  
+  let acc2 = create_account "John Doe" "Savings Account" 1 1 "123456789" 1000.0 in
+  let accounts = add_account acc2 accounts in
+  
+  let acc3 = create_account "Jane Doe" "Checking Account" 1 1 "987654321" 1500.0 in
+  let accounts = add_account acc3 accounts in
+  
+  let acc4 = create_account "John Doe" "Savings Account" 1 1 "123456789" 1000.0 in
+  let accounts = add_account acc4 accounts in
+  
+  let debit_tx = create_debit_transaction "123456789" "987654321" 100.0 in
+  let accounts = add_transaction debit_tx accounts in
+  
+  let credit_tx = create_credit_transaction "987654321" "123456789" 50.0 in
+  let accounts = add_transaction credit_tx accounts in
+  
+  { bank with accounts = accounts }
