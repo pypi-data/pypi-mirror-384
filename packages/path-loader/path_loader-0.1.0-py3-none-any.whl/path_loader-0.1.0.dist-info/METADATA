@@ -1,0 +1,252 @@
+Metadata-Version: 2.4
+Name: path-loader
+Version: 0.1.0
+Summary: 自動從配置檔載入 Python 路徑到 sys.path
+Author: Pyan-X
+License: MIT
+Project-URL: Homepage, https://github.com/Pyan-X/path-loader
+Project-URL: Repository, https://github.com/Pyan-X/path-loader
+Keywords: path,sys.path,pythonpath,auto-load
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# Path Loader
+
+[![Python versions](https://img.shields.io/pypi/pyversions/path-loader.svg)](https://pypi.org/project/path-loader/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+自動從配置檔載入 Python 路徑到 `sys.path` 的輕量級工具。
+
+## 特色
+
+- 🚀 **零配置使用** - 安裝後自動生效
+- 📁 **智慧搜尋** - 自動向上搜尋專案根目錄的 `.pypath` 檔案
+- 🎯 **簡單直覺** - 一個配置檔,一行一個路徑
+- 🔧 **靈活控制** - 可選 `append` 或 `insert` 模式
+
+## 安裝
+
+```bash
+pip install path-loader
+```
+
+## 快速開始
+
+### 1. 建立配置檔
+
+在專案根目錄建立 `.pypath` 檔案:
+
+```plaintext
+./src
+./lib
+```
+
+### 2. 開始使用
+
+就這樣!當你執行 Python 時,這些路徑會自動載入:
+
+```bash
+python your_script.py
+```
+
+現在你可以直接導入這些路徑下的模組:
+
+```python
+from mymodule import something  # 從 ./src 或 ./lib 導入
+```
+
+## 配置檔格式
+
+`.pypath` 檔案支援:
+
+- 每行一個路徑
+- 相對路徑(相對於 `.pypath` 檔案所在目錄)
+- 絕對路徑
+- `#` 開頭的註解
+- 空白行會被忽略
+
+**範例:**
+
+```plaintext
+# 專案原始碼
+./src
+./lib
+
+# 共用模組
+../shared_libs
+
+# 絕對路徑
+/opt/myproject/modules
+```
+
+## 進階使用
+
+### 手動控制載入
+
+```python
+from path_loader import load_paths
+
+# 使用 append(預設,推薦)
+count = load_paths()
+print(f"載入了 {count} 個路徑")
+
+# 使用 insert(0) 獲得高優先級
+load_paths(prepend=True)
+```
+
+## API 說明
+
+### `load_paths(start_dir=None, prepend=False)`
+
+載入配置檔中的路徑到 `sys.path`。
+
+**參數:**
+
+- `start_dir` (str, optional): 搜尋起始目錄,預設為當前工作目錄
+- `prepend` (bool, optional):
+  - `False` (預設): 使用 `sys.path.append()` - 較安全,不會覆蓋標準庫
+  - `True`: 使用 `sys.path.insert(0)` - 高優先級,可能覆蓋標準庫
+
+**回傳:**
+
+- `int`: 成功載入的路徑數量
+
+**範例:**
+
+```python
+# 標準模式(推薦)
+load_paths()
+
+# 高優先級模式
+load_paths(prepend=True)
+```
+
+### `find_pypath_file(start_dir=None)`
+
+搜尋配置檔。
+
+**回傳:**
+
+- `Path` 或 `None`: 找到的配置檔路徑
+
+### `parse_pypath_file(config_path)`
+
+解析配置檔內容。
+
+**回傳:**
+
+- `List[str]`: 解析出的有效路徑列表
+
+## 專案結構範例
+
+```
+myproject/
+├── .pypath              # 配置檔
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   └── utils.py
+├── lib/
+│   └── helpers.py
+└── tests/
+    └── test_main.py
+```
+
+`.pypath` 內容:
+
+```plaintext
+./src
+./lib
+```
+
+現在在 `tests/test_main.py` 中可以直接:
+
+```python
+from utils import something      # 從 src/ 導入
+from helpers import helper_func  # 從 lib/ 導入
+```
+
+## 常見問題
+
+### Q: 支援虛擬環境嗎?
+
+**A:** 完全支援!每個虛擬環境安裝後都會獨立生效。
+
+### Q: 可以禁用自動載入嗎?
+
+**A:** 可以,刪除 site-packages 中的 `path_loader_auto.pth` 檔案:
+
+```bash
+# 找到 site-packages 目錄
+python -c "import site; print(site.getsitepackages()[0])"
+
+# 刪除 .pth 檔案
+rm /path/to/site-packages/path_loader_auto.pth
+```
+
+## append vs insert 說明
+
+### append 模式(預設,推薦)
+
+```python
+load_paths()  # 或 load_paths(prepend=False)
+```
+
+**sys.path 順序:**
+
+```
+[
+    '',                              # 當前目錄
+    '/usr/lib/python3.x',           # 標準庫
+    '/usr/lib/python3.x/site-packages',  # 已安裝套件
+    '/your/custom/path'             # ← 你的路徑(append)
+]
+```
+
+**優點:**
+
+- ✅ 不會覆蓋 Python 標準庫
+- ✅ 不會與已安裝套件衝突
+- ✅ 安全、可預測
+
+### insert 模式(高優先級)
+
+```python
+load_paths(prepend=True)
+```
+
+**sys.path 順序:**
+
+```
+[
+    '/your/custom/path',            # ← 你的路徑(insert)
+    '',                              # 當前目錄
+    '/usr/lib/python3.x',           # 標準庫
+    '/usr/lib/python3.x/site-packages'  # 已安裝套件
+]
+```
+
+**使用場景:**
+
+- 需要覆蓋已安裝套件的修改版本
+- 開發中的套件優先於已安裝版本
+- 測試補丁或修改
+
+**注意:** 使用 `prepend=True` 可能會覆蓋標準庫,請謹慎使用!
+
+## 授權
+
+本專案採用 [MIT 授權](LICENSE)。
