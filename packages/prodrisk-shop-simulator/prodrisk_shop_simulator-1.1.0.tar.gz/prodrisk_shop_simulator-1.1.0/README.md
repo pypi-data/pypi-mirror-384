@@ -1,0 +1,36 @@
+# Prodrisk-SHOP simulator
+The Prodrisk-SHOP simulator is a optimization framework for hydropower systems. It combines the stochastic mid-term model [Prodrisk](https://www.sintef.no/programvare/prodrisk/) and the short-term model [SHOP](https://www.sintef.no/programvare/shop/) to run detailed analysis for long time horizons. The simulator first runs the mid-term model to generate a strategy described with cuts, that are state dependen water value functions. The corresponding SHOP model is then optimized for a limited time horizon, typically 7 days, using the cuts from Prodrisk. The end state from one SHOP optimization is used as initial condition for the following SHOP optimization allowing serial simulation with SHOP for multiple weather scenarios. The simulator has been developed in FME HydroCen.
+
+This work was funded by The Research Council of Norway through project no. 257588.
+
+## Prerequisites
+The simulator uses Prodrisk and SHOP, together with their python APIs [pyprodrisk](https://github.com/sintef-energy/pyprodrisk) and [pyshop](https://github.com/sintef-energy/pyshop).
+
+## Installation
+It is recommended using virtual environment in Python when using the simulator to ensure the required Python packages are not conflicting with existing installations. The simulator comes with a basic example included that should be executed to verify that the installation is successful. Please follow the steps below to get started:
+1. Install Python (3.10 or newer is recommended). This guide suggests using *venv* in Python for creating virtual enviroments, but other tools should work as well.
+2. Clone this repository and open it with VSCode.
+3. Start the *git bash* terminal in VSCode.
+4. Create a virtual environment with the command `python -m venv .venv`. This will create a folder inside the project called *.venv* which is the name of the virtual environment.
+5. Activate the virtual environment. This will happen automatically if you restart the terminal, or you can do it with the command `source ./.venv/Scripts/activate`.
+6. Make sure pip is updated: `pip install --upgrade pip`.
+7. Install the simulator with `pip install -e .`. This will install the Prodrisk-SHOP simulator and all necessary dependencies.
+8. Create a file `system_config.yaml` in `./examples` based on the template `./examples/system_config.yaml.tmp`. Replace the values with the appropriate values for your system. See pyshop and pyprodrisk readme for details.
+9. Open [./examples/basecase/script.py](./examples/basecase/script.py) in VSCode. Make sure the path to the pyprodrisk and pyshop installations are set correct. See [https://github.com/sintef-energy/pyprodrisk](https://github.com/sintef-energy/pyprodrisk) and [https://github.com/sintef-energy/pyshop](https://github.com/sintef-energy/pyshop) for detailed instructions.
+10. Execute the script.
+
+## Results dashboard
+The simulator has an integrated dashboard with various tables and plots. To launch the dashboard, please follow the steps below:
+1. Make sure the virtual environment is activated, if not run the command `source ./.venv/Scripts/activate`
+2. Install Streamlit with `pip install streamlit`
+3. Make sure the path to the file `simulator_config.yaml` is set correctly in `dashboard/functions/functions.py`. The path can also be set directly to the dashboard interface. 
+4. Launch the dashboard with `streamlit run dashboard/System_overview.py`
+
+
+The `resume_week` and `resume_scen` optional arguments in the function `run_serial_simulation()` can be used to resume the simulation from a given scenario and week number. If problems occur for `resume_week=1`, the resume week should be set to one of the last weeks of the previous scenario.
+Note that currently the simulator does not support more than one market (of type day-ahead or spot).
+The dashboard assumes that all models have corresponding Prodrisk modules.
+
+# Publications
+- [Applying the ProdRisk- SHOP simulator for investment decisions](https://hdl.handle.net/11250/2716944)
+- [A Comprehensive Simulator for Hydropower Investment Decisions](https://doi.org/10.1109/PMAPS53380.2022.9810621)
