@@ -1,0 +1,660 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-strict
+
+import asyncio
+import importlib
+import json
+import logging
+import os
+import threading
+from contextlib import AbstractContextManager
+from pathlib import Path
+
+from typing import (
+    Any,
+    Callable,
+    cast,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TYPE_CHECKING,
+    TypeVar,
+)
+from urllib.parse import urlparse
+from weakref import WeakSet
+
+from monarch._rust_bindings.monarch_hyperactor.pytokio import PythonTask, Shared
+from monarch._rust_bindings.monarch_hyperactor.shape import Extent, Region, Shape, Slice
+
+from monarch._rust_bindings.monarch_hyperactor.v1.proc_mesh import (
+    ProcMesh as HyProcMesh,
+)
+from monarch._src.actor.actor_mesh import _Actor, Actor, ActorMesh, context
+from monarch._src.actor.allocator import AllocHandle
+from monarch._src.actor.code_sync import (
+    CodeSyncMeshClient,
+    CodeSyncMethod,
+    RemoteWorkspace,
+    WorkspaceConfig,
+    WorkspaceLocation,
+    WorkspaceShape,
+)
+
+from monarch._src.actor.endpoint import endpoint
+from monarch._src.actor.future import Future
+from monarch._src.actor.logging import LoggingManager
+from monarch._src.actor.shape import MeshTrait
+from monarch.tools.config.environment import CondaEnvironment
+from monarch.tools.config.workspace import Workspace
+from monarch.tools.utils import conda as conda_utils
+
+
+if TYPE_CHECKING:
+    Tensor = Any
+    DeviceMesh = Any
+    from monarch._src.actor.proc_mesh import SetupActor  # noqa
+    from monarch._src.actor.v1.host_mesh import HostMesh
+
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+
+T = TypeVar("T")
+TActor = TypeVar("TActor", bound=Actor)
+
+
+_proc_mesh_registry: WeakSet["ProcMesh"] = WeakSet()
+
+
+def get_active_proc_meshes() -> List["ProcMesh"]:
+    """Get a list of all active ProcMesh instances."""
+    return list(_proc_mesh_registry)
+
+
+class ProcMesh(MeshTrait):
+    """
+    A distributed mesh of processes for actor computation.
+
+    ProcMesh represents a collection of processes that can spawn and manage actors.
+    It provides the foundation for distributed actor systems by managing process
+    allocation, lifecycle, and communication across multiple hosts and devices.
+
+    The ProcMesh supports spawning actors, monitoring process health, logging
+    configuration, and code synchronization across distributed processes.
+    """
+
+    def __init__(
+        self,
+        hy_proc_mesh: "Shared[HyProcMesh]",
+        host_mesh: "HostMesh",
+        region: Region,
+        root_region: Region,
+        _initialized_hy_proc_mesh: Optional[HyProcMesh],
+        _device_mesh: Optional["DeviceMesh"] = None,
+    ) -> None:
+        _proc_mesh_registry.add(self)
+
+        self._initialized_proc_mesh = _initialized_hy_proc_mesh
+        if not self._initialized_proc_mesh:
+
+            async def task(hy_proc_mesh_task: Shared[HyProcMesh]) -> HyProcMesh:
+                self._initialized_proc_mesh = await hy_proc_mesh_task
+                return self._initialized_proc_mesh
+
+            hy_proc_mesh = PythonTask.from_coroutine(task(hy_proc_mesh)).spawn()
+
+        self._proc_mesh = hy_proc_mesh
+        self._host_mesh = host_mesh
+        self._region = region
+        self._root_region = root_region
+        self._maybe_device_mesh = _device_mesh
+        self._logging_manager = LoggingManager()
+        self._controller_controller: Optional["_ControllerController"] = None
+        self._code_sync_client: Optional[CodeSyncMeshClient] = None
+
+    @property
+    def initialized(self) -> Future[Literal[True]]:
+        """
+        Future completes with 'True' when the ProcMesh has initialized.
+        Because ProcMesh are remote objects, there is no guarentee that the ProcMesh is
+        still usable after this completes, only that at some point in the past it was usable.
+        """
+        pm: Shared[HyProcMesh] = self._proc_mesh
+
+        async def task() -> Literal[True]:
+            await pm
+            return True
+
+        return Future(coro=task())
+
+    @property
+    def host_mesh(self) -> "HostMesh":
+        if self.extent.nelements != 1:
+            raise NotImplementedError(
+                "`ProcMesh.host_mesh` is not yet supported for non-singleton proc meshes."
+            )
+        elif self._host_mesh.is_fake_in_process:
+            from monarch._src.actor.v1.host_mesh import create_local_host_mesh
+
+            return create_local_host_mesh()
+        else:
+            return self._host(0)
+
+    @property
+    def _ndslice(self) -> Slice:
+        return self._region.slice()
+
+    @property
+    def _labels(self) -> List[str]:
+        return self._region.labels
+
+    def _new_with_shape(self, shape: Shape) -> "ProcMesh":
+        if shape == self._region.as_shape():
+            return self
+
+        device_mesh = (
+            None
+            if self._maybe_device_mesh is None
+            else self._maybe_device_mesh._new_with_shape(shape)
+        )
+
+        initialized_pm: Optional[HyProcMesh] = (
+            None
+            if self._initialized_proc_mesh is None
+            else self._initialized_proc_mesh.sliced(shape.region)
+        )
+
+        async def task() -> HyProcMesh:
+            return (
+                initialized_pm
+                if initialized_pm
+                else (await self._proc_mesh).sliced(shape.region)
+            )
+
+        return ProcMesh(
+            PythonTask.from_coroutine(task()).spawn(),
+            self._host_mesh,
+            shape.region,
+            self._root_region,
+            initialized_pm,
+            _device_mesh=device_mesh,
+        )
+
+    def spawn(
+        self, name: str, Class: Type[TActor], *args: Any, **kwargs: Any
+    ) -> TActor:
+        """
+        Spawn a T-typed actor mesh on the process mesh.
+
+        Args:
+        - `name`: The name of the actor.
+        - `Class`: The class of the actor to spawn.
+        - `args`: Positional arguments to pass to the actor's constructor.
+        - `kwargs`: Keyword arguments to pass to the actor's constructor.
+
+        Returns:
+        - The actor instance.
+        """
+        return self._spawn_nonblocking(name, Class, *args, **kwargs)
+
+    @property
+    async def _proc_mesh_for_asyncio_fixme(self) -> HyProcMesh:
+        """
+        Get ProcMesh on the asyncio event stream.
+        We should redo this functionality to work on the tokio stream.
+        This must be called on the asyncio stream.
+        """
+        assert asyncio.get_running_loop() is not None
+        return await Future(coro=self._proc_mesh.task())
+
+    async def monitor(self) -> None:
+        logger.debug("monitor is not implemented for v1 ProcMesh")
+
+    @classmethod
+    def from_host_mesh(
+        self,
+        host_mesh: "HostMesh",
+        hy_proc_mesh: "Shared[HyProcMesh]",
+        region: Region,
+        setup: Callable[[], None] | None = None,
+        _attach_controller_controller: bool = True,
+    ) -> "ProcMesh":
+        pm = ProcMesh(hy_proc_mesh, host_mesh, region, region, None)
+
+        if _attach_controller_controller:
+            instance = context().actor_instance
+            cc = instance._controller_controller
+            if (
+                cc is not None
+                and cast(ActorMesh[_ControllerController], cc)._class
+                is not _ControllerController
+            ):
+                # This can happen in the client process
+                pm._controller_controller = _get_controller_controller()[1]
+            else:
+                pm._controller_controller = instance._controller_controller  # type: ignore
+            instance._add_child(pm)
+
+        async def task(
+            pm: "ProcMesh",
+            hy_proc_mesh_task: "Shared[HyProcMesh]",
+            setup_actor: Optional["SetupActor"],
+            stream_log_to_client: bool,
+        ) -> HyProcMesh:
+            hy_proc_mesh = await hy_proc_mesh_task
+
+            await pm._logging_manager.init(hy_proc_mesh, stream_log_to_client)
+
+            if setup_actor is not None:
+                await setup_actor.setup.call()
+
+            return hy_proc_mesh
+
+        setup_actor = None
+        if setup is not None:
+            from monarch._src.actor.proc_mesh import SetupActor  # noqa
+
+            # If the user has passed the setup lambda, we need to call
+            # it here before any of the other actors are spawned so that
+            # the environment variables are set up before cuda init.
+            setup_actor = pm._spawn_nonblocking_on(
+                hy_proc_mesh, "setup", SetupActor, setup
+            )
+
+        pm._proc_mesh = PythonTask.from_coroutine(
+            task(pm, hy_proc_mesh, setup_actor, host_mesh.stream_logs)
+        ).spawn()
+
+        return pm
+
+    def __repr__(self) -> str:
+        return repr(self._proc_mesh)
+
+    def __str__(self) -> str:
+        return str(self._proc_mesh)
+
+    def _spawn_nonblocking(
+        self, name: str, Class: Type[TActor], *args: Any, **kwargs: Any
+    ) -> TActor:
+        return self._spawn_nonblocking_on(self._proc_mesh, name, Class, *args, **kwargs)
+
+    def to_table(self) -> str:
+        return self._maybe_device_mesh.to_table()
+
+    def _spawn_nonblocking_on(
+        self,
+        pm: "Shared[HyProcMesh]",
+        name: str,
+        Class: Type[TActor],
+        *args: Any,
+        **kwargs: Any,
+    ) -> TActor:
+        if not issubclass(Class, Actor):
+            raise ValueError(
+                f"{Class} must subclass monarch.service.Actor to spawn it."
+            )
+
+        instance = context().actor_instance
+        actor_mesh = HyProcMesh.spawn_async(
+            pm, instance._as_rust(), name, _Actor, emulated=False
+        )
+        service = ActorMesh._create(
+            Class,
+            actor_mesh,
+            self._region.as_shape(),
+            self,
+            self._controller_controller,
+            *args,
+            **kwargs,
+        )
+        instance._add_child(service)
+        return cast(TActor, service)
+
+    @property
+    def _device_mesh(self) -> "DeviceMesh":
+        from monarch._src.actor.proc_mesh import _has_tensor_engine
+
+        if not _has_tensor_engine():
+            raise RuntimeError(
+                "DeviceMesh is not available because tensor_engine was not compiled (USE_TENSOR_ENGINE=0)"
+            )
+
+        # type: ignore[21]
+        from monarch.mesh_controller import spawn_tensor_engine  # @manual
+
+        if self._maybe_device_mesh is None:
+            # type: ignore[21]
+            self._maybe_device_mesh = spawn_tensor_engine(self)
+        return self._maybe_device_mesh
+
+    # pyre-ignore
+    def activate(self) -> AbstractContextManager:
+        return self._device_mesh.activate()
+
+    def rank_tensor(self, dim: str | Sequence[str]) -> "Tensor":
+        return self._maybe_device_mesh.rank(dim)
+
+    def rank_tensors(self) -> Dict[str, "Tensor"]:
+        return self._maybe_device_mesh.ranks
+
+    async def logging_option(
+        self,
+        stream_to_client: bool = True,
+        aggregate_window_sec: int | None = 3,
+        level: int = logging.INFO,
+    ) -> None:
+        """
+        Set the logging options for the remote processes
+
+        Args:
+            stream_to_client (bool): If True, logs from the remote processes will be streamed to the client.
+            Defaults to True.
+            aggregate_window_sec (Optional[int]): If not None, logs from the remote processes will be aggregated
+            and sent to the client every aggregate_window_sec seconds. Defaults to 3 seconds, meaning no aggregation.
+            Error will be thrown if aggregate_window_sec is set and stream_to_client is False.
+            level (int): The logging level of the logger. Defaults to logging.INFO.
+
+        Returns:
+            None
+        """
+        await self.initialized
+
+        await self._logging_manager.logging_option(
+            stream_to_client=stream_to_client,
+            aggregate_window_sec=aggregate_window_sec,
+            level=level,
+        )
+
+    async def __aenter__(self) -> "ProcMesh":
+        return self
+
+    def stop(self) -> Future[None]:
+        """
+        This will stop all processes (and actors) in the mesh and
+        release any resources associated with the mesh.
+        """
+
+        # FIXME: Actually implement stopping for v1 proc mesh.
+
+        async def _stop_nonblocking() -> None:
+            pass
+
+        return Future(coro=_stop_nonblocking())
+
+    async def __aexit__(
+        self, exc_type: object, exc_val: object, exc_tb: object
+    ) -> None:
+        pass
+
+    @classmethod
+    def _from_initialized_hy_proc_mesh(
+        cls,
+        hy_proc_mesh: HyProcMesh,
+        host_mesh: "HostMesh",
+        region: Region,
+        root_region: Region,
+    ) -> "ProcMesh":
+        async def task() -> HyProcMesh:
+            return hy_proc_mesh
+
+        return ProcMesh(
+            PythonTask.from_coroutine(task()).spawn(),
+            host_mesh,
+            region,
+            root_region,
+            _initialized_hy_proc_mesh=hy_proc_mesh,
+        )
+
+    def __reduce_ex__(self, protocol: ...) -> Tuple[Any, Tuple[Any, ...]]:
+        return ProcMesh._from_initialized_hy_proc_mesh, (
+            self._initialized_proc_mesh
+            if self._initialized_proc_mesh
+            else self._proc_mesh.block_on(),
+            self._host_mesh,
+            self._region,
+            self._root_region,
+        )
+
+    def _host(self, proc_rank: int) -> "HostMesh":
+        base_proc_rank = self._region.slice().get(proc_rank)
+        n_procs = len(self._root_region.slice())
+        procs_per_host = n_procs // len(self._host_mesh.region.slice())
+        host_rank = base_proc_rank // procs_per_host
+        base_host_rank = self._host_mesh.region.slice().get(host_rank)
+        return self._host_mesh.slice(
+            **self._host_mesh.region.point_of_base_rank(base_host_rank)
+        )
+
+    async def sync_workspace(
+        self,
+        workspace: Workspace,
+        conda: bool = False,
+        auto_reload: bool = False,
+    ) -> None:
+        raise NotImplementedError(
+            "sync_workspace is not implemented for v1 ProcMesh. Use HostMesh.sync_workspace instead."
+        )
+
+    async def _sync_workspace(
+        self,
+        workspace: Workspace,
+        conda: bool = False,
+        auto_reload: bool = False,
+    ) -> None:
+        """
+        Sync local code changes to the remote processes.
+
+        Args:
+            workspace: The workspace to sync.
+            conda: If True, also sync the currently activated conda env.
+            auto_reload: If True, automatically reload the workspace on changes.
+        """
+        if self._code_sync_client is None:
+            self._code_sync_client = CodeSyncMeshClient.spawn_blocking(
+                client=context().actor_instance,
+                proc_mesh=await self._proc_mesh_for_asyncio_fixme,
+            )
+
+        # TODO(agallagher): We need some way to configure and pass this
+        # in -- right now we're assuming the `gpu` dimension, which isn't
+        # correct.
+        # The workspace shape (i.e. only perform one rsync per host).
+        assert set(self._region.labels).issubset({"gpus", "hosts"})
+
+        workspaces = {}
+        for src_dir, dst_dir in workspace.dirs.items():
+            local = Path(src_dir)
+            workspaces[local] = WorkspaceConfig(
+                local=local,
+                remote=RemoteWorkspace(
+                    location=WorkspaceLocation.FromEnvVar(
+                        env="WORKSPACE_DIR",
+                        relpath=dst_dir,
+                    ),
+                    shape=WorkspaceShape.shared("gpus"),
+                ),
+                method=CodeSyncMethod.Rsync(),
+            )
+
+        # If `conda` is set, also sync the currently activated conda env.
+        conda_prefix = conda_utils.active_env_dir()
+        if isinstance(workspace.env, CondaEnvironment):
+            conda_prefix = workspace.env._conda_prefix
+
+        if conda and conda_prefix is not None:
+            conda_prefix = Path(conda_prefix)
+
+            # Resolve top-level symlinks for rsync/conda-sync.
+            while conda_prefix.is_symlink():
+                conda_prefix = conda_prefix.parent / conda_prefix.readlink()
+
+            # Build a list of additional paths prefixes to fixup when syncing
+            # the conda env.
+            conda_prefix_replacements = {}
+
+            # Auto-detect editable installs and implicitly add workspaces for
+            # them.
+            # NOTE(agallagher): There's sometimes a `python3.1` symlink to
+            # `python3.10`, so avoid it.
+            (lib_python,) = [
+                dirpath
+                for dirpath in conda_prefix.glob("lib/python*")
+                if not os.path.islink(dirpath)
+            ]
+            for direct_url in lib_python.glob(
+                "site-packages/*.dist-info/direct_url.json"
+            ):
+                # Parse the direct_url.json to see if it's an editable install
+                # (https://packaging.python.org/en/latest/specifications/direct-url/#example-pip-commands-and-their-effect-on-direct-url-json).
+                with open(direct_url) as f:
+                    info = json.load(f)
+                if not info.get("dir_info", {}).get("editable", False):
+                    continue
+
+                # Extract the workspace path from the URL (e.g. `file///my/workspace/`).
+                url = urlparse(info["url"])
+                assert url.scheme == "file", f"expected file:// URL, got {url.scheme}"
+
+                # Get the project name, so we can use it below to create a unique-ish
+                # remote directory.
+                dist = importlib.metadata.PathDistribution(direct_url.parent)
+                name = dist.metadata["Name"]
+
+                local = Path(url.path)
+
+                # Check if we've already defined a workspace for this local path.
+                existing = workspaces.get(local)
+                if existing is not None:
+                    assert existing.method == CodeSyncMethod.Rsync()
+                    remote = existing.remote
+                else:
+                    # Otherwise, add the workspace to the list.
+                    remote = RemoteWorkspace(
+                        location=WorkspaceLocation.FromEnvVar(
+                            env="WORKSPACE_DIR",
+                            relpath=f"__editable__.{name}",
+                        ),
+                        shape=WorkspaceShape.shared("gpus"),
+                    )
+                    workspaces[local] = WorkspaceConfig(
+                        local=local,
+                        remote=remote,
+                        method=CodeSyncMethod.Rsync(),
+                    )
+
+                logging.info(
+                    f"Syncing editable install of {name} from {local} (to {remote.location})"
+                )
+
+                # Make sure we fixup path prefixes to the editable install.
+                conda_prefix_replacements[local] = remote.location
+
+            workspaces[conda_prefix] = WorkspaceConfig(
+                local=conda_prefix,
+                remote=RemoteWorkspace(
+                    location=WorkspaceLocation.FromEnvVar(
+                        env="CONDA_PREFIX",
+                        relpath="",
+                    ),
+                    shape=WorkspaceShape.shared("gpus"),
+                ),
+                method=CodeSyncMethod.CondaSync(conda_prefix_replacements),
+            )
+
+        assert self._code_sync_client is not None
+        await self._code_sync_client.sync_workspaces(
+            instance=context().actor_instance._as_rust(),
+            workspaces=list(workspaces.values()),
+            auto_reload=auto_reload,
+        )
+
+    @classmethod
+    def from_alloc(
+        self,
+        alloc: AllocHandle,
+        setup: Callable[[], None] | None = None,
+        _attach_controller_controller: bool = True,
+    ) -> "ProcMesh":
+        raise NotImplementedError(
+            "from_alloc is not (and will not be) implemented for v1 ProcMesh"
+        )
+
+
+class _ControllerController(Actor):
+    def __init__(self) -> None:
+        self._controllers: Dict[str, Actor] = {}
+
+    # pyre-ignore
+    @endpoint
+    def get_or_spawn(
+        self,
+        name: str,
+        Class: Type[TActor],
+        *args: Any,
+        **kwargs: Any,
+    ) -> TActor:
+        if name not in self._controllers:
+            from monarch._src.actor.v1.host_mesh import this_proc
+
+            proc = this_proc()
+            proc._controller_controller = _get_controller_controller()[1]
+            self._controllers[name] = proc.spawn(name, Class, *args, **kwargs)
+        return cast(TActor, self._controllers[name])
+
+
+_cc_init = threading.Lock()
+_cc_proc_mesh: Optional["ProcMesh"] = None
+_controller_controller: Optional["_ControllerController"] = None
+
+
+# Lazy init so that the controller_controller and proc do not produce logs when they aren't used.
+# Checking for the controller (when it does not already exist in the MonarchContext) needs a lock,
+# otherwise two initializing procs will both try to init resulting in duplicates. The critical
+# region is not blocking: it spawns a separate task to do the init, assigns the
+# Shared[_ControllerController] from that task to the global and releases the lock.
+def _get_controller_controller() -> "Tuple[ProcMesh, _ControllerController]":
+    global _controller_controller, _cc_proc_mesh
+    with _cc_init:
+        if _controller_controller is None:
+            from monarch._src.actor.v1.host_mesh import fake_in_process_host
+
+            _cc_proc_mesh = fake_in_process_host()._spawn_nonblocking(
+                name="controller_controller_proc",
+                per_host=Extent([], []),
+                setup=None,
+                _attach_controller_controller=False,
+            )
+            _controller_controller = _cc_proc_mesh.spawn(
+                "controller_controller", _ControllerController
+            )
+    assert _cc_proc_mesh is not None and _controller_controller is not None
+    return _cc_proc_mesh, _controller_controller
+
+
+def get_or_spawn_controller(
+    name: str, Class: Type[TActor], *args: Any, **kwargs: Any
+) -> Future[TActor]:
+    """
+    Creates a singleton actor (controller) indexed by name, or if it already exists, returns the
+    existing actor.
+
+    Args:
+        name (str): The unique name of the actor, used as a key for retrieval.
+        Class (Type): The class of the actor to spawn. Must be a subclass of Actor.
+        *args (Any): Positional arguments to pass to the actor constructor.
+        **kwargs (Any): Keyword arguments to pass to the actor constructor.
+
+    Returns:
+        A Future that resolves to a reference to the actor.
+    """
+    cc = context().actor_instance._controller_controller
+    return cc.get_or_spawn.call_one(name, Class, *args, **kwargs)
