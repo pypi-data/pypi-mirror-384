@@ -1,0 +1,1 @@
+from wiederverwendbar.pydantic.security.hashed_password import HashedPasswordModel
