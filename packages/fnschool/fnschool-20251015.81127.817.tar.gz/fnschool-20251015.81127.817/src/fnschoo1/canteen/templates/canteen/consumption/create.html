@@ -1,0 +1,476 @@
+{% extends "base/header_content_footer.html" %}
+{% load crispy_forms_tags %}
+{% block title %}
+  {% trans "Consume Ingredients" %}
+{% endblock %}
+{% block content %}
+  <h1>{% trans "Consume Ingredients" %}</h1>
+  <hr>
+  <div class="container">
+    <div class="row justify-content-end">
+      <button class="btn btn-outline-success col-md-1 col-lg-1 col-2 mx-2"
+              onclick="list_consumptions_by_week();">{% trans "Consume by Week" %}</button>
+
+      <button class="btn btn-outline-success col-md-1 col-lg-1 col-2"
+              onclick="list_consumptions_rapidly();">{% trans "Rapid Consumption" %}</button>
+
+      <a class="btn btn-success col-md-1 col-lg-1 col-2 mx-2"
+         target="canteen_list_categories"
+         href="{% url "canteen:list_categories" %}">{% trans "Ingredient Categories" %}</a>
+
+      <div class="col col-3 col-md-2 col-lg-2">
+        <input class="  form-control"
+               onkeydown="if(event.keyCode==13){list_consumptions();}"
+               title="{% trans 'The starting date of storage.' %}"
+               id="storage_date_start_input"
+               value="{{ storage_date_start|date:"Y/m/d" }}">
+      </input>
+    </div>
+    <div class="col col-3 col-md-2 col-lg-2">
+      <input class="form-control "
+             onkeydown="if(event.keyCode==13){list_consumptions();}"
+             title="{% trans 'The end date of storage.' %}"
+             id="storage_date_end_input"
+             value="{{ request.COOKIES.storage_date_end }}">
+    </input>
+  </div>
+  <button class="btn btn-success col-md-1 col-lg-1 col-2"
+          onclick="list_consumptions();">{% trans "Refresh" %}</button>
+</div>
+</div>
+<div class="table table-responsive table-container">
+  <table class="table table-consumptions cotable-bordered table-striped table-hover table-condensed scroll-vertical ">
+    <thead>
+      <tr>
+        {% if ingredients %}
+          <th class="">{% trans "Ingredient Name" %}</th>
+          <th class="">{% trans "Remaining Quantity" %}</th>
+        {% endif %}
+        {% for date_h in date_range %}
+          <th data-date_of_using="{{ date_h }}" class="consumption-date">
+            {{ date_h }}
+            <br />
+            |
+            <br />
+            |
+          </th>
+        {% empty %}
+          <th></th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for ingredient in ingredients %}
+        <tr class="row-consumption"
+            data-ingredient_id="{{ ingredient.id }}"
+            data-ingredient_name="{{ ingredient.name }}"
+            data-ingredient_quantity="{{ ingredient.quantity }}"
+            data-ingredient_total_price="{{ ingredient.total_price }}"
+            data-ingredient_meal_type="{{ ingredient.meal_type }}"
+            data-ingredient_quantity_unit_name="{{ ingredient.quantity_unit_name }}"
+            data-ingredient_unit_price="{{ ingredient.unit_price }}"
+            id="ingredient_num_{{ ingredient.id }}">
+          <td title="{% blocktrans with storage_date=ingredient.storage_date %}Storaged on {{ storage_date }} .{% endblocktrans %}"
+              class="">
+            <div class='ingredient-progress'
+                 style="width:{% widthratio ingredient.remaining_quantity ingredient.quantity 100 %}%"></div>
+            {{ ingredient.name }}
+            {% if ingredient.meal_type %}
+              <br />
+              ({{ ingredient.meal_type }})
+            {% endif %}
+          </td>
+          <td name="remaining_{{ ingredient.id }}">
+            {{ ingredient.quantity }}-{{ ingredient.consuming_quantity }}={{ ingredient.remaining_quantity }}
+          </td>
+        </tr>
+      {% empty %}
+        <tr>{% trans "No ingredient found." %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="">
+  <button onclick="generate_spreadsheet();"
+          class="btn btn-submit-consumptions btn-success float-end">{% trans "Generate Spreadsheet" %}</button>
+  <select class="workbook-month-select form-select float-end mx-2"
+          style="width:118px"></select>
+</div>
+{{ ingredient_ids|json_script:'ingredient_ids' }}
+{{ months|json_script:'months' }}
+{{ meal_types|json_script:'meal_types' }}
+{{ date_range|json_script:'date_range' }}
+{{ storage_date_start|json_script:'storage_date_start' }}
+<script>
+  var ingredient_ids = JSON.parse($("#ingredient_ids").text())
+  var ingredient_ids_length = ingredient_ids.length
+  var months = JSON.parse($("#months").text())
+  var meal_types = JSON.parse($("#meal_types").text())
+  var date_range = JSON.parse($("#date_range").text())
+
+  var storage_date_start = $('#storage_date_start').text().replace(new RegExp('"', 'g'), "")
+
+  var dont_submit = false
+
+
+  function list_consumptions_rapidly() {
+    query = {
+      'by_week': 'false',
+      "rapidly": 'true'
+    }
+    set_cookies(query)
+    update_href(query)
+  }
+
+  function list_consumptions_by_week() {
+    query = {
+      'by_week': 'true',
+      "rapidly": 'false'
+    }
+    set_cookies(query)
+    update_href(query)
+  }
+
+  function get_previous_month_date(date = new Date()) {
+    const prevMonthDate = new Date(date);
+    prevMonthDate.setDate(1);
+    prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+    return prevMonthDate;
+  }
+
+  function is_weekend(date) {
+    const dayOfWeek = date.getDay();
+    return dayOfWeek === 0 || dayOfWeek === 6;
+  }
+
+  $(document).ready(function() {
+    var td1 = $(".table tr > :nth-child(1):first")
+    $(".table tr > :nth-child(2)").css("left", td1.width() * 1.05)
+  });
+
+
+  $(document).ready(function() {
+    $(months).each(function(index, value) {
+      $('.workbook-month-select').append(`<option>${value}</option>`)
+    });
+    var now = new Date();
+    prev_month = get_previous_month_date(now)
+    var year = prev_month.getFullYear();
+    var month = prev_month.getMonth() + 1;
+    month = month < 10 ? `0${month}` : `${month}`;
+    $('.workbook-month-select').val(`${year}-${month}`)
+
+  });
+
+  $(document).ready(function() {
+    if (get_cookie('storage_date_start') === null) {
+      set_cookies({
+        "storage_date_start": storage_date_start
+      })
+    }
+  });
+
+  $(document).ready(function() {
+    var last_meal_type = ""
+    var consumption_rows = $(".row-consumption")
+    consumption_rows.each(function(index, element) {
+      meal_type = $(element).data("ingredient_meal_type")
+      if (last_meal_type != meal_type) {
+        $(element).find("td").css({
+          "color": "red"
+        })
+        last_meal_type = meal_type
+      }
+    });
+  });
+
+  function submit_consumption_form(element) {
+    var element = $(element)
+    var form = $(element.closest("form"));
+    var formData = new FormData(form[0]);
+
+    $.ajax({
+      url: form.attr('action'),
+      method: 'POST',
+      data: formData,
+      processData: false,
+      contentType: false,
+      success(res) {
+        if (res == "OK") {
+          element.css({
+            'border': "5px solid green",
+            "border-radius": "10px"
+          })
+          form.data("amount_used", element.val())
+        }
+      },
+      error(xhr) {
+        element.css({
+          'border': "5px solid red",
+          "border-radius": "10px"
+        })
+      }
+    });
+
+  }
+
+  function amount_used_input_blur(element) {
+    element = $(element)
+    var ingredient_quantity = element.closest('tr').data("ingredient_quantity")
+    ingredient_quantity = parseInt(ingredient_quantity) || 0
+    var $consumption_form = element.closest("form")
+    var amount_used = parseInt($consumption_form.data("amount_used")) || 0
+    var new_amount_used = parseInt($.trim(element.val())) || 0
+    new_amount_used = parseInt(new_amount_used) || 0
+    if (new_amount_used < 0) {
+      element.val('')
+      new_amount_used = 0
+    }
+    if (new_amount_used === 0 && amount_used === 0) {
+      element.val('')
+    }
+    if (amount_used > 0 && new_amount_used === 0) {
+      element.val('0')
+    }
+    var $tds = element.parent().parent().siblings("td")
+    var $amount_used_inputs = $tds.find("form input[name='amount_used']")
+    var total_consumed = 0
+    $amount_used_inputs.each(function(index, amount_used_element) {
+      var value = parseInt($(amount_used_element).val()) || 0
+      total_consumed += value
+    });
+    if ((total_consumed + new_amount_used) > ingredient_quantity) {
+      var remaining_quantity = total_consumed < ingredient_quantity ? (ingredient_quantity - total_consumed) : 0
+      if (remaining_quantity === 0) {
+        element.val('')
+      } else {
+        element.val(remaining_quantity)
+      }
+      new_amount_used = remaining_quantity
+    }
+    total_consumed = total_consumed + new_amount_used
+    var ingredient_id = element.closest("tr").data("ingredient_id")
+    $(`td[name='remaining_${ingredient_id}']`).text(`${ingredient_quantity}-${total_consumed}=${ingredient_quantity-total_consumed}`)
+    element.closest("tr").find('.ingredient-progress').css('width', `${parseInt((ingredient_quantity-total_consumed)*100/ingredient_quantity)}%`)
+    var date_of_using = element.closest("form").data("date_of_using")
+
+    update_header(date_of_using)
+    if (new_amount_used != amount_used) {
+      submit_consumption_form(element, new_amount_used)
+    }
+  }
+
+  function update_header(date_of_using) {
+    var consumption_content_dated = date_of_using
+    $(meal_types).each(function(index, meal_type) {
+      var total_price_dated = 0.0
+      $(`form[data-date_of_using="${date_of_using}"][data-ingredient_meal_type="${meal_type}"]`).each(function(index, element) {
+        element = $(element)
+        var unit_price = parseFloat(element.data("ingredient_unit_price"))
+        var quantity = parseFloat(element.find("input[name='amount_used']").val()) || 0
+        total_price_dated += (unit_price * quantity)
+      });
+      total_price_dated = total_price_dated.toFixed(2)
+      consumption_content_dated += `<br />${meal_type}:${total_price_dated}`
+    });
+    $(`th[data-date_of_using="${date_of_using}"]`).html(consumption_content_dated)
+  }
+
+  function update_headers() {
+
+    $(date_range).each(function(index, date_h) {
+      update_header(date_h)
+    });
+  }
+
+
+  $(document).ready(function() {
+    dont_submit = true
+    var progress = 0
+    $.each(ingredient_ids, function(index, value) {
+      $.ajax({
+        url: "/canteen/create_consumption/" + value,
+        method: 'GET',
+        success: function(data) {
+          data = $(data)
+          var footer_progressbar = $('.progress-footer')
+          data.each(function(index, element) {
+            if (is_weekend(new Date($(element).data("date_of_using")))) {
+              $(element).find('[name="amount_used"]').addClass("weekend")
+            }
+          });
+          data.find('input[name="amount_used"]').blur(function() {
+            amount_used_input_blur(this)
+          });
+          $('#ingredient_num_' + value).append(data)
+          if (footer_progressbar) {
+            progress += 1
+            footer_progressbar.css('width', `${progress*100/ingredient_ids_length}%`)
+            if (progress >= ingredient_ids_length) {
+              footer_progressbar.css('width', "0%")
+              update_headers()
+              dont_submit = false
+            }
+          }
+
+        }
+      });
+    });
+  });
+
+
+  $(document).ready(function() {
+    $('.table-consumptions').on('keydown', 'input[name="amount_used"]', function(e) {
+      if ([9, 13, 37, 38, 39, 40].includes(e.keyCode)) {
+        e.preventDefault();
+        navigateToNextCell(
+          $(this),
+          e.keyCode === 9 ? "r" :
+          e.keyCode === 13 ? "d" :
+          e.keyCode === 37 ? "l" :
+          e.keyCode === 38 ? "u" :
+          e.keyCode === 39 ? "r" :
+          e.keyCode === 40 ? "d" : ""
+        );
+      }
+      if ((e.keyCode < 91 && e.keyCode > 64) || e.keyCode == 32) {
+        e.preventDefault()
+      }
+
+    });
+
+    function navigateToNextCell($currentInput, direction) {
+      var td = $currentInput.closest("form").closest('td');
+      var columnIndex = td.index();
+
+      var rowIndex = td.closest("tr").index()
+      if (direction == 'l') {
+        columnIndex = columnIndex - 1
+        rowIndex = rowIndex + 1
+      } else if (direction == 'r') {
+        columnIndex = columnIndex + 1
+        rowIndex = rowIndex + 1
+      } else if (direction == "u") {
+        rowIndex = rowIndex
+      } else if (direction == 'd') {
+        rowIndex = rowIndex + 2
+      }
+      var cell = $('.table-consumptions').find(`tr:eq(${rowIndex}) td:eq(${columnIndex})`);
+      var amount_used_input = cell.find('input[name="amount_used"]')
+      amount_used_input.first().focus()
+
+    }
+  });
+
+  function generate_spreadsheet() {
+    var month = $(".workbook-month-select").val()
+    window.open(`/canteen/generate_spreadsheet/${month}`, 'generate_spreadsheet');
+  }
+
+  function set_consumptions_table_size() {
+    const submit_consumptions_btn = $(".btn-submit-consumptions")
+    const consumptions_table = $(".table-consumptions")
+    const header = $("header")
+    const footer = $("footer")
+    const height = Math.round((footer.offset().top - submit_consumptions_btn.height() - consumptions_table.offset().top) * 0.95)
+    consumptions_table.parent().height(height)
+  }
+  $(window).resize(function() {
+    set_consumptions_table_size()
+  });
+  $(document).ready(function() {
+    set_consumptions_table_size()
+  });
+
+  function list_consumptions() {
+    var new_storage_date_start = $('#storage_date_start_input').val()
+    var new_storage_date_end = $('#storage_date_end_input').val()
+    query = {}
+    if (new_storage_date_start) {
+      query["storage_date_start"] = new_storage_date_start
+      set_simple_cookie("storage_date_start", new_storage_date_start)
+    } else {
+      query["storage_date_start"] = ""
+      delete_cookie("storage_date_start")
+    }
+
+    if (new_storage_date_end) {
+      query["storage_date_end"] = new_storage_date_end
+      set_simple_cookie("storage_date_end", new_storage_date_end)
+    } else {
+      query["storage_date_end"] = ""
+      delete_cookie("storage_date_end")
+    }
+    update_href(query)
+  }
+</script>
+<style>
+  .ingredient-progress {
+    height: 2px;
+    background: green;
+    right: 9px;
+    position: absolute;
+  }
+
+  #storage_date_start_input,
+  #storage_date_end {
+    text-align: center;
+    font-family: Mono;
+  }
+
+  .weekend {
+    background-color: pink;
+  }
+
+  .table-container {
+    overflow: auto;
+  }
+
+  .table thead th {
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 1010;
+    white-space: nowrap;
+  }
+
+  .table tr {
+    font-size: 15px;
+  }
+
+  .table tr> :nth-child(1) {
+    position: -webkit-sticky;
+    position: sticky;
+    left: 0;
+    z-index: 1010;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .table tr> :nth-child(2) {
+    position: -webkit-sticky;
+    position: sticky;
+    z-index: 1010;
+    font-family: Mono;
+    text-align: right;
+  }
+
+  .table thead tr {
+    font-size: 15px;
+    font-family: Mono;
+  }
+
+  .table thead tr> :nth-child(1) {
+    z-index: 1020;
+    white-space: nowrap;
+  }
+
+  .table thead tr> :nth-child(2) {
+    z-index: 1020;
+  }
+
+  nav li {
+    z-index: 1030;
+  }
+</style>
+{% endblock %}
