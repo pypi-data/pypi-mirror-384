@@ -1,0 +1,119 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "zarrs"
+description = "A CodecPipeline for zarr-python backed by the zarrs Rust crate"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Ilan Gold" },
+    { name = "Lachlan Deakin" },
+    { name = "Philipp Angerer" },
+]
+license = "MIT"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+dependencies = [
+    "numpy>=1.24",
+    "zarr>=3.1",
+]
+
+[dependency-groups]
+test = [
+    "aiohttp",
+    "fsspec>2024",
+    "numcodecs>=0.16.1",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-xdist",
+    "pytest-mock",
+]
+doc = ["sphinx>=7.4.6", "myst-parser"]
+dev = [
+    "maturin",
+    "pip",
+    "pre-commit",
+    {include-group = "test"},
+    {include-group = "doc"},
+]
+
+[project.entry-points."zarr.codec_pipeline"]
+"zarrs.codec_pipeline" = "zarrs:ZarrsCodecPipeline"
+
+[tool.maturin]
+python-source = "python"
+module-name = "zarrs._internal"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+minversion = "7"
+testpaths = ["tests"]
+log_cli_level = "INFO"
+xfail_strict = true
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+doctest_optionflags = [
+    "NORMALIZE_WHITESPACE",
+    "ELLIPSIS",
+    "IGNORE_EXCEPTION_DETAIL",
+]
+addopts = [
+    "--durations=10",
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+    "--import-mode=importlib",
+]
+filterwarnings = [
+    "error:::zarr.*",
+    "ignore:PY_SSIZE_T_CLEAN will be required.*:DeprecationWarning",
+    "ignore:The loop argument is deprecated since Python 3.8.*:DeprecationWarning",
+    "ignore:Creating a zarr.buffer.gpu.*:UserWarning",
+    "ignore:Duplicate name:UserWarning",                                            # from ZipFile
+    "ignore:.*not part in the Zarr format 3.*:UserWarning",
+]
+markers = ["gpu: mark a test as requiring CuPy and GPU"]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "E",       # Error detected by Pycodestyle
+    "F",       # Errors detected by Pyflakes
+    "W",       # Warning detected by Pycodestyle
+    "UP",      # pyupgrade
+    "I",       # isort
+    "TC",      # manage type checking blocks
+    "TID251",  # Banned imports
+    "ICN",     # Follow import conventions
+    "PTH",     # Pathlib instead of os.path
+    "PLR0917", # Ban APIs with too many positional parameters
+    "FBT",     # No positional boolean parameters
+    "PT",      # Pytest style
+    "SIM",     # Simplify control flow
+]
+ignore = [
+    # line too long -> we accept long comment lines; black gets rid of long code lines
+    "E501",
+    # module level import not at top of file -> required to circumvent circular imports for Scanpys API
+    "E402",
+    # E266 too many leading '#' for block comment -> Scanpy allows them for comments into sections
+    "E262",
+    # allow I, O, l as variable names -> I is the identity matrix, i, j, k, l is reasonable indexing notation
+    "E741",
+]
+[tool.ruff.lint.per-file-ignores]
+"**/*.pyi" = ["ICN001"]
+[tool.ruff.lint.isort]
+known-first-party = ["zarrs"]
