@@ -1,0 +1,2 @@
+class MessagePrompt(Exception):
+    pass
