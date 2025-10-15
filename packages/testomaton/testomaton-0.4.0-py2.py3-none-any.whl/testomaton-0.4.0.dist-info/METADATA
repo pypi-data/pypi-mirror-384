@@ -1,0 +1,1264 @@
+Metadata-Version: 2.4
+Name: testomaton
+Version: 0.4.0
+Summary: Model based combinatorial test data generator
+Home-page: https://bitbucket.org/testify-no/tomato
+Author: Testify AS
+Author-email: tomato@testify.no
+License: GNU Affero General Public License v3 or later (AGPLv3+)
+Project-URL: Changelog, https://bitbucket.org/testify-no/tomato/src/develop/CHANGELOG.md
+Keywords: testing pairwise test_generation
+Classifier: Development Status :: 4 - Beta
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)
+Classifier: Operating System :: OS Independent
+Classifier: Environment :: Console
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Software Development :: Testing
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: python-sat
+Requires-Dist: pyparsing
+Requires-Dist: pyaml
+Requires-Dist: regex
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: license-file
+Dynamic: project-url
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Introduction
+Testomaton is a suite of tools for combinatoric testing. It consists of __tomato__ - a combinatoric test generator and two tools used for postprocessing tomato's output - __beaver__ and __jigsaw__.
+
+# Table of context
+- [Introduction](#introduction)
+- [Table of context](#table-of-context)
+- [Installing testomaton](#installing-testomaton)
+- [Workflow](#workflow)
+- [Combinatoric test generation with tomato](#combinatoric-test-generation-with-tomato)
+  - [Using tomato with examples in this document](#using-tomato-with-examples-in-this-document)
+  - [Model syntax](#model-syntax)
+    - [General rules](#general-rules)
+    - [Labels](#labels)
+    - [Function](#function)
+    - [Global parameters](#global-parameters)
+    - [Function parameters](#function-parameters)
+    - [The `parameter` element](#the-parameter-element)
+      - [Leaf parameters](#leaf-parameters)
+      - [Structures](#structures)
+    - [Linked parameters](#linked-parameters)
+    - [Output parameters](#output-parameters)
+    - [Choices](#choices)
+    - [Model logic](#model-logic)
+    - [Constraints](#constraints)
+      - [Invariants](#invariants)
+      - [Implication](#implication)
+    - [Assignments](#assignments)
+    - [Aliases](#aliases)
+    - [Statements](#statements)
+      - [Primitive statement](#primitive-statement)
+      - [Operations on statements](#operations-on-statements)
+  - [Generating tests with tomato](#generating-tests-with-tomato)
+    - [Generators](#generators)
+    - [Cartesian generator](#cartesian-generator)
+    - [Random generator](#random-generator)
+    - [NWise generator](#nwise-generator)
+    - [Constraints manipulation](#constraints-manipulation)
+    - [Filtering parsed elements](#filtering-parsed-elements)
+    - [Format of the output](#format-of-the-output)
+  - [Validating models](#validating-models)
+  - [Validating tests](#validating-tests)
+  - [Using tomato in test code](#using-tomato-in-test-code)
+- [Test postprocessing](#test-postprocessing)
+  - [Beaver](#beaver)
+  - [Jigsaw](#jigsaw)
+
+
+# Installing testomaton
+
+Testomaton is hosted in the pypi package index, so installing it is as simple as:
+
+```bash
+$ pip3 install testomaton
+```
+
+Verify the installation by:
+```bash
+$ tomato --version
+tomato 0.3.0
+```
+
+This document will explain main features and options of tools from testomaton suite. The full and up-to-date description is available in the tool's help text. Type 
+```bash
+$ tomato --help
+$ beaver --help
+$ jigsaw --help
+```
+to know more.
+
+
+# Workflow
+                    ╔═════════╗         ╔══════════╗
+    ┌───────┐       ║         ║  .csv   ║ beaver   ║        ┌───────┐
+    │ model │╶─────►║ tomato  ║╶───────►║   +      ║╶──────►│ tests │
+    | (yaml)|       ║         ║         ║ jigsaw   ║        | (.csv)|
+    └───────┘       ╚═════════╝         ╚════════╤═╝        └───────┘
+                                          ▲      │
+                                          │      │
+                                          └──────┘
+                                          intermediate
+                                          .csv
+
+The tools are organized so that they can be used in a pipeline. Tomato's input is a yaml file that describes a model of a test function.
+The function contains parameters with the values that they can take and constraints that describe dependencies between the parameters.
+Tomato parses the model and generates an .csv file that contains combinations of the values of the input parameters,
+so that they validate the constraints and provide requested coverage (for example pairwise).
+The output of tomato is in the .csv (comma separated values) format. The output of tomato can be provided to beaver and jigsaw.
+Both accept .csv format on their input and both produce .csv on the output, so they can be used (multiple times at once) in a pipeline.
+Beaver is a simple tool that replaces elements in a .csv line that have format of `@python EXPR` with the result of the expression evaluation.
+Jigsaw is a simple .csv manipulation util that can be used to add, remove, replace or swap columns. 
+
+
+# Combinatoric test generation with tomato
+
+Tomato is the core of the testomaton suite. Simplifying, it reads a model of a test function and generates rows of tests.
+The model is defined in a yaml format and provides the description of what values can be assigned to individual parameters of the function.
+
+                                  ┌───────────────┐
+                                  │ test function │
+                                  └───────┬───────┘
+              ┌───────────────────┬───────┴──────┬────────────────┐
+              X1                  X2           [...]             Xn                     
+      ┌────┬──┴─┬────┐    ┌────┬──┴─┬────┐                ┌────┬──┴─┬────┐  
+     x11  x12 [...] x1m  x21  x22 [...] x2m              xn1  xn2 [...] xnm
+
+Additionaly for the definition of possible function's input, the model describes the relationships between the parameters in the form of constraints
+that are logical expressions defining invariants that must be always fulfilled in the generated tests. For example the expression 
+
+    "IF 'X1' IS 'x11' THEN 'X2' NOT IN ['x21', 'x23']"
+indicates, that in tests where the value of the parameter `X1` is `x11`, the value of the parameter `X2` mustn't be `x21` or `x23`.
+The language of the model and the constraints allows for easily defining more complex relationships than this.
+
+The simplest form of a function model would be:
+```yaml
+functions:
+- function: duel
+  parameters:
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [White Castle, Cair Paravel]
+```
+It defines a function of three parameters (`good guy`, `bad guy`, `location`) that can take values from the sets defined as their __choices__
+(`[Peter, Susan, Edmund, Lucy]`, `[Jadis, Maugrim]` and `[White Castle, Cair Paravel]` respectively). 
+
+## Using tomato with examples in this document
+If called without a filename, tomato will read the model from the standard input.
+Using tomato without any additonal arguments will make it generate pairwise combinations from the first function defined in the model.
+So, to test the examples from this document without having to write them to a file, start tomato:
+```
+$ tomato
+Reading model from stdin
+```
+And then copy&paste the model to stdin:
+```
+$ tomato
+Reading model from stdin
+functions:
+- function: duel
+  parameters:
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [White Castle, Cair Paravel]
+```
+After pasting the model an `EOF` character must be sent (_Ctrl+D_ on Linux and Mac, _Ctrl+Z_ on Windows). An additional newline may also be required in some cases (press _Enter_).
+
+Providing the model above to tomato will result in generation of a nice test suite with pairwise coverage, for example:
+
+```bash
+good guy,bad guy,location
+Peter,Maugrim,White Castle
+Peter,Jadis,Cair Paravel
+Lucy,Maugrim,Cair Paravel
+Lucy,Jadis,White Castle
+Susan,Jadis,White Castle
+Susan,Maugrim,Cair Paravel
+Edmund,Maugrim,White Castle
+Edmund,Jadis,Cair Paravel
+```
+Since the pairwise generation algorithm has a partially random nature, the output you see may be slightly different from the one above.
+
+Pairwise generation is possible for functions with at least 3 paranmeters, so all the examples below will have at least 3 parameters, even if that is not required to illustrate something.
+
+## Model syntax
+The format of tomato's input is a yaml file that consists an arbitrary number of functions.
+Tomato processes only one function at a time, but it may be useful to group many functions in the same file for organizational reasons or if they reuse some of the same parameters.
+The top elements of the yaml file may only be `functions` and `global parameters`, like described below:
+
+```yaml
+global parameters:
+# List of parameters that can be referred to from the functions defined below. Using global parameters enhances maintenance and keeps the file size smaller.
+
+functions:
+# the 'functions' element must contain a list of function elements that describe individual functions in the model. The name of the function is the defined by the value of the 'function' tag.
+- function: F1
+# definition of F1
+- function: F2
+# [...]
+```
+Only the `functions` element is required. It must contain a list with at least one `function` element.
+
+### General rules
+There are very few restrictions about naming of model elements:
+
+- names cannot contain double colons (`::`), and they can't start or end with a colon `:`
+- a name cannot be an empty string
+- a name cannot start or end with a whitespace character (e.g. `   name` will not be allowed)
+- a name must not contain line breaks
+- names must be unique on the same level of model hierarchy (for example all global parameters must have different names)
+- names on different levels may have the same names (for example nested choices)
+- be careful with yaml constants that will be evaluate by python yaml package on the parsing level. For example in `choice: no`, the choice name will be evaluated to `False`. To ensure correct interpretation, it is recommended to surround names with quotes.
+
+Other rules are:
+
+- values of all elements in the model must be one line. The only exception is a value of an expression of elements that define function or structure logic.
+
+### Labels
+Every element of the model (ie. `function`, `parameter`, `linked parameter`, `output parameter`, `choice`, `assignment` or `constraint`) may optionally contain a `labels` element.
+Labels are defined by a flow of strings. General usage of labels is to filter elements of the model that are parsed. 
+
+Whenever allowed types of elements are mentioned in this document, they may always be extended by a `labels` tag, unless explicitly forbidden.
+
+```yaml
+labels: [label, other label]
+```
+
+### Function
+A `function` is the only allowed element of `functions` list. A `function` definition contains two parts: `parameters` and `logic`.
+The `parameters` element enumerates the function's parameters while `logic` describes relations between them. For example:
+
+```yaml
+functions:
+- function: character
+  parameters:
+  - parameter: name
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: gender
+    choices: [M, F]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+
+  logic:
+  - alias: male
+    expression: "'gender' IS 'M'"
+  - constraint: naming males
+    expression: "IF 'male' THEN 'name' IN ['Peter', 'Edmund']"
+  - constraint: naming females
+    expression: "IF NOT 'male' THEN 'name' IN ['Susan', 'Lucy']"     
+```
+Here we have a definition of a function 'character' that has three parameters: `name`, `gender` and `weapon` plus logic that define dependencies between the parameters `name` and `gender`.
+
+### Global parameters
+Parameters that are used multiple times inside the same file (may be the same function, or many different functions) may be defined as global and then linked from the functions.
+This allows easier maintenance and keeping the model size compact. One global parameter may be also linked by another global parameter, or a nested parameter.
+The `global parameters` section is optional. If it is defined, it must contain a list of parameters. The elements of the `global parameters` list must either `parameter` or `linked parameter`.
+Unlike parameters of functions, global parameters cannot be of a `output parameter` type. Their exact syntax is the same as respective function parameters and is explained later in this document.
+
+```yaml
+global parameters:
+- parameter: Weapon
+  choices: [sword, bow, dagger]
+
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - linked parameter: good guy's weapon
+    linked to: Weapon
+  - parameter: bad guy
+    choices: [Jadis, Maugrim, a giant]
+  - linked parameter: bad guy's weapon
+    linked to: Weapon
+```
+
+### Function parameters
+The elements of the `parameters` list of a `function` element define function parameters. The list may contain `parameter`, `linked parameter` or `output parameter` types.
+We already saw a `parameter` and a `linked parameter`. An `output parameter` is a parameter that is not considered during generation of input combinations. Its value is either defined by default or may be modified by an `assignment` in the `logic` section.
+
+```yaml
+functions:
+- function: character
+  parameters:
+  - parameter: name
+    choices: [Peter, Lucy, Aslan]
+  - parameter: job
+    choices: [king, kid]
+  - output parameter: number of legs
+    default value: 2
+
+  logic:
+  - constraint: Aslan's job
+    expression: "IF 'name' IS 'Aslan' THEN 'job' IS 'king'"
+  - assignment: legs
+    expression: "'name' IS 'Aslan' => 'number of legs' = 4"
+```
+
+### The `parameter` element
+A `parameter` element defines function input parameter. There are two ways a parameter may be defined, whether it is a global parameter or defined in a function:
+1. as a leaf parameter, that contain a list of choices that represent a value that the parameter can take
+2. as a list of subparameters and the logic that connects them.
+It is not allowed for a parameter to define both choices and parameters. A parameter that contains a `choices` element is called a _leaf parameter_.
+Parameters with nested parameters are known as _structures_.
+
+#### Leaf parameters
+Leaf parameters represent the actual input parameter of the function. All the parameters used in the examples above were leaf parameters.
+A leaf parameter may only contain a single `choices` element that define values taken by the parameter.
+There are two ways to define choices of a parameter. One way using yaml's flow notation, the other with a list and explicit choice definition. The list may contain only `choice` elements.
+
+```yaml
+functions:
+- function: character
+  parameters:
+  - parameter: name
+    choices: [Peter, Susan, Lucy, Edmund]
+  - parameter: location
+    choices: [Cair Paravel, Stone Table, Lantern Waste]
+  - parameter: weapon
+    choices: 
+    - choice: sword
+    - choice: bow
+    - choice: dagger
+```
+
+#### Structures
+Structures are a way to logically group some parameters together. All elements of a structure will be treated as individual parameters, but grouping them allows reusing and defining constraints for them.
+A parameter (global or not) that is a structure may contain only `parameters` and `logic` elements:
+
+```yaml
+global parameters:
+- parameter: Weapon
+  choices: [sword, bow, dagger]
+- parameter: Character
+  parameters:
+  - parameter: name
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: gender
+    choices: [F, M]
+  - linked parameter: weapon
+    linked to: Weapon
+  logic:
+  - alias: male
+    expression: "'gender' IS 'M'"
+  - constraint: M name
+    expression: "IF 'male' THEN 'name' IN ['Peter', 'Edmund']"
+  - constraint: F name
+    expression: "IF NOT 'male' THEN 'name' IN ['Susan', 'Lucy']"
+
+functions:
+- function: duel
+  parameters: 
+  - linked parameter: contestant 1
+    linked to: Character
+  - linked parameter: contestant 2
+    linked to: Character
+
+  logic:
+  - constraint: F not against F
+    expression: "IF 'contestant 1::gender' IS 'F' THEN 'contestant 2::gender' IS NOT 'F'"
+  - constraint: M not against M
+    expression: "IF 'contestant 1::gender' IS 'M' THEN 'contestant 2::gender' IS NOT 'M'"    
+```
+
+Note that subparameters of a structure may also be linked parameters. However, they may not be `output parameters`.
+If logic is defined for a structure that is a global parameter, it will be applied for all parameters that link to it, unless explicitly disabled in the link.
+Note that `alias` elements of the structure cannot be directly used in the function that instantiates the structure.
+
+### Linked parameters
+A linked parameter is a parameter that is a copy of a global parameter. Linked parameters have a mandatory field `linked to` that defines the target of the link.
+Linked parameters may link to a structure or to a leaf parameter, but must always link to a parameter that is directly defined as a global parameter.
+It means that a linked parameter may not link to a subparameter of a global structure. 
+Optionally, linked parameters may have `constraints whitelist` or `constraints blacklist` element that defines what constraints of the link shall be considered in the linked parameter.
+Obviously, these fields are mutually exclusive (a parameter cannot have both a whitelist and a blacklist). Elements of the lists are names or labels of the constraints that should be filtered, separated by a comma  (`,`).
+Note that although a comma is allowed when naming or labelling a constraint (or anything else), using it may have unexpected consequences and make the model not work as intended. Using quotes when defining white and blacklists may help here.
+As mentioned above, parts of structures may also be defined as linked parameters.
+
+
+```yaml
+global parameters:
+- parameter: Good guy
+  parameters:
+  - parameter: name
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: gender
+    choices: [F, M]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  logic:
+  - alias: male
+    expression: "'gender' IS 'M'"
+  - constraint: M name
+    expression: "IF 'male' THEN 'name' IN ['Peter', 'Edmund']"
+  - constraint: F name
+    expression: "IF NOT 'male' THEN 'name' IN ['Susan', 'Lucy']"
+  - constraint: male weapon
+    expression: "IF NOT 'male' THEN 'weapon' IS NOT 'sword'"
+functions:
+- function: duel
+  parameters:
+  - linked parameter: hero
+    linked to: Good guy
+    constraints whitelist: M name, F name
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+```
+In the example above we define a parameter `hero` that links to a global parameter `Good guy`.
+Although the `Good guy` structure defines a constraint that prevents `Susan` and `Lucy` from using a `sword`, we decide not to use that constraint in the linked parameter.
+The same effect can be obtained by defining a blacklist:
+` constraints blacklist: male weapon `.
+
+### Output parameters
+Output parameters are only allowed as top parameters of a function. They are not allowed to be defined as global parameters or subparameters of structures.
+Output parameters are parameters that do not take part in generating tests. Technically, they have only one choice that is always selected, so they do not have impact on the size of the generated suite.
+Their value, however may be changed to an arbitrary value depending on the values of input parameters. This can be defined by assignments is function logic.
+Output parameters have one required element that is `default value`. This element defines the value that is assigned to the parameter in case that no assignment can be applied.
+
+```yaml
+functions:
+- function: duel
+  parameters:
+  - parameter: Good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: Bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [White Castle, Cair Paravel]
+  - output parameter: result
+    default value: Good guy wins
+  logic:
+  - assignment: Jadis wins in her castle
+    expression: "IF 'Bad guy' IS 'Jadis' AND 'location' IS 'White Castle' THEN 'result'= 'Jadis wins'"
+```
+
+### Choices
+Choices represent values that can be taken by parameters. Choices can be defined simply as a flow (`choices: [sword, bow, dagger]`) or as a list of `choice` elements.
+If a choice is defined explicitly in a list it may optionally contain a `value` element. Choice's value is the actual value that will be used in the result of the generation (but it is also possible to call tomato with `--use-choice-names` switch to generate tests containing choice names instead their values). 
+If the value is not provided, it is derived from the name. The same is applied to a flow syntax. In this case, both name and value will be taken from the flow.
+Using choice name different from the value may be handy if the choice is used in the logic, but the value we want to define is very long, so repeating it in the constraint expression would be tedious. Also some names are not allowed (like strings containing only spaces), but this restriction does not apply to the choice's values. The only restriction about choice value is that it must be a single line.
+As all choices are internally converted to a string, surrounding the values with quotes is a nice precaution to avoid unexpected behaviour (like parsing `yes` as `True`).
+It is perfectly legal to have two choices on the same level of hierarchy (children of the same parent) with the same value, although it is not allowed for them to have the same name.
+
+Similarily to parameters, choices can also be nested. Instead of providing a value of a choice, subchoices can be defined, using `choices` element.
+A choice that has `choices` element is called _abstract choice_, otherwise the choice is a _leaf choice_. A single choice may not have both `value` and `choices` elements.
+Using abstract choices is a handy way to group choices together and simplifying constraints. There is no limit for the nesting levels for choices.
+
+
+```yaml
+functions:
+- function: character
+  parameters:
+  - parameter: name
+    choices:
+    - choice: male
+      choices: [Peter, Edmund]
+    - choice: female
+      choices: [Susan, Lucy]
+  - parameter: gender
+    choices:
+    - choice: F
+      value: female
+    - choice: M
+      value: male
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  logic:
+  - alias: male
+    expression: "'gender' IS 'M'"
+  - constraint: female name and weapon
+    expression: "IF NOT 'male' THEN 'name' IS 'female' AND 'weapon' IS NOT 'sword'"
+  - constraint: male name
+    expression: "IF 'male' THEN 'name' IS 'male'"
+```
+__IMPORTANT:__ No constraint is implicitly derived from naming the model elements. Having abstract choices named `male` and `female` has nothing to do with the values or names of the choices of the `gender` parameter.
+The same with the alias `male` - it is just a coincidence that there is an abstract choice of the `name` parameter with the same name. Every constraint must be defined explicitly.
+
+### Model logic
+
+Model logic defines set of constraints that define allowed combinations of input parameters and assignments to define values of output parameters. Logic may be defined for a function or for a structure.
+Logic of a structure defines dependencies between the parameters of the sturcture. Logic of a function defines rules for all parameters of the function. 
+
+The `logic` element of a function is a list of elements that can be `alias`, `constraint` of `assignment`.
+Logic of a structure may not contain `assignment` elements, as they define values of output parameters which are not alllowed in structures.
+
+All elements of the list defined by `logic` contain required `expression` element that defines the actual expression of the element. The value of the expression element must always be surrounded by double quotes.
+The syntax of the expressions for different elements may differ a bit and is explained below.
+
+```yaml
+[...]
+- constraint: NAME
+  expression: "EXPRESSION"
+```
+
+### Constraints
+
+A constraint defines an expression that must be fulfilled by all tests generated from the model. The value of `expression` in the constraint may be defined as _Invariant_ or _Implication_. 
+
+#### Invariants
+
+Invariant is an expression type in form of a single _statement_ that must always hold in the generated tests, for example:
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [Cair Paravel, White Castle]
+  logic:
+  - constraint: location
+    expression: "'bad guy' IS 'Jadis' OR 'location' IS 'Cair Paravel'"
+ ```
+
+The expression defined by the constraint `location` must hold for all tests. This means that in all generated tests, the value of parameter `bad guy` will be `Jadis`, or the value of parameter `location` will be `Cair Paravel`. Note that there is no restriction that prevents both `bad guy` be `Jadis` and `location` be `Cair Paravel`
+
+#### Implication
+An implication is an expression in a form `"IF CONDITION THEN RESULT"` (or alternatrive notation `"CONDITION => RESULT"`), where `CONDITION` and `RESULT` are statements with the same syntax as in the invariant version of the constrait. Implications define constraints that require that for each tests where the `CONDITION` part is fulfilled, the `RESULT` part must also be true.
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [Cair Paravel, White Castle]
+  logic:
+  - constraint: location
+    expression: "'bad guy' IS 'Jadis' => 'location' IS NOT 'Cair Paravel'"
+ ```
+In this example, whenever the value of `bad guy` is `Jadis`, the location will always be `White Castle`, unlike like in the previous example when `Jadis` and `Cair Paravel` could coexist. 
+
+Invariants and implications are in fact different forms of the same logic semantics. Using implications is introduced for convenient notation, but in the end all implications may be reduced to invariants, because any expression `"IF A THEN B"` can also be noted as `"NOT A OR B"`.
+
+### Assignments
+Assignments are defining values of output parameters in the tests. The syntax of an assignment is `"IF CONDITION THEN ASSIGNMENTS_LIST"` (or alternatively `"CONDITION => ASSIGNMENT_LIST"`),
+where `CONDITION` is a statement and `ASSIGNMENT_LIST` is a comma separated list of assignments of values to choisen output parameters, for example: `'parameter name 1'='value', 'parameter value 2' = 'other value'`.
+The value of an output parameters is set to its default value, unless the combination of parameters of the generated test fulfill the statement defined in the `CONDIDTION`. The value used in the assignment is arbitrary and does not need to be declared anywhere else in the model. There are no restrictions for values used in assignments other than for values used for choices. 
+
+```yaml
+functions:
+- function: duel
+  parameters:
+  - parameter: Good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: Bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [White Castle, Cair Paravel]
+  - output parameter: result
+    default value: Good guy wins
+  - output parameter: duration
+    default value: 1 minute
+  logic:
+  - assignment: Jadis wins in her castle
+    expression: "IF 'Bad guy' IS 'Jadis' AND 'location' IS 'White Castle' THEN 'result'= 'Jadis wins', 'duration'='10 minutes'"
+  - assignment: Maugrim fights 5 minutes
+    expression: "'Bad guy' IS 'Maugrim' => 'duration'='5 minutes'"
+```
+It is technically allowed to define two different assignments for the same condition, but the result of such operation are undefined. Tomato will not warn if that happens.
+
+### Aliases
+Aliases are macros that allow defining short names for long statements used in constraints and assignments. Aliases may be then used by their names in other statements of all logic elements (aliases, constraints or assignments).
+
+```yaml
+functions:
+- function: duel
+  parameters:
+  - parameter: Good guy
+    parameters:
+    - parameter: name
+      choices: [Peter, Susan, Edmund, Lucy]
+    - parameter: weapon
+      choices: [sword, bow, dagger]
+    logic:
+    - alias: female
+      expression: "'name' IN ['Susan', 'Lucy']"
+    - constraint: sword
+      expression: "IF 'female' THEN 'weapon' IS NOT 'sword'"
+  - parameter: Bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [White Castle, Cair Paravel]
+  - output parameter: duration
+    default value: 5 minutes
+  logic:
+  - alias: Cair Paravel
+    expression: "'location' IS 'Cair Paravel'"
+  - alias: Girls against Jadis
+    expression: "'Good guy::female' AND 'Bad guy' IS 'Jadis'"
+  - constraint: Girls against Jadis in Cair Paravel
+    expression: "IF 'Girls against Jadis' THEN 'location' IS 'Cair Paravel'"
+  - assignment: Cair Paravel
+    expression: "IF 'Cair Paravel' THEN 'duration'='10 minutes'"
+```
+
+An alias may be accessed from higher levels of the hierarchy. In the example above the alias `female` in the structure `Good guy` is accessed from the constraint `sword` within the same structure as well as from the alias `Girls against Jadis` on the function level.
+
+### Statements
+A _statement_ is a core concept in the model logic. Statements define invariants, coditions and results of implications and conditions of assignments.
+Statements may also be assigned to aliases. Statements are built from _primitive statements_ using logical operations like `AND`, `OR`, `NOT` and grouping those in parentheses.
+
+#### Primitive statement
+A primitive statement is a building block of all statements. A primitive statement may have following forms:
+
+`'PARAMETER' IS/IS NOT 'CHOICE'`
+This statement defines a situation that a given `CHOICE` has been assigned (or not) to the `PARAMETER`.
+Both parameter and the choice are defined by their names, so the description is not ambiguous even if there exist two choices with the same value.
+Both `PARAMETER` and `CHOICE` may refer to lower level in hierarchy if a nested parameter or choice is used. In this case, `::` is used to separate names on individual levels.
+
+`'PARAMETER' IN/NOT IN ['CHOICE 1', 'CHOICE 2', ...]`
+This statement defines a situation when a value of a parameter is defined by one of the choices on the list (or not belong to the list, if using `NOT IN`). It is equivalent to expression `'PARAMETER' IS 'CHOICE 1' OR 'PARAMETER IS 'CHOICE 2' OR...`
+
+`'PARAMETER' LABEL IN/NOT IN ['label 1', 'label 2', ...]`, `'PARAMETER' LABEL IS/IS NOT 'label'`
+Choice labels can also be used in constraints to only allow specific values/choices which have the allowed labels. The statement building works the same as regular primitive statements, but with the added `LABEL` section to specify that we are restricting based
+on labels and not choice values.
+
+The names of all elements (parameters, choices and labels) from the model mentioned in primitive statements must always be surrounded by single quotes.
+
+```yaml
+global parameters:
+- parameter: Good guy
+  parameters: 
+  - parameter: name
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices:
+    - choice: bow
+    - choice: bladed
+      choices: [sword, dagger]
+functions:
+- function: duel
+  parameters:
+  - linked parameter: our protagonist
+    linked to: Good guy
+  - parameter: bad guy
+    parameters:
+    - parameter: name
+      choices: [Jadis, Maugrim]
+    - parameter: weapon
+      choices: [wand, claws]
+  logic:
+  - constraint: Maugrim fights with claws
+    expression: "'bad guy::name' IS 'Maugrim' => 'bad guy::weapon' IS 'claws'"
+  - constraint: Lucy can't use sword against Maugrim
+    expression: "IF 'our protagonist::name' IS 'Lucy' AND 'bad guy::name' IS 'Maugrim' THEN 'our protagonist::weapon' IN ['bow', 'bladed::dagger']"
+```
+If referring to a name of a parameter is part of a structure defined as a global parameter,
+we use the name of the linking parameter as the top element in the hierarchy and then follow it with the names of elements of the structure (`'our protagonist::weapon'`).
+
+#### Operations on statements
+A statement is recursively defined using primitive statements and operations on those, using `AND`, `OR` and `NOT` operators.
+It is possible to group statements together using parentheses to ensure operation priorities. The order of operations is following:
+
+- `()` parentheses have always highest priorities
+- `NOT STATEMENT` negates the `STATEMENT`
+- `STATEMENT AND/OR STATEMENT` defines logical AND and OR operations.
+
+The operations are executed from left to right, so such statement:
+```
+STATEMENT_1 OR NOT STATEMENT_2 AND STATEMENT_3
+```
+Is equivalent to:
+```
+(STATEMENT_1 OR (NOT STATEMENT_2)) AND STATEMENT_3
+```
+rather than:
+```
+STATEMENT_1 OR ((NOT STATEMENT_2) AND STATEMENT_3)
+```
+or
+```
+STATEMENT_1 OR (NOT (STATEMENT_2 AND STATEMENT_3))
+```
+Using parentheses is recommended to keep the notation unambiguous.
+
+## Generating tests with tomato
+
+The main function of tomato is generating tests. Tomato will read the model from a file or, if the file is not provided, from standard input.
+The input file is the only positional argument of tomato. The two following commands will have the same effect:
+
+```bash
+$ tomato model.yaml
+```
+and
+```bash
+$ cat model.yaml | tomato
+```
+Tomato reads the model and generate lines of test that are rows of a csv file with individul tests. The output is sent to standard output.
+Any errors or other text that is not a test is sent to the error output.
+The `Reading model from stdin` text that is printed when tomato is started with without defining the input file, is an example of this.
+
+If more than one function is defined in the model, tomato will generate tests for the first of them. The function may be selected using `-f|--function` argument.
+If your function has white characters in the name, use quotes (e.g. `$ tomato -f 'my function'`)
+
+### Generators
+There are three main types of generation algorithms used by tomato: _cartesian_, _random_ and _nwise_ that may be optionally customized with some additional options.
+By default, the nwise algorithm is used with the parameter N set to 2, which means that the tool will generate tests with pairwise coverage.
+
+### Demo and progress
+In order to have more info during the data generation, the user may use demo levels (1-3) or progress. 
+
+The demo functionality will print how many tuples/test cases there are left before generation is complete. Using demo level 1
+will only print this to stderr and not change the generation speed or such. On the other hand, using demo levels 2 and 3 will print the info to 
+stderr and also slow down the generation so that the user can more easily see what is happening and follow along.
+The different demo levels are used as such:
+`--demo-level 1`, `--demo-level 2`, `--demo-level 3`
+
+The progress functionality is an experimental feature that may be subject to change in the future. It allows the user to see how many tuples/test cases
+have been generated and how many are left. This allows the user to see exactly how many tests they will have and also helps to follow along so that they can
+know when the generation will finish. The progress is formatted as (completed tuples or test cases / total tuples or test cases).
+The progress functionality is used as such:
+`--show-progress`
+
+
+### Cartesian generator
+The cartesian generator is the simplest generator that will output all possible combinations of parameter values that are valid according to defined constraints.
+This parameter does not take any additional options.
+
+### Random generator
+The random generator will generate rows with parameter values selected randomly. The `--length` switch will define the number of generated tests.
+The default value `0` used for length is default and makes tomato generate tests until all valid combinatins were generated.
+
+Using `--duplicates` switch will cause that two identical test may be generated. Therefore, using `--duplicates` without limiting the length will make tomato generate tests forever (which may be useful in some scenarios).
+
+The `--adaptive` switch will make tomato generate tests that are as different from tests already generated as possible. The metric of how different two tests are is the Hamming distance (number of elements that differ). For each step, tomato will look up to max 100 tests back and calculate a test that differs the most from all of them.
+
+### NWise generator
+The NWise generator generates tests that cover all _n-tuples_ of the space of all possible tests.
+For example, for default value n=2 (pairwise coverage) it will cover all possible pairs of values of the input parameters.
+Take this model as an example:
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+```
+Tomato will generate following tests for it (using default arguments):
+```bash
+good guy,weapon,bad guy
+Susan,bow,Maugrim
+Edmund,sword,Jadis
+Lucy,sword,Maugrim
+Peter,dagger,Maugrim
+Peter,bow,Jadis
+Edmund,bow,Maugrim
+Susan,sword,Jadis
+Edmund,dagger,Jadis
+Susan,dagger,Maugrim
+Lucy,dagger,Jadis
+Peter,sword,Jadis
+Lucy,bow,Jadis
+```
+If you look at the output you will notice that all possible combinations of pairs of parameters are covered: `Lucy` fights using a `bow`, `Edmund` agains `Maugrim`, `Jadis` against a `sword` etc. This allows significantly reducing the number of tests that are needed to achieve relatively good coverage.
+
+The nwise algorithm can be customized with parameters `-n` that defines the size of tuples that must be covered (n=3 will cover all possible triplets etc.).
+
+The parameter `--coverage` defines percentage of tuples that must be covered.
+
+The way the nwise algorithm works is by building a set of all possible n-tuples that validate the constraints and building tests for individual tuples. It tries to build such a test that covers as many tuples in the set as possible. After the test is constructed, covered tuples are removed from the set. The algorithm repeats until the set of uncovered tuples is empty. 
+
+The parameter `-T|--tuples-from` allows to define a set of parameters that will be covered by the n-tuples. For the example above, if we generate tests by the command:
+
+```bash
+$ tomato --tuples-from 'good guy','bad guy'
+```
+
+we will get something like this:
+```
+good guy,weapon,bad guy
+Peter,sword,Jadis
+Susan,bow,Jadis
+Peter,dagger,Maugrim
+Lucy,sword,Jadis
+Edmund,bow,Jadis
+Lucy,sword,Maugrim
+Susan,bow,Maugrim
+Edmund,bow,Maugrim
+```
+ In the generated tests, all the combinations of `good guy` and `bad guy` parameters are covered, not necessarily covering the interactions with the remaining parameters. 
+
+The working of the n-wise algorithm is demonstrated if tomato is used with `--demo-level` parameter 1, 2 or 3.
+The higher the value is, the more intermediate info is printed (on the error output) and the longer the algorithm waits on each step.
+
+### Constraints manipulation
+Tomato can be used with parameters that allow to tune how constraints in the model are used. By default tomato will straightforward apply all constraints and assignments that are defined in the model.
+But it may be useful to ignore them with `--ignore-constraints` and `--ignore-assignments` option.
+Using the option `--negate-constrainst` will generate only tests that violate at least one constraint defined in the model, while `--invert-constraints` will produce only such tests that violate all defined constraints.
+
+### Filtering parsed elements
+Sometimes the same model can be used to generate tests for different applications.
+In some situations the applications differ only in a small detail (by not using some of the parameters or choices or using different constraints).
+It is possible to reuse the same model with restricting the parsed elements using whitelists or blacklists. Take this:
+
+```yaml
+functions:
+- function: duel
+  parameters:
+  - parameter: good guy
+    choices: 
+    - choice: Peter
+    - choice: Susan
+    - choice: Edmund
+    - choice: Lucy
+    - choice: Mr. Tumnus
+      labels: [sidekick]
+  - parameter: bad guy
+    choices: 
+    - choice: Jadis
+    - choice: Maugrim
+    - choice: a Giant
+      labels: [sidekick]
+  - parameter: location
+    choices: [White Castle, Cair Paravel] 
+```
+When we generate tests without any additional parameters, we will get something like this:
+```
+good guy,bad guy,location
+Edmund,Jadis,Cair Paravel
+Peter,a Giant,Cair Paravel
+Lucy,Jadis,White Castle
+Mr. Tumnus,Maugrim,Cair Paravel
+Lucy,Maugrim,White Castle
+Lucy,a Giant,Cair Paravel
+Mr. Tumnus,Jadis,White Castle
+Susan,a Giant,White Castle
+Peter,Jadis,White Castle
+Edmund,Maugrim,White Castle
+Susan,Jadis,Cair Paravel
+Edmund,a Giant,Cair Paravel
+Mr. Tumnus,a Giant,Cair Paravel
+Peter,Maugrim,White Castle
+Susan,Maugrim,Cair Paravel
+```
+but it may be interested with generating tests only for limited parts of the model, so we may get rid of `Mr. Tumnus` as a `good guy` and `a Giant` as a `bad guy`:
+
+```bash
+$ tomato --blacklist sidekick
+[...] //pasted model
+good guy,bad guy,location
+Edmund,Maugrim,Cair Paravel
+Peter,Jadis,Cair Paravel
+Peter,Maugrim,White Castle
+Lucy,Jadis,White Castle
+Lucy,Maugrim,Cair Paravel
+Susan,Maugrim,Cair Paravel
+Edmund,Jadis,White Castle
+Susan,Jadis,White Castle
+```
+
+Using `--whitelist` and `--blacklist` will be applied to all types of model elements. But it is also possible to filter only certain type of elements from the model:
+
+- `--input-whitelist`, `--input-blacklist` - aplied to parameters and choices
+- `--parameters-whitelist`, `--parameters-blacklist` - aplied to parameters
+- `--choices-whitelist`, `--choices-blacklist` - aplied to choices
+- `--logic-whitelist`, `--logic-blacklist` - aplied to constraints and assignments
+- `--constraints-whitelist`, `--constrainst-blacklist` - aplied to constraints
+- `--assignments-whitelist`, `--assignments-blacklist` - aplied to assignments
+
+The elements that are not parsed are not validated semantically, but they still must be valid in terms of yaml syntax.
+
+### Format of the output
+By default, the first row printed by tomato will consists of names of all parameters by their full path (using `::` for nested parameters).
+Then, the following rows will be filled with tests consisting values of choices that were used for the parameters, separated by a comma character. This may be tuned by using following arguments:
+
+- `-H|--no-headrow` - do not print the head row with the parameter names,
+- `--use-choice-names` - choice names will be used instead of values. Nested choices will have `::` between hierarchy levels,
+- `-s|--separator SEPARATOR` - use `SEPARATOR` instead of `,`. May be useful if some of the choices contain `,`.
+
+## Validating models
+If tomato is called to generate tests for an invalid model, it will print the encountered errors and exit with an error code. It is also possible to call tomato only in order to validate the model. This is done with `-v|--validate-model` option. Tomato will check the correctness of the model and quit, without generating tests. If the model is correct, it will print a confirmation message on the error output and quit with `0` exit code. Otherwise it will print all the error messages and quit with a positive exit code.
+
+## Validating tests 
+Tomato may also be used to validate tests using `-V|--validate-tests [TEST_FILE]` option. This is a useful feature in situations when one wants to define a model having some sample tests.
+Tomato will parse the model, read the tests and print the tests that could be generated from the model unaltered on the standard output.
+Tests that from different reasons could not be generated using the model will be printed on the error output with some comments and formatting.
+
+When using the `-V|--validate-tests [TEST_FILE]` option, tomato will try to load tests from the file that is provided as the optional value. If the file is not provided, then tomato will read tests from standard input.
+It is also possible that the model and tests are read from the standard input. In this case, the model must be providd first and separated from tests by a line that starts with three `-` characters (three dashes)
+
+Most common situations when a test could not be generated from a given model include:
+
+- the number of parameters (columns) is different in the test and in the model
+- the names of the parameters do not match the values in the first row
+- values of parameters do not correspond to defined choices
+- input parameters do not fulfill defined constraints
+- value of an output parameter is different that is defined by an assignment
+
+Options that can be used for validation:
+- `--exit-on-error` - exit on the first error. If this flag is not set, the program will continue to the next test or model element after an error.
+- `-F|--no-error-formatting` - do not format error messages. If this flag is not set, the error messages are formatted to be more readable and distinguishable from valid tests.
+- `-M|--no-error-messages` - do not print error messages. If this flag is set, only the tests that fail validation are printed on stderr, without any additional messages.
+- `--duplicate-headrow` - print the headrow both on top of the valid tests and the tests that fail validation.
+
+Lets save the model to a file `model.yaml`:
+```yaml
+functions:
+- function: duel
+  parameters:
+  - parameter: Good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: Bad guy
+    choices: [Jadis, Maugrim]
+  - parameter: location
+    choices: [White Castle, Cair Paravel]
+  - output parameter: duration
+    default value: 5 minutes
+  logic:
+  - alias: Lucy against Jadis
+    expression: "'Good guy' IS 'Lucy' AND 'Bad guy' IS 'Jadis'" 
+  - constraint: Lucy against Jadis in Cair Paravel
+    expression: "IF 'Lucy against Jadis' THEN 'location' IS 'Cair Paravel'"
+  - assignment: Lucy against Jadis duel duration
+    expression: "IF 'Lucy against Jadis' THEN 'duration'='10 minutes'"
+```
+
+Now we will generate tests from this model ignoring all constraints and assignments and try to validate it, but considering the constraints:
+
+```bash
+$ tomato ./model.yaml --ignore-constraints --ignore-assignments | tomato ./model.yaml -V --duplicate-headrow
+```
+Tomato will repeat valid tests on the standard output, for example:
+```
+Good guy,Bad guy,location,duration
+Susan,Maugrim,White Castle,5 minutes
+Edmund,Maugrim,Cair Paravel,5 minutes
+Lucy,Maugrim,Cair Paravel,5 minutes
+Edmund,Jadis,Cair Paravel,5 minutes
+Peter,Jadis,Cair Paravel,5 minutes
+Edmund,Jadis,White Castle,5 minutes
+Peter,Maugrim,White Castle,5 minutes
+Susan,Jadis,Cair Paravel,5 minutes
+```
+and invalid tests, with comments on the error output, for example:
+
+<pre style="color: red;">
+Good guy,Bad guy,location,duration
+Lucy,Jadis,White Castle,5 minutes
+Test case does not satisfy the constraints
+Lucy,Jadis,Cair Paravel,5 minutes
+Output values not correct 
+Value of parameter duration should be 10 minutes
+</pre>
+
+Again, since the nwise algorithm is partly randomized, your results may be different.
+
+## Using tomato in test code
+
+Tomato can be easily integrated with test frameworks like `pytest`. The model can be defined as a separate file, or directly in the test code:
+
+```python
+import pytest
+import subprocess
+import os
+
+def run_tomato_with_stdin(model: str):
+    result = subprocess.run(['tomato', '-H'], input=model.encode('utf-8'), stdout=subprocess.PIPE)
+    for line in [l for l in result.stdout.decode('utf-8').split('\n') if l != '']:
+        yield line.split(',')
+
+model = """
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+"""
+
+    
+@pytest.mark.parametrize('good_guy, weapon, bad_guy', 
+                         run_tomato_with_stdin(model))
+def test_function_with_string_model(good_guy, weapon, bad_guy):
+  print(f'\n{good_guy.strip()} fights with {bad_guy.strip()} using {weapon.strip()}')
+
+```
+
+Save the file as `test_example.py` and run with `pytest -s` to see the program output:
+
+```bash
+$ pytest ./test_example.py  -s
+[...]
+collecting ... Reading model from stdin
+collected 12tems                                                             
+
+test_example.py Peter fights with Jadis using dagger
+.Edmund fights with Jadis using sword
+.Peter fights with Maugrim using sword
+.Lucy fights with Jadis using bow
+.Susan fights with Maugrim using bow
+.Susan fights with Jadis using sword
+.Lucy fights with Maugrim using dagger
+.Susan fights with Maugrim using dagger
+.Peter fights with Maugrim using bow
+.Edmund fights with Maugrim using dagger
+.Lucy fights with Jadis using sword
+.Edmund fights with Maugrim using bow 
+
+=================== 12 passed in 0.15s ===================
+```
+The function `test_function_with_string_model` is a parameterized test, where the parameters `good_guy`, `weapon` and `bad_guy` are provided by the `run_tomato_with_stdin` generator.
+This function runs tomato as a subprocess and sends the model to its input while redirecting its output back to itself. Then tokenizes line by line and yields the parameters that are provided to the test.
+Tomato is started with `-H` parameter to skip the first row that contains parameter names and provide only the actual values.
+
+# Test postprocessing 
+
+Tests generated by tomato can be directly provided to other tools in the testomaton suite for postprocessing.
+The default format of tomato output should be compatible with the input format of beaver and jigsaw, but remember to consistently use any modifiers, for example the separator.
+
+## Beaver
+
+The input to beaver is a csv file. Beaver will process the input row by row and outputs them unchanged, unless it finds a value that starts with `@python` tag.
+These values will be replaced by result of evaluation of what follows the tag. Before the evaluation, beaver will replace content of `{COLUMN}` by the content of that column.
+`COLUMN` may be an index of a column in the file or name of the parameter that is defined in that column. Beaver will take the names of parameters from the first processed row. 
+
+Note that due to `@` having a special meaning in yaml, the content of the `winner name` parameter must be in quotes.
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - output parameter: good guy wins
+    default value: 'yes'
+  - output parameter: winner name
+    default value: '@python {good guy} if {good guy wins} == "yes" else {bad guy}'
+  logic:
+  - assignment: Peter with a bow
+    expression: "IF 'good guy' IS 'Peter' AND 'weapon' IS 'bow' THEN 'good guy wins' = 'no'"
+```
+
+The model contains an output parameter `winner name`.
+The value of that parameter is defined as a python expression that depends on the value of other parameters: `good guy wins` determines the column from where the actual value is taken: from the column `good guy` or `bad guy`.  
+
+We can generate tests by tomato and provide it directly to beaver:
+
+```bash
+$ tomato | beaver
+[...]
+good guy,weapon,bad guy,good guy wins,winner name
+Edmund,bow,Jadis,yes,Edmund
+Peter,sword,Maugrim,yes,Peter
+Susan,sword,Jadis,yes,Susan
+Susan,dagger,Maugrim,yes,Susan
+Lucy,dagger,Jadis,yes,Lucy
+Peter,bow,Jadis,no,Jadis
+Edmund,sword,Maugrim,yes,Edmund
+Edmund,dagger,Jadis,yes,Edmund
+Lucy,sword,Maugrim,yes,Lucy
+Lucy,bow,Maugrim,yes,Lucy
+Peter,dagger,Maugrim,yes,Peter
+Susan,bow,Maugrim,yes,Susan
+```
+
+
+Beaver can use all available functions of packages that are available on the host system. To import packages, use `-i|--imports IMPORTS` argument, where `IMPORTS` is a comma separated list od packages.
+Optionally the packages may be assigned with aliases using `as` keyword. Aliases may be useful is more than one package is imported with the same name. If using aliases, always surround the import with single quotes, eg. `-i 'random as rand','datetime as dt'`.
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - output parameter: good guy wins
+    default value: '@python "yes" if rand.choice([True, False]) else "no"'
+  - output parameter: winner name
+    default value: '@python {good guy} if {good guy wins} == "yes" else {bad guy}'
+```
+The value of `good guy wins` parameter is evaluated using `choice` function (nothing to do with tomato's choice) from the `random` package, but the package is imported as `rand`.
+
+```bash
+$ tomato | beaver -i 'random as rand'
+[...]
+good guy,weapon,bad guy,good guy wins,winner name
+Peter,dagger,Maugrim,no,Maugrim
+Susan,sword,Maugrim,no,Maugrim
+Peter,bow,Jadis,yes,Peter
+Edmund,dagger,Jadis,no,Jadis
+Lucy,dagger,Maugrim,no,Maugrim
+Peter,sword,Jadis,yes,Peter
+Edmund,sword,Maugrim,no,Maugrim
+Lucy,bow,Jadis,no,Jadis
+Susan,bow,Jadis,yes,Susan
+Susan,dagger,Maugrim,yes,Susan
+Lucy,sword,Jadis,no,Jadis
+Edmund,bow,Maugrim,no,Maugrim
+```
+
+It is possible to define own functions and use them in beaver. Own functions shoud be defined in a file that is then provided to beaver with `-m|--modules` argument.
+As with packages, the imported modules can be given aliases using `as` word.
+
+Create such a file and save it as `module.py`:
+
+```python
+def determine_winner(fighter_1, fighter_2, weapon):
+  if fighter_1 == 'Edmund' and weapon == 'dagger':
+    return fighter_2
+  return fighter_1
+```
+
+Then, let us provide following model to tomato and redirect the output to beaver that loads the `module.py` file:
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - output parameter: winner name
+    default value: '@python mod.determine_winner({good guy}, {bad guy}, {weapon})'
+```
+We will import the module `module.py` as `mod`.
+Because the value of the parameter `winner name` contain commas, we have to use an alternative separator for columns in the output of tomato and input of beaver.
+The output of beaver may use standard separator.
+
+```bash
+$ tomato -S '|' | beaver -m 'module.py as mod' -s '|' -S ','
+[...]
+good guy,weapon,bad guy,winner name
+Edmund,bow,Maugrim,Edmund
+Susan,sword,Jadis,Susan
+Lucy,sword,Maugrim,Lucy
+Peter,dagger,Jadis,Peter
+Susan,dagger,Maugrim,Susan
+Edmund,dagger,Jadis,Jadis
+Peter,sword,Maugrim,Peter
+Edmund,sword,Maugrim,Edmund
+Lucy,bow,Jadis,Lucy
+Lucy,dagger,Maugrim,Lucy
+Susan,bow,Maugrim,Susan
+Peter,bow,Jadis,Peter
+```
+
+It is also possible to define a module that import packages used in the expressions. Let us have following file as `imports.py`
+
+```python
+import random as rand
+```
+and define following model:
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - output parameter: winner
+    default value: '@python rand.choice([{good guy}, {bad guy}])'
+```
+Now we can import the module `imports.py` and use all packages that the module imports. This is a useful feature in case when we have to use many packages.
+
+__IMPORTANT__: Beaver will happily evaluate any python code it is provided with. This can be malicious code that does damages to your computer. Never use python with input that you do not trust!
+
+## Jigsaw
+Jigsaw is a simple tool to manipulate csv files it gets on its input. It can add, remove, replace or swap two columns of the input file.
+The columns may be identified by their name (deined in the first row) or index. In case they are defined using the index, the indices start from 1. The value -1 identifies the last column.
+
+Jigsaw may be useful tool if we want to provide the output of tomato directly to other tools, but need to slightly modify the format. Let's take the example model:
+
+```yaml
+functions:
+- function: duel
+  parameters: 
+  - parameter: good guy
+    choices: [Peter, Susan, Edmund, Lucy]
+  - parameter: weapon
+    choices: [sword, bow, dagger]
+  - parameter: bad guy
+    choices: [Jadis, Maugrim]
+  - output parameter: good guy wins
+    default value: 'yes'
+  - output parameter: winner name
+    default value: '@python {good guy} if {good guy wins} == "yes" else {bad guy}'
+  - output parameter: loser name
+    default value: '@python {bad guy} if {good guy wins} == "yes" else {good guy}'
+  logic:
+  - assignment: winner
+    expression: "IF 'bad guy' IS 'Maugrim' AND 'weapon' IS 'sword' THEN 'good guy wins'='no'"
+```
+
+Lets imagine that we need to provide to our test application only a file with three columns: `winner name`, `loser name` and `weapon` in that order.
+We can easily use jigsaw to filter the unwanted columns and reorder them:
+
+```bash
+$ tomato | beaver | jigsaw -W 'winner name','loser name','weapon' -X 'weapon' 'bad guy'
+[...]
+loser name,winner name,weapon
+Maugrim,Lucy,dagger
+Maugrim,Susan,bow
+Jadis,Edmund,sword
+Jadis,Peter,bow
+Peter,Maugrim,sword
+Jadis,Lucy,sword
+Maugrim,Edmund,bow
+Jadis,Edmund,dagger
+Jadis,Susan,dagger
+Maugrim,Peter,dagger
+Maugrim,Lucy,bow
+Susan,Maugrim,sword
+```
+The parameter `-W|--whitelist` defines the columns that should be printed. The  parameter `-X` defines columns to be swapped. Note that you can use the names of the column that eventually will not be printed. Thi the example above, we swapped columns `weapon` and `bad guy`, but we printed only the first one. Other arguments that can be used with jigsaw:
+
+- `-n [COLUMN_NAME]` - adds a column with line numbers. The optional value `COLUMN NAME` is the name of the column (used in the first row). Empty by default.
+- `-B|--blacklist` - blacklist of columns to be parsed
+- `-W|--whitelist` - whitelist of columns to be parsed
+- `-A <COLUMN|INDEX> <NEW_NAME> <VALUE>` - adds a column after the columns with name `COLUMN` or index `INDEX`. The column name will be defined by `NEW_NAME` and the values in all rows will be `VALUE`. Useful to add python expressions to the result of tomato output.
+- `-F <COLUMN|INDEX> <NEW_NAME> <VALUE>` - adds a column before the columns with name `COLUMN` or index `INDEX`. The column name will be defined by `NEW_NAME` and the values in all rows will be `VALUE`. Useful to add python expressions to the result of tomato output.
+- `-R COLUMN|INDEX NEW_NAME VALUE` replaces column identified by name of index by the `NEW_NAME` in the first row and `VALUE` in all other rows
+- `-X COLUMN|INDEX COLUMN|INDEX` - swaps two columns.
+
