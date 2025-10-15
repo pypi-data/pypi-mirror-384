@@ -1,0 +1,135 @@
+# GPULINK-SDK
+
+[GPULINK](https://gpulink.org) is system to help chutes miners to onboard their GPU servers on vast.ai, allowing miners to take on workloads from both places
+
+
+This library exists to manage GPU allocations between chutes and vast.ai
+
+## Basic setup
+
+Basic setup to listen for changes in gpu requirements
+
+You will find `api_key` in account section of the website
+
+```python
+from gpulink_sdk import GPULinkClient
+import asyncio
+
+async def on_update(data):
+    print(data)
+
+client = GPULinkClient(
+    api_key="az5DVISoCFUz5YbLJLUY",
+    report_gpu_requirements=on_update,
+    show_logs=True
+)
+
+async def main():
+    await client.service()
+
+asyncio.run(main())
+```
+
+### Example received data by on_update()
+
+
+```json
+{
+    "89050d4f-6aa8-46b1-924f-b849fbbac744": { // Kuberneted UID
+        "needed_gpus": [0, 1],                // GPU IDs needed by vast.ai orders
+        "available_gpus": [0, 1, 3]           // GPU IDs of gpus reported to GPULINK, that are not under utilisation of chutes
+    }
+}
+```
+
+## Submit Available GPUs
+
+To run this call the `client.service()` must be running
+You need to submit GPUs, that are not utilised by chutes to allow vast.ai jobs to run on them
+
+```python
+await client.submit_available_gpus(
+    {
+        "89050d4f-6aa8-46b1-924f-b849fbbac744": [0, 1, 2] # Kubernetes UID: [GPU UIDs not utilised by chutes]
+    }
+)
+```
+
+## Announce node
+
+Before running GPULINK software on the target machine (node) you must firstly announce it to GPULINK
+
+```python
+# ---- SELF IPv4 MODE (Recommend) -----
+# Announce machine with it's public IPv4 and open ports, vast.ai clients will reach
+# ⚠️ When announcing machine like this you must ensure the correctness of IPv4 and must make sure UDP,TCP ports in this range are open from public internet
+# ⚠️ Vast.ai recommends 100 open ports per GPU
+await client.announce_machine(
+    {
+        "node_name": "node1", # Name of node, under which it will show up in gpulink website,
+        "uid": "b2a3e58e-7e54-4e3c-93c2-2d97d1e6c2d9", # Kubernetes UID of the node (unique identifier of node)
+        "min_port": 10000, # Lowest port in range
+        "max_port": 10800, # Highest port in range
+        "public_ip": "198.51.100.6" # Public IPv4 of machine
+    }
+)
+
+# ---- GPULINK IPv4 MODE -----
+# Announce machine without your public IPv4, will list machine with GPULINK IPv4 on vast.ai, because of traffic running throut proxy can lead to slower communication speed, higher latency for vast.ai clients
+await client.announce_machine(
+    {
+        "node_name": "node2", # Name of node, under which it will show up in gpulink website,
+        "uid": "f8a6b1cb-2390-4e93-935b-1dbf2a9a1b3e", # Kubernetes UID of the node (unique identifier of node)
+    }
+)
+```
+
+⚠️ IPv4 mode per machine cannot be later changed
+
+## List nodes
+
+```python
+await client.list_machines()
+```
+
+### Output:
+
+```json
+[
+    {
+        "node_name": "node1", // Node name
+        "uid": "b2a3e58e-7e54-4e3c-93c2-2d97d1e6c2d9", // Kubernetes UID
+        "last_online": None, // GPULINK deployer never connected
+        "net": {
+            "ip": "198.51.100.6", // Public IPv4 if the machine
+            "min_port": 10000,    // Lowest open port for vast.ai client
+            "max_port": 10800     // Highest open port for vast.ai client
+        }
+    },
+    {
+        "node_name": "node2", // Node name
+        "uid": "f8a6b1cb-2390-4e93-935b-1dbf2a9a1b3e", // Kubernetes UID
+        "last_online": 1760448725, // Last hearthbeat of GPULINK deployer in unix timestamp (s)
+        "net": "gpulink" // Network managed by GPULINK, our IPv4 listed on VAST.AI
+    }
+]
+```
+
+## Get gpulink deployer image
+
+```python
+await client.get_deployer_image()
+```
+
+### Output:
+
+```
+registry.gpulink.org/internal/deployer:0.0.1
+```
+
+
+## Workflow
+
+### ℹ️ Learn more at [Chutes deployment documentation](https://github.com/gpulink-org/docs/blob/main/chutes_deployment.md)
+
+❤️ [CHUTES.AI](https://chutes.ai) & [VAST.AI](https://vast.ai)
