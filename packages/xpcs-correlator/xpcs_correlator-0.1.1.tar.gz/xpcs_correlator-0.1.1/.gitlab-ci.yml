@@ -1,0 +1,112 @@
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+stages:
+  - setup
+  - test
+  - docs
+  - deploy
+
+variables:
+  PROJECT_NAME: "xpcs_correlator"
+  LOCAL_REPO_SHELL: "/dev/shm/gitlab_ci/xpcs_correlator"
+  VENV_DIR_SHELL: /dev/shm/gitlab_ci/xpcs_correlator/venv
+  USE_CLEAN_VENV: "true"
+
+# Global before_script applied to all jobs
+before_script:
+  - unset HTTP_PROXY
+  - unset HTTPS_PROXY
+
+.setup_template: &setup_template
+  tags:
+    - shell
+  before_script:
+    - if [ ! -d "$LOCAL_REPO" ]; then mkdir -p "$LOCAL_REPO"; fi
+  script:
+    # recreate venv if requested, otherwise create if missing
+    - if [ "$USE_CLEAN_VENV" == "true" ] && [ -d "$VENV_DIR" ]; then rm -rf "$VENV_DIR"; fi
+    - if [ ! -d "$VENV_DIR" ]; then python3 -m venv "$VENV_DIR"; fi
+    - source "$VENV_DIR/bin/activate"
+    - pip install --upgrade pip setuptools wheel setuptools_scm
+    # install project + docs extras into the venv + dev extras for testing
+    - pip install -e ".[doc,dev]"
+    # install pandoc binary for converters (remove downloaded archives after install)
+    - wget https://github.com/jgm/pandoc/releases/download/3.1.12.2/pandoc-3.1.12.2-linux-amd64.tar.gz
+    - tar xvzf pandoc-3.1.12.2-linux-amd64.tar.gz
+    - mkdir -p $HOME/.local/bin
+    - mv pandoc-3.1.12.2/bin/pandoc $HOME/.local/bin/
+    - rm -rf pandoc-3.1.12.2 pandoc-3.1.12.2-linux-amd64.tar.gz
+    - export PATH="$HOME/.local/bin:$PATH"
+    - 'echo "setup: venv at ${VENV_DIR} ready"'
+  variables:
+    VENV_DIR: ${VENV_DIR_SHELL}
+    LOCAL_REPO: $LOCAL_REPO_SHELL
+
+setup:
+  stage: setup
+  <<: *setup_template
+
+.docs_template: &docs_template
+  stage: docs
+  tags:
+    - shell
+  before_script:
+    - if [ ! -d "$LOCAL_REPO" ]; then mkdir -p "$LOCAL_REPO"; fi
+    # ensure the shared venv exists (fail early if missing)
+    - 'if [ ! -d "${VENV_DIR}" ]; then echo "ERROR: VENV not found at ${VENV_DIR}. Run setup stage on same runner or disable USE_CLEAN_VENV."; exit 1; fi'
+    - source "$VENV_DIR/bin/activate"
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - cd doc
+    - make html
+  artifacts:
+    paths:
+      - doc/build/html/
+    expire_in: 1 week
+  variables:
+    VENV_DIR: ${VENV_DIR_SHELL}
+    LOCAL_REPO: $LOCAL_REPO_SHELL
+  dependencies:
+    - setup
+
+test:
+  stage: test
+  tags:
+    - shell
+  before_script:
+    - if [ ! -d "$LOCAL_REPO" ]; then mkdir -p "$LOCAL_REPO"; fi
+    - 'if [ ! -d "${VENV_DIR}" ]; then echo "ERROR: VENV not found at ${VENV_DIR}. Run setup stage first."; exit 1; fi'
+    - source "$VENV_DIR/bin/activate"
+  script:
+    - pytest -v
+  variables:
+    VENV_DIR: ${VENV_DIR_SHELL}
+    LOCAL_REPO: $LOCAL_REPO_SHELL
+  dependencies:
+    - setup
+
+docs:
+  <<: *docs_template
+
+pages:
+  stage: deploy
+  tags:
+    - shell
+  before_script:
+    - if [ ! -d "$LOCAL_REPO" ]; then mkdir -p "$LOCAL_REPO"; fi
+    - 'if [ ! -d "${VENV_DIR}" ]; then echo "WARNING: VENV missing at ${VENV_DIR}; pages job only needs artifacts."; fi'
+    - source "$VENV_DIR/bin/activate" || true
+  script:
+    - rm -rf public #remove old public directory
+    - mkdir public #create a new empty public directory
+    - mv doc/build/html/* public #copy the documentation to the new public directory
+  artifacts:
+    paths:
+      - public/
+  dependencies:
+    - docs
+  variables:
+    VENV_DIR: ${VENV_DIR_SHELL}
+    LOCAL_REPO: $LOCAL_REPO_SHELL
