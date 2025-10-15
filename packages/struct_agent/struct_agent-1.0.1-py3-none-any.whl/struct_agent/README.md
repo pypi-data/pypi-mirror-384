@@ -1,0 +1,281 @@
+# StructAgent
+
+A small, simple, and structured AI agent with reasoning capabilities and tool integration. Built with modern Python patterns and designed for extensibility.
+
+## Features
+
+- **ReAct Agent**: Think-Act-Observe loop with structured reasoning steps
+- **Tool Integration**: Modular tool system with pluggable capabilities
+- **Multiple LLM Providers**: Support for OpenRouter and other providers via Instructor
+- **Mathematical Operations**: Arithmetic and expression evaluation tools
+- **Web Search**: SearXNG integration for meta-search capabilities
+- **Vector Indexing**: LEANN integration for semantic search and RAG
+- **Type Safety**: Full Pydantic validation and structured outputs
+
+## Installation
+
+### Prerequisites
+
+- Python 3.12+
+- Poetry (for dependency management)
+- OpenRouter API key
+
+### Setup
+
+1. **Install dependencies**
+   ```bash
+   poetry install
+   ```
+
+2. **Configure environment**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
+
+3. **Set required environment variables**
+   ```bash
+   OPENROUTER_API_KEY="your-api-key"
+   OPENROUTER_MODEL_ID="qwen/qwen3-next-80b-a3b-thinking"
+   OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+   ...
+   ```
+
+## Configuration
+
+### Required Environment Variables
+
+```bash
+# OpenRouter (primary LLM provider)
+OPENROUTER_API_KEY=your-openrouter-api-key
+OPENROUTER_MODEL_ID=qwen/qwen3-next-80b-a3b-thinking
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# Optional: LM Studio (local models)
+USE_LMSTUDIO=false
+LMSTUDIO_MODEL_ID=qwen/qwen3-next-80b-a3b-thinking
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
+LMSTUDIO_API_KEY=your-lmstudio-key
+
+# Tools
+SEARXNG_BASE_URL=http://localhost:8080
+LEANN_INDEX_PATH=/path/to/your/leann_index
+LEANN_CHAT_MODEL=qwen/qwen3-next-80b-a3b-thinking
+LEANN_CHAT_BASE_URL=https://openrouter.ai/api/v1
+LEANN_CHAT_API_KEY=your-openrouter-api-key
+```
+
+### Supported Models
+
+The agent supports various models through OpenRouter:
+- `qwen/qwen3-next-80b-a3b-thinking` (recommended for reasoning)
+- `anthropic/claude-3.5-sonnet`
+- `openai/gpt-4o`
+- And many more
+
+It also supports whatever models you host locally with LM Studio.
+- 'ibm/ibm/granite-4-h-tiny'
+
+## Quick Start
+
+### Run With a Query
+```python
+from struct_agent import build_client, run_react_loop
+
+# Initialize client
+# Client parameters are taken from .env
+client = build_client()
+
+# Run the agent with a query
+query = "What is the weather in the capital of France, and what is that city known for?"
+
+response = run_react_loop(query, client)
+
+print(f"Answer: {response}")
+```
+
+### Use a Custom Configuration
+
+Possible parameters:
+```python
+config = {
+   "max_steps": int,        # The maximum ReAct loop steps allowed
+   "tools": list[ToolSpec], # The tools available to the agent (By default, Searxng, Leann, and Maths tools are available)
+   "verbose": bool,         # Print out ReAct steps if True
+}
+```
+
+Usage example:
+```python
+from struct_agent import build_client, run_react_loop, make_searxng_search_tool
+
+client = build_client()
+
+query = "Research recent advances in quantum computing"
+
+# Custom configuration
+config = {
+   "max_steps": 15,
+   "tools": [make_searxng_search_tool()],
+   "verbose": True
+}
+
+response = run_react_loop(query, client, config)
+```
+
+## Available Tools
+
+### MathsToolkit
+- Arithmetic operations
+- Expression evaluation
+- Mathematical calculations
+
+### MetaSearchToolkit
+- Web search via SearXNG
+- Meta-search capabilities
+- Information retrieval
+
+### VectorIndexToolkit
+- Semantic search via LEANN
+- Vector indexing
+- RAG capabilities
+
+## Adding a Custom Tool
+First, you'll need to define the response model for your tool (to force the llm to reply with a correct structure).
+
+```python
+from pydantic import BaseModel, Field
+
+class CustomTool(BaseModel):
+   """Inputs for the custom tool."""
+   message: str = Field(default="", description="Some input message") # The input can be anything (int, list, dict, .etc).
+   # list_of_things: list = Field(default=[], description="A list of things") # It can also have as many fields as you need
+   # ...
+
+```
+
+Second, you'll need to define the factory function, that will return the ToolSpec with the argument info for the llm and the handler (actual functionality).
+
+```python
+from struct_agent import ToolSpec
+
+def make_custom_tool() -> ToolSpec:
+    """Create a custom tool"""
+
+    def handler(args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle the custom tool call."""
+        parsed_args = AddTextArgs(**args)
+        message = parsed_args.message
+        # Some functionality...
+        return {"result": "function result"}
+
+    return ToolSpec(
+        name="custom_tool",
+        description="A custom tool that does something.",
+        args_model=CustomTool,
+        handler=handler,
+        parameters={
+            "message": "Some input message"
+        }
+    )
+```
+
+Then, you'll need to simply add it to the config, which you pass to the agent.
+Note that when you override the ```config['tools']```, the default tools are removed, so you'll have to add them manually.
+
+```python
+from struct_agent import build_client, run_react_loop, create_toolspecs_from_toolkits, MathsToolkit, MetaSearchToolkit, VectorIndexToolkit
+
+client = build_client()
+query = "What is 2 + 2?"
+
+# Add default tools
+toolkits = [MathsToolkit, MetaSearchToolkit, VectorIndexToolkit]
+all_tools = create_toolspecs_from_toolkits(toolkits) + [make_custom_tool()] # Add custom tool
+
+# Add tools to the agent
+config = {
+   "tools": all_tools
+}
+
+# Run
+response = run_react_loop(query, client, config)
+```
+
+## Project Structure
+
+```
+src/struct_agent/
+├── __init__.py                 # Main package exports
+├── instructor_based/           # LLM client and agent logic
+│   ├── __init__.py
+│   ├── new_agent.py           # Main ReAct agent implementation
+│   ├── client_manager.py      # LLM client management
+│   ├── prompt_manager.py      # System prompts
+│   ├── tool_manager.py        # Tool registry and execution
+│   ├── reasoning_modules.py   # Reasoning data models
+│   └── utils.py               # Utility functions
+├── tools/                      # Modular tool system
+│   ├── __init__.py
+│   ├── maths_tools.py         # Mathematical operations
+│   ├── searxng_tools.py       # Web search integration
+│   ├── leann_tools.py         # Vector indexing
+│   ├── blank_tool.py          # No-op tool
+│   └── toolkits.py            # Pre-configured tool bundles
+└── README.md                  # Package documentation
+```
+
+## Core Components
+
+### ReAct Agent (`new_agent.py`)
+Implements the Reasoning + Acting loop:
+- **Think**: Generate reasoning steps
+- **Act**: Select and execute tools
+- **Observe**: Process tool results
+- **Repeat**: Until final answer is reached
+
+### Client Manager (`client_manager.py`)
+Handles LLM provider setup and model resolution through Instructor for structured outputs.
+
+### Tool System
+- Modular toolkits with standardized interfaces
+- Pydantic models for type-safe tool arguments
+- Easy extensibility for custom tools
+
+## Dependencies
+
+- `instructor>=1.3`: Structured outputs for LLM
+- `openai>=1.30`: OpenAI API client
+- `pydantic>=2.7`: Data validation and serialization
+- `leann>=0.3.4,<0.4.0`: Vector indexing and search
+
+## Troubleshooting
+
+### Common Issues
+
+1. **ModuleNotFoundError**: Ensure PYTHONPATH includes the src directory
+   ```bash
+   export PYTHONPATH=~/projects/struct_agent/src
+   ```
+
+2. **Missing API Keys**: Verify .env file exists and contains required keys
+   ```bash
+   cp .env.example .env
+   # Edit .env with your actual API keys
+   ```
+
+3. **SearXNG Connection**: Ensure SearXNG is running on configured port
+   ```bash
+   SEARXNG_BASE_URL=http://localhost:8080
+   # Update SEARXNG_BASE_URL if using different instance
+   ```
+
+4. **LEANN Index**: Set correct absolute path to your LEANN index
+   ```bash
+   #.env
+   LEANN_INDEX_PATH="/absolute/path/to/your/leann_index"
+   ```
+
+## License
+
+This project is open source and available under the MIT License.
