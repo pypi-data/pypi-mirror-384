@@ -1,0 +1,49 @@
+name: CI Tests
+# 功能：在代码推送和PR时自动运行测试
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, 3.10, 3.11]
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史，setuptools-scm需要
+
+    - name: 🐍 设置Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: 📦 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        pip install -e .  # 可编辑模式安装当前包
+
+    - name: 🔍 代码质量检查
+      run: |
+        python -m flake8 src/ --count --max-line-length=88
+        python -m black --check src/ tests/
+
+    - name: 🧪 运行测试
+      run: |
+        python -m pytest tests/ -v
+
+    - name: 🏗️ 测试构建
+      run: |
+        python -m build
+
+    - name: ✅ 验证包
+      run: |
+        python -m twine check dist/*

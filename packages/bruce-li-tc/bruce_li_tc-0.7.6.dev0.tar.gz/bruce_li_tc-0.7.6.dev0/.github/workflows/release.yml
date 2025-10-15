@@ -1,0 +1,80 @@
+name: Release and Publish
+# 功能：推送git tag时自动发布到PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'  # 推送v开头的标签时触发，如v0.7.5
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    environment: release  # 使用GitHub环境保护
+
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: 🐍 设置Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: 🔧 设置UTF-8环境
+      run: |
+        # 设置Python使用UTF-8编码
+        export PYTHONUTF8=1
+        export PYTHONIOENCODING=utf-8
+        echo "PYTHONUTF8=1" >> $GITHUB_ENV
+        echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+
+    - name: 🐛 调试信息
+      run: |
+        echo "当前目录结构:"
+        find . -type f -name "*.py" -o -name "*.toml" -o -name "*.md" | head -20
+        echo "文件编码检查:"
+        file -i src/bruce_li_tc/__init__.py || true
+        file -i pyproject.toml || true
+        python -c "import sys; print('默认编码:', sys.getdefaultencoding())"
+
+    - name: 📦 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine setuptools-scm
+
+    - name: 🧹 清理构建缓存
+      run: |
+        rm -rf build/ dist/ *.egg-info/
+        # 清理可能的Python缓存文件
+        find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+        find . -name "*.pyc" -delete
+
+    - name: 🏗️ 构建包（带详细日志）
+      run: |
+        python -c "
+        import sys
+        print('Python版本:', sys.version)
+        print('默认编码:', sys.getdefaultencoding())
+        "
+        
+        # 尝试构建，如果失败会显示详细错误
+        python -m build --verbose
+
+    - name: ✅ 验证包
+      run: |
+        python -m twine check dist/*
+
+    - name: 🚀 发布到PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_API_TOKEN }}
+
+    - name: 🏷️ 创建GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*
+        generate_release_notes: true

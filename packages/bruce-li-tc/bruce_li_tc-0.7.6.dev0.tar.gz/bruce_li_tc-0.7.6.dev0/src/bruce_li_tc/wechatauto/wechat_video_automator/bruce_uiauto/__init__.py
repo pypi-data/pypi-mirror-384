@@ -1,0 +1,4 @@
+from .bruce_uiautomation import WeChatAutomator
+from .view_tree import UIControlEnumerator
+from .bruce_wechat_video_guanzhu import VideoChannelOperator
+from .wechat_auto_utils import WeChat_Auto_utils
