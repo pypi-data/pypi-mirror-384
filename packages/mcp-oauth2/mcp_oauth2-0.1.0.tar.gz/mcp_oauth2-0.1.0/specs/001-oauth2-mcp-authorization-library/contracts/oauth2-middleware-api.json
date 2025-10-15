@@ -1,0 +1,316 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "OAuth2 MCP Authorization Library API",
+    "description": "API contracts for OAuth2 middleware integration with FastAPI applications",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://your-mcp-server.com",
+      "description": "MCP Server with OAuth2 Authentication"
+    }
+  ],
+  "paths": {
+    "/mcp/tools/call": {
+      "post": {
+        "summary": "Call MCP Tool",
+        "description": "Execute an MCP tool with OAuth2 authentication",
+        "security": [
+          {
+            "OAuth2": ["api://mcp-server/.default"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^Bearer [A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+            },
+            "description": "Bearer JWT token"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCallRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool execution successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCallResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationError"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer realm=\"mcp-server\", error=\"invalid_token\""
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "JWKS service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp/resources": {
+      "get": {
+        "summary": "List MCP Resources",
+        "description": "List available MCP resources with OAuth2 authentication",
+        "security": [
+          {
+            "OAuth2": ["api://mcp-server/.default"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^Bearer [A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+            },
+            "description": "Bearer JWT token"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resources listed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "JWKS service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceUnavailableError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "OAuth2": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://your-oauth-provider.com/oauth/authorize",
+            "tokenUrl": "https://your-oauth-provider.com/oauth/token",
+            "scopes": {
+              "api://mcp-server/.default": "Access to MCP server resources"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AuthenticatedUser": {
+        "type": "object",
+        "properties": {
+          "sub": {
+            "type": "string",
+            "description": "Subject identifier (user ID)"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "User email address"
+          },
+          "name": {
+            "type": "string",
+            "description": "User display name"
+          },
+          "aud": {
+            "type": "string",
+            "description": "Token audience"
+          },
+          "iss": {
+            "type": "string",
+            "description": "Token issuer"
+          },
+          "exp": {
+            "type": "integer",
+            "description": "Token expiration time (Unix timestamp)"
+          },
+          "iat": {
+            "type": "integer",
+            "description": "Token issued at time (Unix timestamp)"
+          }
+        },
+        "required": ["sub"]
+      },
+      "ToolCallRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name"
+          },
+          "arguments": {
+            "type": "object",
+            "description": "Tool arguments"
+          }
+        },
+        "required": ["name"]
+      },
+      "ToolCallResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Tool execution results"
+          },
+          "isError": {
+            "type": "boolean",
+            "description": "Whether execution resulted in error"
+          }
+        }
+      },
+      "ResourceListResponse": {
+        "type": "object",
+        "properties": {
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uri": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AuthenticationError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "code": {
+            "type": "string",
+            "enum": ["TOKEN_VALIDATION_ERROR", "CONFIGURATION_ERROR"],
+            "description": "Error code"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details"
+          }
+        },
+        "required": ["error", "code"]
+      },
+      "AuthorizationError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "code": {
+            "type": "string",
+            "enum": ["INSUFFICIENT_PERMISSIONS"],
+            "description": "Error code"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details"
+          }
+        },
+        "required": ["error", "code"]
+      },
+      "ServiceUnavailableError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "code": {
+            "type": "string",
+            "enum": ["JWKS_ERROR"],
+            "description": "Error code"
+          },
+          "details": {
+            "type": "string",
+            "description": "Additional error details"
+          }
+        },
+        "required": ["error", "code"]
+      }
+    }
+  }
+}

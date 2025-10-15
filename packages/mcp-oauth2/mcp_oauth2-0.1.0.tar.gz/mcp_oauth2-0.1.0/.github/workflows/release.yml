@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Install dependencies
+      run: uv sync --dev
+    
+    - name: Run checks
+      run: uv run make check
+    
+    - name: Build package
+      run: uv build
+    
+    - name: Create Git tag
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git tag -a "v${{ github.event.inputs.version }}" -m "Release v${{ github.event.inputs.version }}"
+        git push origin "v${{ github.event.inputs.version }}"
+    
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+    
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.event.inputs.version }}
+        release_name: Release v${{ github.event.inputs.version }}
+        draft: false
+        prerelease: ${{ github.event.inputs.prerelease }}
+        body: |
+          ## Changes in v${{ github.event.inputs.version }}
+          
+          - OAuth2 MCP Authorization Library
+          - FastAPI middleware integration
+          - JWT token validation
+          - JWKS support
+          - Comprehensive test coverage (78%)
+          
+          ## Installation
+          
+          ```bash
+          pip install mcp-oauth2
+          ```
+          
+          ## Usage
+          
+          ```python
+          from fastapi import FastAPI
+          from mcp_oauth2 import OAuth2Middleware, OAuth2Config
+          
+          app = FastAPI()
+          config = OAuth2Config(
+              issuer="https://auth.example.com",
+              audience="https://mcp-server.example.com",
+              client_id="mcp-server-client"
+          )
+          app.add_middleware(OAuth2Middleware, config=config)
+          ```
