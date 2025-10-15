@@ -1,0 +1,143 @@
+name: QUTEN Ablation Study
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  ablation-study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        pip install matplotlib numpy
+
+    - name: Run ablation study
+      run: |
+        cd tests
+        python run_ablation_production.py
+
+    - name: Upload visualizations
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ablation-results
+        path: |
+          ablation_results/*.png
+          ablation_results/*.json
+        retention-days: 30
+
+    - name: Upload to PR comment (if PR)
+      if: github.event_name == 'pull_request' && hashFiles('ablation_results/results.json') != ''
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+
+          // Read results
+          const resultsPath = 'ablation_results/results.json';
+          const results = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+
+          // Format results as markdown table
+          let comment = '## 🧪 QUTEN Ablation Study Results\n\n';
+          comment += '| Optimizer | Final Loss | Best Loss | Time (s) | Convergence Epoch |\n';
+          comment += '|-----------|------------|-----------|----------|-------------------|\n';
+
+          results.sort((a, b) => a.final_loss - b.final_loss);
+
+          for (const r of results) {
+            comment += `| ${r.config_name} | ${r.final_loss.toFixed(4)} | ${r.best_loss.toFixed(4)} | ${r.time_seconds.toFixed(2)} | ${r.convergence_epoch || 'N/A'} |\n`;
+          }
+
+          comment += `\n🏆 **Best performer:** ${results[0].config_name}\n\n`;
+
+          // Add comparison to Adam
+          const adam = results.find(r => r.config_name === 'Adam');
+          if (adam) {
+            comment += '### Comparison to Adam Baseline\n\n';
+            for (const r of results) {
+              if (r.config_name !== 'Adam') {
+                const improvement = ((adam.final_loss - r.final_loss) / adam.final_loss * 100).toFixed(2);
+                const emoji = improvement > 0 ? '✅' : '❌';
+                comment += `- ${r.config_name}: ${emoji} ${improvement}%\n`;
+              }
+            }
+          }
+
+          comment += '\n📊 View detailed visualizations in the workflow artifacts.';
+
+          // Post comment
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+    - name: Generate summary
+      if: always()
+      run: |
+        if [ -d ablation_results ] && [ -f ablation_results/results.json ]; then
+          cd ablation_results
+          echo "## Ablation Study Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python3 << 'EOF' >> $GITHUB_STEP_SUMMARY
+          import json
+
+          with open('results.json') as f:
+              results = json.load(f)
+
+          results.sort(key=lambda x: x['final_loss'])
+
+          print("| Optimizer | Final Loss | Best Loss | Time (s) |")
+          print("|-----------|------------|-----------|----------|")
+
+          for r in results:
+              print(f"| {r['config_name']} | {r['final_loss']:.4f} | {r['best_loss']:.4f} | {r['time_seconds']:.2f} |")
+
+          print(f"\n🏆 Best: {results[0]['config_name']} ({results[0]['final_loss']:.4f})")
+          EOF
+        fi
+
+    - name: Check for performance regression
+      id: check-regression
+      if: github.event_name == 'pull_request'
+      run: |
+        if [ -d ablation_results ] && [ -f ablation_results/results.json ]; then
+          cd ablation_results
+          python3 << 'EOF'
+        import json
+        import sys
+
+        with open('results.json') as f:
+            results = json.load(f)
+
+        quten_full = next((r for r in results if r['config_name'] == 'QUTEN-Full'), None)
+        adam = next((r for r in results if r['config_name'] == 'Adam'), None)
+
+        if quten_full and adam:
+            # Check if QUTEN-Full is at least competitive (within 10% of Adam)
+            threshold = adam['final_loss'] * 1.10
+            if quten_full['final_loss'] > threshold:
+                print(f"⚠️ QUTEN-Full performance degraded: {quten_full['final_loss']:.4f} vs Adam {adam['final_loss']:.4f}")
+                sys.exit(1)
+            else:
+                print(f"✅ QUTEN-Full performance acceptable: {quten_full['final_loss']:.4f} vs Adam {adam['final_loss']:.4f}")
+        EOF
+        fi
