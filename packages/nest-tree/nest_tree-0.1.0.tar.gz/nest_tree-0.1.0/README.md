@@ -1,0 +1,150 @@
+# nest-tree
+
+A Python tool to visualize the structure of nested dictionaries and lists in a tree-like format, similar to the Unix `tree` command.
+
+## Installation
+
+```bash
+pip install nest-tree
+```
+
+## Usage
+### `tree(data, leaf="none", level=None, print_output=True, return_output=False)`
+**Parameters:**
+- `data` (dict | list): The nested dictionary or list to visualize.
+- `leaf` (str): Controls leaf display - `"none"` (default), `"value"`, or `"type"`.
+- `level` (int | None): Maximum depth. If `None`, expand fully.
+- `print_output` (bool): If True, print to stdout. Default: True.
+- `return_output` (bool): If True, return what would be printed as a string. Default: False (in order to avoid busy output in interactive REPLs like IPython).
+
+**Return:**
+- If `return_output` is True: the output is returned as a string.
+- Otherwise, `None`.  
+
+### Example
+Consider the following nested list/dict
+```python
+data = {
+    "fruits": ["apple", "banana"],
+    "vegetables": {
+        "green": ["lettuce", "spinach"],
+        "root": ["carrot", "potato"],
+    },
+    "requirement": [
+        {"type": "protein", "amount": 100, "unit": "g"},
+        {"type": "vitamin C", "amount": 80, "unit": "mg"}
+    ]
+}
+```
+
+#### `tree(data, leaf="none")`
+```
+├── fruits
+│   ├── [0]
+│   └── [1]
+├── vegetables
+│   ├── green
+│   │   ├── [0]
+│   │   └── [1]
+│   └── root
+│       ├── [0]
+│       └── [1]
+└── requirement
+    ├── [0]
+    │   ├── type
+    │   ├── amount
+    │   └── unit
+    └── [1]
+        ├── type
+        ├── amount
+        └── unit
+```
+
+#### `tree(data, level=2)`
+```
+├── fruits
+│   ├── [0]
+│   └── [1]
+├── vegetables
+│   ├── green
+│   └── root
+└── requirement
+    ├── [0]
+    └── [1]
+```
+
+#### `tree(data, leaf="type")`
+```
+├── fruits
+│   ├── [0]
+│   │   └── <class 'str'>
+│   └── [1]
+│       └── <class 'str'>
+├── vegetables
+│   ├── green
+│   │   ├── [0]
+│   │   │   └── <class 'str'>
+│   │   └── [1]
+│   │       └── <class 'str'>
+│   └── root
+│       ├── [0]
+│       │   └── <class 'str'>
+│       └── [1]
+│           └── <class 'str'>
+└── requirement
+    ├── [0]
+    │   ├── type
+    │   │   └── <class 'str'>
+    │   ├── amount
+    │   │   └── <class 'int'>
+    │   └── unit
+    │       └── <class 'str'>
+    └── [1]
+        ├── type
+        │   └── <class 'str'>
+        ├── amount
+        │   └── <class 'int'>
+        └── unit
+            └── <class 'str'>
+```
+
+#### `tree(data, leaf="value")`
+```
+├── fruits
+│   ├── [0]
+│   │   └── apple
+│   └── [1]
+│       └── banana
+├── vegetables
+│   ├── green
+│   │   ├── [0]
+│   │   │   └── lettuce
+│   │   └── [1]
+│   │       └── spinach
+│   └── root
+│       ├── [0]
+│       │   └── carrot
+│       └── [1]
+│           └── potato
+└── requirement
+    ├── [0]
+    │   ├── type
+    │   │   └── protein
+    │   ├── amount
+    │   │   └── 100
+    │   └── unit
+    │       └── g
+    └── [1]
+        ├── type
+        │   └── vitamin C
+        ├── amount
+        │   └── 80
+        └── unit
+            └── mg
+```
+
+## Running Tests
+
+```bash
+python -m unittest tests.test_tree -v
+```
