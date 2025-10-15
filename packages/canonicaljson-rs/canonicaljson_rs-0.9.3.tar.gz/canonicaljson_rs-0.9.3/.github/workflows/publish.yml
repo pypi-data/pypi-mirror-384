@@ -1,0 +1,160 @@
+name: Publish Python 🐍 distribution 📦 to PyPI
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    # This workflow comes from https://github.com/pydantic/pydantic-core/blob/main/.github/workflows/ci.yml
+    name: Build distribution 📦 on ${{ matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows builds are disabled because maturin fails.
+          # - os: windows
+          #   ls: dir
+          #   target: x86_64
+          #   manylinux: auto
+          #   python-architecture: x64
+          #   interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+          # - os: windows
+          #   ls: dir
+          #   target: i686
+          #   manylinux: auto
+          #   python-architecture: x86
+          #   interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+          - os: macos
+            target: x86_64
+            manylinux: auto
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9
+          - os: macos
+            target: aarch64
+            manylinux: auto
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+          # Build all manylinux targets on 2_28
+          # https://github.com/pypa/manylinux#readme
+          # https://github.com/PyO3/maturin-action/blob/135c746/src/index.ts#L33
+          - os: ubuntu
+            target: x86_64
+            manylinux: 2_28
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9
+          - os: ubuntu
+            target: aarch64
+            manylinux: 2_28
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9
+          - os: ubuntu
+            target: armv7
+            manylinux: 2_28
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13
+          - os: ubuntu
+            target: ppc64le
+            manylinux: 2_28
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+          - os: ubuntu
+            target: s390x
+            manylinux: 2_28
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14
+          # musllinux - https://musl.libc.org/about.html
+          - os: ubuntu
+            target: x86_64
+            manylinux: musllinux_1_1 # /!\ value used in steps conditions below.
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9
+          - os: ubuntu
+            target: aarch64
+            manylinux: musllinux_1_1
+            python-architecture: x64
+            interpreter: 3.9 3.10 3.11 3.12 3.13 3.14 pypy3.9
+
+    runs-on: ${{ matrix.os }}-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python-architecture }}
+
+      - name: Extract version from tag
+        uses: actions/github-script@v8
+        id: set_version
+        with:
+          script: |
+            const tag = context.ref.substring(10)
+            const no_v = tag.replace('v', '')
+            const dash_index = no_v.lastIndexOf('-')
+            const no_dash = (dash_index > -1) ?  no_v.substring(0, dash_index) : no_v
+            core.setOutput('no-dash', no_dash)
+
+      - name: Set package version from Git
+        run: |
+          cargo install cargo-edit
+          cargo set-version ${{steps.set_version.outputs.no-dash}}
+
+      - name: Build sdist
+        if: ${{ matrix.os == 'ubuntu' && matrix.target == 'x86_64' && matrix.manylinux != 'musllinux_1_1' }}
+        uses: messense/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist/
+          rust-toolchain: stable
+
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist/ --interpreter ${{ matrix.interpreter }}
+          rust-toolchain: stable
+
+      - name: Check wheels content
+        run: |
+          ${{ matrix.ls || 'ls -lh' }} dist/
+          pip install -U twine
+          twine check --strict dist/*
+
+      - name: Install built wheel on Ubuntu 64
+        if: ${{ matrix.os == 'ubuntu' && matrix.target == 'x86_64' && matrix.manylinux != 'musllinux_1_1' }}
+        run: |
+          pip install canonicaljson-rs --no-index --find-links dist/ --force-reinstall
+          python -c "import canonicaljson"
+
+      - name: Store the distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}
+          path: dist/
+
+  publish-to-pypi:
+    name: Publish Python 🐍 distribution 📦 to PyPI
+    if: endsWith(github.ref, '-debug-publish-action') != true
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/p/canonicaljson-rs
+    permissions:
+      id-token: write
+    steps:
+      - name: Download all the dists
+        uses: actions/download-artifact@v5
+        with:
+          pattern: python-package-distributions-*
+          merge-multiple: true
+          path: dist/
+      - name: Publish distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
