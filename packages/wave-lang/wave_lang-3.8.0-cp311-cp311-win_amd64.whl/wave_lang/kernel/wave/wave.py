@@ -1,0 +1,996 @@
+# Copyright 2024 The IREE Authors
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+# Lang, compiler, ops, constraints
+import inspect
+import logging
+import warnings
+from itertools import chain
+
+# Others
+from typing import Any, Callable, Optional, Sequence, get_type_hints
+
+import sympy
+import torch.fx as fx
+from sympy.utilities.lambdify import lambdastr
+
+from wave_lang.support.ir_imports import (
+    Block,
+    BlockArgument,
+    Context,
+    Module,
+    Operation,
+    InsertionPoint,
+    stream_d,
+    IndexType,
+    IntegerAttr,
+    arith_d,
+    MemRefType,
+)
+
+from .._support.indexing import IndexExpr, IndexingContext, index_symbol
+from ...support.location_config import LocationCaptureConfig, LocationCaptureLevel
+from .._support.location import capture_function_location
+from .._support.tracing import (
+    CapturedTrace,
+    CompiledContext,
+    KernelRegionGraph,
+    Launchable,
+)
+from ..compiler import builder, dispatch_codegen, kernel_codegen
+from ..lang import Grid, Memory, SymbolBind
+from ..lang.global_symbols import *
+from ..ops import wave_ops
+from ..ops.wave_ops import CustomOp, Iterate, get_custom, Placeholder, Output
+
+# Passes
+from .analysis.index_sequence_analysis import (
+    set_node_indices,
+    set_post_expansion_indices,
+)
+from .analysis.partition_strided_operators import (
+    partition_gather_like_ops,
+    partition_ops_with_gpr_offsets,
+    partition_strided_operators,
+)
+from .barriers import add_shared_memory_barriers
+from .cache import get_temp_binary_dir
+from .codegen import WaveEmitter
+from .compile_options import WaveCompileOptions
+from .constraints import (
+    Constraint,
+    HardwareConstraint,
+    ReorderingConstraint,
+    TilingConstraint,
+    WaveConstraint,
+    WorkgroupConstraint,
+    DeviceConstraint,
+    get_grid_shape,
+    get_device_layout,
+)
+from .construct_index_mapping import construct_index_mapping
+from .debug_log_hoist import (
+    debug_log_hoist,
+    debug_log_write_replace,
+    DebugArgInfo,
+)
+from .decompose_dot_mma import decompose_dot_mma
+from .decompose_reduce_ops import decompose_reduce_ops
+from .decompose_scan_ops import decompose_scan_ops
+from .decompose_topk_ops import decompose_topk_ops
+from .decompose_vmma_ops import decompose_vmma_ops
+from .expansion.expansion import add_get_results, expand_graph
+from .gather_to_shared import gather_to_shared, gather_to_shared_swizzling
+from .generate_bounds_exprs import generate_bounds_exprs
+from .global_to_shared_gathers import global_to_shared_gathers
+from .hardware_transpose import mark_hardware_transpose_candidates
+from .hoisting import hoist_loop_invariant_ops
+from .in_thread_transpose import in_thread_transpose
+from .location_check_pass import location_check_pass
+from .memory_analysis.minimize_shared_allocs import minimize_shared_allocs
+from .minimize_global_loads import minimize_global_loads
+from .promotion import compute_shared_memory_usage, promote_placeholders
+from .schedule_reordering import schedule_reordering
+from .scheduling.schedule import schedule_graph
+from .shared_memory_indexing import apply_shared_memory_indexing_corrections
+from .generate_bound_checks import generate_bound_checks
+from .symbolic_constraints import SymbolicAlias
+from .type_inference import infer_types
+from .utils.compile_utils import canonicalize_module, apply_transform
+from .utils.general_utils import (
+    delinearize_index,
+    get_hardware_constraint,
+    partial,
+    remove_files_with_extension,
+)
+from .utils.graph_utils import (
+    initialize_iter_args,
+    remove_chained_extractslice,
+    remove_chained_getresult,
+)
+from .utils.print_utils import print_trace, try_apply_pass
+
+# Utils
+from .utils.symbol_utils import safe_subs, subs_idxc, get_induction_symbol
+from .workgroup_reordering import reorder_workgroups
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = ["wave", "wave_trace_only"]
+
+# Warn only once
+_warned = False
+
+
+def _are_versions_compatible(ver1: "Version", ver2: "Version") -> bool:
+    if ver1.is_prerelease or ver2.is_prerelease:
+        return ver1 == ver2
+    else:
+        # For stable releases, it is fine if the patch level mismatches.
+        return (ver1.major == ver2.major) and (ver1.minor == ver2.minor)
+
+
+def _warn_iree_is_too_old():
+    """
+    Issue a warning if IREE runtime and compiler versions mismatch or IREE
+    version is too low.
+
+    Warning is issued only once.
+    """
+    global _warned
+    if _warned:
+        return
+
+    _warned = True
+
+    try:
+        from importlib.metadata import version
+
+        from packaging.version import Version
+
+        iree_compiler_ver = Version(version("iree-base-compiler"))
+        iree_runtime_ver = Version(version("iree-base-runtime"))
+    except:
+        return
+
+    if not _are_versions_compatible(iree_compiler_ver, iree_runtime_ver):
+        warnings.warn(
+            f"IREE compiler and runtime versions mismatch: {iree_compiler_ver} and {iree_runtime_ver}"
+        )
+
+    # Increment only when IREE has breaking changes.
+    # We don't want to enforce it on package level or make it a hard error just yet.
+    min_iree_version = Version("3.6.0rc20250721")
+    if iree_compiler_ver < min_iree_version:
+        warnings.warn(
+            f"IREE version is too old: {iree_compiler_ver}, min version: {min_iree_version}"
+        )
+
+
+def wave(constraints: Optional[list[Constraint]] = None):
+    def decorator(f: Callable[..., Any]) -> "LaunchableWave":
+        return LaunchableWave(constraints, f.__name__, f)
+
+    return decorator
+
+
+def wave_trace_only(
+    constraints: Optional[list[Constraint]] = None,
+    *,
+    location_capture_config: Optional[LocationCaptureConfig] = None,
+):
+    def decorator(f: Callable[..., Any]) -> "Callable[[], CapturedTrace]":
+        wave = LaunchableWave(constraints, f.__name__, f)
+        return lambda: wave._trace(location_capture_config=location_capture_config)  # type: ignore
+
+    return decorator
+
+
+def _is_symbol_bind(a: Any) -> bool:
+    return inspect.isclass(a) and issubclass(a, SymbolBind)
+
+
+def _is_memory_arg(a: Any) -> bool:
+    return inspect.isclass(a) and issubclass(a, Memory)
+
+
+def add_placeholder_locations(
+    trace: "CapturedTrace", kernel_func: Callable
+) -> "CapturedTrace":
+    """
+    Add location info to placeholder nodes.
+    The location used is the kernel function definition location.
+    Also adds the location to the output node of the graph, which is maybe
+    unnecessary, but it's convenient to have a location for the output as well
+    so that 100% of nodes have locations at the beginning of the pipeline.
+
+    Args:
+        trace: The captured trace to analyze
+        kernel_func:
+            The original kernel function being traced -- IE the function
+            definition with the @tkw.wave annotation.
+
+    Returns:
+        The modified trace with location information added
+    """
+
+    root_graph = trace.get_root_graph()
+    region_graph = getattr(trace, "region_graph", None)
+    location_capture_config = getattr(region_graph, "location_capture_config", None)
+
+    if (
+        location_capture_config is None
+        or location_capture_config.level == LocationCaptureLevel.NONE
+    ):
+        return trace
+
+    kernel_location = capture_function_location(kernel_func, location_capture_config)
+    if kernel_location is None:
+        return trace
+
+    for node in root_graph.nodes:
+        custom_op = get_custom(node)
+        if hasattr(custom_op, "location") and custom_op.location is not None:
+            continue
+
+        if isinstance(custom_op, (Placeholder, Output)):
+            custom_op.fx_node.location = kernel_location
+
+    return trace
+
+
+def _rewrite_module_for_iree_stream_abi(
+    module_op: Module,
+    dispatch_entrypoint: dispatch_codegen.DispatchEntrypoint,
+    exe: dispatch_codegen.StreamExecutable,
+) -> None:
+    """
+    Update an existing MLIR module that has been wrapped with IREE stream executable
+    to be compatible with stream bindings arguments.
+    """
+
+    with exe._loc, InsertionPoint.at_block_begin(dispatch_entrypoint.entry_block):
+        target_block = dispatch_entrypoint.entry_block
+        source_func_op = module_op.operation.regions[0].blocks[0].operations[0]
+        source_block = source_func_op.regions[0].blocks[0]
+
+        target_args = list(target_block.arguments)
+
+        def convert_memref_to_stream_binding(
+            target_block: Block,
+            old_arg: BlockArgument,
+            new_arg: BlockArgument,
+            index: int,
+        ) -> stream_d.BindingSubspanOp:
+            """Convert a memref argument to stream.binding + subspan extraction."""
+            # Create zero constant
+            result_type = IndexType.get()
+            zero_value = arith_d.constant(result_type, IntegerAttr.get(result_type, 0))
+
+            # Create subspan operation
+            subspan_op = stream_d.binding_subspan(
+                old_arg.type,  # The original memref type
+                new_arg,  # The stream.binding argument
+                byte_offset=zero_value,
+                # dynamic_dims=dispatch_entrypoint.get_dynamic_dims(binding),
+                dynamic_dims=[],  # TODO: get dynamic dims
+            )
+
+            return subspan_op
+
+        # Create argument mapping
+        arg_mapping = {}
+        for i, old_arg in enumerate(source_block.arguments):
+            if i < len(target_args) and isinstance(old_arg.type, MemRefType):
+                new_subspan = convert_memref_to_stream_binding(
+                    target_block, old_arg, target_args[i], i
+                )
+                arg_mapping[old_arg] = new_subspan
+
+        # Move operations
+        ops_to_move = list(source_block)
+        for op in ops_to_move:
+            op.detach_from_parent()
+            target_block.append(op)
+
+        # Replace all uses of old arguments with new subspan results
+        for old_arg, new_value in arg_mapping.items():
+            old_arg.replace_all_uses_with(new_value)
+
+
+class LaunchableWave(Launchable):
+    def __init__(
+        self,
+        constraints: Optional[list[Constraint]],
+        name: str,
+        eager_function: Callable[[Any], Any],
+    ):
+        super().__init__(eager_function)
+
+        self.constraints = constraints if constraints else []
+        self.induction_vars: dict[CustomOp, IndexExpr] = {}
+        self._name = name
+        self._f = eager_function
+        self._sig = inspect.signature(eager_function)
+        self.grid_type = Grid[
+            tuple(get_grid_shape(self.workgroup_constraints, self.device_constraints))
+        ]
+        self.device_layout = Grid[tuple(get_device_layout(self.device_constraints))]
+
+        # TODO: needed for the wave_runtime grid calculations, we should really
+        # just generate host wrapper suitable for wave_runtime instead of doing
+        # it in python (and it will be faster as well).
+        hints = get_type_hints(eager_function)
+        self.bound_scalar_symbols = {
+            index_symbol(name): i
+            for i, (name, arg) in enumerate(hints.items())
+            if _is_symbol_bind(arg)
+        }
+
+        # Build a mapping between symbol and tensor arg (index, dim) so we can
+        # use it to extract dynamic symbols from the tensor args.
+        symbols_args_map = {}
+        for arg_idx, arg in enumerate(hints.values()):
+            if not _is_memory_arg(arg):
+                continue
+
+            for dim, symbol in enumerate(arg.symbolic_shape):
+                if symbol in symbols_args_map:
+                    continue
+
+                symbols_args_map[symbol] = (arg_idx, dim)
+        self.symbols_args_map = symbols_args_map
+
+    @property
+    def device_constraints(self) -> list[DeviceConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, DeviceConstraint)
+        ]
+
+    @property
+    def workgroup_constraints(self) -> list[WorkgroupConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, WorkgroupConstraint)
+        ]
+
+    @property
+    def tiling_constraints(self) -> list[TilingConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, TilingConstraint)
+        ]
+
+    @property
+    def wave_constraints(self) -> list[WaveConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, WaveConstraint)
+        ]
+
+    @property
+    def hardware_constraints(self) -> list[HardwareConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, HardwareConstraint)
+        ]
+
+    @property
+    def reordering_constraints(self) -> list[ReorderingConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, ReorderingConstraint)
+        ]
+
+    @property
+    def symbolic_constraints(self) -> list[HardwareConstraint]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if isinstance(constraint, SymbolicAlias)
+        ]
+
+    def _validate_constraints(self):
+        wave_map = {
+            constraint.dim: subs_idxc(constraint.tile_size)
+            for constraint in self.wave_constraints
+        }
+
+        workgroup_map = {
+            constraint.dim: subs_idxc(constraint.tile_size)
+            for constraint in self.workgroup_constraints
+        }
+
+        for dim in set(wave_map.keys()) | set(workgroup_map.keys()):
+            wave_size = wave_map[dim] if dim in wave_map else None
+            workgroup_size = workgroup_map[dim] if dim in workgroup_map else None
+
+            assert (
+                workgroup_size is not None
+            ), f"expected non-empty tile size in `WorkgroupConstraint` for dimension {dim}"
+
+            if wave_size is None:
+                continue
+
+            assert (
+                wave_size > 0
+            ), f"expected non-zero tile in `WaveConstraint` for dimension {dim}"
+
+            assert (
+                workgroup_size > 0
+            ), f"expected non-zero tile in `WorkgroupConstraint` for dimension {dim}"
+
+            assert (
+                workgroup_size >= wave_size
+            ), f"expected workgroup tile size to be the same or larger than wavefront tile size for dimension {dim}"
+
+            assert (
+                workgroup_size % wave_size == 0
+            ), f"expected workgroup tile size to be an integral multiple of wavefront tile size for dimension {dim}"
+
+        workgroup_dims = set(
+            [cons.workgroup_dim for cons in self.workgroup_constraints]
+        )
+
+        min_dim = min(workgroup_dims)
+        max_dim = max(workgroup_dims)
+        assert max_dim - min_dim + 1 == len(
+            workgroup_dims
+        ), "expected contiguous indices for `workgroup_dim` field in workgroup constraints"
+
+        return
+
+    def _trace(
+        self, *, location_capture_config: Optional[LocationCaptureConfig] = None
+    ) -> CapturedTrace:
+        region_graph = KernelRegionGraph(
+            location_capture_config=location_capture_config, func=self._f
+        )
+        with CompiledContext(region_graph, grid_type=self.grid_type) as context:
+            # Get all explictly defined custom ops
+            custom_ops: dict[str, wave_ops.CustomOp] = {
+                cls.tkw_op_name: cls
+                for _, cls in inspect.getmembers(wave_ops, inspect.isclass)
+                if issubclass(cls, wave_ops.CustomOp) and hasattr(cls, "tkw_op_name")
+            }
+
+            # Register custom ops
+            for name, op in custom_ops.items():
+                context.register_custom_op(name, op)
+
+            with region_graph.subtracer() as subtracer:
+                root_name, _ = subtracer.trace(self._f)
+                kernel_location = capture_function_location(
+                    self._f, location_capture_config
+                )
+                trace = CapturedTrace(region_graph, root_name, kernel_location)
+                trace = add_placeholder_locations(trace, self._f)
+
+        return trace
+
+    def create_induction_vars(self, trace: CapturedTrace) -> None:
+        """
+        Creates induction variables for all the reductions in the graph
+        and associates tiling constraints all the reduction dimensions
+        with the appropriate induction variables.
+
+        """
+
+        def is_reduction(node: fx.Node):
+            custom = get_custom(node)
+            return isinstance(custom, Iterate)
+
+        reduction_nodes = trace.walk(is_reduction)
+        for node in reduction_nodes:
+            custom = get_custom(node)
+            self.induction_vars[custom] = get_induction_symbol(custom.axis)
+            for tiling_constraint in self.tiling_constraints:
+                if tiling_constraint.dim == custom.axis:
+                    tiling_constraint.induction_var = self.induction_vars[custom]
+
+    def initialize_wave_constraints(self) -> None:
+        """
+        For each wave constraint, determines the appropriate wave id by looking
+        for workgroup constraints along the same dimension and using information
+        from the hardware constraints.
+
+        """
+
+        self._validate_constraints()
+        hardware_constraint = self.hardware_constraints[0]
+        for wave_constraint in self.wave_constraints:
+            for workgroup_constraint in self.workgroup_constraints:
+                if wave_constraint.dim == workgroup_constraint.dim:
+                    wave_constraint.set_wave_id_from_hardware_and_workgroup_constraint(
+                        hardware_constraint, workgroup_constraint
+                    )
+
+        if hardware_constraint.waves_per_block is None:
+            waves_per_block = [1, 1, 1]
+            for wave_constraint in self.wave_constraints:
+                count = subs_idxc(wave_constraint.waves_per_block)
+                waves_per_block[wave_constraint.workgroup_dim] = count
+
+            hardware_constraint.waves_per_block = tuple(waves_per_block)
+
+    def initialize_reductions(self, trace: CapturedTrace) -> None:
+        """
+        For each reduction, initializes the reduction count by looking at the
+        tiling constraints associated with the reduction.
+
+        """
+        is_reduction = lambda node: isinstance(get_custom(node), Iterate)
+        for reduction in trace.walk(is_reduction):
+            for tiling_constraint in self.tiling_constraints:
+                if tiling_constraint.dim == get_custom(reduction).axis:
+                    reduction.count = subs_idxc(tiling_constraint.count)
+
+    def get_workgroup_dims(self) -> list[int]:
+        """
+        Returns the workgroup dimensions that are not aliased.
+        """
+        # Ignore aliased variables. They will be handled separately.
+        aliased_dims = [
+            x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+        ]
+        workgroup_dims = [
+            x for x in self.workgroup_constraints if x.dim not in aliased_dims
+        ]
+        return workgroup_dims
+
+    def update_aliased_workgroup_constraints(
+        self, workgroup_dims: dict[int, int]
+    ) -> None:
+        """
+        This function updates the wg_dim for aliased workgroup constraints.
+        """
+        aliased_dims = [
+            x.source for x in self.constraints if isinstance(x, SymbolicAlias)
+        ]
+        # Update the workgroup constraints for aliases sources.
+        for constraint in self.workgroup_constraints:
+            if constraint.dim in aliased_dims:
+                constraint.wg_dim = workgroup_dims[constraint.workgroup_dim].wg_dim
+
+    def initialize_workgroup_constraints(self) -> None:
+        """
+        For kernels that distribute more than three dimensions among workgroups,
+        we need to update the workgroup constraints for dimensions >= 2
+        with the appropriate workgroup index.
+        """
+
+        workgroup_dims = self.get_workgroup_dims()
+        # Filter to WG2 and above.
+        dims_to_delinearize = [x for x in workgroup_dims if x.workgroup_dim >= 2]
+        if all(x.workgroup_dim <= 2 for x in dims_to_delinearize):
+            return
+        # Only take account primary dim for delinearize shape.
+        shape = [subs_idxc(x.count) for x in dims_to_delinearize if x.primary]
+        new_workgroup_dims = delinearize_index(WORKGROUP_2, shape)
+        for delinearize_dim in dims_to_delinearize:
+            delinearize_dim.wg_dim = new_workgroup_dims[
+                delinearize_dim.workgroup_dim - 2
+            ]
+        self.update_aliased_workgroup_constraints(workgroup_dims)
+
+    def initialize_symbolic_constraints(self) -> None:
+        """
+        For each symbolic constraint, create new constraints for the
+        related symbolic values with appropriate substitutions.
+        """
+        new_wg_constraints, new_wave_constraints, new_tiling_constraints = [], [], []
+        for symbolic_constraint in self.symbolic_constraints:
+            new_wg_constraints += symbolic_constraint.create_new_constraints(
+                self.workgroup_constraints
+            )
+            new_wave_constraints += symbolic_constraint.create_new_constraints(
+                self.wave_constraints
+            )
+            new_tiling_constraints += symbolic_constraint.create_new_constraints(
+                self.tiling_constraints
+            )
+        # Remove wave constraints with same tile size as workgroup constraints
+        for wave_constraint in new_wave_constraints:
+            for workgroup_constraint in new_wg_constraints:
+                if (
+                    wave_constraint.dim == workgroup_constraint.dim
+                    and wave_constraint.tile_size == workgroup_constraint.tile_size
+                ):
+                    new_wave_constraints.remove(wave_constraint)
+        self.constraints += (
+            new_wg_constraints + new_wave_constraints + new_tiling_constraints
+        )
+        idxc = IndexingContext.current()
+        for constraint in self.symbolic_constraints:
+            if subs_idxc(constraint.target).is_number:
+                idxc._bind_symbol(
+                    constraint.source,
+                    subs_idxc(constraint.source_to_target(constraint.target)),
+                )
+
+    def infer_grid_shape(self, idxc: IndexingContext):
+        self.grid_type.dims = [1, 1, 1]
+        max_workgroup_dim = 2
+        aliases = [x.source for x in self.constraints if isinstance(x, SymbolicAlias)]
+        for constraint in self.workgroup_constraints:
+            if constraint.dim in aliases:
+                continue
+            if not constraint.primary:
+                continue
+            dim = (
+                constraint.workgroup_dim
+                if constraint.workgroup_dim < max_workgroup_dim
+                else max_workgroup_dim
+            )
+            self.grid_type.dims[dim] *= safe_subs(constraint.count, idxc.subs)
+
+    def infer_device_layout(self, idxc: IndexingContext):
+        self.device_layout.dims = [1, 1, 1]
+        max_device_dim = 2
+        aliases = [x.source for x in self.constraints if isinstance(x, SymbolicAlias)]
+        for constraint in self.device_constraints:
+            if constraint.dim in aliases:
+                continue
+            dim = (
+                constraint.device_dim
+                if constraint.device_dim < max_device_dim
+                else max_device_dim
+            )
+            self.device_layout.dims[dim] *= safe_subs(constraint.count, idxc.subs)
+
+    def compile_to_mlir(
+        self,
+        trace: CapturedTrace,
+        context: Context,
+        module_op: Optional[Module] = None,
+        options: WaveCompileOptions = None,
+    ):
+        entrypoint_name = self._name
+        root_graph = trace.get_root_graph()
+
+        # pass device constraint to kernel signature
+        # so that we can set the dimensions of the tensors per device
+        kernel_sig = kernel_codegen.KernelSignature(self.device_constraints)
+        kernel_sig.add_from_graph_placeholders(root_graph)
+        kernel_sig.add_from_dynamic_symbols(options.dynamic_symbols)
+        kernel_sig.add_grid(self.grid_type)
+        kernel_sig.determine_input_output_buffers(root_graph)
+        if options.print_signature:
+            print(kernel_sig)
+
+        mb = builder.ModuleBuilder(context=context, module_op=None)
+        exe = dispatch_codegen.StreamExecutable(mb, name=entrypoint_name)
+        workgroup_size = self.hardware_constraints[0].threads_per_block
+        subgroup_size = self.hardware_constraints[0].threads_per_wave
+
+        # Setup LLVM func compilation configs.
+        llvm_func_config = {}
+        if options.denorm_fp_math_f32:
+            llvm_func_config["denormal-fp-math-f32"] = options.denorm_fp_math_f32
+
+        if options.waves_per_eu:
+            llvm_func_config["amdgpu-waves-per-eu"] = options.waves_per_eu
+
+        dispatch_entrypoint = exe.define_entrypoint(
+            entrypoint_name,
+            kernel_sig,
+            self.grid_type,
+            workgroup_size,
+            subgroup_size,
+            options.dynamic_symbols,
+            llvm_func_config,
+            trace.location,
+        )
+
+        # Only emit MLIR if we don't have a module yet.
+        if not module_op:
+            emitter = WaveEmitter(
+                dispatch_entrypoint, trace, self.constraints, options, self.grid_type
+            )
+            try:
+                emitter.emit(trace.get_root_graph())
+            except:
+                logger.info("Error in emitter")
+                asm = mb.module_op.get_asm()
+                logger.info(asm)
+                raise
+            emitter.finish()
+        # Otherwise, we need to iree-fy the existing module (that supposedly has
+        # upstream MLIR ops only) in order for it to be executable in the wave
+        # pipeline.
+        # `dispatch_entrypoint` already has most of the setup, we'll just need
+        # to move the ops from existing module to inside `dispatch_entrypoint`.
+        # Also we'll need to update the uses of the memref arguments (from the
+        # existing module) to be compatible with the new stream.binding arguments.
+        else:
+            assert not any(
+                isinstance(op, stream_d.ExecutableOp)
+                for op in module_op.operation.regions[0].blocks[0]
+            ), "expected overriding module to contain only upstream MLIR ops"
+            _rewrite_module_for_iree_stream_abi(module_op, dispatch_entrypoint, exe)
+
+        if options.postprocess:
+            apply_transform(mb.module_op, options.postprocess, options.subs)
+
+        if options.canonicalize:
+            canonicalize_module(mb.module_op)
+
+        return mb, trace, exe, kernel_sig, entrypoint_name
+
+    def build_initial_pass_pipeline(
+        self,
+        trace: CapturedTrace,
+        options: WaveCompileOptions,
+        debug_arg_info: list[DebugArgInfo],
+        debug_handlers: list[Any],
+        print_ir_before: Sequence[str] = [],
+        print_ir_after: Sequence[str] = [],
+    ):
+        idxc = IndexingContext.current()
+
+        def finalize_indices():
+            idxc.finalize()
+
+        def substitute_vector_shapes():
+            self.hardware_constraints[0].subs_vector_shapes(idxc.subs)
+
+        return [
+            partial(debug_log_hoist, trace, debug_handlers),
+            partial(initialize_iter_args, trace),
+            partial(self.create_induction_vars, trace),
+            partial(self.initialize_reductions, trace),
+            finalize_indices,
+            substitute_vector_shapes,
+            partial(add_get_results, trace),
+            partial(infer_types, trace, self.constraints),
+            partial(construct_index_mapping, trace, self.constraints),
+            partial(
+                debug_log_write_replace,
+                trace,
+                self.constraints,
+                options,
+                debug_arg_info,
+            ),
+            partial(
+                promote_placeholders,
+                trace,
+                self.constraints,
+                options.reorder_allocs,
+            ),
+            partial(
+                set_node_indices,
+                trace,
+                self.constraints,
+                print_ir_before,
+                print_ir_after,
+            ),
+            partial(reorder_workgroups, trace, self.reordering_constraints),
+            partial(expand_graph, trace, self.constraints),
+            partial(set_post_expansion_indices, trace, self.constraints),
+            partial(remove_chained_getresult, trace),
+        ]
+
+    def _trace_and_get_kernel_signature(
+        self,
+        options: WaveCompileOptions,
+        context: Optional[Context] = None,
+        module_op: Optional[Operation] = None,
+    ) -> tuple[
+        builder.ModuleBuilder,
+        CapturedTrace,
+        dispatch_codegen.StreamExecutable,
+        kernel_codegen.KernelSignature,
+        str,
+        WaveCompileOptions,
+        Sequence[DebugArgInfo],
+        Grid,
+    ]:
+        # Issue a warning if IREE ver is too low.
+        # Warning will only be issued if we are compiling the kernel and won't
+        # if we are using cached kernel as we don't want to add any additional
+        # overhead to 'happy' path.
+        _warn_iree_is_too_old()
+
+        # Build wave runtime, if specified.
+        if options.wave_runtime:
+            # Remove any existing hsaco files in this directory.
+            # If the kernel is being cached, then it will be referenced from the
+            # cache directory. When kernels are not being cached, we remove them
+            # to ensure that at any time there is only one hsaco file in this directory.
+            remove_files_with_extension(get_temp_binary_dir(), ".hsaco")
+
+        print_ir_after = options.print_ir_after
+        print_ir_before = options.print_ir_before
+        profile_pass = options.profile_pass
+        if options.print_trace_begin:
+            print(f"\n***Tracing kernel {self._name}***")
+
+        debug_arg_info = []
+        debug_handlers = []
+
+        trace = self._trace(location_capture_config=options.location_capture_config)
+        if (
+            "all" in print_ir_after
+            or "all" in print_ir_before
+            or "trace" in print_ir_after
+            or "first" in print_ir_before
+        ):
+            print(f"***After trace/Before first pass***\n")
+            print_trace(trace)
+
+        # Initial passes, pre-optimization.
+        graph_passes = self.build_initial_pass_pipeline(
+            trace,
+            options,
+            debug_arg_info,
+            debug_handlers,
+            print_ir_before,
+            print_ir_after,
+        )
+
+        graph_passes += [
+            partial(decompose_vmma_ops, trace, self.constraints),
+            partial(decompose_dot_mma, trace, self.constraints),
+        ]
+
+        # Optimizations.
+        if options.optimization_level:
+            graph_passes += [
+                partial(hoist_loop_invariant_ops, trace, self.constraints),
+                partial(gather_to_shared, trace, self.constraints, options),
+                partial(gather_to_shared_swizzling, trace, self.constraints, options),
+                partial(in_thread_transpose, trace, self.constraints, options),
+                partial(global_to_shared_gathers, trace, self.constraints),
+                partial(minimize_global_loads, trace, self.constraints),
+                partial(
+                    mark_hardware_transpose_candidates, trace, self.constraints, options
+                ),
+            ]
+        graph_passes += [
+            partial(apply_shared_memory_indexing_corrections, trace, self.constraints),
+        ]
+
+        # Partition strided operators.
+        graph_passes += [
+            partial(partition_ops_with_gpr_offsets, trace, self.constraints),
+            partial(partition_strided_operators, trace, self.constraints),
+            partial(remove_chained_extractslice, trace),
+        ]
+
+        graph_passes += [
+            partial(decompose_reduce_ops, trace, self.constraints),
+            partial(decompose_scan_ops, trace, self.constraints),
+            partial(decompose_topk_ops, trace, self.constraints),
+        ]
+
+        # Schedule the reduction ops.
+        scheduling_type = options.schedule
+        use_scheduling_barriers = options.use_scheduling_barriers
+        graph_passes.append(
+            partial(
+                schedule_graph,
+                trace,
+                self.constraints,
+                use_scheduling_barriers,
+                scheduling_type,
+                options.override_schedule,
+                options.dump_schedule,
+                options.multi_buffer_count,
+            )
+        )
+
+        if options.optimization_level:
+            graph_passes += [
+                partial(
+                    schedule_reordering,
+                    trace,
+                    self.constraints,
+                    scheduling_type,
+                ),
+                partial(
+                    minimize_shared_allocs,
+                    trace,
+                    options.minimize_shared_allocs,
+                ),
+            ]
+        graph_passes += [
+            partial(add_shared_memory_barriers, trace),
+            partial(compute_shared_memory_usage, trace, options.kernel_launch_info),
+            partial(partition_gather_like_ops, trace, self.constraints),
+            partial(generate_bounds_exprs, trace, self.constraints),
+        ]
+
+        if options.use_bound_check:
+            graph_passes += [
+                partial(generate_bound_checks, trace),
+            ]
+
+        graph_passes.append(
+            partial(
+                location_check_pass,
+                trace,
+                "enforce-locations",
+                log=False,
+                enforce_locations=options.enforce_locations,
+            )
+        )
+
+        pass_times = {}
+        for p in graph_passes:
+            try_apply_pass(
+                p, trace, print_ir_before, print_ir_after, profile_pass, pass_times
+            )
+
+        if options.print_pass_times:
+            pass_times_list = sorted(
+                pass_times.items(), key=lambda x: x[1], reverse=True
+            )
+
+            print(f"Pass times:")
+            for k, v in pass_times_list:
+                print(f"    {k}: {v:.4f}s")
+
+        if "all" in print_ir_after or "last" in print_ir_after:
+            # Take advantage of Python leaking loop variables
+            print(f"***After final pass {p.__name__}***\n")
+            print_trace(trace)
+
+        # Determine grid shape.
+        self.infer_grid_shape(IndexingContext.current())
+        self.infer_device_layout(IndexingContext.current())
+        if options.print_grid:
+            print(f"Grid: {self.grid_type}")
+            print(f"Device layout: {self.device_layout}")
+
+        # Add grid and block dims to kernel launch info.
+        # Convert the grid into a lambda that we can use to compute the grid dimension.
+        hw_constraint = get_hardware_constraint(self.constraints)
+        grid_symbols = list(self.bound_scalar_symbols.keys()) + list(
+            options.dynamic_symbols
+        )
+        options.kernel_launch_info.grid = sympy.lambdify(
+            [grid_symbols], self.grid_type.dims
+        )
+        options.kernel_launch_info.grid_str = lambdastr(
+            [grid_symbols], self.grid_type.dims
+        )
+        options.kernel_launch_info.blocks = [
+            int(x) for x in hw_constraint.threads_per_block
+        ]
+        options.kernel_launch_info.func_name = self._name
+
+        idxc = IndexingContext.current()
+        for sym, val in zip(
+            [THREAD_0, THREAD_1, THREAD_2, WORKGROUP_0, WORKGROUP_1, WORKGROUP_2],
+            chain(hw_constraint.threads_per_block, self.grid_type.dims),
+        ):
+            if safe_subs(val, idxc.subs) == 1:
+                idxc.bind_constant(sym, 0)
+
+        return (
+            *self.compile_to_mlir(trace, context, module_op, options=options),
+            options,
+            debug_arg_info,
+            debug_handlers,
+            self.device_layout,
+        )
+
+    def aot_execute(self, args, kwargs):
+        raise NotImplementedError("AOT execution for wave not implemented yet.")
+
+    def eager_execute(self, args, kwargs):
+        raise NotImplementedError("Eager execution for wave not implemented yet.")
+
+    def __repr__(self):
+        return f"tk.wave @{self._name}[{self.grid_type}]"
