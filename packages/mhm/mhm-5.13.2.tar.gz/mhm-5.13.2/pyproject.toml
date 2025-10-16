@@ -1,0 +1,160 @@
+[build-system]
+requires = [
+    "scikit_build_core>=0.11,<0.12",
+    "setuptools_scm>=8",
+    "numpy>=2.0,<3",
+    "fypp",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+requires-python = ">=3.9"
+name = "mhm"
+description = "Python distribution of mHM with bindings."
+authors = [{name = "mHM Developers", email = "mhm-admin@ufz.de"}]
+readme = "pybind/README.md"
+license = {text = "LGPL-3.0"}
+dynamic = ["version"]
+keywords = ["mHM"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Natural Language :: English",
+    "Operating System :: Unix",
+    "Operating System :: MacOS",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Hydrology",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Utilities",
+]
+dependencies = ["numpy>=1.17.3"]
+
+[project.urls]
+Changelog = "https://www.mhm-ufz.org"
+Conda-Forge = "https://anaconda.org/conda-forge/mhm"
+Documentation = "https://www.mhm-ufz.org"
+Homepage = "https://www.mhm-ufz.org"
+Source = "https://www.mhm-ufz.org"
+Tracker = "https://www.mhm-ufz.org"
+
+[project.optional-dependencies]
+test = [
+    "pytest-cov>=3",
+    "xarray",
+    "netCDF4",
+]
+
+[project.scripts]
+mhm = "mhm.cli:mhm"
+mhm-download = "mhm.download:cli"
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
+wheel.packages = ["pybind/src/mhm"]
+
+[tool.scikit-build.ninja]
+version = ">=1.11"
+make-fallback = false
+
+[tool.scikit-build.cmake]
+version = ">=3.26.1"
+build-type = "Release"
+args = ["-GNinja"]
+
+[tool.scikit-build.cmake.define]
+BUILD_MHM_PYBIND = "ON"
+
+[tool.scikit-build.sdist]
+include = [
+    "pybind/src/mhm/_version.py",
+    "forces/cmake/*.cmake",
+    "forces/include",
+    "forces/src/*.fypp",
+    "forces/src/*.*90",
+    "forces/src/CMakeLists.txt",
+    "forces/*.txt",
+    "forces/*.md",
+    "forces/AUTHORS",
+    "forces/COPYING*",
+]
+exclude = [
+    "check",
+    "CI-scripts",
+    "doc",
+    "hpc-module-loads",
+    "*-proc",
+    "test_domain**",
+    ".git*",
+    ".zenodo.json",
+    "*.nml",
+    "src/tests",
+    "cmake/.gitrepo",
+]
+reproducible = false
+# run cmake to download forces
+cmake = true
+
+[tool.setuptools_scm]
+write_to = "pybind/src/mhm/_version.py"
+write_to_template = "__version__ = '{version}'"
+local_scheme = "no-local-version"
+fallback_version = "0.0.0.dev0"
+search_parent_directories = true
+
+[tool.black]
+exclude = "_version.py"
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+known_first_party = ["mhm"]
+
+[tool.coverage.run]
+source = ["mhm"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover"]
+show_missing = true
+
+[tool.cibuildwheel]
+# verbose output for debugging purpose
+build-verbosity = 1
+# skip py38, musl and free-threaded versions
+skip = ["cp38*", "*-musllinux_*", "cp31?t-*"]
+# check command
+test-extras = "test"
+test-command = "mhm -h && python -m pytest pybind/tests/"
+test-sources = ["pybind/tests/", "pyproject.toml"]
+test-skip = "cp314*"  # not all test dependencies have wheels for python 3.14 yet
+# force binary numpy dep
+environment.PIP_ONLY_BINARY = "numpy"
+environment.PIP_PREFER_BINARY = "1"
+
+[tool.cibuildwheel.linux]
+environment = { FC="gfortran", F77="gfortran", CC="gcc", CXX="g++" }
+before-all = "source CI-scripts/install-deps -c -p /usr"
+
+[tool.cibuildwheel.macos]
+environment = { FC="gfortran-14", F77="gfortran-14", CC="gcc-14", CXX="g++-14", MACOSX_DEPLOYMENT_TARGET="13.0" }
+before-all = "source CI-scripts/install-deps -s -p /opt/local" # "brew install netcdf-fortran"
+
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_arm64"
+inherit.environment = "append"
+environment.MACOSX_DEPLOYMENT_TARGET = "14.0"
