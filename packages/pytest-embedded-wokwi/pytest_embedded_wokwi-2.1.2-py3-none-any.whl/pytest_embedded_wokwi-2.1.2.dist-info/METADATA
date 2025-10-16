@@ -1,0 +1,92 @@
+Metadata-Version: 2.4
+Name: pytest-embedded-wokwi
+Version: 2.1.2
+Summary: Make pytest-embedded plugin work with the Wokwi CLI.
+Author-email: Fu Hanxi <fuhanxi@espressif.com>, Uri Shaked <uri@wokwi.com>, Jakub Andrysek <jakub.andrysek@espressif.com>
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Framework :: Pytest
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python
+Classifier: Topic :: Software Development :: Testing
+License-File: LICENSE
+Requires-Dist: pytest-embedded~=2.1.2
+Requires-Dist: wokwi-client>=0.2.0
+Requires-Dist: pytest-embedded-idf~=2.1.2 ; extra == "idf"
+Project-URL: changelog, https://github.com/espressif/pytest-embedded/blob/main/CHANGELOG.md
+Project-URL: documentation, https://docs.espressif.com/projects/pytest-embedded/en/latest/
+Project-URL: homepage, https://github.com/espressif/pytest-embedded
+Project-URL: repository, https://github.com/espressif/pytest-embedded
+Provides-Extra: idf
+
+### pytest-embedded-wokwi
+
+pytest-embedded service for running tests on [Wokwi](https://wokwi.com/ci) instead of the real target.
+
+Wokwi supports most ESP32 targets, including: esp32, esp32s2, esp32s3, esp32c3, esp32c6, and esp32h2. In addition, it supports a [wide range of peripherals](https://docs.wokwi.com/getting-started/supported-hardware), including sensors, displays, motors, and debugging tools.
+
+Running the tests with Wokwi requires an internet connection. Your firmware is uploaded to the Wokwi server for the duration of the simulation, but it is not saved on the server. On-premises Wokwi installations are available for enterprise customers.
+
+#### Wokwi API Tokens
+
+Before using this plugin, you need to create a free Wokwi account and [generate an API key](https://wokwi.com/dashboard/ci). You can then set the `WOKWI_CLI_TOKEN` environment variable to the API key.
+
+Linux / Mac OS / WSL:
+
+```bash
+export WOKWI_CLI_TOKEN="your-api-key"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:WOKWI_CLI_TOKEN="your-api-key"
+```
+
+#### Usage
+
+To run your tests with Wokwi, make sure to specify the `wokwi` service when running pytest, e.g.:
+
+```
+pytest --embedded-services idf,wokwi
+```
+
+#### Writing Tests
+
+When writing tests for your firmware, you can use the same pytest fixtures and assertions as you would for local testing. The main difference is that your tests will be executed in the Wokwi simulation environment and you have access to the Wokwi API for controlling the simulation through the `wokwi` fixture.
+
+All interactions with the Wokwi simulation is through the `wokwi.client` - [wokwi-python-client](https://github.com/wokwi/wokwi-python-client)
+
+For example, you can use `wokwi.client.set_control()` to control virtual components in the simulation, such as buttons, LEDs, and other peripherals.
+Whole documentations can be found at [Wokwi Documentation](https://wokwi.github.io/wokwi-python-client/)
+
+Button test:
+```py
+import logging
+from pytest_embedded_wokwi import Wokwi
+from pytest_embedded import Dut
+
+
+def test_gpio(dut: Dut, wokwi: Wokwi):
+    LOGGER = logging.getLogger(__name__)
+
+    LOGGER.info("Waiting for Button test begin...")
+    dut.expect_exact("Butston test")
+
+    for i in range(3):
+        LOGGER.info(f"Setting button pressed for {i + 1} seconds")
+        wokwi.client.set_control("btn1", "pressed", 1)
+
+        dut.expect_exact(f"Button pressed {i + 1} times")
+        wokwi.client.set_control("btn1", "pressed", 0)
+```
+
