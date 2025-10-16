@@ -1,0 +1,451 @@
+{
+  "states": [
+    "disabled", {"comment": "Default state when retrace is disabled for a thread"},
+    "internal", {"comment": "Default state when retrace is disabled for a thread"},
+    "external", {"comment": "When target thread is running outside the python system to be recorded"},
+    "retrace", {"comment": "When target thread is running outside the retrace system"},
+    "gc", {"comment": "When the target thread is running inside the pyton garbage collector"}
+  ],
+
+  "recording_path": "recordings/%Y%m%d_%H%M%S_%f",
+
+  "tracing_levels": {
+    "none": [],
+    "all": [
+      "tracecalls",
+      "proxy.ext.disabled.call",
+      "proxy.int.disabled.call",
+      "proxy.wrapping.new",
+      "proxy.wrapping.new.method",
+      "proxy.int.handler",
+      "proxy.ext.handler",
+      "proxy.int.newref",
+      "proxy.ext.call",
+      "proxy.ext.result",
+      "proxy.ext.error",
+      "proxy.int.call",
+      "proxy.int.result",
+      "proxy.int.error",
+      "proxy.ext.new.extended",
+      "proxy.ext.new.extended.method",
+      "proxy.ext.new.extended.member",
+      "proxy.int.new.extended",
+      "proxy.int.new.extended.method",
+      "install.module",
+      "install.module.phase",
+      "install.module.phase.results"
+    ],
+    "debug": [
+      "proxy.wrapping.new",
+      "proxy.wrapping.new.method",
+      "proxy.int_to_ext.stack",
+      "proxy.ext_to_int.wrap",
+      "proxy.int.handler",
+      "proxy.int.newref",
+      "proxy.ext.call",
+      "proxy.ext.result",
+      "proxy.ext.error",
+      "proxy.int.result",
+      "proxy.int.error",
+      "proxy.ext.new.extended",
+      "proxy.ext.new.extended.method",
+      "proxy.ext.new.extended.member",
+      "proxy.int.new.extended",
+      "proxy.int.new.extended.method",
+      "install.module",
+      "install.module.phase",
+      "install.module.phase.results"
+    ]
+  },
+
+  "default_tracing_level": "debug",
+
+  "exclude_paths": [
+    "^.*\\.py$",
+    "^.*\\.pyc$",
+    "^/tmp$",
+    "^/tmp/.*$"
+  ],
+
+  "preload": [
+  ],
+
+  "predicates": {
+    "path": {
+      "and": [
+        {
+          "not": "^.*\\.py$"
+        },
+        {
+          "not": "^.*\\.pyc$"
+        },
+        {
+          "not": "^recordings/.*$"
+        }
+      ]
+    }
+  },
+
+  "type_attribute_filter": {
+    "and": [
+      ".*",
+      {
+        "not": [
+          "__hash__",
+          "__getattribute__",
+          "__init_subclass__",
+          "__subclasshook__",
+          "__class__",
+          "__sizeof__",
+          "__new__",
+          "__del__",
+          "__dict__"
+        ]
+      }
+    ]
+  },
+
+  "filters": {
+    "functions": [
+      {
+        "or": [
+          {
+            "type": "types.BuiltinFunctionType"
+          },
+          {
+            "type": "types.FunctionType"
+          }
+        ]
+      }
+    ],
+    "all": {
+      "and": [
+        {
+          "or": [
+            {
+              "type": "type"
+            },
+            {
+              "type": "types.BuiltinFunctionType"
+            },
+            {
+              "type": "types.FunctionType"
+            }
+          ]
+        },
+        {
+          "noneof": [
+            {
+              "subtype": "BaseException"
+            },
+            {
+              "value": "$immutable"
+            },
+            {
+              "name": "__spec__"
+            },
+            {
+              "name": "__package__"
+            },
+            {
+              "name": "__loader__"
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  "modules": {
+    "_frozen_importlib_external": {
+      "comment": {
+        "with_state": {
+          "disabled": ["_path_stat"]
+        }
+      }
+    },
+    "_imp": {
+      "patch_extension_exec": ["exec_dynamic", "exec_builtin"],
+      "comment": {
+        "with_state": {
+          "internal": ["create_dynamic"]
+        }
+      }
+    },
+    "bdb": {
+      "methods_with_state": {
+        "disabled": {
+          "Bdb": ["trace_dispatch"]
+        }
+      },
+      "with_state": {
+        "disabled": ["Bdb.trace_dispatch"]
+      }
+    },
+
+    "sys": {
+      "with_state": {
+        "disabled": ["excepthook"]
+      },
+      "comment": {
+        "with_state_recursive": {
+          "disabled": ["settrace", "setprofile"]
+        }
+      }
+    },
+    
+    "importlib": {
+      "with_state": {
+        "disabled": ["import_module"]
+      }
+    },
+
+    "importlib._bootstrap": {
+      "comment": {
+        "with_state": {
+          "internal": [
+            "_load_unlocked",
+            "_find_spec",
+            "_lock_unlock_module",
+            "_get_module_lock"]
+        }
+      }
+    },
+
+    "encodings": {
+      "with_state": {
+        "disabled": ["search_function"]
+      }
+    },
+    "_retrace_utils": {
+      "immutable_types": [
+        "PyCFunctionProxy"
+      ]
+    },
+    "enum": {
+      "immutable_types": [
+        "Enum"
+      ]
+    },
+    "os": {
+      "immutable_types": [
+        "stat_result",
+        "terminal_size",
+        "statvfs_result"
+      ]
+    },
+    "mmap": {
+      "proxy": [
+        "mmapXXX"
+      ]
+    },
+    "types": {
+      "patch_hash": ["FunctionType"],
+      "immutable_types": [
+        "TracebackType",
+        "ModuleType"
+      ]
+    },
+    "builtins": {
+      "patch_hash": ["object"],
+
+      "comment": {
+        "with_state": {
+          "disabled": ["__import__"]
+        }
+      },
+
+      "immutable_types": [
+        "BaseException",
+        "memoryview",
+        "int",
+        "float",
+        "complex",
+        "str",
+        "bytes",
+        "bool",
+        "bytearray",
+        "type",
+        "slice"],
+
+      "patch_exec": "exec"
+    },
+    "_thread": {
+      "proxy": [
+        "allocate",
+        "allocate_lock",
+        "RLock"
+      ],
+      "patch_start_new_thread": ["start_new_thread", "start_new"]
+    },
+    "_datetime": {
+      "immutable_types": [
+        "datetime",
+        "tzinfo",
+        "timezone"
+      ],
+      "proxy_type_attributes": {
+        "datetime": [
+          "now",
+          "utcnow",
+          "today"
+        ]
+      }
+    },
+    "time": {
+      "immutable_types": [
+        "struct_time"
+      ],
+      "proxy": [
+        "perf_counter",
+        "time",
+        "gmtime",
+        "localtime",
+        "monotonic",
+        "monotonic_ns",
+        "time_ns"
+      ]
+    },
+    "io": {
+      "comment": {
+        "proxy": ["open_code", "open"]
+      },
+      "path_predicates": {
+        "open_code": "path",
+        "open": "file"
+      },
+      "patchtype": {
+        "FileIO": {
+          "readinfo": "retracesoftware.install.edgecases.readinto"
+        },
+        "BufferedReader": {
+          "readinfo": "retracesoftware.install.edgecases.readinto"
+        },
+        "BufferedRandom": {
+          "readinfo": "retracesoftware.install.edgecases.readinto"
+        }
+      }
+    },
+    "pathlib": {
+      "immutable_types": [
+        "PosixPath"
+      ]
+    },
+    "posix": {
+      "immutable_types": [
+        "times_result",
+        "statvfs_result",
+        "uname_result",
+        "stat_result",
+        "terminal_size"
+      ],
+
+      "proxy_all_except": [
+        "fork",
+        "register_at_fork",
+        "basename",
+        "readlink",
+        "strerror",
+        "listdir",
+        "_path_normpath",
+        "DirEntry"
+      ],
+
+      "with_state_recursive0": {
+        "disabled": ["register_at_fork"]
+      },
+
+      "wrappers": {
+        "fork_exec": "retracesoftware.install.edgecases.fork_exec",
+        "posix_spawn": "retracesoftware.install.edgecases.posix_spawn"
+      }
+    },
+    "_posixsubprocess": {
+      "proxy_all_except": []
+    },
+    "fcntl": {
+      "proxy_all_except": []
+    },
+    "_signal": {
+      "proxy_all_except": []
+    },
+    "_socket": {
+      "proxy_all_except": [
+        "CAPI"
+      ],
+      "immutable_types": [
+        "error",
+        "herror",
+        "gaierror",
+        "timeout"
+      ],
+      "patchtype": {
+        "socket": {
+          "recvfrom_into": "retracesoftware.install.edgecases.recvfrom_into",
+          "recv_into": "retracesoftware.install.edgecases.recv_into",
+          "recvmsg_into": "retracesoftware.install.edgecases.recvmsg_into"
+        }
+      }
+    },
+    "select": {
+      "proxy_all_except": []
+    },
+    "_sqlite3": {
+      "proxy_all_except": []
+    },
+    "_ssl": {
+      "proxy_all_except": [],
+
+      "proxy_functions": ".*",
+      "comment": {
+        "proxy_types": [
+          "MemoryBIO",
+          "_SSLSocket",
+          "_SSLContext"
+          ],
+          "wrap": {
+            "_SSLSocket.write": "write"
+          }
+        },
+      "patchtype": {
+        "_SSLSocket": {
+          "read": "retracesoftware.install.edgecases.read"
+        }
+      }
+    },
+    "_random": {
+      "proxy_all_except": [],
+      "proxy_types": [
+        "Random"
+      ],
+      "proxy_functions": ".*"
+    },
+    "_multiprocessing": {
+      "proxy_functions": ".*"
+    },
+    "multiprocessing.context": {      
+      "proxy": ["_default_context"]
+    },
+
+    "PIL._imaging": {
+      "proxy_all_except": ["map_buffer"]
+    },
+    "psycopg2._psycopg": {
+      "proxy_all_except": ["Error"]
+    },
+
+    "_weakrefset": {
+      "sync_types": ["WeakSet", "_IterationGuard"]
+    },
+    "_collections": {
+      "sync_types": [
+        "deque"
+      ]
+    },
+    "_queue": {
+      "sync_types": [
+        "SimpleQueue"
+      ]
+    }
+  }
+}
