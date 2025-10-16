@@ -1,0 +1,49 @@
+name: Release to PyPi
+on: [workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+  
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v6
+      with:
+        python-version: 3.11
+  
+    - name: Install uv 0.6.6
+      run: |
+        python -m ensurepip
+        python -m pip install --upgrade pip
+        python -m pip install uv==0.6.6
+  
+    - name: Install dependencies
+      shell: bash
+      run: uv sync
+  
+    - name: Build package
+      shell: bash
+      run: uv build
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-dists
+        path: dist/
+  pypi-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    needs:
+      - build
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v5
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.13.0

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.11,3.12]
+        uv-version: [0.6.6]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv ${{ matrix.uv-version }}
+      run: |
+        python -m ensurepip
+        python -m pip install --upgrade pip
+        python -m pip install uv==${{ matrix.uv-version }}  
+
+    - name: Install dependencies
+      shell: bash
+      run: uv sync
+
+    - name: Test with pytest
+      env:
+        USERNAME: ${{ secrets.PICNIC_USERNAME }}
+        PASSWORD: ${{ secrets.PICNIC_PASSWORD }}
+        COUNTRY_CODE: ${{ secrets.PICNIC_COUNTRY_CODE }}
+      run: |
+        uv run pytest tests/ --cov --cov-report=xml
+        
+    - name: Lint with ruff
+      run: |
+        uv run ruff check --output-format=github --ignore FIX
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+    
+    
+    
+    
