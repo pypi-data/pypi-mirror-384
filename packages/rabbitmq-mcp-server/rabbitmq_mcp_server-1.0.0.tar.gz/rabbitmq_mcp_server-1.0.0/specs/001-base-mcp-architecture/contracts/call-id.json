@@ -1,0 +1,413 @@
+{
+  "name": "call-id",
+  "description": "Execute a specific RabbitMQ operation with validated parameters. Performs dynamic schema validation, executes the operation via RabbitMQ HTTP API, and returns the result or detailed error.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "endpoint_id": {
+        "type": "string",
+        "description": "Operation identifier obtained from search-ids (format: {namespace}.{name})",
+        "pattern": "^[a-z-]+\\.[a-z-]+$",
+        "examples": ["queues.list", "exchanges.create", "bindings.delete"]
+      },
+      "params": {
+        "type": "object",
+        "description": "Operation-specific parameters (validated dynamically against operation's request schema)",
+        "additionalProperties": true
+      },
+      "pagination": {
+        "type": "object",
+        "description": "Optional pagination parameters (only for operations that support pagination)",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number (1-based)",
+            "minimum": 1,
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Items per page",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "required": ["endpoint_id", "params"],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "description": "Operation result (schema varies by operation) or paginated response for list operations",
+    "oneOf": [
+      {
+        "description": "Non-paginated operation result",
+        "type": "object",
+        "properties": {
+          "result": {
+            "description": "Operation-specific result data (validated against operation's response schema)"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Execution metadata",
+            "properties": {
+              "operation_id": {"type": "string"},
+              "duration_ms": {"type": "integer"},
+              "trace_id": {"type": "string"}
+            }
+          }
+        },
+        "required": ["result", "metadata"]
+      },
+      {
+        "description": "Paginated operation result",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Result items (validated against operation's response schema)"
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": {"type": "integer", "minimum": 1},
+              "pageSize": {"type": "integer", "minimum": 1, "maximum": 200},
+              "totalItems": {"type": "integer", "minimum": 0},
+              "totalPages": {"type": "integer", "minimum": 0},
+              "hasNextPage": {"type": "boolean"},
+              "hasPreviousPage": {"type": "boolean"}
+            },
+            "required": ["page", "pageSize", "totalItems", "totalPages", "hasNextPage", "hasPreviousPage"]
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "operation_id": {"type": "string"},
+              "duration_ms": {"type": "integer"},
+              "trace_id": {"type": "string"}
+            }
+          }
+        },
+        "required": ["items", "pagination", "metadata"]
+      }
+    ]
+  },
+  "examples": [
+    {
+      "name": "List queues in default vhost",
+      "input": {
+        "endpoint_id": "queues.list",
+        "params": {
+          "vhost": "/"
+        },
+        "pagination": {
+          "page": 1,
+          "pageSize": 50
+        }
+      },
+      "output": {
+        "items": [
+          {
+            "name": "my-queue",
+            "vhost": "/",
+            "durable": true,
+            "auto_delete": false,
+            "messages": 42,
+            "messages_ready": 40,
+            "messages_unacknowledged": 2,
+            "consumers": 2
+          },
+          {
+            "name": "another-queue",
+            "vhost": "/",
+            "durable": false,
+            "auto_delete": true,
+            "messages": 0,
+            "messages_ready": 0,
+            "messages_unacknowledged": 0,
+            "consumers": 0
+          }
+        ],
+        "pagination": {
+          "page": 1,
+          "pageSize": 50,
+          "totalItems": 2,
+          "totalPages": 1,
+          "hasNextPage": false,
+          "hasPreviousPage": false
+        },
+        "metadata": {
+          "operation_id": "queues.list",
+          "duration_ms": 145,
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        }
+      }
+    },
+    {
+      "name": "Create exchange",
+      "input": {
+        "endpoint_id": "exchanges.create",
+        "params": {
+          "vhost": "/",
+          "name": "my-exchange",
+          "type": "direct",
+          "durable": true,
+          "auto_delete": false
+        }
+      },
+      "output": {
+        "result": {
+          "status": "success",
+          "message": "Exchange 'my-exchange' created successfully"
+        },
+        "metadata": {
+          "operation_id": "exchanges.create",
+          "duration_ms": 89,
+          "trace_id": "7a3c8e2f91d44b5a8f6e2d1c9b4a7e3f"
+        }
+      }
+    },
+    {
+      "name": "Get queue details",
+      "input": {
+        "endpoint_id": "queues.get",
+        "params": {
+          "vhost": "/",
+          "name": "my-queue"
+        }
+      },
+      "output": {
+        "result": {
+          "name": "my-queue",
+          "vhost": "/",
+          "durable": true,
+          "auto_delete": false,
+          "arguments": {},
+          "messages": 42,
+          "messages_ready": 40,
+          "messages_unacknowledged": 2,
+          "consumers": 2,
+          "consumer_details": [
+            {
+              "channel_details": {
+                "connection_name": "127.0.0.1:56789 -> 127.0.0.1:5672",
+                "number": 1
+              },
+              "consumer_tag": "ctag-1234"
+            }
+          ]
+        },
+        "metadata": {
+          "operation_id": "queues.get",
+          "duration_ms": 67,
+          "trace_id": "9f2e4d8c1b7a5e3c6d9f2e4d8c1b7a5e"
+        }
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": -32601,
+      "message": "Method not found: operation 'invalid.operation' does not exist",
+      "condition": "endpoint_id does not match any known operation",
+      "example": {
+        "input": {
+          "endpoint_id": "invalid.operation",
+          "params": {}
+        },
+        "error": {
+          "code": -32601,
+          "message": "Method not found: operation 'invalid.operation' does not exist",
+          "data": {
+            "endpoint_id": "invalid.operation",
+            "suggestions": ["queues.list", "queues.get", "queues.create"]
+          }
+        }
+      }
+    },
+    {
+      "code": -32602,
+      "message": "Invalid params: missing required field 'vhost'",
+      "condition": "Required parameters are missing from params object",
+      "example": {
+        "input": {
+          "endpoint_id": "queues.list",
+          "params": {}
+        },
+        "error": {
+          "code": -32602,
+          "message": "Invalid params: validation failed",
+          "data": {
+            "missing": ["vhost"],
+            "invalid": [],
+            "provided": [],
+            "expected_schema": {
+              "type": "object",
+              "properties": {
+                "vhost": {"type": "string", "required": true}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": -32602,
+      "message": "Invalid params: pageSize must be between 1 and 200",
+      "condition": "Pagination parameters are out of allowed range",
+      "example": {
+        "input": {
+          "endpoint_id": "queues.list",
+          "params": {"vhost": "/"},
+          "pagination": {"pageSize": 500}
+        },
+        "error": {
+          "code": -32602,
+          "message": "Invalid params: pageSize must be between 1 and 200",
+          "data": {
+            "field": "pagination.pageSize",
+            "value": 500,
+            "constraint": "maximum: 200"
+          }
+        }
+      }
+    },
+    {
+      "code": -32000,
+      "message": "Server error: RabbitMQ connection failed",
+      "condition": "Cannot connect to RabbitMQ HTTP API",
+      "example": {
+        "input": {
+          "endpoint_id": "queues.list",
+          "params": {"vhost": "/"}
+        },
+        "error": {
+          "code": -32000,
+          "message": "Server error: RabbitMQ connection failed",
+          "data": {
+            "reason": "Connection refused",
+            "rabbitmq_host": "localhost:15672",
+            "resolution": "Check if RabbitMQ is running and credentials are correct"
+          }
+        }
+      }
+    },
+    {
+      "code": -32001,
+      "message": "Timeout error: operation exceeded 30s timeout",
+      "condition": "Operation execution time exceeded configured timeout",
+      "example": {
+        "input": {
+          "endpoint_id": "queues.list",
+          "params": {"vhost": "/"}
+        },
+        "error": {
+          "code": -32001,
+          "message": "Timeout error: operation exceeded 30s timeout",
+          "data": {
+            "operation_id": "queues.list",
+            "timeout_seconds": 30,
+            "elapsed_seconds": 30.1,
+            "resolution": "Try with more specific filters or contact RabbitMQ administrator"
+          }
+        }
+      }
+    },
+    {
+      "code": -32002,
+      "message": "Rate limit error: client exceeded 100 requests per minute",
+      "condition": "Client exceeded rate limit",
+      "example": {
+        "input": {
+          "endpoint_id": "queues.list",
+          "params": {"vhost": "/"}
+        },
+        "error": {
+          "code": -32002,
+          "message": "Rate limit error: client exceeded 100 requests per minute",
+          "data": {
+            "limit": 100,
+            "window_seconds": 60,
+            "retry_after_seconds": 45,
+            "resolution": "Wait 45 seconds before retrying"
+          }
+        }
+      }
+    },
+    {
+      "code": -32603,
+      "message": "Internal error: response validation failed",
+      "condition": "RabbitMQ returned data in unexpected format",
+      "example": {
+        "input": {
+          "endpoint_id": "queues.list",
+          "params": {"vhost": "/"}
+        },
+        "error": {
+          "code": -32603,
+          "message": "Internal error: response validation failed",
+          "data": {
+            "reason": "RabbitMQ returned unexpected data format",
+            "resolution": "This may indicate a RabbitMQ version mismatch. Check RABBITMQ_API_VERSION configuration."
+          }
+        }
+      }
+    }
+  ],
+  "validation": {
+    "description": "Two-phase validation process",
+    "phases": [
+      {
+        "phase": "pre-execution",
+        "steps": [
+          "1. Validate endpoint_id exists in operation registry",
+          "2. Retrieve operation's request_schema",
+          "3. Validate params against request_schema (jsonschema validation)",
+          "4. Validate pagination parameters (if provided)",
+          "5. Check rate limit for client",
+          "6. Return validation errors immediately if any checks fail"
+        ],
+        "performance": "< 10ms overhead"
+      },
+      {
+        "phase": "post-execution",
+        "steps": [
+          "1. Execute operation via RabbitMQ HTTP API",
+          "2. Enforce timeout (abort if > 30s)",
+          "3. Validate response against operation's response_schema",
+          "4. Return formatted result or error"
+        ],
+        "performance": "< 200ms total (including RabbitMQ API call)"
+      }
+    ]
+  },
+  "performance": {
+    "targetLatency": "< 200ms for basic operations",
+    "maxLatency": "30s (hard timeout)",
+    "validationOverhead": "< 10ms",
+    "rateLimitCheck": "< 5ms",
+    "tracingEnabled": true,
+    "metricsCollected": [
+      "operation_duration_ms",
+      "validation_duration_ms",
+      "rabbitmq_api_duration_ms",
+      "error_rate_by_operation",
+      "rate_limit_rejections"
+    ]
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "protocol": "MCP",
+    "category": "semantic-discovery",
+    "requiredCapabilities": [
+      "operation-execution",
+      "schema-validation",
+      "rate-limiting",
+      "timeout-enforcement",
+      "opentelemetry-tracing"
+    ]
+  }
+}
+
