@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<beast
+    namespace="
+        :beast.base.evolution.operator.kernel
+        :beast.base.inference.parameter
+        :beast.base.inference
+        :beast.base.inference.distribution
+        :bdmmprime.distribution
+        :bdmmprime.parameterization
+        :feast.fileio
+        :feast.function
+        :feast.expressions"
+    version="2.5"
+>
+    <map name="Uniform">beast.base.inference.distribution.Uniform</map>
+
+    <map name="TreeFromNewickFile">feast.fileio.TreeFromNewickFile</map>
+    <map name="TaxonSetFromTree">feast.fileio.TaxonSetFromTree</map>
+	<map name="TraitSetFromTaxonSet">feast.fileio.TraitSetFromTaxonSet</map>
+    <map name="TypeSet">bdmmprime.parameterization.TypeSet</map>
+
+    <TreeFromNewickFile id="tree" fileName="$(treeFile)" IsLabelledNewick="true" adjustTipHeights='false'/>
+    <TaxonSetFromTree id="taxonSet" tree="@tree"/>
+	<TraitSetFromTaxonSet id="typeTraitSet" traitname="type" delimiter="|" takeGroup="1" taxa="@taxonSet"/>
+	<TypeSet id="typeSet" value="$(types)" typeTraitSet="@typeTraitSet"/>
+
+    <parameter id="finalSampleOffset" spec="ExpCalculator" value="$(processLength)-$(lastSampleTime)"/>
+
+    <Uniform id="migrationRatePrior" upper="$(migrationRateUpper)"/>
+
+    <run spec="MCMC" chainLength="10000000">
+        <state id="state">
+            <stateNode id="migrationRate" spec="RealParameter" value="$(migrationRateInit)"/>
+        </state>
+
+        <distribution id="posterior" spec="CompoundDistribution">
+            <distribution id="likelihood" spec="CompoundDistribution">
+                <distribution spec="BirthDeathMigrationDistribution" tree="@tree" finalSampleOffset="@finalSampleOffset" typeTraitSet="@typeTraitSet">
+                    <parameterization spec="EpiParameterization" processLength="$(processLength)" typeSet="@typeSet">
+                        <Re spec="SkylineVectorParameter" skylineValues="$(reproductionNumber)" typeSet="@typeSet"/>
+                        <becomeUninfectiousRate spec="SkylineVectorParameter" skylineValues="$(becomeUninfectiousRate)" typeSet="@typeSet"/>
+                        <samplingProportion spec="SkylineVectorParameter" skylineValues="$(samplingProportion)" typeSet="@typeSet"/>
+                        <migrationRate id="migrationRateSP" spec="SkylineMatrixParameter" skylineValues="@migrationRate" typeSet="@typeSet"/>
+						<removalProb spec="SkylineVectorParameter" skylineValues="1.0" typeSet="@typeSet"/>
+                    </parameterization>
+					<startTypePriorProbs spec="RealParameter" value="$(startTypePriorProbs)"/>
+                </distribution>
+            </distribution>
+
+            <distribution id="prior" spec="CompoundDistribution">
+                <distribution spec="Prior" x="@migrationRate" distr="@migrationRatePrior"/>
+            </distribution>
+        </distribution>
+
+        <operator spec="BactrianScaleOperator" parameter="@migrationRate" weight="30.0"/>
+
+        <logger spec="Logger" fileName="$(treeID).log" logEvery="1000" model="@posterior">
+            <log idref="posterior"/>
+            <log idref="prior"/>
+            <log idref="likelihood"/>
+            <log idref="migrationRateSP"/>
+        </logger>
+    </run>
+
+</beast>
