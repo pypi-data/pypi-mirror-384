@@ -1,0 +1,203 @@
+services:
+  jupyter:
+    user: "$${SERVICE_UID}:$${SERVICE_GID}"
+    container_name: jupyter
+    group_add:
+      - "$${DOCKER_GID}"
+    build:
+      context: .
+      dockerfile: dockerfile.jupyter
+      args:
+        - SERVICE_UID=$${SERVICE_UID}
+        - SERVICE_GID=$${SERVICE_GID}
+        - DOCKER_GID=$${DOCKER_GID}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24224"
+        tag: "docker.jupyter"
+    networks:
+      - web
+    environment:
+      - AWS_REGION=${aws_region}
+    depends_on:
+      - fluent-bit
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jupyter.rule=Host(`${full_domain}`)"
+      - "traefik.http.routers.jupyter.entrypoints=websecure"
+      - "traefik.http.routers.jupyter.tls.certresolver=letsencrypt"
+      - "traefik.http.services.jupyter.loadbalancer.server.port=8888"
+      - "traefik.http.routers.jupyter.middlewares=oauth-errors@docker,oauth-auth@docker"
+    volumes:
+      - /mnt/jupyter-data:/home/jovyan
+      - /var/run/docker.sock:/var/run/docker.sock
+%{ if length(ebs_mounts) > 0 ~}
+%{ for ebs in ebs_mounts ~}
+      - /home/jovyan/${ebs.mount_point}:/home/jovyan/${ebs.mount_point}
+%{ endfor ~}
+%{ endif ~}
+%{ if length(efs_mounts) > 0 ~}
+%{ for efs in efs_mounts ~}
+      - /home/jovyan/${efs.mount_point}:/home/jovyan/${efs.mount_point}
+%{ endfor ~}
+%{ endif ~}
+    deploy:
+      resources:
+        limits:
+          memory: "$${JUPYTER_MEM_LIMIT_MB}M"
+        reservations:
+          memory: "$${JUPYTER_MEM_RESERVATION_MB}M"
+%{ if has_gpu ~}
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+%{ endif ~}
+%{ if has_neuron ~}
+          devices:
+            - driver: aws-neuron
+              count: all
+              capabilities: [neuron]
+%{ endif ~}
+  oauth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    container_name: oauth
+    user: "$${SERVICE_UID}:$${SERVICE_GID}"
+    restart: unless-stopped
+    mem_limit: "256M"
+    mem_reservation: "128M"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24224"
+        tag: "docker.oauth"
+    depends_on:
+      - fluent-bit
+    labels:
+      - "traefik.enable=true"
+      # Main service definition
+      - "traefik.http.services.oauth.loadbalancer.server.port=4180"
+      # oauth-middleware
+      - "traefik.http.middlewares.oauth-auth.forwardauth.address=http://oauth:4180/oauth2/auth"
+      - "traefik.http.middlewares.oauth-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.oauth-auth.forwardauth.authResponseHeaders=X-Auth-Request-User,X-Auth-Request-Email"
+      # security headers middleware
+      - "traefik.http.middlewares.auth-headers.headers.sslRedirect=true"
+      - "traefik.http.middlewares.auth-headers.headers.stsSeconds=315360000"
+      - "traefik.http.middlewares.auth-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.auth-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.auth-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.auth-headers.headers.sslHost=${full_domain}"
+      - "traefik.http.middlewares.auth-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.auth-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.auth-headers.headers.frameDeny=true"
+      # error handling middleware
+      - "traefik.http.middlewares.oauth-errors.errors.status=401-403"
+      - "traefik.http.middlewares.oauth-errors.errors.service=oauth"
+      - "traefik.http.middlewares.oauth-errors.errors.query=/oauth2/sign_in?rd={url}"
+      # Auth domain routing
+      - "traefik.http.routers.oauth.rule=Host(`${full_domain}`) && PathPrefix(`/oauth2/`)"
+      - "traefik.http.routers.oauth.entrypoints=websecure"
+      - "traefik.http.routers.oauth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.oauth.middlewares=auth-headers@docker"
+      - "traefik.http.routers.oauth.service=oauth"
+    networks:
+      - web
+    environment:
+      - OAUTH2_PROXY_PROVIDER=${oauth_provider}
+      - OAUTH2_PROXY_CLIENT_ID=${github_client_id}
+      - OAUTH2_PROXY_CLIENT_SECRET=$${GITHUB_CLIENT_SECRET}
+      - OAUTH2_PROXY_SCOPE=read:user,user:email,read:org
+      # This allows any email domain, but access is restricted by org/team/user restrictions below
+      # Safety checks in docker-startup.sh prevent empty auth restrictions
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_GITHUB_ORG=$${AUTHED_ORG_CONTENT}
+      - OAUTH2_PROXY_GITHUB_TEAM=$${AUTHED_TEAMS_CONTENT}
+      - OAUTH2_PROXY_GITHUB_USERS=$${AUTHED_USERS_CONTENT}
+      - OAUTH2_PROXY_REDIRECT_URL=https://${full_domain}/oauth2/callback
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_COOKIE_DOMAINS=${full_domain}
+      - OAUTH2_PROXY_COOKIE_SECRET=$${OAUTH_SECRET}
+      - OAUTH2_PROXY_COOKIE_SECURE=true
+      - OAUTH2_PROXY_REVERSE_PROXY=true
+      - OAUTH2_PROXY_UPSTREAMS=https://${full_domain}/
+      - OAUTH2_PROXY_WHITELIST_DOMAINS=${full_domain}
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    mem_limit: "256M"
+    mem_reservation: "128M"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24224"
+        tag: "docker.traefik"
+    depends_on:
+      - fluent-bit
+    ports:
+      - "443:8443"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/traefik.yml:ro
+      - ./acme.json:/acme.json
+    networks:
+      - web
+    environment:
+      - AWS_REGION=${aws_region}
+  fluent-bit:
+    image: fluent/fluent-bit:latest
+    container_name: fluent-bit
+    restart: unless-stopped
+    mem_limit: "128M"
+    mem_reservation: "64M"
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - /var/log/services:/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./parsers.conf:/fluent-bit/etc/parsers.conf:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - web
+  log-rotator:
+    build:
+      context: .
+      dockerfile: dockerfile.logrotator
+    container_name: log-rotator
+    restart: unless-stopped
+    mem_limit: "128M"
+    mem_reservation: "64M"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24224"
+        tag: "docker.log-rotator"
+    depends_on:
+      - fluent-bit
+    volumes:
+      - /var/log/services:/var/log/services
+      - /var/log/jupyter-deploy:/var/log/jupyter-deploy
+    networks:
+      - web
+    environment:
+      - TZ=UTC
+networks:
+  web:
+    name: web
+    driver: bridge

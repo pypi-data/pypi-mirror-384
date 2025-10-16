@@ -1,0 +1,164 @@
+#!/bin/bash
+set -e
+
+# Records logs
+mkdir -p /var/log/jupyter-deploy
+exec > >(tee /var/log/jupyter-deploy/cloudinit.log) 2>&1
+
+echo "Running cloudinit script as: $(whoami)"
+
+# Detect Linux distribution
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$NAME
+    VERSION=$VERSION_ID
+else
+    echo "Cannot detect OS version"
+    exit 1
+fi
+
+if [[ "$OS" == "Amazon Linux" ]]; then
+    yum update -y
+
+    # Check if Docker is already installed
+    if ! command -v docker &> /dev/null; then
+        echo "Docker not found, installing..."
+        yum install -y docker
+
+        # Enable docker
+        systemctl start docker
+        systemctl enable docker
+    else
+        echo "Docker is already installed"
+    fi
+    
+    # Check if docker-compose is already installed
+    if ! command -v docker-compose &> /dev/null; then
+        echo "docker-compose not found, installing..."
+        curl -L https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+    else
+        echo "docker-compose is already installed"
+    fi
+
+    # Check if jq is already installed
+    if ! command -v jq &> /dev/null; then
+        echo "jq not found, installing..."
+        yum install -y jq
+    else
+        echo "jq is already installed"
+    fi
+
+    # Check if SSM agent is installed and running
+    if ! systemctl is-active --quiet amazon-ssm-agent; then
+        echo "SSM agent not running, checking if installed..."
+        if ! rpm -q amazon-ssm-agent &> /dev/null; then
+            echo "SSM agent not found, installing..."
+            yum install -y amazon-ssm-agent
+        fi
+        echo "Starting SSM agent..."
+        systemctl start amazon-ssm-agent
+        systemctl enable amazon-ssm-agent
+    else
+        echo "SSM agent is already running"
+    fi
+else
+    echo "Unsupported OS version. This script only supports Amazon Linux."
+    exit 1
+fi
+
+# create the service user and restrict permissions
+useradd -r -s /sbin/nologin -d /home/service-user -m service-user
+
+# revisit: granting access to the docker deamon is an avenue for elevation of privilege
+usermod -aG docker service-user
+
+tee /etc/sudoers.d/service-user << EOF
+service-user ALL=(ALL) NOPASSWD: /bin/systemctl start docker
+service-user ALL=(ALL) NOPASSWD: /bin/systemctl stop docker
+service-user ALL=(ALL) NOPASSWD: /bin/systemctl restart docker
+service-user ALL=(ALL) NOPASSWD: /usr/local/bin/update-auth.sh
+EOF
+chmod 440 /etc/sudoers.d/service-user
+
+# Set up specific PATH
+tee /home/service-user/.bash_profile << EOF
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin
+EOF
+
+chown service-user:service-user /home/service-user/.bash_profile
+chmod 644 /home/service-user/.bash_profile
+
+mkdir -p /home/service-user/.aws
+chown -R service-user:service-user /home/service-user
+
+# Create limits configuration
+echo "Setting up resource limits..."
+tee /etc/security/limits.d/service-user.conf << EOF
+service-user soft nproc 1024
+service-user hard nproc 2048
+service-user soft nofile 4096
+service-user hard nofile 8192
+EOF
+chmod 440 /etc/security/limits.d/service-user.conf
+
+# Allocate swap memory based on RAM amount
+TOTAL_MEMORY_MB=$(free -m | awk '/^Mem:/{print $2}')
+
+if [ $TOTAL_MEMORY_MB -le 1024 ]; then
+    SWAP_SIZE_MB=2048
+elif [ $TOTAL_MEMORY_MB -le 8192 ]; then
+    SWAP_SIZE_MB=$TOTAL_MEMORY_MB
+else
+    SWAP_SIZE_MB=8192
+fi
+
+CURRENT_SWAP_KB=$(free -k | awk '/^Swap:/{print $2}')
+NEEDED_SWAP_KB=$((SWAP_SIZE_MB * 1024))
+
+if [ $CURRENT_SWAP_KB -eq 0 ]; then
+    echo "Creating new swap file of $${SWAP_SIZE_MB}MB..."
+    fallocate -l $${SWAP_SIZE_MB}M /swapfile
+elif [ $CURRENT_SWAP_KB -ne $NEEDED_SWAP_KB ]; then
+    echo "Resizing swap file from $((CURRENT_SWAP_KB/1024))MB to $${SWAP_SIZE_MB}MB..."
+    swapoff -a
+    fallocate -l $${SWAP_SIZE_MB}M /swapfile
+fi
+
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# Mount the jupyter-data drive and save config to persist on reboots
+mkfs -t ext4 /dev/sdf
+mkdir -p /mnt/jupyter-data
+mount /dev/sdf /mnt/jupyter-data
+
+chown service-user:service-user /mnt/jupyter-data
+chmod 750 /mnt/jupyter-data
+
+echo "/dev/sdf /mnt/jupyter-data ext4 defaults,nofail 0 2" | tee -a /etc/fstab
+
+# Create the docker dir
+mkdir -p /opt/docker
+touch /opt/docker/acme.json
+chown service-user:service-user /opt/docker/acme.json
+chmod 600 /opt/docker/acme.json
+
+# Create the log dir
+mkdir -p /var/log/services
+
+# Create the AUTHED_ENTITIES file with the initial GitHub org/teams/users
+echo "[org]" > /etc/AUTHED_ENTITIES
+echo "${allowed_github_org}" >> /etc/AUTHED_ENTITIES
+echo "" >> /etc/AUTHED_ENTITIES
+echo "[teams]" >> /etc/AUTHED_ENTITIES
+echo "${allowed_github_teams}" >> /etc/AUTHED_ENTITIES
+echo "" >> /etc/AUTHED_ENTITIES
+echo "[users]" >> /etc/AUTHED_ENTITIES
+echo "${allowed_github_usernames}" >> /etc/AUTHED_ENTITIES
+chmod 600 /etc/AUTHED_ENTITIES
+chown service-user:service-user /etc/AUTHED_ENTITIES
+
+mkdir -p /usr/local/bin
