@@ -1,0 +1,2 @@
+from .kegg_enrichment import ModuleKEGGEnrichment
+from .panther_enrichment import ModulePantherEnrichment
