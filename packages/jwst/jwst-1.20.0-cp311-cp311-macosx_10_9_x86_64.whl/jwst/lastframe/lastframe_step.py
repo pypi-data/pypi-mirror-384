@@ -1,0 +1,56 @@
+import logging
+
+from stdatamodels.jwst import datamodels
+
+from jwst.lastframe import lastframe_sub
+from jwst.stpipe import Step
+
+__all__ = ["LastFrameStep"]
+
+log = logging.getLogger(__name__)
+
+
+class LastFrameStep(Step):
+    """
+    Set data quality flags for the last group in MIRI ramps.
+
+    If the number of groups > 2, the GROUP
+    data quality flag for the final group will be set to DO_NOT_USE.
+    """
+
+    class_alias = "lastframe"
+
+    spec = """
+    """  # noqa: E501
+
+    def process(self, step_input):
+        """
+        For MIRI data with more than 2 groups, set final group dq to DO_NOT_USE.
+
+        Parameters
+        ----------
+        step_input : DataModel
+            Input datamodel to be corrected
+
+        Returns
+        -------
+        output_model : DataModel
+            Lastframe corrected datamodel
+        """
+        # Open the input data model
+        with datamodels.RampModel(step_input) as input_model:
+            # Work on a copy
+            result = input_model.copy()
+
+            # check the data is MIRI data
+            detector = result.meta.instrument.detector
+            if detector[:3] != "MIR":
+                log.warning("Last Frame Correction is only for MIRI data")
+                log.warning("Last frame step will be skipped")
+                result.meta.cal_step.lastframe = "SKIPPED"
+                return result
+
+            # Do the lastframe correction subtraction
+            result = lastframe_sub.do_correction(result)
+
+        return result
