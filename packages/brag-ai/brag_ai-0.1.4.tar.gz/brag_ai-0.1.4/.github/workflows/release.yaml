@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: |
+          Release version without the v prefix (e.g. 0.1.0).
+          Can also be `major`, `minor`, or `patch`.
+          If not provided, the next version will be automatically calculated.
+        required: false
+        type: string
+
+jobs:
+  release:
+    name: Release and publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    environment: release
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Set up UV
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: false
+
+    - name: Calculate new version
+      id: new-version
+      run: |
+        if [ -z "${{ github.event.inputs.version }}" ]; then
+          echo "No version provided, using next version from git-cliff"
+          version=$(uvx git-cliff --unreleased --bump --context | jq -r .[0].version)
+        elif [ "${{ github.event.inputs.version }}" = "major" ]; then
+          echo "Major version bump requested"
+          version=$(uvx git-cliff --unreleased --bump major --context | jq -r .[0].version)
+        elif [ "${{ github.event.inputs.version }}" = "minor" ]; then
+          echo "Minor version bump requested"
+          version=$(uvx git-cliff --unreleased --bump minor --context | jq -r .[0].version)
+        elif [ "${{ github.event.inputs.version }}" = "patch" ]; then
+          echo "Patch version bump requested"
+          version=$(uvx git-cliff --unreleased --bump patch --context | jq -r .[0].version)
+        else
+          echo "Using specific version: ${input-version}"
+          version="${{ github.event.inputs.version }}"
+        fi
+        # Remove the v prefix from the version
+        echo "version=${version//v}" >> "${GITHUB_OUTPUT}"
+
+    - name: Update version in __init__.py
+      run: |
+        echo "Updating version to v${{ steps.new-version.outputs.version }}"
+        sed -i 's/__version__ = ".*"/__version__ = "${{ steps.new-version.outputs.version }}"/' src/brag/__init__.py
+
+    - name: Update changelog with new version
+      uses: orhun/git-cliff-action@v4
+      id: update-changelog
+      with:
+        config: .github/git-cliff-config.toml
+        args: --tag v${{ steps.new-version.outputs.version }}
+      env:
+        OUTPUT: CHANGELOG.md
+
+    - name: Generate release changelog
+      uses: orhun/git-cliff-action@v4
+      id: generate-release-changelog
+      with:
+        config: .github/git-cliff-config.toml
+        args: -vv --latest
+
+    - name: Commit and push version and changelog
+      run: |
+        git config --global user.name ${{ github.actor }}
+        git config --global user.email ${{ github.actor }}@users.noreply.github.com
+        git remote set-url --push origin "https://${{ github.actor }}:${{ secrets.MAIN_BRANCH_PROTECTION_BYPASS_PAT }}@github.com/${{ github.repository }}"
+
+        git add src/brag/__init__.py
+        git add CHANGELOG.md
+        git commit -m "chore: release v${{ steps.new-version.outputs.version }}"
+
+        git tag v${{ steps.new-version.outputs.version }}
+        git push origin main
+        git push origin v${{ steps.new-version.outputs.version }}
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ steps.new-version.outputs.version }}
+        name: v${{ steps.new-version.outputs.version }}
+        body: ${{ steps.generate-release-changelog.outputs.content }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build package
+      run: uv build
+
+    - name: Publish to PyPI
+      run: uv publish --trusted-publishing always

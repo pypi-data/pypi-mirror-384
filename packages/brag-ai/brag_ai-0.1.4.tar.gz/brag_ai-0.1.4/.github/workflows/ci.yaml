@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    strategy:
+      matrix:
+        check:
+        - name: lint
+          run: bash scripts/lint.sh
+        - name: format
+          run: bash scripts/format.sh
+        - name: type-check
+          run: bash scripts/type-check.sh
+        # Disabled pre-commit checks since they are flaky
+        # and unhelpful - see e.g.
+        # https://github.com/ruancomelli/brag-ai/actions/runs/14008479153/job/39225367619
+        # - name: pre-commit
+        #   run: bash scripts/pre-commit-check.sh
+
+    name: Python ${{ matrix.check.name }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Run check ${{ matrix.check.name }}
+      run: ${{ matrix.check.run }}
+
+  tests:
+    strategy:
+      matrix:
+        python-version:
+        - '3.12'
+        - '3.13'
+        runner:
+        - ubuntu-latest
+        - macos-latest
+        - windows-latest
+
+    name: Python ${{ matrix.python-version }} test on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+
+    - name: Run tests
+      run: bash scripts/test.sh
+
+    - name: Run tests with coverage
+      run: bash scripts/test-cov.sh
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+    - name: Run ShellCheck
+      uses: ludeeus/action-shellcheck@2.0.0
