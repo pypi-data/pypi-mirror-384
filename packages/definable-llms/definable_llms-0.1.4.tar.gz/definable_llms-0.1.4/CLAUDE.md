@@ -1,0 +1,2 @@
+- Always remember to update your local memory
+- remember to always commit on git, after my confirmation.
