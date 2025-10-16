@@ -1,0 +1,41 @@
+name: Build Docs
+
+on:
+  pull_request:
+    branches: ['main']
+    types: [opened, reopened, ready_for_review, synchronize]
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+        cache: pip
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools build
+        python -m pip install -r docs/requirements.txt
+    - name: Build & install package
+      run: |
+        python -m build .
+        tools/install_wheel_extras.sh dist --extra envs
+    - name: Generate docs assets
+      run: |
+        python -c "import pathlib; pathlib.Path('docs/tree').mkdir(parents=True, exist_ok=True)"
+        python -c "import glob, os; [os.remove(f) for f in glob.glob('docs/tree/*.rst')]"
+        typer qbraid_cli.main utils docs --name=qbraid --output=docs/tree/qbraid.md
+        m2r docs/tree/qbraid.md
+        python -c "import os; os.remove('docs/tree/qbraid.md')"
+        python tools/split_rst.py docs/tree/qbraid.rst
+    - name: Build docs
+      run: |
+        sphinx-build -W -b html docs docs/build/html

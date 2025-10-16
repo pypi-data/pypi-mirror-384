@@ -1,0 +1,81 @@
+name: CI (PR Target)
+
+on:
+  pull_request_target:
+    branches: ['main']
+    types: [opened, reopened, ready_for_review, synchronize]
+
+jobs:
+  build:
+    if: github.event.pull_request.draft == false && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11']
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Upgrade pip and install build tools
+        run: |
+          pip install --upgrade pip
+          pip install setuptools wheel build
+      - name: Build the package
+        run: |
+          python -m build
+      - name: Upload built package
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-package
+          path: dist/*.whl
+
+  test:
+    if: github.event.pull_request.draft == false && github.event.pull_request.user.login == 'dependabot[bot]'
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+      fail-fast: true
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Download built package
+        uses: actions/download-artifact@v5
+        with:
+          name: built-package
+          path: dist
+      - name: Install package
+        run: |
+          if ($env:RUNNER_OS -eq "Windows") {
+            Get-ChildItem dist/*.whl | ForEach-Object { pip install $_.FullName }
+          } else {
+            pip install dist/*.whl
+          }
+        shell: pwsh
+      - name: Install testing dependencies
+        run: |
+          pip install pytest pytest-cov qbraid-core[environments]
+      - name: Run tests with pytest
+        run: |
+          pytest --cov=qbraid_cli tests/ --cov-report=html --cov-report=xml --cov-report=term --cov-config=pyproject.toml
+        env:
+          QBRAID_API_KEY: ${{ secrets.QBRAID_API_KEY }}
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5.5.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          files: ./build/coverage/coverage.xml
+          verbose: true

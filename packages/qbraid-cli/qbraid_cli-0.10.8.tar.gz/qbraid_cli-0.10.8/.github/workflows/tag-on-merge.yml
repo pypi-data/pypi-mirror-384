@@ -1,0 +1,36 @@
+name: Tag on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  tag-version:
+    if: github.event.pull_request.merged == true && github.event.pull_request.user.login == 'github-actions[bot]' && startsWith(github.event.pull_request.title, 'Bump project version to ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Extract version
+        id: extract_version
+        run: |
+          VERSION=$(echo '${{ github.event.pull_request.title }}' | sed -E 's/Bump project version to (.*)/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: 'main'
+
+      - name: Setup Git config
+        run: |
+          git config --global user.name 'qbraidTeam'
+          git config --global user.email 'qbraid.team@qbraid.com'
+
+      - name: Create Tag
+        run: |
+          VERSION=${{ steps.extract_version.outputs.version }}
+          git tag v$VERSION
+          git push origin v$VERSION
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
