@@ -1,0 +1,428 @@
+# PYPIPR
+- [ComparePerformance](#compareperformance)
+- [LINUX](#linux)
+- [WINDOWS](#windows)
+- [batch_calculate](#batch_calculate)
+- [batchmaker](#batchmaker)
+- [calculate](#calculate)
+- [chr_to_int](#chr_to_int)
+- [chunk_array](#chunk_array)
+- [datetime_from_string](#datetime_from_string)
+- [datetime_now](#datetime_now)
+- [filter_empty](#filter_empty)
+- [get_class_method](#get_class_method)
+- [irange](#irange)
+- [random_bool](#random_bool)
+
+
+# ComparePerformance
+Menjalankan seluruh method dalam class,
+Kemudian membandingkan waktu yg diperlukan.
+Nilai 100 berarti yang tercepat.
+
+example : 
+```python
+import pprint
+
+class ExampleComparePerformance(ComparePerformance):
+    # number = 1
+    z = 10
+
+    def a(self):
+        return (x for x in range(self.z))
+
+    def b(self):
+        return tuple(x for x in range(self.z))
+
+    def c(self):
+        return [x for x in range(self.z)]
+
+    def d(self):
+        return list(x for x in range(self.z))
+
+pprint.pprint(ExampleComparePerformance().compare_result())
+print(ExampleComparePerformance().compare_performance())
+print(ExampleComparePerformance().compare_performance())
+print(ExampleComparePerformance().compare_performance())
+print(ExampleComparePerformance().compare_performance())
+print(ExampleComparePerformance().compare_performance())
+```
+
+result : 
+```shell
+{'a': <generator object test.<locals>.ExampleComparePerformance.a.<locals>.<genexpr> at 0x7df65ad540>,
+ 'b': (0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+ 'c': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+ 'd': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}
+{'a': 125, 'b': 159, 'c': 100, 'd': 263}
+{'a': 106, 'b': 159, 'c': 100, 'd': 223}
+{'a': 100, 'b': 159, 'c': 101, 'd': 203}
+{'a': 106, 'b': 160, 'c': 99, 'd': 210}
+{'a': 109, 'b': 164, 'c': 100, 'd': 208}
+
+```
+
+
+# LINUX
+bool(x) -> bool
+
+Returns True when the argument x is true, False otherwise.
+The builtins True and False are the only two instances of the class bool.
+The class bool is a subclass of the class int, and cannot be subclassed.
+
+example : 
+```python
+print(LINUX)
+```
+
+result : 
+```shell
+True
+
+```
+
+
+# WINDOWS
+bool(x) -> bool
+
+Returns True when the argument x is true, False otherwise.
+The builtins True and False are the only two instances of the class bool.
+The class bool is a subclass of the class int, and cannot be subclassed.
+
+example : 
+```python
+print(WINDOWS)
+```
+
+result : 
+```shell
+False
+
+```
+
+
+# batch_calculate
+Analisa perhitungan massal.
+Bisa digunakan untuk mencari alternatif terendah/tertinggi/dsb.
+
+example : 
+```python
+res = batch_calculate("({1 10} m) ** {1 3}")
+for k, v in res:
+    print(f"{k} : {v:~P}")
+```
+
+result : 
+```shell
+(1 m) ** 1 : 1 m
+(1 m) ** 2 : 1 m²
+(1 m) ** 3 : 1 m³
+(2 m) ** 1 : 2 m
+(2 m) ** 2 : 4 m²
+(2 m) ** 3 : 8 m³
+(3 m) ** 1 : 3 m
+(3 m) ** 2 : 9 m²
+(3 m) ** 3 : 27 m³
+(4 m) ** 1 : 4 m
+(4 m) ** 2 : 16 m²
+(4 m) ** 3 : 64 m³
+(5 m) ** 1 : 5 m
+(5 m) ** 2 : 25 m²
+(5 m) ** 3 : 125 m³
+(6 m) ** 1 : 6 m
+(6 m) ** 2 : 36 m²
+(6 m) ** 3 : 216 m³
+(7 m) ** 1 : 7 m
+(7 m) ** 2 : 49 m²
+(7 m) ** 3 : 343 m³
+(8 m) ** 1 : 8 m
+(8 m) ** 2 : 64 m²
+(8 m) ** 3 : 512 m³
+(9 m) ** 1 : 9 m
+(9 m) ** 2 : 81 m²
+(9 m) ** 3 : 729 m³
+(10 m) ** 1 : 10 m
+(10 m) ** 2 : 100 m²
+(10 m) ** 3 : 1000 m³
+
+```
+
+
+# batchmaker
+Alat Bantu untuk membuat teks yang berulang.
+Gunakan `{[start][separator][finish]([separator][step])}`.
+```
+[start] dan [finish]    -> bisa berupa huruf maupun angka
+([separator][step])     -> bersifat optional
+[separator]             -> selain huruf dan angka
+[step]                  -> berupa angka positif
+```
+
+example : 
+```python
+import pprint
+pattern = "Urutan {1/6/3} dan {10:9} dan {j k} dan {Z - A - 15} saja."
+pprint.pprint(list(batchmaker(pattern)))
+```
+
+result : 
+```shell
+['Urutan 1 dan 10 dan j dan Z saja.',
+ 'Urutan 1 dan 10 dan j dan K saja.',
+ 'Urutan 1 dan 10 dan j dan  saja.',
+ 'Urutan 1 dan 10 dan k dan Z saja.',
+ 'Urutan 1 dan 10 dan k dan K saja.',
+ 'Urutan 1 dan 10 dan k dan  saja.',
+ 'Urutan 1 dan 9 dan j dan Z saja.',
+ 'Urutan 1 dan 9 dan j dan K saja.',
+ 'Urutan 1 dan 9 dan j dan  saja.',
+ 'Urutan 1 dan 9 dan k dan Z saja.',
+ 'Urutan 1 dan 9 dan k dan K saja.',
+ 'Urutan 1 dan 9 dan k dan  saja.',
+ 'Urutan 4 dan 10 dan j dan Z saja.',
+ 'Urutan 4 dan 10 dan j dan K saja.',
+ 'Urutan 4 dan 10 dan j dan  saja.',
+ 'Urutan 4 dan 10 dan k dan Z saja.',
+ 'Urutan 4 dan 10 dan k dan K saja.',
+ 'Urutan 4 dan 10 dan k dan  saja.',
+ 'Urutan 4 dan 9 dan j dan Z saja.',
+ 'Urutan 4 dan 9 dan j dan K saja.',
+ 'Urutan 4 dan 9 dan j dan  saja.',
+ 'Urutan 4 dan 9 dan k dan Z saja.',
+ 'Urutan 4 dan 9 dan k dan K saja.',
+ 'Urutan 4 dan 9 dan k dan  saja.',
+ 'Urutan 7 dan 10 dan j dan Z saja.',
+ 'Urutan 7 dan 10 dan j dan K saja.',
+ 'Urutan 7 dan 10 dan j dan  saja.',
+ 'Urutan 7 dan 10 dan k dan Z saja.',
+ 'Urutan 7 dan 10 dan k dan K saja.',
+ 'Urutan 7 dan 10 dan k dan  saja.',
+ 'Urutan 7 dan 9 dan j dan Z saja.',
+ 'Urutan 7 dan 9 dan j dan K saja.',
+ 'Urutan 7 dan 9 dan j dan  saja.',
+ 'Urutan 7 dan 9 dan k dan Z saja.',
+ 'Urutan 7 dan 9 dan k dan K saja.',
+ 'Urutan 7 dan 9 dan k dan  saja.']
+
+```
+
+
+# calculate
+Mengembalikan hasil dari perhitungan teks menggunakan modul pint.
+Mendukung perhitungan matematika dasar dengan satuan.
+
+Return value:
+- Berupa class Quantity dari modul pint
+
+Format:
+- f"{result:~P}"            -> pretty
+- f"{result:~H}"            -> html
+- result.to_base_units()    -> SI
+- result.to_compact()       -> human readable
+
+example : 
+```python
+fx = "3 meter * 10 cm * 3 km"
+res = calculate(fx)
+print(res)
+print(res.to_base_units())
+print(res.to_compact())
+print(f"{res:~P}")
+print(f"{res:~H}")
+```
+
+result : 
+```shell
+90 centimeter * kilometer * meter
+900.0 meter ** 3
+900.0 meter ** 3
+90 cm·km·m
+90 cm km m
+
+```
+
+
+# chr_to_int
+Fungsi ini berguna untuk mengubah urutan huruf menjadi angka.
+dimulai dari a = 0
+
+example : 
+```python
+print(chr_to_int("a"))
+print(chr_to_int("z"))
+print(chr_to_int("ac"))
+print(chr_to_int("abc", numbers="abcde"))
+```
+
+result : 
+```shell
+0
+25
+28
+37
+
+```
+
+
+# chunk_array
+Membagi array menjadi potongan-potongan dengan besaran yg diinginkan
+
+example : 
+```python
+arr = [2, 3, 12, 3, 3, 42, 42, 1, 43, 2, 42, 41, 4, 24, 32, 42, 3, 12, 32, 42, 42]
+print(chunk_array(arr, 5))
+pprint.pprint(list(chunk_array(arr, 5)))
+```
+
+result : 
+```shell
+<generator object chunk_array at 0x7df66117b0>
+[[2, 3, 12, 3, 3],
+ [42, 42, 1, 43, 2],
+ [42, 41, 4, 24, 32],
+ [42, 3, 12, 32, 42],
+ [42]]
+
+```
+
+
+# datetime_from_string
+Parse iso_string menjadi datetime object.
+Mempermudah untuk konversi timezone
+
+example : 
+```python
+print(datetime_from_string("2022-12-12 15:40:13").isoformat())
+print(datetime_from_string("2022-12-12 15:40:13", timezone="Asia/Jakarta"))
+```
+
+result : 
+```shell
+2022-12-12T15:40:13+00:00
+2022-12-12 15:40:13+07:00
+
+```
+
+
+# datetime_now
+Memudahkan dalam membuat Datetime untuk suatu timezone tertentu
+
+example : 
+```python
+print(datetime_now())
+print(datetime_now("Asia/Jakarta"))
+print(datetime_now("GMT"))
+print(datetime_now("Etc/GMT+7"))
+```
+
+result : 
+```shell
+2025-10-15 22:23:30.660895
+2025-10-15 22:23:30.660920+07:00
+2025-10-15 15:23:30.661559+00:00
+2025-10-15 08:23:30.663172-07:00
+
+```
+
+
+# filter_empty
+Generator yang mengembalikan elemen non-kosong dari iterable.
+Lihat docstring sebelumnya untuk detail parameter.
+
+example : 
+```python
+var = [1, None, False, 0, "0", True, {}, ['eee']]
+print(filter_empty(var))
+print(list(filter_empty(var)))
+```
+
+result : 
+```shell
+<generator object filter_empty at 0x7dfd6f82a0>
+[1, '0', True, ['eee']]
+
+```
+
+
+# get_class_method
+Mengembalikan berupa tuple yg berisi list dari method dalam class
+
+example : 
+```python
+class ExampleGetClassMethod:
+    def a(self):
+        return [x for x in range(10)]
+
+    def b(self):
+        return [x for x in range(10)]
+
+    def c(self):
+        return [x for x in range(10)]
+
+    def d(self):
+        return [x for x in range(10)]
+
+print(get_class_method(ExampleGetClassMethod))
+pprint.pprint(list(get_class_method(ExampleGetClassMethod)))
+```
+
+result : 
+```shell
+<generator object get_class_method at 0x7df453de00>
+[<function test.<locals>.ExampleGetClassMethod.a at 0x7df45325c0>,
+ <function test.<locals>.ExampleGetClassMethod.b at 0x7df45336a0>,
+ <function test.<locals>.ExampleGetClassMethod.c at 0x7df45327a0>,
+ <function test.<locals>.ExampleGetClassMethod.d at 0x7df4533740>]
+
+```
+
+
+# irange
+Meningkatkan fungsi range() dari python untuk pengulangan menggunakan huruf
+
+example : 
+```python
+print(list(irange(10)))
+print(list(irange(3, 15)))
+print(list(irange(13, 5)))
+print(list(irange(2, 10, 3)))
+print(list(irange(2, "10", 3)))
+print(list(irange("10")))
+print(list(irange("10", "100", 7)))
+print(list(irange("h")))
+print(list(irange("A", "D")))
+print(list(irange("z", "a", 4)))
+```
+
+result : 
+```shell
+[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+[13, 12, 11, 10, 9, 8, 7, 6]
+[2, 5, 8]
+[2, 5, 8]
+[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+[10, 17, 24, 31, 38, 45, 52, 59, 66, 73, 80, 87, 94]
+['a', 'b', 'c', 'd', 'e', 'f', 'g']
+['A', 'B', 'C']
+['z', 'v', 'r', 'n', 'j', 'f', 'b']
+
+```
+
+
+# random_bool
+Menghasilkan nilai random True atau False.
+Fungsi ini merupakan fungsi tercepat untuk mendapatkan random bool.
+Fungsi ini sangat cepat, tetapi pemanggilan fungsi ini membutuhkan
+overhead yg besar.
+
+example : 
+```python
+print(random_bool())
+```
+
+result : 
+```shell
+True
+
+```
