@@ -1,0 +1,42 @@
+name: Upload Python Package
+
+on:
+  push:
+    tags:
+      - v*.*.*
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: upload release to PyPI
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install dependencies
+      run: |
+        pip install -U pip
+        pip install -U .[packaging]
+    - name: Construct release body
+      id: construct
+      run: |
+        awk -v RS='' '/\[v/ {print $0; exit}' Changelog.md | tail -n+2 > ${{ github.workspace }}-release_notes.md
+        cat ${{ github.workspace }}-release_notes.md
+    - name: Create Github release
+      uses: softprops/action-gh-release@v2
+      with:
+        body_path: ${{ github.workspace }}-release_notes.md
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build package
+      run: |
+        python -m build
+    - name: Publish package distributions to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
