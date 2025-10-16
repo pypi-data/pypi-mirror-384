@@ -1,0 +1,78 @@
+name: "Data Transformation Pipeline"
+description: "Clean and transform raw data with column operations"
+
+variables:
+  input_file: "raw_data/user_activity.parquet"
+  output_file: "processed_data/cleaned_user_activity.parquet"
+  min_sessions: 5
+
+steps:
+  # Load raw user activity data
+  - name: "load_raw_data"
+    type: "read"
+    input: "${input_file}"
+    output: "raw_activity"
+    # Force Dask for large files
+    islazy: true
+
+  # Filter active users (minimum sessions)
+  - name: "filter_active_users"
+    type: "filter"
+    input: "raw_activity"
+    query: "session_count >= ${min_sessions}"
+    output: "active_users"
+
+  # Transform and clean data
+  - name: "clean_data"
+    type: "transform"
+    input: "active_users"
+    transforms:
+      # Rename columns for clarity
+      - column: "usr_id"
+        operation: "rename"
+        to: "user_id"
+
+      # Remove unnecessary columns
+      - column: "internal_tracking_id"
+        operation: "drop"
+
+      # Additional transformations can be added here
+    output: "cleaned_data"
+
+  # Select final columns in desired order
+  - name: "select_final_columns"
+    type: "select"
+    input: "cleaned_data"
+    columns: [
+      "user_id",
+      "username",
+      "email",
+      "session_count",
+      "total_time_spent",
+      "last_activity_date",
+      "user_segment"
+    ]
+    output: "final_data"
+
+  # Group by user segment for summary
+  - name: "segment_summary"
+    type: "groupby"
+    input: "final_data"
+    by: ["user_segment"]
+    agg:
+      user_id: "count"
+      session_count: ["mean", "sum"]
+      total_time_spent: ["mean", "sum"]
+    output: "segment_stats"
+
+  # Save the cleaned data
+  - name: "save_cleaned_data"
+    type: "save"
+    input: "final_data"
+    output: "${output_file}"
+
+  # Save segment statistics
+  - name: "save_segment_stats"
+    type: "save"
+    input: "segment_stats"
+    output: "processed_data/user_segment_statistics.parquet"

@@ -1,0 +1,63 @@
+name: "Multi-File Data Processing Workflow"
+description: "Process multiple data sources and combine results"
+
+variables:
+  data_dir: "data"
+  output_dir: "output"
+  year: 2023
+
+steps:
+  # Load customer data
+  - name: "load_customers"
+    type: "read"
+    input: "${data_dir}/customers.parquet"
+    output: "customers"
+
+  # Load orders data
+  - name: "load_orders"
+    type: "read"
+    input: "${data_dir}/orders_${year}.parquet"
+    output: "orders"
+
+  # Filter orders for the current year
+  - name: "filter_current_year"
+    type: "filter"
+    input: "orders"
+    query: "year == ${year}"
+    output: "current_orders"
+
+  # Select relevant order columns
+  - name: "select_order_fields"
+    type: "select"
+    input: "current_orders"
+    columns: ["customer_id", "order_date", "total_amount", "status"]
+    output: "clean_orders"
+
+  # Group orders by customer
+  - name: "customer_order_summary"
+    type: "groupby"
+    input: "clean_orders"
+    by: ["customer_id"]
+    agg:
+      total_amount: ["sum", "mean", "count"]
+      order_date: ["min", "max"]
+    output: "customer_stats"
+
+  # Select customer info
+  - name: "select_customer_info"
+    type: "select"
+    input: "customers"
+    columns: ["customer_id", "name", "email", "segment"]
+    output: "customer_info"
+
+  # Save customer statistics
+  - name: "save_customer_stats"
+    type: "save"
+    input: "customer_stats"
+    output: "${output_dir}/customer_order_statistics_${year}.parquet"
+
+  # Save customer info for reference
+  - name: "save_customer_info"
+    type: "save"
+    input: "customer_info"
+    output: "${output_dir}/customer_info_${year}.parquet"
