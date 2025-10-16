@@ -1,0 +1,381 @@
+# helper_functions.py
+from __future__ import annotations
+
+import warnings
+import logging
+import numpy as np
+from operator import itemgetter
+from tqdm import tqdm
+from typing import Callable, Any, Sequence, Iterable, Sized, Optional
+from pathlib import Path
+from time import time
+from functools import wraps
+from hashlib import sha512
+
+# Optional imports
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+
+def next_power_of_2(x : int) -> int:
+    """
+    Returns the next power of two greater than or equal to the input.
+
+    Parameters
+    ----------
+    x : int
+        The input number.
+
+    Returns
+    -------
+    nextpow2 : int
+        The next power of two, nextpow2 >= x.
+    """
+    if x <= 0:
+        return 0
+    else:
+        return int(2**np.ceil(np.log2(x)))
+
+
+def hash_str_repeatable(s : str) -> int:
+    """
+    By default, string hashing in python is randomized. This function returns a
+    repeatable non-randomized hash for strings.
+    See: https://docs.python.org/3/using/cmdline.html#cmdoption-R
+
+    Parameters
+    ----------
+    s : str
+        The string to hash.
+
+    Returns
+    -------
+    s_hash : int
+        The hash of str.
+    """
+    return int(sha512(s.encode('utf-8')).hexdigest(), 16)
+
+
+def hashable_val_vectorized(vals : Iterable[Any]) -> list[Any]:
+    """
+    Vectorized version of hashable_val for processing multiple values efficiently.
+
+    Parameters
+    ----------
+    vals : Iterable[Any]
+        The values to make hashable.
+
+    Returns
+    -------
+    hashable_vals : list[Any]
+        A list of hashable representations of the values.
+    """
+    # Type check to see if all values are hashable and of the same type
+    first_val = vals[0]
+    try:
+        hash(first_val)
+        first_type = type(first_val)
+        if all(isinstance(v, first_type) for v in vals):
+            return list(vals)
+    except TypeError:
+        pass
+
+    # If not, process each value individually
+    result = []
+    for val in vals:
+        result.append(hashable_val(val))
+
+    return result
+
+
+def hashable_val(val : Any) -> Any:
+    """
+    For `nummap` and `valmap`, we need to use values as keys in a dictionary.
+    This function will return the string representation of a value if that
+    value is not hashable.
+
+    Parameters
+    ----------
+    val : Any
+        The value to hash.
+
+    Returns
+    -------
+    hashable_val : Any
+        A hashable representation of the val.
+    """
+    try:
+        hash(val)
+        return val
+    except TypeError:
+        return str(val)
+
+
+def is_num(val : Any) -> bool:
+    """
+    Type checking function to see if the input is a number.
+
+    Parameters
+    ----------
+    val : Any
+        The value to check.
+
+    Returns
+    -------
+    isnum : bool
+        Returns True if the input is a number, False otherwise.
+    """
+    if isinstance(val, bool) or isinstance(val, str):
+        return False
+    else:
+        try:
+            float(val)
+        except (ValueError, TypeError):
+            return False
+        else:
+            return True
+
+
+def length(x : Any) -> int | None:
+    """
+    Genericized length function that works on scalars (which have length 1).
+
+    Parameters
+    ----------
+    x : Any
+        The value to check.
+
+    Returns
+    -------
+    x_len : int
+        The length of the input. If not a sequence or scalar, returns None.
+    """
+    if isinstance(x, Sized):
+        return len(x)
+    elif isinstance(x, (np.float64, float, bool, int)):
+        return 1
+    else:
+        return None
+
+
+def get_list(x : Any) -> list[Any]:
+    """
+    Converts the input to an iterable list.
+
+    Parameters
+    ----------
+    x : Any
+        The object to convert.
+
+    Returns
+    -------
+    x_list : list
+        A list conversion of the input.
+    """
+    if x is None:
+        return list()
+    elif isinstance(x, str):
+        return [x, ]
+    elif pd and isinstance(x, pd.DataFrame):
+        return [x, ]
+    elif isinstance(x, Iterable):
+        if isinstance(x, np.ndarray) and np.ndim(x) == 0:
+            return [x[()], ]
+        return list(x)
+    else:
+        return [x, ]
+
+
+def get_cases(ncases : int,
+              cases  : None | int | Iterable[int],
+              ) -> list[int]:
+    """
+    Parse the `cases` input for plotting functions. If None, return a list of
+    all the cases. Otherwise, return a list of all the specified cases.
+
+    Parameters
+    ----------
+    ncases : int
+        The total number of cases.
+    cases : None | int | Iterable[int]
+        The cases to downselect to.
+
+    Returns
+    -------
+    cases_list : list[int]
+        The cases.
+    """
+    if cases is None:
+        cases = list(range(ncases))
+    cases_list = get_list(cases)
+    return cases_list
+
+
+def slice_by_index(sequence : Sequence[Any],
+                   indices  : int | Iterable[int],
+                   ) -> list:
+    """
+    Returns a slice of a sequence at the specified indices.
+
+    Parameters
+    ----------
+    sequence : Sequence
+        The sequence to slice.
+    indices : int | Iterable
+        The indices to slice at.
+
+    Returns
+    -------
+    slice : list
+        A list representing the values of the input sequence at the specified
+        indices.
+    """
+    indices_list = get_list(indices)
+    if sequence is None or indices_list == list():
+        return []
+    items = itemgetter(*indices_list)(sequence)
+    if len(indices_list) == 1:
+        return [items]
+    return list(items)
+
+
+def configure_logging(verbose: bool = True) -> None:
+    """
+    Configure the monaco logger level based on verbose flag.
+
+    Parameters
+    ----------
+    verbose : bool, default: True
+        If True, set logging level to INFO. If False, set to WARNING.
+    """
+    logger = logging.getLogger('monaco')
+    if verbose:
+        logger.setLevel(logging.INFO)
+    else:
+        logger.setLevel(logging.WARNING)
+
+    logger.handlers.clear()
+    handler = logging.StreamHandler()
+    handler.setLevel(logger.level)
+    logger.addHandler(handler)
+
+
+def log_to_file(filepath: Optional[str | Path] = None) -> None | Path:
+    """
+    Configure the monaco logger to log to a file.
+    """
+    if filepath is None:
+        return
+    logger = logging.getLogger("monaco")
+    file_handler = logging.FileHandler(Path(filepath), mode="a", encoding="utf-8")
+    file_handler.setLevel(logger.level)  # keep same level as console
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    return Path(filepath)
+
+
+def warn_short_format(message, category, filename, lineno, file=None, line=None) -> str:
+    """
+    Custom warning format for use in vwarn()
+    """
+    return f'{category.__name__}: {message}\n'
+
+
+def vwarn(verbose : bool, *args, **kwargs) -> None:
+    """
+    Warn only if verbose is True.
+
+    Parameters
+    ----------
+    verbose : bool
+        Flag to determine whether to print something.
+    *args, **kwargs
+        Must include a warning message here!
+    """
+    if verbose:
+        logger = logging.getLogger('monaco')
+        # Log warning as well as emit warnings.warn with short format
+        try:
+            message = args[0] if args else ''
+            logger.warning(message)
+        except Exception:
+            pass
+        warn_default_format = warnings.formatwarning
+        warnings.formatwarning = warn_short_format  # type: ignore
+        warnings.warn(*args, **kwargs)
+        warnings.formatwarning = warn_default_format
+
+
+def vwrite(verbose : bool, *args, **kwargs) -> None:
+    """
+    Perform a tqdm.write() only if verbose is True.
+
+    Parameters
+    ----------
+    verbose : bool
+        Flag to determine whether to write something.
+    *args, **kwargs
+        Must include something to write here!
+    """
+    if verbose:
+        tqdm.write(*args, **kwargs)
+
+
+def timeit(fcn : Callable):
+    """
+    Function decorator to print out the function runtime in milliseconds.
+
+    Parameters
+    ----------
+    fcn : Callable
+        Function to time.
+    """
+    @wraps(fcn)
+    def timed(*args, **kw):
+        t0 = time()
+        output = fcn(*args, **kw)
+        t1 = time()
+        logger = logging.getLogger('monaco')
+        logger.info(f'"{fcn.__name__}" took {(t1 - t0)*1000 : .3f} ms to execute.')
+        return output
+    return timed
+
+
+def empty_list() -> list:
+    """
+    Sentinel for default arguments being an empty list.
+
+    Returns
+    -------
+    empty_list : list
+        An empty list.
+    """
+    return []
+
+
+def flatten(nested_x : Iterable[Any]) -> list[Any]:
+    """
+    Flattens a nested interable into a list with all nested items.
+
+    Parameters
+    ----------
+    nested_x : Iterable
+        Nested iterable.
+
+    Returns
+    -------
+    flattened_x : list
+        The nested iterable flattened into a list.
+    """
+    def flatten_generator(x):
+        for element in x:
+            if isinstance(element, Iterable) and not isinstance(element, (str, bytes)):
+                yield from flatten(element)
+            else:
+                yield element
+
+    flattened_x = list(flatten_generator(nested_x))
+    return flattened_x
