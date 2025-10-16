@@ -1,0 +1,107 @@
+# vrpbap
+
+[![PyPI - Version](https://img.shields.io/pypi/v/vrpbap.svg)](https://pypi.org/project/vrpbap)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/vrpbap.svg)](https://pypi.org/project/vrpbap)
+
+-----
+
+## Table of Contents
+
+- [Installation](#installation)
+- [License](#license)
+- [Example](#example)
+
+## Installation
+
+1. Install [hatch](https://hatch.pypa.io/latest/install/).
+1. Build a wheel.
+
+```console
+hatch build
+```
+
+1. Install the wheel in your environment.
+
+```console
+pip install dist/vrpbap-0.0.1-py3-none-any.whl
+```
+
+## License
+
+`vrpbap` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
+
+### Example
+
+Implement a class inheriting `vrpbap.RoutePricer`.
+Two methods are required:
+
+- `pricerredcost_column` for reduced cost pricing.
+- `pricerfarkas_column` for Farkas pricing.
+
+Each method has 4 arguments:
+
+- `edges`: a set of pairs of nodes (integers), representing directed edges.
+- `node_costs`: a dictionary mapping a node to its negative dual value.
+- `constant_cost`: the negative dual value of the number of vehicle constraint (0 if no constraint).
+- `time_limit`: the time limit in seconds (optional).
+
+Each method is a generator of a column, which yields a 5-tuple `(route, coeffs, cost, redcost, stopped)` where
+
+- `route`: tuple of nodes (integers) representing a route, including the starting and ending depots.
+- `coeffs`: a dictionary mapping a node to the number of times it is visited in the route, excluding the depots.
+- `cost`: the cost of the route in the original graph.
+- `redcost`: the reduced cost of the route.
+- `stopped`: binary flag, `True` if pricing is early stopped (stopped without proving the optimality).
+
+When `route` is `None`, then the algorithm assumes that no column is found. If `stopped` is `False` in addition, it means that the subproblem is infeasible. If `stopped` is `True`, it means that pricing is stopped without finding a column.
+
+To solve a problem, instantiate the implemented pricer and pass it to `vrpbap.VRPBap`. It takes the following arguments:
+
+- `nodes`: a list of nodes that must be visited, excluding depots.
+- `edges`: a list of edges (pairs of nodes).
+- `start_depots`: a list of start depots.
+- `end_depots`: a list of end depots.
+- `pricer`: the pricer.
+- `routes`: initial routes, represented by a list of tuples of integers (optional).
+- `route_coeffs`: coefficients for the initial routes, represented by a list of dictionaries (optional).
+- `route_costs`: the costs of the initial routes, represented by a list of integers or floats (optional).
+- `max_routes`: the maximum number of routes, no constraint if `None` (default).
+- `verbosity`: an integer from 0 to 3 (0 by default).
+- `time_limit`: the time limit in seconds (integer).
+- `objective_integral`: whether the objective value is integral.
+
+```python
+from vrpbap import RoutePricer, VRPBaP
+
+
+class MyPricer(RoutePricer):
+    def __init__(self):
+        pass
+
+    def pricerredcost_column(self, edges, node_costs, constant_cost, time_limit=None):
+        pass
+
+    def pricerfarkas_column(self, edges, node_costs, constant_cost, time_limit=None):
+        pass
+
+
+pricer = MyPricer()
+
+
+model = VRPBaP(
+    nodes=[1, 2],
+    edges=[(0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1)],
+    start_depots=[0],
+    end_depots=[0],
+    pricer=pricer,
+    routes=routes,
+    route_coeffs=route_coeffs,
+    route_costs=route_costs,
+    max_routes=m,
+    verbosity=args.verbosity,
+    time_limit=args.timeout,
+    objective_integral=True,
+)
+solution = model.optimize()
+print(solution)
+```
