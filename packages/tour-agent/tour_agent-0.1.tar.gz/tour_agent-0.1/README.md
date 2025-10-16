@@ -1,0 +1,1 @@
+shunchaki yuklab oling va run qiling
