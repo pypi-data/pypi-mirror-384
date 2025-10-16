@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}IAToolkit{% endblock %}
+
+{% block content %}
+
+<style>
+    {{ branding.css_variables | safe }}
+</style>
+
+<!-- Sección de encabezado con el usuario conectado -->
+<div id="company-section" class="company-section d-flex justify-content-between align-items-center px-3 py-2"
+     style="{{ branding.header_style }}">
+
+    <!-- Izquierda: Nombre de la Empresa y atribución "Powered by" -->
+    <div class="d-flex align-items-center">
+        <span style="{{ branding.primary_text_style }}">
+            {{ branding.name }}
+        </span>
+        <span class="ms-2" data-bs-toggle="tooltip" data-bs-placement="bottom"
+              title="Powered by IAToolkit ({{ iatoolkit_version }})">
+            <i class="bi bi-info-circle" style="color: {{ branding.header_text_color }}; opacity: 0.7; font-size: 0.9rem;"></i>
+        </span>
+    </div>
+
+    <!-- Derecha: Grupo de información y acciones para el usuario -->
+    <div class="d-flex align-items-center">
+        <!-- 1. ID de Usuario -->
+        <span style="{{ branding.secondary_text_style }}">
+            {{ external_user_id or user_email }}
+        </span>
+
+        <!-- 2. Separador Vertical -->
+        <div class="vr mx-3"></div>
+
+        <!-- 3. Iconos de Acción -->
+        <a href="javascript:void(0);" id="history-button"
+           class="action-icon-style" title="Historial con mis consultas" style="color: {{ branding.header_text_color }};">
+            <i class="bi bi-clock-history"></i>
+        </a>
+        <a href="javascript:void(0);" id="send-feedback-button"
+           class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: {{ branding.header_text_color }};">
+            <i class="bi bi-emoji-smile"></i>
+        </a>
+
+        <!-- Icono de cerrar sesión (al final) -->
+        {% if user_email %}
+            <a href="{{ url_for('logout', company_short_name=company_short_name, _external=True) }}"
+                 class="ms-3 action-icon-style" title="Cerrar sesión" style="color: {{ branding.header_text_color }} !important;">
+                <i class="bi bi-box-arrow-right"></i>
+            </a>
+        {% endif %}
+    </div>
+
+</div>
+
+<div id="chat-container"
+     class="chat-block mt-2 flex-grow-1"
+     style="overflow-y: auto;">
+        <div id="chat-messages">
+        <!-- Mensaje de bienvenida estático -->
+        <div class="answer-section">
+            ¡Hola! en que te puedo ayudar hoy?
+        </div>
+    </div>
+</div>
+
+<!-- Input oculto de FilePond -->
+<div class="filepond-container" style="display: none;">
+    <input type="file" id="file-upload" class="filepond" data-max-files="5" multiple>
+</div>
+
+<div id="input-area" class="input-area chat-block  mt-2 mb-2">
+
+    <!-- 1. Contenido Colapsable del Asistente de prompts -->
+    <div class="collapse" id="prompt-assistant-collapse">
+        <div class="card card-body mb-2">
+            <div class="row g-2">
+                {% set prompt_col_class = 'col-md-4' %}
+                <div class="{{ prompt_col_class }}">
+                    <div class="position-relative h-100">
+                        <div class="input-group dropup h-100">
+                            <button type="button" id="prompt-select-button" class="btn btn-light border dropdown-toggle w-100 text-start" data-bs-toggle="dropdown" aria-expanded="false">
+                                Prompts disponibles ....
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-soft w-100">
+                                {% if prompts and prompts.message %}
+                                {% for category_group in prompts.message %}
+                                    <li><h6 class="dropdown-header">{{ category_group.category_name }}</h6></li>
+                                    {% for prompt in category_group.prompts %}
+                                        <li>
+                                            <a class="dropdown-item" href="#"
+                                               data-prompt-name="{{ prompt.prompt }}"
+                                               data-prompt-description="{{ prompt.description }}"
+                                               data-custom-fields='{{ prompt.custom_fields | tojson  }}'>
+                                                {{ prompt.description }}
+                                            </a>
+                                        </li>                                    {% endfor %}
+                                    {% if not loop.last %}<li><hr class="dropdown-divider"></li>{% endif %}
+                                {% endfor %}
+                                {% endif %}
+                            </ul>
+                        </div>
+                        <button type="button" id="clear-selection-button" class="btn clear-specific-data-button" style="display: none;"><i class="bi bi-x-circle-fill"></i></button>
+                    </div>
+                    <input type="hidden" id="prompt-select-value" name="prompt_select_value">
+                    <input type="hidden" id="prompt-select-description" name="prompt-select-description">
+                </div>
+                <!-- Contenedor donde JavaScript inyectará los inputs dinámicos -->
+                <div id="dynamic-inputs-container" class="col-md">
+                    <!-- aca se renderizarán los customs_fields del prompt seleccionado -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. La Barra de Entrada Principal -->
+    <div id="chat-input-bar" class="chat-input-bar d-flex align-items-center">
+        <!-- Iconos de la izquierda -->
+        <div class="d-flex align-items-center">
+            <!-- varita magica -->
+            <a class="p-2" href="#prompt-assistant-collapse" data-bs-toggle="collapse" role="button"
+               aria-expanded="false" aria-controls="prompt-assistant-collapse" title="Usar Asistente de Prompts">
+                <i class="bi bi-magic"></i>
+            </a>
+            <a class="p-2" href="javascript:void(0);" id="paperclip-button" title="Adjuntar archivos">
+                <i class="bi bi-plus-circle"></i>
+            </a>
+            <div id="view-files-button-container" style="display: none;">
+                <a class="p-2" href="javascript:void(0);" id="view-files-button" title="Ver archivos adjuntos">
+                    <i class="bi bi-file-earmark-text"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Textarea Central -->
+        <textarea id="question" placeholder="Escribe tu consulta aquí..." class="form-control chat-textarea" style="resize: none;" rows="1"></textarea>
+
+        <!-- Botón de Enviar a la derecha -->
+        <div class="d-flex align-items-center">
+            <div id="send-button-container">
+                <a href="javascript:void(0);" id="send-button"
+                   class="p-2 send-button-icon" title="Enviar">
+                    <i class="bi bi-arrow-up-circle-fill"></i>
+                </a>
+            </div>
+            <div id="stop-button-container" style="display: none;">
+                <a href="javascript:void(0);" id="stop-button"
+                   class="p-2 text-danger" title="Detener">
+                    <i class="bi bi-stop-circle-fill"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Incluir los modales desde un archivo externo -->
+{% include 'chat_modals.html' %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // --- Global Configuration from Backend ---
+    window.companyShortName = "{{ company_short_name }}";
+    window.iatoolkit_base_url = "{{ iatoolkit_base_url }}";
+    window.externalUserId = "{{ external_user_id }}";
+    window.availablePrompts = {{ prompts.message | tojson }};
+    window.sendButtonColor = "{{ branding.send_button_color }}";
+
+    {% if auth_method == 'jwt' and session_jwt %}
+        // Store session JWT if it exists, defined in the same global scope
+        window.sessionJWT = "{{ session_jwt }}";
+    {% endif %}
+</script>
+
+<!-- Carga de los scripts JS externos después de definir las variables globales -->
+<script src="{{ url_for('static', filename='js/chat_filepond.js', _external=True) }}"></script>
+<script src="{{ url_for('static', filename='js/chat_history.js', _external=True) }}"></script>
+<script src="{{ url_for('static', filename='js/chat_feedback.js', _external=True) }}"></script>
+<script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const promptCollapse = document.getElementById('prompt-assistant-collapse');
+        if (promptCollapse) {
+            promptCollapse.addEventListener('shown.bs.collapse', function () {
+                // Desplazar la ventana al final de la página para mantener visible el área de entrada.
+                window.scrollTo({
+                    top: document.body.scrollHeight,
+                    behavior: 'smooth'
+                });
+            });
+        }
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+        // Inicializar todos los tooltips de la página
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
+    });
+</script>
+{% endblock %}
