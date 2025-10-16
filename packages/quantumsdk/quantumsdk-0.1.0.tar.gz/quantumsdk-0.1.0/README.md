@@ -1,0 +1,186 @@
+# QuantumSDK
+
+Python client SDK for interacting with the Volodymyr Quantum API. It provides a simple, typed interface for working with machines, qubits, couplers, file uploads, and common API workflows.
+
+## Features
+- Simple `Client` for authenticated requests with automatic token refresh
+- High-level resource objects: `Machine`, `Qubit`, `Coupler`
+- Convenient mapping access: `machine.qubits[<number>]`, `machine.couplers[<number>]`
+- File APIs: upload, list, and open files
+- Consistent error handling via `QuantumSDKError`
+
+## Requirements
+- Python >= 3.13 (as configured in `pyproject.toml`)
+- Dependencies are installed automatically (notably `requests`)
+
+## Installation
+
+Once published to PyPI or TestPyPI:
+
+```bash
+pip install quantumsdk
+```
+
+Install from TestPyPI (example):
+
+```bash
+python -m pip install --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple \
+  quantumsdk==0.1.0
+```
+
+For local development from source (editable install):
+
+```bash
+pip install -e .
+```
+
+## Quick start
+
+```python
+from quantumsdk import Client
+
+client = Client(
+    base_url="https://your-api-host.example.com",   # e.g., https://api.your-domain.com
+    access_token="YOUR_ACCESS_TOKEN",
+    refresh_token="YOUR_REFRESH_TOKEN",             # optional; enables auto-refresh
+)
+
+machine = client.get_machine("<machine-uuid>")
+
+# Read a property
+print(machine.title)
+
+# Update a property (PATCH)
+machine.title = "New Machine Title"
+
+# Work with qubits by logical number
+q1 = machine.qubits[1]
+print(q1.anharmonicity_max)
+q1.anharmonicity_max = 10
+
+# Time scales: first set all required fields at once via dict
+q1.time_scales = {"t1": 12.3, "tphi": 4.5, "tphi_1f": 1.1, "t2star": 7.8}
+# Later you can update individual fields
+q1.time_scales.t1 = 13.0
+
+# Couplers by logical number
+c7 = machine.couplers[7]
+print(c7.fmin)
+c7.fmin = 4.9
+
+# File APIs
+with open("example.txt", "rb") as f:
+    client.save_file(machine_id=machine.id, file_path="example.txt", file_content=f)
+
+files = client.list_files(machine_id=machine.id)
+first_file_id = files["results"][0]["id"] if isinstance(files, dict) and files.get("results") else None
+if first_file_id:
+    file_data = client.open_file(file_id=first_file_id)
+    content_bytes = file_data.get("content")
+    content_type = file_data.get("content_type")
+```
+
+## API overview
+
+### Client
+- `Client(base_url: str, access_token: str, refresh_token: Optional[str] = None, timeout_seconds: int = 10)`
+  - Creates a client with bearer auth and optional automatic refresh.
+- `get_machine(machine_id: str) -> Machine`
+- File helpers:
+  - `save_file(machine_id: str, file_path: str, file_content) -> Dict[str, Any]`
+  - `list_files(machine_id: str) -> Dict[str, Any]`
+  - `open_file(file_id: str) -> Dict[str, Any]` (attempts to download content and attach to response)
+
+### Machine
+- Properties are fetched on demand and cached.
+- `title: str` (read/write)
+- `qubits: QubitMap` — index by logical number, e.g., `machine.qubits[1]`
+- `couplers: CouplerMap` — index by logical number, e.g., `machine.couplers[7]`
+
+### Qubit
+- Dynamic fields (read/write via attributes): `number`, `fmax`, `fmin`, `anharmonicity_max`, `flux_bias`, `num_lvl`, `driving_freq`, `detuning`
+- `time_scales: TimeScales`
+  - First-time creation requires setting all fields as a dict: `{"t1", "tphi", "tphi_1f", "t2star"}`
+  - Subsequent updates can set individual fields, e.g., `qubit.time_scales.t1 = 13.0`
+
+### Coupler
+- Dynamic fields (read/write via attributes): `number`, `fmin`, `fmax`, `anharmonicity_max`, `flux_bias`, `num_lvl`, `g12_zero_flux`, `g1c_zero_flux`, `g2c_zero_flux`, and several `cz_*`/`iswap_*` fields.
+
+### Errors
+- All HTTP and API validation errors raise `quantumsdk.http_client.QuantumSDKError` with a readable message.
+
+```python
+from quantumsdk.http_client import QuantumSDKError
+
+try:
+    machine.title = "Example"
+except QuantumSDKError as exc:
+    print(f"API error: {exc}")
+```
+
+## Security
+- Never commit real access or refresh tokens to source control.
+- Keep tokens in environment variables or a `.env` file that is excluded by `.gitignore`.
+- If you include runnable examples, use placeholders instead of real credentials.
+
+## Publishing to TestPyPI (Poetry)
+
+1) Build the distribution
+
+```powershell
+poetry build
+```
+
+2) Configure the TestPyPI repository
+
+```powershell
+poetry config repositories.testpypi https://test.pypi.org/legacy/
+```
+
+3) Provide credentials (choose one approach)
+
+- Token env var (no username required):
+
+  Set `POETRY_PYPI_TOKEN_TESTPYPI=pypi-<your-testpypi-token>` in your environment (or use `poetry-plugin-dotenv` to load from `.env`). Then:
+
+  ```powershell
+  poetry publish -r testpypi
+  ```
+
+- HTTP basic env vars:
+
+  ```powershell
+  $env:POETRY_HTTP_BASIC_TESTPYPI_USERNAME = "__token__"
+  $env:POETRY_HTTP_BASIC_TESTPYPI_PASSWORD = "pypi-<your-testpypi-token>"
+  poetry publish -r testpypi
+  ```
+
+- One-off flags:
+
+  ```powershell
+  poetry publish -r testpypi -u __token__ -p pypi-<your-testpypi-token>
+  ```
+
+4) Install from TestPyPI to verify
+
+```powershell
+python -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple quantumsdk==0.1.0
+```
+
+Notes:
+- Increment `version` in `pyproject.toml` for each re-publish.
+- The repository name in flags/env vars (`testpypi`) must match your configured repository key.
+
+## Local development
+
+```bash
+poetry install
+poetry run python -c "from quantumsdk import Client; print('OK')"
+```
+
+If you run examples directly from the repository without installing, prefer `from quantumsdk import Client` after an editable install (`pip install -e .`).
+
+---
+
+If you encounter issues or have feature requests, please open an issue or contribution PR.
