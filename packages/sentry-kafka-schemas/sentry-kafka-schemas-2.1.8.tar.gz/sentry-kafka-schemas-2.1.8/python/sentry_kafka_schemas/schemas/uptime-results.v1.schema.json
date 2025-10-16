@@ -1,0 +1,209 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "uptime_result",
+  "$ref": "#/definitions/CheckResult",
+  "definitions": {
+    "CheckStatus": {
+      "title": "check_status",
+      "description": "The status of the check",
+      "type": "string",
+      "enum": ["success", "failure", "missed_window", "disallowed_by_robots"]
+    },
+    "CheckStatusReasonType": {
+      "title": "check_status_reason_type",
+      "description": "The type of the status reason",
+      "type": "string",
+      "enum": [
+        "timeout",
+        "dns_error",
+        "failure",
+        "tls_error",
+        "connection_error",
+        "redirect_error"
+      ]
+    },
+    "RequestType": {
+      "title": "request_type",
+      "description": "The type of HTTP method used for the check",
+      "type": "string",
+      "enum": ["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"]
+    },
+    "CheckStatusReason": {
+      "title": "check_status_reason",
+      "description": "Reason for the status, primarily used for failure",
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/definitions/CheckStatusReasonType"
+        },
+        "description": {
+          "description": "A human readable description of the status reason",
+          "type": "string"
+        }
+      },
+      "required": ["type", "description"]
+    },
+    "Timing": {
+      "title": "timing",
+      "type": "object",
+      "properties": {
+        "start_us": {
+          "description": "Start of the timing, timestamp in microseconds.",
+          "type": "number"
+        },
+        "duration_us": {
+          "description": "Duration of the timing, in microseconds",
+          "type": "number"
+        }
+      },
+      "required": ["start_us", "duration_us"]
+    },
+    "RequestDurations": {
+      "title": "request_durations",
+      "description": "Durations of each operation in the request",
+      "type": "object",
+      "properties": {
+        "dns_lookup": {
+          "$ref": "#/definitions/Timing",
+          "description": "Total time from request initiation until DNS resolution completes."
+        },
+        "tcp_connection": {
+          "$ref": "#/definitions/Timing",
+          "description": "Time to establish a TCP connection (excluding TLS)."
+        },
+        "tls_handshake": {
+          "$ref": "#/definitions/Timing",
+          "description": "Time spent on the TLS handshake."
+        },
+        "time_to_first_byte": {
+          "$ref": "#/definitions/Timing",
+          "description": "Time from request start to receiving the first response header byte."
+        },
+        "send_request": {
+          "$ref": "#/definitions/Timing",
+          "description": "Time spent sending the request (per OTEL conventions)."
+        },
+        "receive_response": {
+          "$ref": "#/definitions/Timing",
+          "description": "Time spent receiving the response (per OTEL)."
+        }
+      }
+    },
+    "RequestInfo": {
+      "title": "request_info",
+      "description": "Additional information about each request made",
+      "type": "object",
+      "properties": {
+        "request_type": {
+          "$ref": "#/definitions/RequestType"
+        },
+        "http_status_code": {
+          "description": "Status code of the request",
+          "type": ["number", "null"]
+        },
+        "url": {
+          "description": "The full URL being requested",
+          "type": ["string"]
+        },
+        "request_body_size_bytes": {
+          "description": "Size of the request body in bytes (per OTEL).",
+          "type": ["number"]
+        },
+        "response_body_size_bytes": {
+          "description": "Size of the response body in bytes (per OTEL).",
+          "type": ["number"]
+        },
+        "request_duration_us": {
+          "description": "Total measured duration for this specific request in microseconds. This is the actual wall clock time and may differ from summing individual timing components.",
+          "type": ["number"]
+        },
+        "durations": {
+          "$ref": "#/definitions/RequestDurations"
+        }
+      },
+      "required": ["request_type", "http_status_code"]
+    },
+    "CheckResult": {
+      "title": "check_result",
+      "description": "A message containing the result of the uptime check.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "guid": {
+          "description": "Unique identifier of the uptime check",
+          "type": "string"
+        },
+        "subscription_id": {
+          "description": "Identifier of the subscription that this check was run for",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/CheckStatus"
+        },
+        "status_reason": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/CheckStatusReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trace_id": {
+          "description": "Trace ID associated with the check-in made",
+          "type": "string"
+        },
+        "span_id": {
+          "description": "Span ID associated with the check-in made. This is a phantom span generated by the uptime-checker, no real span is ingested.",
+          "type": "string"
+        },
+        "scheduled_check_time_ms": {
+          "description": "Timestamp in milliseconds of when the check was schedule to run",
+          "type": "number"
+        },
+        "actual_check_time_ms": {
+          "description": "Timestamp in milliseconds of when the check was actually ran",
+          "type": "number"
+        },
+        "duration_ms": {
+          "description": "Duration of the check in ms. Will be null when the status is missed_window",
+          "type": ["number", "null"]
+        },
+        "request_info": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/RequestInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request_info_list": {
+          "description": "List of all request attempts, in order of execution",
+          "type": ["array"],
+          "items": {
+            "$ref": "#/definitions/RequestInfo"
+          }
+        },
+        "region": {
+          "description": "The region that this check was performed in",
+          "type": "string"
+        }
+      },
+      "required": [
+        "guid",
+        "subscription_id",
+        "status",
+        "status_reason",
+        "trace_id",
+        "span_id",
+        "scheduled_check_time_ms",
+        "actual_check_time_ms",
+        "duration_ms",
+        "request_info"
+      ]
+    }
+  }
+}
