@@ -1,0 +1,225 @@
+const clientId = "{{stinger.name}}-web-" + new Date().getTime();
+
+const responseTopic = "client/" + clientId + "/responses";
+var responseSubscriptionId = null;
+
+function makeRequestProperties() {
+    const correlationData = Math.random().toString(16).substr(2, 8);
+    return {
+        "contentType": "application/json",
+        "correlationData": correlationData,
+        "responseTopic": responseTopic
+    }
+}
+
+var app = angular.module("myApp", []);
+
+app.controller("myCtrl", function ($scope, $filter, $location) {
+
+    console.log("Running app");
+
+    var subscription_state = 0;
+
+    $scope.timePattern = new RegExp("^[0-2][0-9]:[0-5][0-9]$");
+    $scope.online = false;
+
+    $scope.enums = {
+        {%-for enum_name, enum in stinger.enums.items() %}
+        "{{enum_name | snake_case}}": [
+            {%-for e in enum.values %}
+            {"name": "{{e}}", "id": {{loop.index}} }{%if not loop.last%},{%endif%}
+            {%endfor-%}
+        ]{%if not loop.last%},{%endif%}
+    {%endfor-%} };
+
+    $scope.signals = { {%-for sig_name, signal in stinger.signals.items() %}
+        "{{sig_name | snake_case}}": {
+            "subscription_id": null,
+            "name": "{{sig_name}}",
+            "received": null,
+            "received_time": null,
+            "mqtt_topic": "{{signal.topic}}"
+        }{%if not loop.last%},{%endif%}
+    {%endfor-%} };
+
+    $scope.properties = { {%-for prop_name, prop in stinger.properties.items() %}
+        "{{prop_name | snake_case}}": {
+            "subscription_id": null,
+            "name": "{{prop_name}}",
+            "received": { {%for arg in prop.arg_list %}
+                "{{arg.name|snake_case}}": {%if arg.type == "argtype.primitive"%}{%else%}{ {%for member in arg.members %}
+                    "{{member.name|snake_case}}": "{{member.value}}"{%if not loop.last%},{%endif%}
+                {%endfor%} }{%endif%}{%if not loop.last%},{%endif%}
+            {%endfor%} },
+            "mqtt_topic": "{{prop.value_topic}}"{%if not prop.read_only %},
+            "update_topic": "{{prop.update_topic}}"{%endif%}
+        }{%if not loop.last%},{%endif%}
+    {%endfor-%} };
+
+    $scope.methods = {
+        {%-for method_name, method in stinger.methods.items() %}
+        "{{method_name | snake_case}}": {
+            "name": "{{method_name}}",
+            "mqtt_topic": "{{method.topic}}",
+            "response_topic": "{{method.response_topic('"+clientId+"')}}",
+            "pending_correlation_id": null,
+            "args": { {%-for arg in method.arg_list %}
+                "{{arg.name|snake_case}}": {
+                    "type": "{{arg.type}}",
+                    "value": null
+                }{%if not loop.last%},{%endif%}
+            {%endfor-%} },
+            "received": null,
+            "received_time": null
+        }{%if not loop.last%},{%endif%}
+        {%-endfor%}
+    };
+
+    $scope.console = {
+        showing: false,
+        requests: []
+    }
+
+    $scope.showoutput = false;
+    $scope.linuxoutput = '';
+
+    const brokerUrl = 'ws://' + location.hostname + ':' + location.port + '/ws'
+
+    const connectOptions = {
+        keepAlive: 60,
+        clientId: clientId,
+        protocolId: 'MQTT',
+        protocolVersion: 5,
+        clean: true
+    };
+
+    var client = mqtt.connect(brokerUrl, connectOptions);
+
+    client.on('close', function() {
+        console.log("Connection Lost");
+    });
+
+    function publish(name, topic, payload, qos) {
+        console.log(name + " Sending to " + topic);
+        console.log(payload);
+        let props = makeRequestProperties();
+        $scope.console.requests.unshift({"name":name, "correlationData":props.correlationData, "topic": topic, "payload": payload, "response": null, "requestTime": Date.now()});
+        client.publish(topic, payload, { "qos": qos, retain: false, properties: props});
+        return props.correlationData;
+    }
+
+    client.on('message', function(topic, message, packet) {
+        
+        const subid = packet.properties.subscriptionIdentifier;
+
+        console.log("Message Arrived: " + topic + " (" + subid + ")");
+        console.log($scope.properties);
+
+        var obj;
+        if (message.toString().length == 0) {
+            obj = null;
+        } else {
+            obj = JSON.parse(message.toString());
+        }
+        console.log(obj);
+
+        for (const key in $scope.signals) {
+            if (!$scope.signals.hasOwnProperty(key)) continue;
+            const sig = $scope.signals[key];
+            if (sig.subscription_id == subid) {
+                sig.received = obj;
+                sig.received_time = new Date();
+            }
+        }
+        for (const key in $scope.properties) {
+            if (!$scope.properties.hasOwnProperty(key)) continue;
+            const prop = $scope.properties[key];
+            if (prop.subscription_id == subid) {
+                prop.received = obj;
+                console.log("Set property received object to ", prop.received);
+            }
+        }
+        for (const key in $scope.methods) {
+            if (!$scope.methods.hasOwnProperty(key)) continue;
+            const method = $scope.methods[key];
+            if (responseSubscriptionId == subid) {
+                if (packet.properties.correlationData && method.pending_correlation_id == packet.properties.correlationData) {
+                    method.received = obj;
+                    method.received_time = new Date();
+                    for (let i=0; i<$scope.console.requests.length; i++) {
+                        const req = $scope.console.requests[i];
+                        if (req.correlationData == packet.properties.correlationData) {
+                            req.response = obj;
+                            req.responseTime = Date.now();
+                        }
+                    }
+                }
+            }
+        }
+
+        $scope.$apply();
+    });
+
+    client.on('connect', function() {
+        $scope.online = true;
+
+        var subscription_count = 10;
+        console.log("Connected with ", client);
+
+        var responseSubscriptionId = subscription_count++;
+        const responseSubOpts = {
+            "qos": 1,
+            "properties": {
+                "subscriptionIdentifier": responseSubscriptionId
+            }
+        };
+        client.subscribe(responseTopic, responseSubOpts);
+        console.log("Subscribing to response topic " + responseTopic + " with id " + responseSubscriptionId);
+        
+        {%for signal_name, signal in stinger.signals.items() %}
+        const {{signal_name|snake_case}}_sub_opts = {
+            "qos": 1,
+            "properties": {
+                "subscriptionIdentifier": subscription_count
+            }
+        };
+        $scope.signals["{{signal_name | lowerCamelCase}}"].subscription_id = subscription_count;
+        client.subscribe("{{signal.topic}}", {{signal_name|snake_case}}_sub_opts);
+        console.log("Subscribing to signal {{signal.topic}} with id ", subscription_count);
+        subscription_count++;
+        {%endfor%}
+
+        for (const key in $scope.properties) {
+            if (!$scope.properties.hasOwnProperty(key)) continue;
+            var sub_id = subscription_count++;
+            const prop_sub_opts = {
+                "qos": 1,
+                "properties": {
+                    "subscriptionIdentifier": sub_id
+                }
+            };
+            $scope.properties[key].subscription_id = sub_id;
+            client.subscribe($scope.properties[key].mqtt_topic, prop_sub_opts);
+            console.log("Subscribing to property " + $scope.properties[key].mqtt_topic + " with id " + $scope.properties[key].subscription_id);
+        }
+
+        subscription_state = 1;
+        $scope.$apply();
+    });
+
+    $scope.updateProperty = function(prop) {
+        const payload = JSON.stringify(prop.received);
+        publish("Property Update", prop.update_topic, payload, 1);
+    };
+ 
+    $scope.callMethod = function(method) {
+        const payload = {};
+        for (const key in method.args) {
+            if (!method.args.hasOwnProperty(key)) continue;
+            payload[key] = method.args[key].value;
+        }
+        const payload_str = JSON.stringify(payload);
+        console.log("Method Call", method.mqtt_topic, payload_str, 1);
+        method.pending_correlation_id = publish("Method Call", method.mqtt_topic, payload_str, 1);
+    };
+});
