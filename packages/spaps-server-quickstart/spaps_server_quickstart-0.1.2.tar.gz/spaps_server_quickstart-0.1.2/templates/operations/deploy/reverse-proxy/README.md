@@ -1,0 +1,1 @@
+This directory mirrors the shared reverse-proxy stack used in production. Copy it into `/opt/sweet-potato/deploy/reverse-proxy` (or equivalent) and customise `nginx.conf` / `sites-available/*` for your domains. Certbot tooling or `deploy/renew-certs.sh` can manage certificates.
