@@ -1,0 +1,158 @@
+# Azure DevOps Pipeline for MCP Package Publishing
+
+trigger:
+  tags:
+    include:
+      - v*
+  branches:
+    include:
+      - main
+
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  pythonVersion: '3.11'
+  packagePath: 'src/c2i_athena_mcp'
+
+stages:
+- stage: Build
+  displayName: 'Build Package'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Python Package'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(pythonVersion)'
+      displayName: 'Use Python $(pythonVersion)'
+      
+    - script: |
+        python -m pip install --upgrade pip
+        pip install build twine
+      displayName: 'Install build dependencies'
+      
+    - script: |
+        cd $(packagePath)
+        python -m build
+      displayName: 'Build package'
+      
+    - script: |
+        cd $(packagePath)
+        twine check dist/*
+      displayName: 'Check package'
+      
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(packagePath)/dist'
+        artifactName: 'python-package'
+      displayName: 'Publish build artifacts'
+
+- stage: Publish
+  displayName: 'Publish to PyPI'
+  dependsOn: Build
+  condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/v')
+  jobs:
+  - deployment: PublishJob
+    displayName: 'Publish to PyPI'
+    environment: 'pypi-production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '$(pythonVersion)'
+            displayName: 'Use Python $(pythonVersion)'
+            
+          - script: |
+              python -m pip install --upgrade pip twine
+            displayName: 'Install twine'
+            
+          - task: DownloadBuildArtifacts@0
+            inputs:
+              artifactName: 'python-package'
+              downloadPath: '$(System.ArtifactsDirectory)'
+            displayName: 'Download artifacts'
+            
+          - task: TwineAuthenticate@1
+            inputs:
+              pythonUploadServiceConnection: 'PyPI-Connection'
+            displayName: 'Authenticate with PyPI'
+            
+          - script: |
+              twine upload -r pypi --config-file $(PYPIRC_PATH) $(System.ArtifactsDirectory)/python-package/*
+            displayName: 'Upload to PyPI'
+
+- stage: UpdateRegistry
+  displayName: 'Update MCP Registry'
+  dependsOn: Publish
+  condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/v')
+  jobs:
+  - job: UpdateRegistryJob
+    displayName: 'Update Registry'
+    steps:
+    - script: |
+        # Extract version from tag
+        VERSION=$(echo $(Build.SourceBranch) | sed 's|refs/tags/v||')
+        echo "Version: $VERSION"
+        
+        # Update registry.json with new version
+        sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" registry.json
+        
+        echo "Updated registry.json:"
+        cat registry.json
+      displayName: 'Update registry version'
+      
+    - task: GitHubRelease@1
+      inputs:
+        gitHubConnection: 'GitHub-Connection'
+        repositoryName: 'c2i-genomics/c2i-athena-mcp'
+        action: 'create'
+        target: '$(Build.SourceVersion)'
+        tagSource: 'gitTag'
+        releaseNotesSource: 'inline'
+        releaseNotesInline: |
+          ## C2i Athena MCP Server $(Build.SourceBranchName)
+          
+          ### Installation
+          
+          ```bash
+          # Install via uvx (recommended)
+          uvx install c2i-athena-mcp
+          
+          # Or install via pip
+          pip install c2i-athena-mcp
+          ```
+          
+          ### VS Code Configuration
+          
+          Add to your `~/.vscode/mcp.json`:
+          
+          ```json
+          {
+            "mcpServers": {
+              "c2i-athena": {
+                "command": "uvx",
+                "args": ["c2i-athena-mcp"],
+                "env": {
+                  "AWS_REGION": "us-east-1",
+                  "AWS_PROFILE": "your-aws-profile"
+                }
+              }
+            }
+          }
+          ```
+          
+          ### What's New
+          
+          - Enhanced MRD calculation tools
+          - Improved AWS Athena integration
+          - Better error handling and logging
+          - Updated dependencies for security
+        assets: |
+          registry.json
+          extension.json
+      displayName: 'Create GitHub Release'
