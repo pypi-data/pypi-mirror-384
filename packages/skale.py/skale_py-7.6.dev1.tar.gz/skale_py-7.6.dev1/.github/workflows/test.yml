@@ -1,0 +1,84 @@
+name: Test
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        component: [manager, allocator, fair]
+    env:
+      ETH_PRIVATE_KEY: ${{ secrets.ETH_PRIVATE_KEY }}
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python 3.13
+        run: uv python install 3.13
+
+      - name: Install python dependencies
+        run: uv sync --all-extras
+
+      - name: Lint with ruff
+        run: uv run ruff check skale/
+
+      - name: Type check with mypy
+        run: uv run mypy skale/
+
+      - name: Export env
+        run: |
+          . ./scripts/export_env.sh
+          printenv >> $GITHUB_ENV
+
+      - name: Launch hardhat node
+        run: |
+          bash ./helper-scripts/helper.sh run_hh_node
+
+      - name: Deploy manager
+        run: |
+          bash ./helper-scripts/deploy_manager.sh
+          docker rmi -f skalenetwork/skale-manager:$MANAGER_TAG
+
+      - name: Deploy allocator
+        if: ${{ matrix.component == 'allocator' }}
+        run: |
+          bash ./helper-scripts/deploy_allocator.sh
+          docker rmi -f skalenetwork/skale-allocator:$ALLOCATOR_TAG
+
+      - name: Bootstrap fair-boot contracts
+        if: ${{ matrix.component == 'fair' }}
+        run: |
+          bash ./scripts/bootstrap_fair.sh
+
+      - name: Deploy fair
+        if: ${{ matrix.component == 'fair' }}
+        run: |
+          . ./scripts/export_env.sh
+          printenv >> $GITHUB_ENV
+          export TARGET=$(bash ./helper-scripts/helper.sh manager_address)
+          bash ./helper-scripts/deploy_fair.sh
+          docker rmi -f skalenetwork/fair-manager:$FAIR_TAG
+
+      - name: Show stats before tests
+        if: always()
+        run: |
+          sudo lsblk -f
+          sudo free -h
+
+      - name: Run tests for ${{ matrix.component }}
+        run: bash ./scripts/run_${{ matrix.component }}_tests.sh
+
+      - name: Codecov
+        run: |
+          uv run codecov -t $CODECOV_TOKEN
+
+      - name: Show stats after tests
+        if: always()
+        run: |
+          sudo lsblk -f
+          sudo free -h
