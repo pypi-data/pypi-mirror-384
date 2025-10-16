@@ -1,0 +1,30 @@
+
+# simple-math-toolkit (library-only)
+
+A tiny Python math library with a few modules:
+
+- `arithmetic`: `add`, `sub`, `mul`, `div`
+- `algebra`: `quadratic_roots`
+- `stats`: `mean`, `median`
+- `geometry`: `area_circle`, `perimeter_rectangle`
+
+## Install
+```bash
+pip install simple-math-toolkit
+```
+
+## Use from Python
+```python
+from simple_math_toolkit.arithmetic import add, div
+from simple_math_toolkit.algebra import quadratic_roots
+from simple_math_toolkit.stats import mean, median
+from simple_math_toolkit.geometry import area_circle, perimeter_rectangle
+
+print(add(2, 3))                      # 5
+print(div(10, 4))                     # 2.5
+print(quadratic_roots(1, -3, 2))      # (1.0, 2.0)
+print(mean([1, 2, 3, 4]))             # 2.5
+print(median([1, 2, 3, 4]))           # 2.5
+print(area_circle(1.5))               # 7.0685...
+print(perimeter_rectangle(2.0, 3.0))  # 10.0
+```
