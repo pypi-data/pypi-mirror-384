@@ -1,0 +1,494 @@
+# Fluster - testing framework for decoders conformance
+# Copyright (C) 2020, Fluendo, S.A.
+#  Author: Pablo Marcos Oltra <pmarcos@fluendo.com>, Fluendo, S.A.
+#  Author: Andoni Morales Alastruey <amorales@fluendo.com>, Fluendo, S.A.
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public License
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library. If not, see <https://www.gnu.org/licenses/>.
+
+import re
+import subprocess
+from functools import lru_cache
+from typing import Dict, Optional, Tuple
+
+from fluster.codec import Codec, OutputFormat
+from fluster.decoder import Decoder, register_decoder
+from fluster.utils import file_checksum, run_command_with_output
+
+
+@lru_cache(maxsize=128)
+def _run_ffmpeg_command(
+    binary: str,
+    *args: str,
+    verbose: bool = False,
+) -> str:
+    """Runs a ffmpeg command and returns the output or an empty string"""
+    try:
+        return run_command_with_output(
+            [binary, "-hide_banner", *args],
+            verbose=verbose,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return ""
+
+
+class FFmpegDecoder(Decoder):
+    """Generic class for FFmpeg decoder"""
+
+    binary = "ffmpeg"
+    api = ""
+    wrapper = False
+    hw_download = False
+    hw_download_mapping: Dict[OutputFormat, str] = {}
+    init_hw_device = ""
+    hw_output_format = ""
+    thread_count = 1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = f"FFmpeg-{self.codec.value}{'-' + self.api if self.api else ''}"
+        self.description = f"FFmpeg {self.codec.value} {self.api if self.hw_acceleration else 'SW'} decoder"
+        self.ffmpeg_codec: Optional[str] = None
+        self.ffmpeg_version: Optional[Tuple[int, ...]] = None
+        self.use_md5_muxer: bool = False
+
+    def decode(
+        self,
+        input_filepath: str,
+        output_filepath: str,
+        output_format: OutputFormat,
+        timeout: int,
+        verbose: bool,
+        keep_files: bool,
+    ) -> str:
+        """Decodes input_filepath in output_filepath"""
+        command = [self.binary, "-hide_banner", "-nostdin"]
+
+        # Loglevel
+        if not verbose:
+            command.extend(["-loglevel", "warning"])
+
+        # Hardware acceleration
+        if self.hw_acceleration:
+            if self.init_hw_device:
+                command.extend(["-init_hw_device", self.init_hw_device])
+            if not self.wrapper:
+                command.extend(["-hwaccel", self.api.lower()])
+            if self.hw_output_format:
+                command.extend(["-hwaccel_output_format", self.hw_output_format])
+
+        # Number of threads
+        if self.thread_count:
+            command.extend(["-threads", str(self.thread_count)])
+
+        # Codec
+        if self.hw_acceleration and self.wrapper:
+            command.extend(["-codec", self.api.lower()])
+        elif self.ffmpeg_codec:
+            command.extend(["-codec", self.ffmpeg_codec])
+
+        # Input file
+        command.extend(["-i", input_filepath])
+
+        # Passthrough timestamp from the demuxer to the muxer
+        if self.ffmpeg_version and self.ffmpeg_version < (5, 1):
+            command.extend(["-vsync", "passthrough"])
+        else:
+            command.extend(["-fps_mode", "passthrough"])
+
+        # Hardware download
+        download = ""
+        if self.hw_acceleration and self.hw_download:
+            if output_format not in self.hw_download_mapping:
+                raise Exception(f"No matching ffmpeg pixel format found for {output_format}")
+            download = f"hwdownload,format={self.hw_download_mapping[output_format]},"
+
+        # Output format filter
+        command.extend(["-filter", f"{download}format=pix_fmts={output_format.value}"])
+
+        # MD5 muxer
+        if self.use_md5_muxer and not keep_files:
+            command.extend(["-f", "md5", "-"])
+        # Output file
+        else:
+            command.extend(["-f", "rawvideo", output_filepath])
+
+        output = run_command_with_output(command, timeout=timeout, verbose=verbose, keep_stderr=True)
+
+        # Detect software fallback and turn this into an error
+        if self.hw_acceleration:
+            hw_error = re.search(r"Failed setup for format", output)
+            if hw_error:
+                raise Exception("Failed to use HW accelerator.")
+
+        if self.use_md5_muxer and not keep_files:
+            md5sum = re.search(r"MD5=([0-9a-fA-F]+)\s*", output)
+            if not md5sum:
+                raise Exception("No MD5 found in the program trace.")
+            return md5sum.group(1).lower()
+        else:
+            return file_checksum(output_filepath)
+
+    @lru_cache(maxsize=128)
+    def check(self, verbose: bool) -> bool:
+        """Checks whether the decoder can be run"""
+        if not super().check(verbose):
+            return False
+
+        # Check if codec is supported
+        codec_mapping = {
+            Codec.H264: "h264",
+            Codec.H265: "hevc",
+            Codec.H266: "vvc",
+            Codec.VP8: "vp8",
+            Codec.VP9: "vp9",
+            Codec.AV1: "av1",
+            Codec.MPEG2_VIDEO: "mpeg2video",
+            Codec.MPEG4_VIDEO: "mpeg4",
+        }
+        if self.codec not in codec_mapping:
+            return False
+        self.ffmpeg_codec = codec_mapping[self.codec]
+
+        # Get ffmpeg version
+        output = _run_ffmpeg_command(self.binary, "-version", verbose=verbose)
+        version = re.search(r" version n?(\d+)\.(\d+)(?:\.(\d+))?", output)
+        self.ffmpeg_version = tuple((int(x) if x else 0 for x in version.groups())) if version else None
+
+        # Check if codec can be used
+        output = _run_ffmpeg_command(self.binary, "-codecs", verbose=verbose)
+        codec = re.escape(self.ffmpeg_codec)
+        if re.search(rf"\s+{codec}\s+", output) is None:
+            return False
+
+        # Check if MD5 muxer can be used
+        output = _run_ffmpeg_command(self.binary, "-formats", verbose=verbose)
+        muxer = re.escape("md5")
+        self.use_md5_muxer = re.search(rf"E\s+{muxer}\s+", output) is not None
+
+        if not self.hw_acceleration:
+            return True
+
+        # Check if hw decoder or hwaccel is supported
+        command = "-decoders" if self.wrapper else "-hwaccels"
+        output = _run_ffmpeg_command(self.binary, command, verbose=verbose)
+        api = re.escape(self.api.lower())
+        return re.search(rf"\s+{api}\s+", output) is not None
+
+
+@register_decoder
+class FFmpegH264Decoder(FFmpegDecoder):
+    """FFmpeg SW decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265Decoder(FFmpegDecoder):
+    """FFmpeg SW decoder for H.265"""
+
+    codec = Codec.H265
+
+
+@register_decoder
+class FFmpegH266Decoder(FFmpegDecoder):
+    """FFmpeg SW decoder for H.266"""
+
+    codec = Codec.H266
+
+
+@register_decoder
+class FFmpegVP8Decoder(FFmpegDecoder):
+    """FFmpeg SW decoder for VP8"""
+
+    codec = Codec.VP8
+
+
+@register_decoder
+class FFmpegVP9Decoder(FFmpegDecoder):
+    """FFmpeg SW decoder for VP9"""
+
+    codec = Codec.VP9
+
+
+@register_decoder
+class FFmpegMPEG2VideoDecoder(FFmpegDecoder):
+    """FFmpeg SW decoder for MPEG2 video"""
+
+    codec = Codec.MPEG2_VIDEO
+
+
+@register_decoder
+class FFmpegMPEG4VideoDecoder(FFmpegDecoder):
+    """FFmpeg SW decoder for MPEG4 video"""
+
+    codec = Codec.MPEG4_VIDEO
+
+
+class FFmpegVaapiDecoder(FFmpegDecoder):
+    """Generic class for FFmpeg VAAPI decoder"""
+
+    hw_acceleration = True
+    api = "VAAPI"
+
+
+@register_decoder
+class FFmpegH264VaapiDecoder(FFmpegVaapiDecoder):
+    """FFmpeg VAAPI decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265VaapiDecoder(FFmpegVaapiDecoder):
+    """FFmpeg VAAPI decoder for H.265"""
+
+    codec = Codec.H265
+
+
+@register_decoder
+class FFmpegVP8VaapiDecoder(FFmpegVaapiDecoder):
+    """FFmpeg VAAPI decoder for VP8"""
+
+    codec = Codec.VP8
+
+
+@register_decoder
+class FFmpegVP9VaapiDecoder(FFmpegVaapiDecoder):
+    """FFmpeg VAAPI decoder for VP9"""
+
+    codec = Codec.VP9
+
+
+@register_decoder
+class FFmpegAV1VaapiDecoder(FFmpegVaapiDecoder):
+    """FFmpeg VAAPI decoder for AV1"""
+
+    codec = Codec.AV1
+
+
+class FFmpegVdpauDecoder(FFmpegDecoder):
+    """Generic class for FFmpeg VDPAU decoder"""
+
+    hw_acceleration = True
+    api = "VDPAU"
+
+
+@register_decoder
+class FFmpegH264VdpauDecoder(FFmpegVdpauDecoder):
+    """FFmpeg VDPAU decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265VdpauDecoder(FFmpegVdpauDecoder):
+    """FFmpeg VDPAU decoder for H.265"""
+
+    codec = Codec.H265
+
+
+@register_decoder
+class FFmpegVP9VdpauDecoder(FFmpegVdpauDecoder):
+    """FFmpeg VDPAU decoder for VP9"""
+
+    codec = Codec.VP9
+
+
+@register_decoder
+class FFmpegAV1VdpauDecoder(FFmpegVdpauDecoder):
+    """FFmpeg VDPAU decoder for AV1"""
+
+    codec = Codec.AV1
+
+
+class FFmpegDxva2Decoder(FFmpegDecoder):
+    """Generic class for FFmpeg DXVA2 decoder"""
+
+    hw_acceleration = True
+    api = "DXVA2"
+
+
+@register_decoder
+class FFmpegH264Dxva2Decoder(FFmpegDxva2Decoder):
+    """FFmpeg DXVA2 decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265Dxva2Decoder(FFmpegDxva2Decoder):
+    """FFmpeg DXVA2 decoder for H.265"""
+
+    codec = Codec.H265
+
+
+class FFmpegD3d11vaDecoder(FFmpegDecoder):
+    """Generic class for FFmpeg D3D11VA decoder"""
+
+    hw_acceleration = True
+    api = "D3D11VA"
+
+
+@register_decoder
+class FFmpegH264D3d11vaDecoder(FFmpegD3d11vaDecoder):
+    """FFmpeg D3D11VA decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265D3d11vaDecoder(FFmpegD3d11vaDecoder):
+    """FFmpeg D3D11VA decoder for H.265"""
+
+    codec = Codec.H265
+
+
+class FFmpegV4L2m2mDecoder(FFmpegDecoder):
+    """Generic class for FFmpeg V4L2 mem2mem decoder"""
+
+    hw_acceleration = True
+    wrapper = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = f"FFmpeg-{self.codec.value}-v4l2m2m"
+        self.description = f"FFmpeg {self.codec.value} v4l2m2m decoder"
+
+
+@register_decoder
+class FFmpegVP8V4L2m2mDecoder(FFmpegV4L2m2mDecoder):
+    """FFmpeg V4L2 mem2mem decoder for VP8"""
+
+    codec = Codec.VP8
+    api = "vp8_v4l2m2m"
+
+
+@register_decoder
+class FFmpegVP9V4L2m2mDecoder(FFmpegV4L2m2mDecoder):
+    """FFmpeg V4L2 mem2mem decoder for VP9"""
+
+    codec = Codec.VP9
+    api = "vp9_v4l2m2m"
+
+
+@register_decoder
+class FFmpegH264V4L2m2mDecoder(FFmpegV4L2m2mDecoder):
+    """FFmpeg V4L2 mem2mem decoder for H.264"""
+
+    codec = Codec.H264
+    api = "h264_v4l2m2m"
+
+
+@register_decoder
+class FFmpegH265V4L2m2mDecoder(FFmpegV4L2m2mDecoder):
+    """FFmpeg V4L2 mem2mem decoder for H.265"""
+
+    codec = Codec.H265
+    api = "hevc_v4l2m2m"
+
+
+class FFmpegVulkanDecoder(FFmpegDecoder):
+    """Generic class for FFmpeg Vulkan decoder"""
+
+    hw_acceleration = True
+    api = "Vulkan"
+    init_hw_device = "vulkan"
+    hw_output_format = "vulkan"
+    hw_download = True
+    hw_download_mapping = {
+        OutputFormat.YUV420P: "nv12",
+        OutputFormat.YUV422P: "nv12",
+        OutputFormat.YUV420P10LE: "p010",
+        OutputFormat.YUV422P10LE: "p012",
+    }
+
+
+@register_decoder
+class FFmpegH264VulkanDecoder(FFmpegVulkanDecoder):
+    """FFmpeg Vulkan decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265VulkanDecoder(FFmpegVulkanDecoder):
+    """FFmpeg Vulkan decoder for H.265"""
+
+    codec = Codec.H265
+
+
+@register_decoder
+class FFmpegAV1VulkanDecoder(FFmpegVulkanDecoder):
+    """FFmpeg Vulkan decoder for AV1"""
+
+    codec = Codec.AV1
+
+
+@register_decoder
+class FFmpegVP9VulkanDecoder(FFmpegVulkanDecoder):
+    """FFmpeg Vulkan decoder for VP9"""
+
+    codec = Codec.VP9
+
+
+class FFmpegCudaDecoder(FFmpegDecoder):
+    """Generic class for FFmpeg CUDA decoder"""
+
+    hw_acceleration = True
+    api = "CUDA"
+    hw_output_format = "cuda"
+    hw_download = True
+    hw_download_mapping = {
+        OutputFormat.YUV420P: "nv12",
+        OutputFormat.YUV444P: "yuv444p",
+        OutputFormat.YUV420P10LE: "p010",
+        OutputFormat.YUV444P10LE: "yuv444p16le",
+        OutputFormat.YUV420P12LE: "p016",
+        OutputFormat.YUV444P12LE: "yuv444p16le",
+    }
+
+
+@register_decoder
+class FFmpegH264CudaDecoder(FFmpegCudaDecoder):
+    """FFmpeg CUDA decoder for H.264"""
+
+    codec = Codec.H264
+
+
+@register_decoder
+class FFmpegH265CudaDecoder(FFmpegCudaDecoder):
+    """FFmpeg CUDA decoder for H.265"""
+
+    codec = Codec.H265
+
+
+@register_decoder
+class FFmpegVP8CudaDecoder(FFmpegCudaDecoder):
+    """FFmpeg CUDA decoder for VP8"""
+
+    codec = Codec.VP8
+
+
+@register_decoder
+class FFmpegVP9CudaDecoder(FFmpegCudaDecoder):
+    """FFmpeg CUDA decoder for VP9"""
+
+    codec = Codec.VP9
+
+
+@register_decoder
+class FFmpegAV1VCudaDecoder(FFmpegCudaDecoder):
+    """FFmpeg CUDA decoder for AV1"""
+
+    codec = Codec.AV1

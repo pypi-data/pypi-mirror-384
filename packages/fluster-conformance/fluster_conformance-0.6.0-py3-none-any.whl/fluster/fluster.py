@@ -1,0 +1,675 @@
+# Fluster - testing framework for decoders conformance
+# Copyright (C) 2020, Fluendo, S.A.
+#  Author: Pablo Marcos Oltra <pmarcos@fluendo.com>, Fluendo, S.A.
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public License
+# as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library. If not, see <https://www.gnu.org/licenses/>.
+
+import os
+import os.path
+import sys
+from collections import defaultdict
+from enum import Enum
+from functools import lru_cache
+from shutil import rmtree
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+
+from fluster.codec import Codec, Profile
+from fluster.decoder import DECODERS, Decoder
+
+# Import decoders that will auto-register
+from fluster.decoders import *  # noqa: F403
+from fluster.decoders.av1_aom import AV1AOMDecoder
+from fluster.test_suite import Context as TestSuiteContext
+from fluster.test_suite import TestMethod, TestSuite
+from fluster.test_vector import TestVector, TestVectorResult
+
+
+class Context:
+    """Context for run and reference command"""
+
+    def __init__(
+        self,
+        jobs: int,
+        timeout: int,
+        test_suites: List[str],
+        decoders: List[str],
+        test_vectors: List[str],
+        skip_vectors: List[str],
+        failfast: bool = False,
+        quiet: bool = False,
+        reference: bool = False,
+        summary: bool = False,
+        keep_files: bool = False,
+        threshold: Optional[int] = None,
+        time_threshold: Optional[int] = None,
+        verbose: bool = False,
+        summary_output: str = "",
+        summary_format: str = "",
+    ):
+        self.jobs = jobs
+        self.timeout = timeout
+        self.test_suites_names = test_suites
+        self.test_suites: List[TestSuite] = []
+        self.decoders_names = decoders
+        self.decoders: List[Decoder] = []
+        self.test_vectors_names = test_vectors
+        self.skip_vectors_names = skip_vectors
+        self.failfast = failfast
+        self.quiet = quiet
+        self.reference = reference
+        self.summary = summary
+        self.keep_files = keep_files
+        self.threshold = threshold
+        self.time_threshold = time_threshold
+        self.verbose = verbose
+        self.summary_output = summary_output
+        self.summary_format = summary_format
+
+    def to_test_suite_context(
+        self,
+        decoder: Decoder,
+        output_dir: str,
+        test_vectors: List[str],
+        skip_vectors: List[str],
+    ) -> TestSuiteContext:
+        """Create a TestSuite's Context from this"""
+        ts_context = TestSuiteContext(
+            jobs=self.jobs,
+            decoder=decoder,
+            timeout=self.timeout,
+            failfast=self.failfast,
+            quiet=self.quiet,
+            output_dir=output_dir,
+            reference=self.reference,
+            test_vectors=test_vectors,
+            skip_vectors=skip_vectors,
+            keep_files=self.keep_files,
+            verbose=self.verbose,
+        )
+        return ts_context
+
+
+EMOJI_RESULT = {
+    TestVectorResult.NOT_RUN: "",
+    TestVectorResult.SUCCESS: "✔️",
+    TestVectorResult.FAIL: "❌",
+    TestVectorResult.TIMEOUT: "⌛",
+    TestVectorResult.ERROR: "☠",
+}
+
+TEXT_RESULT = {
+    TestVectorResult.NOT_RUN: "",
+    TestVectorResult.SUCCESS: "OK",
+    TestVectorResult.FAIL: "KO",
+    TestVectorResult.TIMEOUT: "TO",
+    TestVectorResult.ERROR: "ER",
+}
+
+
+class SummaryFormat(Enum):
+    """Summary formats"""
+
+    MARKDOWN = "md"
+    CSV = "csv"
+    JUNITXML = "junitxml"
+
+
+class Fluster:
+    """Main class for fluster"""
+
+    def __init__(
+        self,
+        test_suites_dir: str,
+        decoders_dir: str,
+        resources_dir: str,
+        output_dir: str,
+        verbose: bool = False,
+        use_emoji: bool = True,
+    ):
+        self.test_suites_dir = test_suites_dir
+        self.decoders_dir = decoders_dir
+        self.resources_dir = resources_dir
+        self.output_dir = output_dir
+        self.verbose = verbose
+        self.test_suites: List[TestSuite] = []
+        self.decoders = DECODERS
+        self.emoji = EMOJI_RESULT if use_emoji else TEXT_RESULT
+        if self.verbose:
+            print(
+                f"NOTE: Internal dirs used:\n"
+                f" * test_suites_dir: {self.test_suites_dir}\n"
+                f" * resources_dir: {self.resources_dir}\n"
+                f" * output_dir: {self.output_dir}"
+            )
+
+    def _walk_test_suite_dir(self) -> Iterator[Tuple[str, List[str], List[str]]]:
+        for test_suite_dir in self.test_suites_dir.split(os.pathsep):
+            for root, dirnames, files in os.walk(test_suite_dir):
+                yield (root, dirnames, files)
+
+    @lru_cache(maxsize=128)
+    def _load_test_suites(self) -> None:
+        for root, _, files in self._walk_test_suite_dir():
+            for file in files:
+                if os.path.splitext(file)[1] == ".json":
+                    try:
+                        test_suite = TestSuite.from_json_file(os.path.join(root, file), self.resources_dir)
+                        if test_suite.name in [ts.name for ts in self.test_suites]:
+                            raise Exception(f'Repeated test suite with name "{test_suite.name}"')
+                        self.test_suites.append(test_suite)
+                    except Exception as ex:
+                        print(f"Error loading test suite {file}: {ex}")
+        if len(self.test_suites) == 0:
+            raise Exception(f'No test suites found in "{self.test_suites_dir}"')
+
+    def list_decoders(self, check: bool, verbose: bool, codec: Optional[Codec] = None) -> None:
+        """List all the available decoders"""
+        print("\nList of available decoders:")
+        decoders_dict: Dict[Codec, List[Decoder]] = {}
+        for dec in self.decoders:
+            if dec.codec not in decoders_dict:
+                decoders_dict[dec.codec] = []
+            decoders_dict[dec.codec].append(dec)
+
+        for current_codec, decoder_list in decoders_dict.items():
+            if codec and codec != current_codec:
+                continue
+            print(f"\n{current_codec}")
+            for decoder in decoder_list:
+                string = f"{decoder}"
+                if check:
+                    string += "... " + (
+                        self.emoji[TestVectorResult.SUCCESS]
+                        if decoder.check(verbose)
+                        else self.emoji[TestVectorResult.FAIL]
+                    )
+                print(string)
+
+    def list_test_suites(
+        self,
+        show_test_vectors: bool = False,
+        test_suites: Optional[List[str]] = None,
+        codec: Optional[Codec] = None,
+    ) -> None:
+        """List all test suites"""
+        self._load_test_suites()
+        print("\nList of available test suites:")
+        if test_suites:
+            test_suites = [x.lower() for x in test_suites]
+
+        for test_suite in self.test_suites:
+            if test_suites and test_suite.name.lower() not in test_suites:
+                continue
+            if codec and test_suite.codec != codec:
+                continue
+            print(test_suite)
+            if show_test_vectors:
+                for test_vector in test_suite.test_vectors.values():
+                    print(test_vector)
+        if len(self.test_suites) == 0:
+            print(f'    No test suites found in "{self.test_suites_dir}"')
+
+    @staticmethod
+    def _get_matches(in_list: List[str], check_list: List[Any], name: str) -> List[Any]:
+        if in_list:
+            in_list_names = {x.lower() for x in in_list}
+            check_list_names = {x.name.lower() for x in check_list}
+            matches = in_list_names & check_list_names
+            if len(matches) != len(in_list):
+                sys.exit(f"No {name} found for: {', '.join(in_list_names - check_list_names)}")
+            matches_ret = [x for x in check_list if x.name.lower() in matches]
+        else:
+            matches_ret = check_list
+        return matches_ret
+
+    def _normalize_context(self, ctx: Context) -> None:
+        # Convert all test suites and decoders to lowercase to make the filter greedy
+        if ctx.test_suites:
+            ctx.test_suites_names = [x.lower() for x in ctx.test_suites_names]
+        if ctx.decoders_names:
+            ctx.decoders_names = [x.lower() for x in ctx.decoders_names]
+        if ctx.test_vectors_names:
+            ctx.test_vectors_names = [x.lower() for x in ctx.test_vectors_names]
+        if ctx.skip_vectors_names:
+            ctx.skip_vectors_names = [x.lower() for x in ctx.skip_vectors_names]
+        ctx.test_suites = self._get_matches(ctx.test_suites_names, self.test_suites, "test suite")
+        ctx.decoders = self._get_matches(ctx.decoders_names, self.decoders, "decoders")
+
+    def run_test_suites(self, ctx: Context) -> None:
+        """Run a group of test suites"""
+
+        self._load_test_suites()
+        self._normalize_context(ctx)
+
+        if ctx.reference and (not ctx.decoders or len(ctx.decoders) > 1):
+            dec_names = [dec.name for dec in ctx.decoders]
+            raise Exception(f"Only one decoder can be the reference. Given: {', '.join(dec_names)}")
+
+        if ctx.threshold and len(ctx.test_suites) > 1:
+            raise Exception(
+                "Threshold for success tests can only be applied running a single test suite for a single decoder"
+            )
+
+        if ctx.reference:
+            print("\n=== Reference mode ===\n")
+
+        error = False
+        no_test_run = True
+        results: Dict[str, List[Tuple[Decoder, TestSuite]]] = {}
+        for test_suite in ctx.test_suites:
+            test_suite_results: List[Tuple[Decoder, TestSuite]] = []
+            for decoder in ctx.decoders:
+                if isinstance(decoder, AV1AOMDecoder) and decoder.name == "libaom-AV1":
+                    if any(keyword in test_suite.name for keyword in ["CORE", "STRESS"]):
+                        decoder.annexb = True
+                if decoder.codec != test_suite.codec:
+                    continue
+                if test_suite.test_method == TestMethod.PIXEL and decoder.is_reference:
+                    continue
+                test_suite_res = test_suite.run(
+                    ctx.to_test_suite_context(
+                        decoder,
+                        self.output_dir,
+                        ctx.test_vectors_names,
+                        ctx.skip_vectors_names,
+                    )
+                )
+
+                if test_suite_res:
+                    no_test_run = False
+                    test_suite_results.append((decoder, test_suite_res))
+                    results[test_suite.name] = test_suite_results
+                    success = True
+                    for test_vector in test_suite_res.test_vectors.values():
+                        if test_vector.errors:
+                            success = False
+                            break
+
+                    if not success:
+                        error = True
+                        if ctx.failfast:
+                            self._show_summary_if_needed(ctx, results)
+                            sys.exit(1)
+
+                    if ctx.threshold:
+                        if test_suite_res.test_vectors_success < ctx.threshold:
+                            self._show_summary_if_needed(ctx, results)
+                            print(
+                                f"Tests results below threshold: {test_suite_res.test_vectors_success} vs "
+                                f"{ctx.threshold}\nReporting error through exit code 2"
+                            )
+                            sys.exit(2)
+
+                    if ctx.time_threshold:
+                        if test_suite_res.time_taken > ctx.time_threshold:
+                            self._show_summary_if_needed(ctx, results)
+                            print(
+                                f"Tests results over time threshold: {test_suite_res.time_taken} vs "
+                                f"{ctx.time_threshold}\nReporting error through exit code 3"
+                            )
+                            sys.exit(3)
+
+        self._show_summary_if_needed(ctx, results)
+
+        if not ctx.keep_files and os.path.isdir(self.output_dir):
+            rmtree(self.output_dir)
+
+        if (error and (not ctx.threshold and not ctx.time_threshold)) or no_test_run:
+            sys.exit(1)
+
+    def _show_summary_if_needed(self, ctx: Context, results: Dict[str, List[Tuple[Decoder, TestSuite]]]) -> None:
+        if ctx.summary and results:
+            if ctx.summary_format == SummaryFormat.JUNITXML.value:
+                self._generate_junit_summary(ctx, results)
+            elif ctx.summary_format == SummaryFormat.CSV.value:
+                self._generate_csv_summary(ctx, results)
+            else:
+                self._generate_md_summary(ctx, results)
+
+    @staticmethod
+    def _generate_junit_summary(ctx: Context, results: Dict[str, List[Tuple[Decoder, TestSuite]]]) -> None:
+        try:
+            import junitparser as junitp  # type: ignore
+        except ImportError:
+            sys.exit("error: junitparser required to use JUnit format. Please install with pip install junitparser.")
+
+        def _parse_vector_errors(vector: TestVector) -> List[junitp.Error]:
+            junit_err_map = {
+                TestVectorResult.ERROR: junitp.Error,
+                TestVectorResult.FAIL: junitp.Failure,
+                TestVectorResult.NOT_RUN: junitp.Skipped,
+                TestVectorResult.TIMEOUT: junitp.Failure,
+            }
+
+            jerrors = []
+
+            for err in vector.errors:
+                jerr = junit_err_map[vector.test_result](message=f"FAIL: {err[0]}")
+                jerr.text = "\n".join(err[1:])
+                jerrors.append(jerr)
+
+            return jerrors
+
+        def _parse_suite_results(
+            test_suite_tuple: Tuple[str, List[Tuple[Decoder, TestSuite]]],
+        ) -> junitp.TestSuite:
+            jsuites = []
+
+            test_suite_name, test_suite_results = test_suite_tuple
+
+            for suite_decoder_res in test_suite_results:
+                timeouts = 0
+
+                jsuite = junitp.TestSuite(test_suite_name)
+                jsuite.add_property("decoder", suite_decoder_res[0].name)
+
+                for vector in suite_decoder_res[1].test_vectors.values():
+                    jcase = junitp.TestCase(vector.name)
+                    if vector.test_result == TestVectorResult.NOT_RUN:
+                        jcase.result = [junitp.Skipped()]
+                    elif vector.test_result not in [
+                        TestVectorResult.SUCCESS,
+                        TestVectorResult.REFERENCE,
+                    ]:
+                        jcase.result = _parse_vector_errors(vector)
+
+                    jcase.time = vector.test_time
+
+                    jsuite.add_testcase(jcase)
+
+                    if vector.test_result is TestVectorResult.TIMEOUT and ctx.jobs == 1:
+                        timeouts += ctx.timeout
+
+                jsuite.time = round(suite_decoder_res[1].time_taken - timeouts, 3)
+
+                jsuites.append(jsuite)
+
+            return jsuites
+
+        xml = junitp.JUnitXml()
+
+        jsuites = map(_parse_suite_results, results.items())
+
+        for jsuite in [item for sublist in jsuites for item in sublist]:
+            xml.add_testsuite(jsuite)
+
+        if ctx.summary_output:
+            with open(ctx.summary_output, "w+", encoding="utf-8") as summary_file:
+                xml.write(summary_file.name, pretty=True)
+
+    @staticmethod
+    def _generate_csv_summary(ctx: Context, results: Dict[str, List[Tuple[Decoder, TestSuite]]]) -> None:
+        result_map = {
+            TestVectorResult.SUCCESS: "Success",
+            TestVectorResult.REFERENCE: "Reference",
+            TestVectorResult.TIMEOUT: "Timeout",
+            TestVectorResult.ERROR: "Error",
+            TestVectorResult.FAIL: "Fail",
+            TestVectorResult.NOT_RUN: "Not run",
+        }
+        content: Dict[Any, Any] = defaultdict(lambda: defaultdict(dict))
+        max_vectors = 0
+        for test_suite, suite_results in results.items():
+            for decoder, vectors in suite_results:
+                decoder_name = str(decoder.name[: decoder.name.find(":")])
+                max_vectors = max(max_vectors, len(vectors.test_vectors.values()))
+                for vector in vectors.test_vectors.values():
+                    vector_name = str(vector.name)
+                    content[str(test_suite)][decoder_name][vector_name] = result_map[vector.test_result]
+
+        suite_row = []
+        decoder_row = []
+        field_row = []
+        content_rows: List[List[Any]] = [[] for _ in range(max_vectors)]
+        for suite in content:
+            suite_row.append(str(suite))
+            num_decoders = len(content[suite])
+            suite_row += ["" for _ in range(num_decoders + (num_decoders - 1))]
+            for decoder in content[suite]:
+                decoder_row += [str(decoder), ""]
+                field_row += ["Vector", "Result"]
+                for index, vector in enumerate(content[suite][decoder]):
+                    content_rows[index] += [vector, content[suite][decoder][vector]]
+                for index in range(len(content[suite][decoder]), max_vectors):
+                    content_rows[index] += ["", ""]
+        rows = [suite_row, decoder_row, field_row] + content_rows
+        if ctx.summary_output:
+            with open(ctx.summary_output, mode="w", encoding="utf8") as file:
+                file.writelines([",".join(row) + "\n" for row in rows])
+
+    def _generate_md_summary(self, ctx: Context, results: Dict[str, List[Tuple[Decoder, TestSuite]]]) -> None:
+        def _global_stats(
+            results: List[Tuple[Decoder, TestSuite]],
+            test_suites: List[TestSuite],
+            first: bool,
+        ) -> str:
+            separator = f"\n|-|{'-|' * len(results)}"
+            output = separator if not first else ""
+            output += "\n|Test|" if not first else "|Test|"
+            for decoder, _ in results:
+                output += f"{decoder.name}|"
+            output += separator if first else ""
+            output += "\n|TOTAL|"
+            for test_suite in test_suites:
+                output += f"{test_suite.test_vectors_success}/{len(test_suite.test_vectors)}|"
+            output += "\n|TOTAL TIME|"
+            for test_suite in test_suites:
+                # Substract from the total time that took running a test suite on a decoder
+                # the timeouts. This is not ideal since we won't be comparing decoding the
+                # same number of test vectors, but at least it is much better than comparing
+                # total times when timeouts are such a huge part of the global time taken.
+                # Note: we only do this when the number of parallel jobs is 1, because
+                # whenever there are actual parallel jobs, this gets much more complicated.
+                timeouts = (
+                    sum(
+                        [
+                            ctx.timeout
+                            for tv in test_suite.test_vectors.values()
+                            if tv.test_result == TestVectorResult.TIMEOUT
+                        ]
+                    )
+                    if ctx.jobs == 1
+                    else 0
+                )
+                total_time = test_suite.time_taken - timeouts
+                output += f"{total_time:.3f}s|"
+            output += separator if first else ""
+            return output
+
+        def _profile_stats(
+            results: List[Tuple[Decoder, TestSuite]],
+        ) -> str:
+            separator = f"|-|{'-|' * len(results)}"
+            output = ""
+
+            vectors_per_profile = {profile.name: 0 for profile in Profile}
+            for test_vector in results[0][1].test_vectors.values():
+                if test_vector.profile is not None:
+                    vectors_per_profile[test_vector.profile.name] += 1
+
+            vectors_passed_per_profile_per_decoder: Dict[str, Dict[str, int]] = {
+                profile.name: {} for profile in Profile if vectors_per_profile[profile.name] != 0
+            }
+
+            if vectors_passed_per_profile_per_decoder:
+                output = separator
+                output += "\n|Profile|"
+                for decoder, _ in results:
+                    output += f"{decoder.name}|"
+
+            for profile in vectors_passed_per_profile_per_decoder.keys():
+                for decoder, _ in results:
+                    vectors_passed_per_profile_per_decoder[profile][decoder.name] = 0
+
+            for decoder, test_suite in results:
+                for test_vector in test_suite.test_vectors.values():
+                    if test_vector.test_result == TestVectorResult.SUCCESS and test_vector.profile is not None:
+                        vectors_passed_per_profile_per_decoder[test_vector.profile.name][decoder.name] += 1
+
+            for profile_temp, decoders in vectors_passed_per_profile_per_decoder.items():
+                output += "\n|" + str(profile_temp) + "|"
+                for decoder_temp in decoders:
+                    output += (
+                        str(vectors_passed_per_profile_per_decoder[profile_temp][decoder_temp])
+                        + "/"
+                        + str(vectors_per_profile[profile_temp])
+                        + "|"
+                    )
+
+            return output
+
+        def _generate_global_summary(results: Dict[str, List[Tuple[Decoder, TestSuite]]]) -> str:
+            if not results:
+                return ""
+
+            all_decoders = []
+            decoder_names = set()
+            for test_suite_results in results.values():
+                for decoder, _ in test_suite_results:
+                    if decoder.name not in decoder_names:
+                        all_decoders.append(decoder)
+                        decoder_names.add(decoder.name)
+
+            decoder_totals = {dec.name: {"success": 0, "total": 0} for dec in all_decoders}
+            decoder_times = {dec.name: 0.0 for dec in all_decoders}
+            global_profile_stats: Dict[str, Dict[str, Dict[str, int]]] = {dec.name: {} for dec in all_decoders}
+
+            for test_suite_results in results.values():
+                for decoder, test_suite in test_suite_results:
+                    totals = decoder_totals[decoder.name]
+                    totals["success"] += test_suite.test_vectors_success
+                    totals["total"] += len(test_suite.test_vectors)
+
+                    timeouts = (
+                        sum(
+                            ctx.timeout
+                            for tv in test_suite.test_vectors.values()
+                            if tv.test_result == TestVectorResult.TIMEOUT
+                        )
+                        if ctx.jobs == 1
+                        else 0
+                    )
+                    decoder_times[decoder.name] += test_suite.time_taken - timeouts
+
+                    for test_vector in test_suite.test_vectors.values():
+                        if test_vector.profile is not None:
+                            profile_name = test_vector.profile.name
+                            stats = global_profile_stats[decoder.name].setdefault(
+                                profile_name, {"success": 0, "total": 0}
+                            )
+                            stats["total"] += 1
+                            if test_vector.test_result == TestVectorResult.SUCCESS:
+                                stats["success"] += 1
+
+            separator = f"\n|-|{'-|' * len(all_decoders)}"
+            output = "\n# GLOBAL SUMMARY"
+            output += "\n|TOTALS|" + "".join(f"{dec.name}|" for dec in all_decoders) + separator
+            output += "\n|TOTAL|" + "".join(
+                f"{decoder_totals[dec.name]['success']}/{decoder_totals[dec.name]['total']}|" for dec in all_decoders
+            )
+            output += "\n|TOTAL TIME|" + "".join(f"{decoder_times[dec.name]:.3f}s|" for dec in all_decoders)
+
+            all_profiles: Set[str] = set()
+            for decoder_profiles in global_profile_stats.values():
+                all_profiles.update(decoder_profiles.keys())
+
+            if all_profiles:
+                output += separator
+                output += "\n|Profile|" + "".join(f"{dec.name}|" for dec in all_decoders)
+                for profile in sorted(all_profiles):
+                    output += f"\n|{profile}|"
+                    for dec in all_decoders:
+                        stats = global_profile_stats[dec.name].get(profile, {"success": 0, "total": 0})
+                        output += f"{stats['success']}/{stats['total']}|"
+
+            output += separator
+            return output
+
+        output = ""
+
+        for test_suite_name, test_suite_results in results.items():
+            decoders_names = [decoder.name for decoder, _ in test_suite_results]
+            test_suites = [res[1] for res in test_suite_results]
+            print(f"Generating summary for test suite {test_suite_name} and decoders {', '.join(decoders_names)}:\n")
+            output += _global_stats(test_suite_results, test_suites, True)
+            for test_vector in test_suite_results[0][1].test_vectors.values():
+                output += f"\n|{test_vector.name}|"
+                for test_suite in test_suites:
+                    tvector = test_suite.test_vectors[test_vector.name]
+                    output += self.emoji[tvector.test_result] + "|"
+            output += _global_stats(test_suite_results, test_suites, False)
+            output += "\n\n"
+
+            profile_output = _profile_stats(test_suite_results)
+            if profile_output:
+                output += profile_output + "\n\n"
+
+        global_summary = _generate_global_summary(results)
+        if global_summary:
+            output += global_summary + "\n\n"
+
+        if ctx.summary_output:
+            with open(ctx.summary_output, "w+", encoding="utf-8") as summary_file:
+                summary_file.write(output)
+        else:
+            print(output)
+
+    def download_test_suites(
+        self, test_suites: List[str], jobs: int, keep_file: bool, retries: int, codec_string: Optional[str] = None
+    ) -> None:
+        """Download a group of test suites"""
+        self._load_test_suites()
+
+        # Parse codecs from comma-separated string
+        codecs = None
+        if codec_string:
+            # Split by comma and convert to Codec enum
+            codec_strings = [c.strip() for c in codec_string.split(",")]
+            codecs = []
+            for codec_str in codec_strings:
+                if not codec_str:  # Skip empty strings
+                    continue
+                # Find matching codec (case-insensitive)
+                for codec in Codec:
+                    if codec.value.lower() == codec_str.lower():
+                        codecs.append(codec)
+                        break
+                else:
+                    sys.exit(f"Unknown codec: {codec_str}")
+
+        download_test_suites: List[TestSuite] = []
+
+        if codecs:
+            codec_names = {codec.value for codec in codecs}
+            download_test_suites = [ts for ts in self.test_suites if ts.codec.value in codec_names]
+            if test_suites:
+                download_test_suites += self._get_matches(test_suites, self.test_suites, "test suites")
+            print(
+                f"Test suites for codecs {', '.join(sorted(codec_names))}: {[ts.name for ts in download_test_suites]}"
+            )
+        else:
+            if test_suites:
+                download_test_suites = self._get_matches(test_suites, self.test_suites, "test suites")
+            else:
+                download_test_suites = self.test_suites
+            print(f"Test suites: {[ts.name for ts in download_test_suites]}")
+
+        for test_suite in download_test_suites:
+            test_suite.download(
+                jobs,
+                self.resources_dir,
+                verify=True,
+                keep_file=keep_file,
+                retries=retries,
+            )
