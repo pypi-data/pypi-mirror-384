@@ -1,0 +1,2 @@
+"use strict";sap.ui.define(["./BaseController"],function(t){"use strict";function n(t){return t&&t.__esModule&&typeof t.default!=="undefined"?t.default:t}const e=n(t);const o=e.extend("com.optrabot.ui.controller.NotFoundController",{onInit:function t(){}});return o});
+//# sourceMappingURL=NotFound.controller.js.map

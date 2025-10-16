@@ -1,0 +1,2 @@
+"use strict";sap.ui.define(["sap/m/MessageBox","./BaseController"],function(e,o){"use strict";function t(e){return e&&e.__esModule&&typeof e.default!=="undefined"?e.default:e}const n=t(o);const s=n.extend("com.optrabot.ui.controller.Main",{sayHello:function o(){e.show("Hello World!")}});return s});
+//# sourceMappingURL=Main.controller.js.map
