@@ -1,0 +1,29 @@
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+import re
+
+from config.database.connections import db_client
+
+
+from app.{{ name }}.infrastructure.models.{{ name }}_model import {{ pascal_case }}Model
+from app.{{ name }}.infrastructure.dto.input_{{ name }} import Input{{ pascal_case }}
+
+class {{ pascal_case }}InsertValidation:
+    @staticmethod
+    def validate({{ name }}: Input{{ pascal_case }}, db: Session = Depends(db_client)) -> Input{{ pascal_case }}:
+        errors = {}
+
+        # Check if the example is contained in special characters using regex
+        if not re.match(r"^[a-zA-ZÀ-ÿ\u00f1\u00d1\s0-9]+$", {{ name }}.example.strip()):
+            errors.setdefault("example", []).append("El example no puede contener caracteres especiales.")
+
+        existing_example = db.query({{ pascal_case }}Model).filter_by(example={{ name }}.example).first()
+        if existing_example:
+            errors.setdefault("example", []).append("La example ya se encuentra registrada.")
+
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+
+        return {
+            "example": {{ name }}.example.strip(),
+        }
