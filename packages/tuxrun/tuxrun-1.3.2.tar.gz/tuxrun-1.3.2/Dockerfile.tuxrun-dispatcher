@@ -1,0 +1,26 @@
+FROM registry.gitlab.com/lava/lava/amd64/lava-dispatcher:2025.06.dev0075
+ARG EXTRA_PACKAGES
+
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries
+
+RUN apt-get update && \
+    apt-get install --no-install-recommends --yes gnupg && \
+    apt-get install --yes libgpgme11-dev podman ${EXTRA_PACKAGES} && \
+    echo "deb     http://ftp.de.debian.org/debian/    testing main contrib non-free" > /etc/apt/sources.list.d/testing.list && \
+    echo "deb-src http://ftp.de.debian.org/debian/    testing main contrib non-free" >> /etc/apt/sources.list.d/testing.list && \
+    apt-get update && \
+    apt-get -t testing install --no-install-recommends --yes qemu-system-arm qemu-system-mips qemu-system-misc qemu-system-ppc qemu-system-sparc qemu-system-x86 && \
+    apt-get upgrade --yes && \
+    apt-get purge --yes gnupg && \
+    apt-get autoremove --purge --yes && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN podman --version
+
+ENTRYPOINT ["/root/entrypoint.sh"]
+
+# FIXME: Ugly hack to launch the http server here. This needs to be changed to use tuxmake runtime where we can run multiple commands. The launch of http server was tested with podman run command but that did not pass the sigkill correctly to lava-run.
+RUN sed -i "s|set -e|set -e \npython3 -m http.server 80 -d /var/lib/lava/dispatcher/ \&|g" /root/entrypoint.sh ; cat /root/entrypoint.sh
+
+# vim: ft=dockerfile
