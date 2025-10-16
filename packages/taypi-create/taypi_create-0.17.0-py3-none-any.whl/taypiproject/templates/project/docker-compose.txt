@@ -1,0 +1,48 @@
+services:
+  example:
+    build:
+      context: ./example_entity
+      dockerfile: Dockerfile
+    container_name: example-service
+    volumes:
+      - ./example_entity:/app
+    command: uvicorn app.main:run --host 0.0.0.0 --port ${SERVICE_PORT} --reload
+    networks:
+      - project-network
+    expose:
+      - ${SERVICE_PORT}
+    depends_on:
+      - localdb
+  nginx:
+    image: nginx:latest
+    container_name: nginx-proxy
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./nginx/sites:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - project-network
+    depends_on:
+      - example
+  localdb:
+    image: postgres:latest
+    container_name: postgres-db-local
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER_LOCAL}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_LOCAL}
+      POSTGRES_DB: ${POSTGRES_DB_LOCAL}
+    ports:
+    - ${POSTGRES_PORT_LOCAL}:5432
+    volumes:
+    - postgres_data_local:/var/lib/postgresql/data
+    networks:
+    - project-network
+networks:
+  project-network:
+    driver: bridge
+volumes:
+  postgres_data_local:
+    driver: local
