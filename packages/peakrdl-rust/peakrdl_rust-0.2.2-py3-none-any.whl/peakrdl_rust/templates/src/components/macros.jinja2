@@ -1,0 +1,41 @@
+{% macro loop(depth, dims, expr) %}
+{% set idx = "i" ~ depth %}
+let mut {{idx}} = 0;
+while {{idx}} < {{dims[depth]}} {
+    {% if depth + 1 < dims|length %}
+    {{loop(depth+1, dims, expr) | indent(4*(depth+1))}}
+    {% else %}
+    array{% for d in range(depth+1) %}[i{{d}}]{% endfor %}.write({{expr}});
+    {% endif %}
+    {{idx}} += 1;
+}
+{%- endmacro -%}
+
+{% macro includes(ctx) %}
+{% for use in ctx.use_statements %}
+{{use}}
+{% endfor %}
+
+{% if ctx.anon_instances|length > 0 %}
+// anonymous component instances
+{% endif %}
+{% for mod in ctx.anon_instances %}
+pub mod {{mod}};
+{% endfor %}
+
+{% if ctx.named_type_declarations|length > 0 %}
+/// Named types defined within this component's body
+pub mod named_types {
+    {% for mod in ctx.named_type_declarations %}
+    pub mod {{mod}};
+    {% endfor %}
+}
+{% endif %}
+
+{% if ctx.named_type_instances|length > 0 %}
+// instances of named component types
+{% endif %}
+{% for (inst_name, module) in ctx.named_type_instances %}
+pub use {{module}} as {{inst_name}};
+{% endfor %}
+{%- endmacro -%}
