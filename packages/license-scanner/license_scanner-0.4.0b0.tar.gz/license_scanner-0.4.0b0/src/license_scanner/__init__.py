@@ -1,0 +1,9 @@
+# -*- coding: utf-8 -*-
+"""Scans your environment for all needed licenses"""
+
+__author__ = """Tom Nijhof-Verhees"""
+__version__ = "0.4.0b0"
+
+# Add here import to all the functions you need
+
+from .get_all_licenses import get_all_licenses
