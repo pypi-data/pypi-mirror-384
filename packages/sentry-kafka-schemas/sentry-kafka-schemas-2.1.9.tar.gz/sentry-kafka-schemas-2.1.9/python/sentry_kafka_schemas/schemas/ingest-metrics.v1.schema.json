@@ -1,0 +1,171 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/IngestMetric",
+  "definitions": {
+    "IngestMetric": {
+      "type": "object",
+      "title": "ingest_metric",
+      "additionalProperties": true,
+      "properties": {
+        "org_id": {
+          "description": "The organization for which this metric is being sent.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "project_id": {
+          "description": "The project for which this metric is being sent.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "name": {
+          "description": "The metric name. Relay sometimes calls this an MRI and makes assumptions about its string shape, and those assumptions also exist in certain queries. The rest of the ingestion pipeline treats it as an opaque string.",
+          "type": "string"
+        },
+        "type": {
+          "description": "The metric type. [c]ounter, [d]istribution, [s]et. Relay additionally defines Gauge, but that metric type is completely unsupported downstream.",
+          "type": "string",
+          "enum": ["c", "d", "s", "g"]
+        },
+        "timestamp": {
+          "description": "The timestamp at which this metric was being sent. Relay will round this down to the next 10-second interval.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "value": {
+          "anyOf": [
+            {
+              "title": "encoded_series_array_metric_value",
+              "type": "object",
+              "properties": {
+                "format": {
+                  "const": "array"
+                },
+                "data": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": ["format", "data"]
+            },
+            {
+              "title": "encoded_series_base64_metric_value",
+              "type": "object",
+              "properties": {
+                "format": {
+                  "const": "base64"
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": ["format", "data"]
+            },
+            {
+              "title": "encoded_series_zstd_metric_value",
+              "type": "object",
+              "properties": {
+                "format": {
+                  "const": "zstd"
+                },
+                "data": {
+                  "type": "string"
+                }
+              },
+              "required": ["format", "data"]
+            },
+            {
+              "title": "counter_metric_value",
+              "type": "number"
+            },
+            {
+              "title": "set_metric_value",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            },
+            {
+              "title": "distribution_metric_value",
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            },
+            {
+              "title": "gauge_metric_value",
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "sum": {
+                  "type": "number"
+                },
+                "count": {
+                  "type": "integer"
+                },
+                "last": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false,
+              "required": ["min", "max", "sum", "count", "last"]
+            }
+          ]
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "received_at": {
+          "description": "The oldest timestamp of the first metric that was received in this bucket by the outermost internal Relay.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "sampling_weight": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        }
+      },
+      "required": [
+        "name",
+        "org_id",
+        "project_id",
+        "retention_days",
+        "tags",
+        "timestamp",
+        "type",
+        "value"
+      ]
+    }
+  }
+}
