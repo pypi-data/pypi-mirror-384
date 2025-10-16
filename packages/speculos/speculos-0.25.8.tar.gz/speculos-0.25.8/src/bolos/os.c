@@ -1,0 +1,243 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include "emulate.h"
+#include "environment.h"
+#include "launcher.h"
+#include "svc.h"
+
+#define OS_SETTING_PLANEMODE_OLD 5
+#define OS_SETTING_PLANEMODE_NEW 6
+#define OS_SETTING_SOUND         9
+#define OS_SETTING_FEATURES      14
+
+#undef PATH_MAX
+#define PATH_MAX 1024
+
+#define MAX_LIBCALL 3
+
+#define BOLOS_UX_OK 0xAA
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+struct libcall_s {
+  struct app_s *app;
+  struct sigcontext sigcontext;
+  try_context_t *trycontext;
+};
+
+static try_context_t *try_context;
+static struct libcall_s libcalls[MAX_LIBCALL];
+static unsigned int libcall_index;
+
+unsigned long sys_os_flags(void)
+{
+  /* not in recovery and mcu unsigned */
+  return 0;
+}
+
+unsigned long sys_os_perso_isonboarded(void)
+{
+  return true;
+}
+
+unsigned long sys_os_setting_get(unsigned int setting_id,
+                                 uint8_t *UNUSED(value), size_t UNUSED(maxlen))
+{
+  // Since Nano X SDK 2.0 & Nano S SDK 2.1, OS_SETTING_PLANEMODE is 6!
+  if (setting_id == OS_SETTING_PLANEMODE_NEW) {
+    return 1;
+  }
+  if (((hw_model == MODEL_STAX) || (hw_model == MODEL_FLEX) ||
+       (hw_model == MODEL_APEX_P)) &&
+      setting_id == OS_SETTING_FEATURES) {
+    return 0xff;
+  }
+
+  if (((hw_model == MODEL_STAX) || (hw_model == MODEL_FLEX)) &&
+      (setting_id == OS_SETTING_SOUND)) {
+    const bool tap_enabled = true;
+    const bool notif_enabled = true;
+    return (!tap_enabled) | ((!notif_enabled) << 1);
+  }
+
+  fprintf(stderr, "os_setting_get not implemented for 0x%x\n", setting_id);
+
+  return 0;
+}
+
+unsigned long sys_os_registry_get_current_app_tag(unsigned int tag,
+                                                  uint8_t *buffer,
+                                                  size_t length)
+{
+  return env_get_app_tag((char *)buffer, length, tag);
+}
+
+unsigned long sys_os_lib_call(unsigned long *call_parameters)
+{
+  char libname[PATH_MAX + 1];
+
+  if (libcall_index >= MAX_LIBCALL) {
+    fprintf(stderr, "too many os_lib_call calls\n");
+    _exit(1);
+  }
+
+  /* save current try_context of the caller */
+  libcalls[libcall_index].trycontext = try_context;
+
+  /* save current app to restore it later */
+  save_current_context(&libcalls[libcall_index].sigcontext);
+  libcalls[libcall_index].app = get_current_app();
+  libcall_index += 1;
+
+  /* libname must be on the stack */
+  strncpy(libname, (char *)call_parameters[0], sizeof(libname) - 1);
+
+  /* unmap current app */
+  unload_running_app(false);
+
+  /* map lib code and jump to main */
+  run_lib(libname, &call_parameters[1]);
+
+  /* Value should not be used */
+  return 0xdeadbeef;
+}
+
+unsigned long sys_os_version(uint8_t *buffer, unsigned int len)
+{
+  const char *kFirmVersion = "Speculos";
+  const uint8_t kLen = strlen(kFirmVersion);
+
+  if (len > 0) {
+    strncpy((char *)buffer, kFirmVersion, len);
+    if (len < kLen)
+      return len;
+    else
+      return kLen; // This mimics the real behaviour that does return the data
+                   // without the '\0'
+  }
+
+  return 0;
+}
+
+unsigned long sys_os_seph_version(uint8_t *buffer, size_t len)
+{
+  const char *kMcuVersion = "SpeculosMCU";
+  const size_t kLen = strlen(kMcuVersion);
+
+  if (len > 0) {
+    strncpy((char *)buffer, kMcuVersion, len);
+    if (len < kLen) {
+      return len;
+    } else {
+      return kLen;
+    }
+  }
+  return 0;
+}
+
+unsigned long sys_os_lib_end(void)
+{
+  if (libcall_index < 1) {
+    fprintf(stderr, "too many os_lib_end calls\n");
+    _exit(1);
+  }
+
+  libcall_index--;
+
+  if (replace_current_code(libcalls[libcall_index].app) != 0) {
+    fprintf(stderr, "os_lib_end failed\n");
+    _exit(1);
+  }
+
+  replace_current_context(&libcalls[libcall_index].sigcontext);
+
+  /* restore try_context of the caller */
+  try_context = libcalls[libcall_index].trycontext;
+
+  return 0;
+}
+
+unsigned long sys_try_context_set(try_context_t *context)
+{
+  try_context_t *previous_context;
+
+  previous_context = try_context;
+  try_context = context;
+
+  return (unsigned long)previous_context;
+}
+
+unsigned long sys_try_context_get(void)
+{
+  return (unsigned long)try_context;
+}
+
+unsigned long sys_check_api_level(void)
+{
+  return 0;
+}
+
+unsigned long sys_os_sched_exit(unsigned int code)
+{
+  fprintf(stderr, "[*] exit called (%u)\n", code);
+  _exit(code);
+}
+
+unsigned long sys_reset(void)
+{
+  fprintf(stderr, "[*] reset syscall called (skipped)\n");
+  return 0;
+}
+
+unsigned long sys_os_lib_throw(unsigned int exception)
+{
+  fprintf(stderr, "[*] os_lib_throw(0x%x) unhandled\n", exception);
+  _exit(1);
+  return 0;
+}
+
+unsigned long sys_os_ux(bolos_ux_params_t *UNUSED(params))
+{
+  return BOLOS_UX_OK;
+}
+
+unsigned long sys_os_global_pin_is_validated(void)
+{
+  return BOLOS_UX_OK;
+}
+
+unsigned long sys_os_sched_last_status(unsigned int task_idx
+                                       __attribute__((unused)))
+{
+  return BOLOS_UX_OK;
+}
+
+unsigned long sys_os_sched_current_task(void)
+{
+  return 2; // = TASK_USER in OS
+}
+
+//-----------------------------------------------------------------------------
+// The functions below are empty, to avoid a crash if an app use them.
+//-----------------------------------------------------------------------------
+
+unsigned int sys_os_perso_seed_cookie(unsigned char *seed_cookie
+                                      __attribute__((unused)),
+                                      unsigned int seed_cookie_length
+                                      __attribute__((unused)))
+{
+  return 0;
+}
+
+unsigned int sys_os_serial(unsigned char *serial, unsigned int maxlength)
+{
+  char *sn = "1.2.3.4";
+  size_t size = strlen(sn);
+  if (maxlength < size) {
+    size = maxlength;
+  }
+  memcpy(serial, sn, size);
+  return size;
+}

@@ -1,0 +1,78 @@
+name: Fast checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+# Cancel previous runs on this reference
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linter-python:
+    name: Linter on Python code
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Python dependency
+      run: pip install flake8 flake8-pyproject
+    - name: Lint Python code
+      run: flake8 speculos* setup.py
+
+  linter-c:
+    name: Linter on C code
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Lint C code
+      uses: DoozyX/clang-format-lint-action@v0.16.1
+      with:
+        source: 'src tests'
+        extensions: 'c,h'
+        clangFormatVersion: 11
+
+  mypy:
+    name: Type checking
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone
+      uses: actions/checkout@v4
+    - run: pip install mypy types-requests types-setuptools PyQt5-stubs
+    - name: Mypy type checking
+      run: mypy speculos
+
+  bandit:
+    name: Security checking
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone
+      uses: actions/checkout@v4
+    - run: pip install bandit
+    - name: Bandit security checking
+      run: bandit -r speculos -ll || echo 0
+
+  misspell:
+    name: Check misspellings
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Check misspellings
+      uses: codespell-project/actions-codespell@v1
+      with:
+        builtin: clear,rare
+        check_filenames: true
+        ignore_words_file: .codespell-ignore
+        skip: ./speculos/api/static/swagger/swagger-ui.css,./speculos/api/static/swagger/swagger-ui-bundle.js,./speculos/api/static/swagger/swagger-ui-standalone-preset.js,./speculos/fonts
