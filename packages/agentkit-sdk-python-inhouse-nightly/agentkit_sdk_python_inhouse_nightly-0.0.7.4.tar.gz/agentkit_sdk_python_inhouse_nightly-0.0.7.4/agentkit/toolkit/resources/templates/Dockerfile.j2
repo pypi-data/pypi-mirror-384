@@ -1,0 +1,27 @@
+FROM agentkit-cn-beijing.cr.volces.com/base/py-simple:python{{ python_version }}-bookworm-slim_v1011_1
+
+ENV UV_SYSTEM_PYTHON=1 UV_COMPILE_BYTECODE=1 PYTHONUNBUFFERED=1 DOCKER_CONTAINER=1
+
+{% if dependencies_file %}
+{% if dependencies_install_path %}
+COPY {{ dependencies_install_path }} {{ dependencies_install_path }}
+{% else %}
+COPY {{ dependencies_file }} {{ dependencies_file }}
+{% endif %}
+{% endif %}
+
+{% if dependencies_file or observability_enabled %}
+RUN {% if dependencies_file %}{% if dependencies_install_path %}uv pip install {{ dependencies_install_path }}{% else %}uv pip install -r {{ dependencies_file }}{% endif %}{% endif %}{% if observability_enabled %}{% if dependencies_file %} && \
+    {% endif %}{% endif %}
+{% endif %}
+
+EXPOSE 8000
+
+WORKDIR /app
+
+# Copy entire project
+{% if not dependencies_install_path or dependencies_install_path != '.' %}
+COPY . .
+{% endif %}
+
+CMD ["python", "-m", "{{ agent_module_path }}"]
