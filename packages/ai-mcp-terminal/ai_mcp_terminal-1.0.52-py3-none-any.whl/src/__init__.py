@@ -1,0 +1,2 @@
+# AI-MCP Terminal Package
+
