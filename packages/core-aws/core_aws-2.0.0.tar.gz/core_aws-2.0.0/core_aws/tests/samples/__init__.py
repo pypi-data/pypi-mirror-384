@@ -1,0 +1,3 @@
+
+# It contains some sample responses for different
+# services and methods...
