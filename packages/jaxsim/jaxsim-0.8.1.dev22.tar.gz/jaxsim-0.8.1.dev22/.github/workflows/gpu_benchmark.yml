@@ -1,0 +1,111 @@
+name: GPU Benchmarks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0  * * 1" # Run At 00:00 on Monday
+
+permissions:
+  pull-requests: write
+  deployments: write
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: self-hosted
+    container:
+      image: ghcr.io/prefix-dev/pixi:0.46.0-noble@sha256:c12bcbe8ba5dfd71867495d3471b95a6993b79cc7de7eafec016f8f59e4e4961
+      options: --rm --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 -e "TERM=xterm-256color"
+
+    steps:
+      - name: Install Git and Git-LFS
+        run: |
+            apt update && apt install -y git git-lfs
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Fetch pixi.lock from LFS
+        run: |
+          git config --global safe.directory /__w/jaxsim/jaxsim
+          git lfs checkout pixi.lock
+
+      - name: Get main branch SHA
+        id: get-main-branch-sha
+        run: |
+          SHA=$(git rev-parse origin/main)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Get benchmark results from main branch
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+
+      - name: Ensure version file is written
+        run: |
+            pixi run --frozen --environment gpu python -m setuptools_scm --force-write-version-file
+
+      - name: Run benchmark and store result
+        run: |
+            pixi run --frozen --environment gpu benchmark --batch-size 128 --benchmark-json output.json
+        env:
+            PY_COLORS: "1"
+
+      - name: Compare benchmark results with main branch
+        uses: benchmark-action/github-action-benchmark@v1.20.7
+        with:
+          tool: 'pytest'
+          output-file-path: output.json
+          external-data-json-path: ./cache/benchmark-data.json
+          save-data-file: false
+          fail-on-alert: true
+          summary-always: true
+          comment-always: true
+          alert-threshold: 150%
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Store benchmark result for main branch
+        uses: benchmark-action/github-action-benchmark@v1.20.7
+        if: ${{ github.ref_name == 'main' }}
+        with:
+          tool: 'pytest'
+          output-file-path: output.json
+          external-data-json-path: ./cache/benchmark-data.json
+          save-data-file: true
+          fail-on-alert: false
+          summary-always: true
+          comment-always: true
+          alert-threshold: 150%
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Benchmark Results to GitHub Pages
+        uses: benchmark-action/github-action-benchmark@v1.20.7
+        if: ${{ github.ref_name == 'main' }}
+        with:
+          tool: 'pytest'
+          output-file-path: output.json
+          benchmark-data-dir-path: "benchmarks"
+          fail-on-alert: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-on-alert: true
+          summary-always: true
+          save-data-file: true
+          alert-threshold: "150%"
+          auto-push: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+
+      - name: Update Benchmark Results cache
+        uses: actions/cache/save@v4
+        if: ${{ github.ref_name == 'main' }}
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark

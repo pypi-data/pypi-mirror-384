@@ -1,0 +1,154 @@
+name: Python CI/CD
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+  release:
+    types:
+      - published
+  schedule:
+  # Execute a nightly build at 2am UTC.
+  - cron:  '0 2 * * *'
+
+
+jobs:
+
+  package:
+    name: Package the project
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Python tools
+        run: pip install build twine
+
+      - name: Create distributions
+        run: python -m build -o dist/
+
+      - name: Inspect dist folder
+        run: ls -lah dist/
+
+      - name: Check wheel's abi and platform tags
+        run: test $(find dist/ -name *-none-any.whl | wc -l) -gt 0
+
+      - name: Run twine check
+        run: twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: dist/*
+          name: dist
+
+  test:
+    name: 'Python${{ matrix.python }}@${{ matrix.os }}'
+    needs: package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        python:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+
+    steps:
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download Python packages
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+          name: dist
+
+      - name: Install wheel (ubuntu)
+        if: contains(matrix.os, 'ubuntu')
+        shell: bash
+        run: pip install "$(find dist/ -type f -name '*.whl')"
+
+      - name: Install wheel (macos|windows)
+        if: contains(matrix.os, 'macos') || contains(matrix.os, 'windows')
+        shell: bash
+        run: pip install "$(find dist/ -type f -name '*.whl')"
+
+      - name: Document installed pip packages
+        shell: bash
+        run: pip list --verbose
+
+      - name: Import the package
+        run: python -c "import jaxsim"
+
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        if: contains(matrix.os, 'ubuntu')
+        with:
+          pixi-version: "latest"
+          frozen: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      - name: Ensure version file is written
+        if: |
+          contains(matrix.os, 'ubuntu') &&
+          (github.event_name != 'pull_request')
+        run: |
+          pixi run --frozen python -m setuptools_scm --force-write-version-file
+
+      - name: Run the Python tests
+        if: |
+          contains(matrix.os, 'ubuntu') &&
+          (github.event_name != 'pull_request')
+        run: pixi run --frozen test
+        env:
+          # https://github.com/pytest-dev/pytest/issues/7443#issuecomment-656642591
+          PY_COLORS: "1"
+          JAX_PLATFORM_NAME: cpu
+
+  publish:
+    name: Publish to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+        id-token: write
+
+    steps:
+
+      - name: Download Python packages
+        uses: actions/download-artifact@v5
+        with:
+          path: dist
+          name: dist
+
+      - name: Inspect dist folder
+        run: ls -lah dist/
+
+      - name: Publish to PyPI
+        if: |
+          github.repository == 'ami-iit/jaxsim' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+           (github.event_name == 'release'))
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
