@@ -1,0 +1,110 @@
+@startuml
+/' package bi level OA'/
+package bilevel_oa{
+
+    /'All the post-processing classes.'/
+    package post{
+        class BilevelOAHistory
+        class OAHistory
+        class TopologyAnimation
+        class UpperBoundAnimation
+    }
+
+    /' The Benders formulation '/
+    class formulations.Benders{
+        + convexification
+        + sub_problem_scenario
+        + sub_problem_dspace
+        + sub_problem_formulation
+        + sub_problem_main_mda_formulation
+        + chain
+        + main_problem_dv
+
+        __build_sub_problem_scenario()
+        __update_main_problem_scenario()
+        __build_sub_problem_scenario_adapter()
+        add_constraint()
+
+    }
+
+    /' The different algorithms. '/
+    package algos{
+        class CatalogueDesignSpace{
+            + discrete_var_to_catalogue_choice
+            + hyper_cube_discipline
+            + hypercube
+            + integer_encoding
+            + categorical_var
+            + nb_components
+            + catalogues
+            + nb_catalogue
+
+            add_categorical_variable()
+            filter_non_categorical()
+            filter_by_type()
+            get_catalogue_interpolation_discipline()
+            get_catalogue_interpolation_discipline_from_dict()
+        }
+
+        class ConvexificationDiscipline
+        class ConvexificationCorrection
+        class MDOScenarioAdapterBenders{
+            + upper_level_constraints
+            + constraint_violation_discipline
+            + post_optimal_analysis
+        }
+    }
+
+
+    package opt{
+        class BievelMasterOA
+        class OrtoolsMILP
+        class OuterApproximationLibrary
+
+        package core{
+            BiLevelOuterApproximation --|> OuterApproximationOptimizer
+            class BiLevelOuterApproximation{
+                _deal_with_constraints()
+                _deal_with_infeasible_point_constraints()
+                _deal_with_feasible_points()
+            }
+
+            class OuterApproximationOptimizer{
+                + number_of_parallel_points
+                + problem
+                + problem_copy
+                + initial_doe
+
+                _is_point_feasible()
+                _execute_doe()
+                optimize()
+                build_doe()
+                _deal_with_feasible_points()
+                _deal_with_constraints()
+                _deal_with_infeasible_points()
+                _deal_with_infeasible_point_constraints()
+                __iterate()
+                _build_relaxed_milp_problem()
+                _build_milp_problem()
+                _solve_milp()
+
+            }
+        }
+
+        OuterApproximationLibrary --> core.OuterApproximationOptimizer
+        BievelMasterOA --> core.BiLevelOuterApproximation
+    }
+
+
+}
+
+bilevel_oa.formulations.Benders --|> gemseo.formulations.MDOFormulation
+bilevel_oa.algos.ConvexificationDiscipline --|> gemseo.core.chain.MDOChain
+bilevel_oa.algos.ConvexificationCorrection --|> gemseo.core.discipline.MDODisicpline
+bilevel_oa.algos.CatalogueDesignSpace --|> gemseo.algos.DesignSpace
+bilevel_oa.opt.OuterApproximationLibrary --|> gemseo.algos.opt.optimization_library
+bilevel_oa.opt.OrtoolsMILP --|> gemseo.algos.opt.optimization_library
+bilevel_oa.opt.BievelMasterOA --|> gemseo.algos.opt.optimization_library
+
+
+@enduml

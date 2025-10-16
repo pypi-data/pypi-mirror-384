@@ -1,0 +1,57 @@
+<!--
+Copyright 2021 IRT Saint Exupéry, https://www.irt-saintexupery.com
+
+This work is licensed under the Creative Commons Attribution-ShareAlike 4.0
+International License. To view a copy of this license, visit
+http://creativecommons.org/licenses/by-sa/4.0/ or send a letter to Creative
+Commons, PO Box 1866, Mountain View, CA 94042, USA.
+-->
+
+# gemseo-bilevel-outer-approximation
+
+[![PyPI - License](https://img.shields.io/pypi/l/gemseo-bilevel-outer-approximation)](https://www.gnu.org/licenses/lgpl-3.0.en.html)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/gemseo-bilevel-outer-approximation)](https://pypi.org/project/gemseo-bilevel-outer-approximation/)
+[![PyPI](https://img.shields.io/pypi/v/gemseo-bilevel-outer-approximation)](https://pypi.org/project/gemseo-bilevel-outer-approximation/)
+[![Codecov branch](https://img.shields.io/codecov/c/gitlab/gemseo:dev/gemseo-bilevel-outer-approximation/develop)](https://app.codecov.io/gl/gemseo:dev/gemseo-bilevel-outer-approximation)
+
+## Overview
+
+GEMSEO plugin for Bi-Level Outer Approximation.
+
+The implementation is based on the work done by Pierre-Jean Barjoux in:
+
+* Barjhoux, P. J., Diouane, Y., Grihon, S., & Morlier, J. (2022). An outer approximation bi-level framework for mixed categorical structural optimization problems. Structural and Multidisciplinary Optimization, 65(8), 214.
+* Barjhoux, P. J., Diouane, Y., Grihon, S., Bettebghor, D., & Morlier, J. (2020). A bi-level methodology for solving large-scale mixed categorical structural optimization. Structural and Multidisciplinary Optimization, 62(1), 337-351.
+
+It contains:
+
+* Benders formulation decomposition
+* Bi-level Outer Approximation optimization algorithm to solve mixed integer optimization problems.
+* Several strategy of Bi-level Outer Approximation improvements:
+    * Convexification alpha - underestimator
+    * Post Optimal Sensitivity Amplification (POSA)
+    * Adaptive Convexification
+* Shape Function Penalization and Hyper-sphere Penalization implementation
+* A wrapper of the Open source version of MMA solver.
+
+## Installation
+
+Install the latest version with `pip install gemseo-bilevel-outer-approximation`.
+
+See [pip](https://pip.pypa.io/en/stable/getting-started/) for more information.
+
+## Bugs and questions
+
+Please use the [gitlab issue tracker](https://gitlab.com/gemseo/dev/gemseo-bilevel-outer-approximation/-/issues)
+to submit bugs or questions.
+
+## Contributing
+
+See the [contributing section of GEMSEO](https://gemseo.readthedocs.io/en/stable/software/developing.html#dev).
+
+## Contributors
+
+- Simone Coniglio
+- Loic Cousin
+- Benoit Pauwels
+- Antoine DECHAUME
