@@ -1,0 +1,30 @@
+TCT.name\_resolver
+==================
+
+.. automodule:: TCT.name_resolver
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      lookup
+      synonyms
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

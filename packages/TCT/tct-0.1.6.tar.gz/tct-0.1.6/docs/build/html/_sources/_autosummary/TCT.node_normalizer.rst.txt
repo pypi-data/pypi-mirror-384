@@ -1,0 +1,29 @@
+TCT.node\_normalizer
+====================
+
+.. automodule:: TCT.node_normalizer
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      get_normalized_nodes
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+
