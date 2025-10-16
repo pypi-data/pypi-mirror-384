@@ -1,0 +1,18 @@
+from mixam_sdk.metadata.product.models import (
+    ProductMetadata,
+    CopiesMetadata,
+    StandardSizeMetadata,
+    ColoursMetadata,
+    LaminationOption as LaminationMetadata,
+    SubstrateTypeMetadata,
+    SubstrateDesignMetadata,
+    CustomSizeMetadata,
+    BoundMetadata,
+    FramedMetadata,
+    FoilingMetadata,
+    PreDrilledHolesMetadata,
+    ShrinkWrapMetadata,
+    PublicationMetadata,
+    FlapMetadata,
+    ComponentRequirement,
+)
