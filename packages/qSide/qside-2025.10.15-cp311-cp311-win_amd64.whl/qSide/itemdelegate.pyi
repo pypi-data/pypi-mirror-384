@@ -1,0 +1,6 @@
+from .qt import QAbstractTextDocumentLayout as QAbstractTextDocumentLayout, QApplication as QApplication, QIcon as QIcon, QPoint as QPoint, QRect as QRect, QSize as QSize, QStyle as QStyle, QStyleOptionViewItem as QStyleOptionViewItem, QTreeView as QTreeView, Qt as Qt
+from qtpy import QtWidgets
+
+class QHtmlStyledItemDelegate(QtWidgets.QStyledItemDelegate):
+    def paint(self, painter, option, index) -> None: ...
+    def sizeHint(self, option, index): ...

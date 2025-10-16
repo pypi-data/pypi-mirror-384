@@ -1,0 +1,9 @@
+from _typeshed import Incomplete
+from ctypes import Structure
+from ctypes.wintypes import POINT as POINT
+
+class MARGINS(Structure): ...
+class PWINDOWPOS(Structure): ...
+class NCCALCSIZE_PARAMS(Structure): ...
+
+LPNCCALCSIZE_PARAMS: Incomplete
