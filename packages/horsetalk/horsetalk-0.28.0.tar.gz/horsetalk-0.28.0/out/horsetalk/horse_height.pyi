@@ -1,0 +1,3 @@
+from horsetalk.quantity import HorsetalkQuantity as HorsetalkQuantity
+
+class HorseHeight(HorsetalkQuantity): ...
