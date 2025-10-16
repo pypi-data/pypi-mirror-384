@@ -1,0 +1,7 @@
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/generator/src/generator/include)
+add_subdirectory(magic_series)
+add_subdirectory(magic_square)
+add_subdirectory(n_queens)
+add_subdirectory(qap)
+add_subdirectory(tsp)
