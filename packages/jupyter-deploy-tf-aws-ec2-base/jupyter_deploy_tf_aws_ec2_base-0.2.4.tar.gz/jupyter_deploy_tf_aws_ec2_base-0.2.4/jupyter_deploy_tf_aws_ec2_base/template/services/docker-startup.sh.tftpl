@@ -1,0 +1,83 @@
+#!/bin/bash
+set -e
+
+exec > >(tee /var/log/jupyter-deploy/docker-compose.log) 2>&1
+
+echo "Running docker-startup script as: $(whoami)"
+cd /opt/docker
+
+if ! GITHUB_CLIENT_SECRET=$(aws secretsmanager get-secret-value \
+    --secret-id ${oauth_secret_arn} \
+    --query 'SecretString' \
+    --output text); then
+    echo "Error: could not retrieve the GitHub oauth app secret from AWS secret: ${oauth_secret_arn}"
+    exit 1
+fi
+
+if [ -z "$GITHUB_CLIENT_SECRET" ]; then
+    echo "Error: retrieved empty token from secret: ${oauth_secret_arn}"
+    exit 1
+fi
+
+# memory management: attempt to allocate 95% of memory to jupyter
+# while keeping enough memory for other containers
+TOTAL_MEMORY_MB=$(free -m | awk '/^Mem:/{print $2}')
+MAX_MEM_RESERVATION_MB=$((TOTAL_MEMORY_MB - 384))
+PERC_MEM_RESERVATION_MB=$((TOTAL_MEMORY_MB * 95 / 100))
+
+JUPYTER_MEM_LIMIT_MB=$(( PERC_MEM_RESERVATION_MB < MAX_MEM_RESERVATION_MB ? PERC_MEM_RESERVATION_MB : MAX_MEM_RESERVATION_MB ))
+JUPYTER_MEM_RESERVATION_MB=$((JUPYTER_MEM_LIMIT_MB / 2))
+
+if [ -f /etc/AUTHED_ENTITIES ]; then
+    get_section_content() {
+        local section=$1
+        local content=$(sed -n "/^\[$section\]$/,/^\[/p" /etc/AUTHED_ENTITIES | grep -v "^\[$section\]$" | grep -v "^\[" | tr -d '\n' | tr -d ' ')
+        echo "$content"
+    }
+    AUTHED_USERS_CONTENT=$(get_section_content "users")
+    AUTHED_ORG_CONTENT=$(get_section_content "org")
+    AUTHED_TEAMS_CONTENT=$(get_section_content "teams")
+else
+    echo "Warning: /etc/AUTHED_ENTITIES file not found"
+    AUTHED_USERS_CONTENT=""
+    AUTHED_ORG_CONTENT=""
+    AUTHED_TEAMS_CONTENT=""
+fi
+
+# Safety check: If no auth restrictions are set (no users, no org, no teams), exit with error
+# This prevents the dangerous configuration where any GitHub user could access the system
+if [ -z "$AUTHED_USERS_CONTENT" ] && [ -z "$AUTHED_ORG_CONTENT" ] && [ -z "$AUTHED_TEAMS_CONTENT" ]; then
+    echo "ERROR: No authentication restrictions found!"
+    echo "At least one user, organization, or team must be specified."
+    exit 1
+fi
+
+tee /opt/docker/.env >/dev/null << EOFENV
+SERVICE_UID=$(id -u service-user)
+SERVICE_GID=$(id -g service-user)
+DOCKER_GID=$(getent group docker | cut -d: -f3)
+GITHUB_CLIENT_SECRET=$${GITHUB_CLIENT_SECRET}
+JUPYTER_MEM_LIMIT_MB=$${JUPYTER_MEM_LIMIT_MB}
+JUPYTER_MEM_RESERVATION_MB=$${JUPYTER_MEM_RESERVATION_MB}
+AUTHED_USERS_CONTENT=$${AUTHED_USERS_CONTENT}
+AUTHED_ORG_CONTENT=$${AUTHED_ORG_CONTENT}
+AUTHED_TEAMS_CONTENT=$${AUTHED_TEAMS_CONTENT}
+EOFENV
+echo "Saved environment file /opt/docker/.env"
+
+echo "Generating OAuth cookie secret..."
+sh /usr/local/bin/refresh-oauth-cookie.sh
+
+if ! docker-compose -f docker-compose.yml config > /dev/null; then
+    echo "Invalid docker-compose configuration"
+    exit 1
+else
+    echo "Validated docker-compose file"
+fi
+
+echo "Starting docker-compose"
+docker-compose up -d
+echo "Docker-compose complete"
+
+touch /opt/docker/started.txt
+chmod 644 /opt/docker/started.txt
