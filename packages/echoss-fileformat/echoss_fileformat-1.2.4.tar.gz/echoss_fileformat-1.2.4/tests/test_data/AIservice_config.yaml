@@ -1,0 +1,197 @@
+# 원천 데이터의 시계열 컬럼명과 예측하고자 하는 컬럼명
+start_date: '2021-06-01'
+end_date: '2024-05-31'
+time_col: 판매일자
+target_col: 총 수량
+jumpo_code_col: 점포코드
+id_col: 소분류
+
+# Train/Test Set을 나누는 기준[날짜를 입력 '2024-02-01' 반영 O or D의 수를 입력 28 -> 이부분은 아직 코드에 반영x]
+# 반드시 위의 end_date의 이전 날짜로 입력해야 함
+split_date: '2024-05-01'
+
+data_use_col:
+  - 판매일자
+  - 점포코드
+  - 소분류
+  - 총 수량
+  #- 상권
+  
+data_col_type: 
+  '점포코드': str
+  '소분류': str
+  #'상권': str
+  '총 수량': float64
+
+# 학습 준비
+# id_list는 groupby기준이 될 소분류(제품으로 변경 가능)(SPC 데이터 기준)
+id_list:
+  - 완제플레인식빵
+  # - 곡물식빵
+  - 완제식사빵
+  - 완제단과자
+  - 완제소형빵
+  # - 완제샌드위치
+  # - 완제샐러드
+  # - 키즈
+  - 핫완제샌드위치
+
+jumpocode_dict: 
+  '8479': '카페신사 파리바게뜨'
+  '12031': '카페수유역 파리바게뜨'
+  '16756': '제주공항 파리바게뜨'
+  '17046': 'PB부산덕천 파리바게뜨'
+  # '17334': '인천공항에어사이드 파리바게뜨'
+  '17570': 'PB김포공항국내선'
+  '17708': '양재본점 파리바게뜨'
+  '17859': '해운대장산 파리바게뜨'
+  '17876': '광명역사'
+  # '18493': 'PB인천공항 가든'
+  '22011': 'PB횡계'
+  '22491': '한양대학교병원 파리바게뜨'
+  '22743': '제주공항탑승 파리바게뜨'
+  '22756': '강남서초 파리바게뜨'
+# target_value의 shift, rolling파생변수 추가
+shift_period:  # 1은 필수로 넣어줘야함
+  - 1
+  - 7
+  - 14
+rolling_period: 
+  - 7
+  - 14
+  - 21
+
+# Autogluon의 parameters
+eval_metric: MAE
+presets: best_quality
+time_limit: 600
+random_seed: 777555
+# AutoGluon의 known_covariates
+known_covariates:
+  #- 상권
+  - month
+  - day
+  - week
+  - dow
+  - shift_1
+  - shift_7
+  - shift_14
+  - rolling_mean_7
+  - rolling_mean_14
+  - rolling_mean_21
+  - rolling_std_7
+  - rolling_std_14
+  - rolling_std_21
+  
+# AutoGluon의 hyperparameter
+naive_hyperparameter:
+  Naive: {}
+  AutoARIMA: {}
+  SeasonalNaive: {}
+  SeasonalAverage: {}
+
+hyperparameter:
+  AutoARIMA: {}
+  AutoETS: {}
+  Theta: {}
+  NPTS: {}
+  CrostonSBA: {}
+  # CrostonClassic: {}
+  # RecursiveTabular: {}
+
+# 날씨 데이터의 경로 및 날짜 기간 입력
+whether_data: ../../data/original/서울_weather_data.csv
+
+# 날씨 관련 파생변수 생성
+# 기온
+temp:
+  use_col:
+    - 평균 기온
+    - 최저 기온
+    - 최고 기온
+    - 최저 기온 시각
+    - 최고 기온 시각
+  timezone_dict:
+    최저 기온 시각: 최저 기온 시각_timezone
+    최고 기온 시각: 최고 기온 시각_timezone
+  # 추가 사용 함수 목록 및 파생변수 명
+  use_def_dict:
+    net_change_high_low_temp: 
+      - high_net_change_temp
+      - low_net_change_temp
+    temp_continue: 
+      - temp_continue
+    daily_temp_range: 
+      - daily_temp_range
+    temp_cat: 
+      - temp_cat
+# 강수량
+precipitation:
+  use_col:
+    - 10분 최다강수량
+    - 1시간 최다강수량
+    - 일강수량
+    - 10분 최다강수량 시각
+    - 1시간 최다 강수량 시각
+  timezone_dict:
+    10분 최다강수량 시각: 10분 최다강수량 시각_timezone
+    1시간 최다 강수량 시각: 1시간 최다 강수량 시각_timezone
+  # 추가 사용 함수 목록 및 파생변수 명
+  use_def_dict:
+    precipitation_cat: 
+      - precipitation_cat
+# 풍속
+wind:
+  use_col:
+    - 최대 순간풍속
+    - 최대 풍속
+    - 평균 풍속
+    - 최대 순간풍속 시각
+    - 최대 풍속 시각
+  timezone_dict:
+    최대 순간풍속 시각: 최대 순간풍속 시각_timezone
+    최대 풍속 시각: 최대 풍속 시각_timezone
+# 습도
+humid:
+  use_col:
+    - 평균 기온
+    - 최소 상대습도
+    - 평균 상대습도
+    - 평균 상대습도 시각
+  timezone_dict:
+    평균 상대습도 시각: 평균 상대습도 시각_timezone
+  # 추가 사용 함수 목록 및 파생변수 명
+  use_def_dict:
+    temp_humid_cat: 
+      - temp_humid
+# 일사량
+insolation:
+  use_col:
+    - 가조시간
+    - 합계 일조 시간
+    - 1시간 최다 일사량
+    - 합계 일사량
+    - 1시간 최다 일사 시각
+  timezone_dict:
+    1시간 최다 일사 시각: 1시간 최다 일사 시각_timezone
+# 미세먼지
+dust:
+  use_col: 
+    - PM10_주의보
+    - PM10_경보
+    - PM25_주의보
+    - PM25_경보
+    - 아침_dust
+    - 점심_dust
+    - 간식_dust
+    - 저녁_dust
+    - 영업종료_dust
+    - time
+  # 미세먼지 농도 데이터 로드
+  dust1_data: ../../data/original/미세먼지_PM10_2021_20240619.csv
+  # 미세먼지 경보 데이터 로드
+  dust2_data: ../../data/original/미세먼지 경보_2021_2024.csv
+  # 미세먼지 점포별 지역코드 excel
+  dust_jiyeok_data: ../../data/original/3YEAR_가맹점 기상청_미세먼지 정보.xlsx
+  timezone_dict:
+    time: timezone
