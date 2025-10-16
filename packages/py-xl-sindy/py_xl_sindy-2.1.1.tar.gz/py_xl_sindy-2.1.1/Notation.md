@@ -1,0 +1,1 @@
+Number of generalised coordinate : n (can be find in code as coord_count)
