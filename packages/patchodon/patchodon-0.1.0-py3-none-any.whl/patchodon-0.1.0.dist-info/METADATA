@@ -1,0 +1,135 @@
+Metadata-Version: 2.4
+Name: patchodon
+Version: 0.1.0
+Summary: Send and receive git patchsets via Mastodon
+Author-email: Mirek Kratochvil <exa.exa@gmail.com>
+License-Expression: GPL-3.0-or-later
+Project-URL: Homepage, https://gitlab.com/exaexa/patchodon
+Keywords: git,mastodon,patch
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: Unix
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Communications
+Classifier: Topic :: Software Development :: Version Control :: Git
+Classifier: Topic :: Utilities
+Requires-Python: >=3
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.25
+Requires-Dist: html2text>=2025
+Dynamic: license-file
+
+
+# Patchodon -- send `git` patchsets via Mastodon
+
+Patchodon is a tool for federated distribution of "pull requests" for git.
+
+In ye olde times (and in linux development and related places), the "pull
+requests" are done simply via sending patches through e-mail. Coordinating some
+discussion atop of that is doable in a semi-distributed manner, typically the
+discussion is done via a mailing list, and you need a mailing list service that
+manages the mail forwarding to everyone involved, and preferably archives.
+
+Patchodon is doing a similar workflow of sending the patches directly to the
+"target", but it uses [Mastodon](https://joinmastodon.org/) network as an open
+communication medium, instead of the mailing lists.
+
+In short, the workflow is as follows:
+
+1. The patch author runs `git format-patch ... | patchodon post`, which uploads
+   the patches to a mastodon thread and gives the URL to the "head" status
+2. All commits in the patch receive their own status, so that people can freely
+   comment on them and generally organize on getting the code in a good shape
+   for merging. If space allows, the commit statuses have a piece of commit
+   message and/or diff stats, so that people can sensibly comment on individual
+   pieces of the patchset.
+3. The actual commit data are currently uploaded to
+   [dpaste](https://dpaste.com) via their API, as that is a slightly better
+   place for posting "exact" patches.
+4. The owner of the target repository runs `pathodon get
+   https://mastodon.example/@some_user/1234567890 | git am`, which retrieves
+   the patches from the thread and applies them into a branch in the local
+   repository.  The actual merging happens locally, like with other federated
+   git workflows.
+
+## Installation and setup
+
+You can install via pip to any environment:
+```sh
+cd patchodon
+pip install .
+```
+
+## Basic usage
+
+To get patchodon working, you will need to give it (limited) access to your
+Mastodon instance, via an access token:
+- navigate to Preferences → Development
+- there, create a new application
+- the application needs the following scopes:
+  - `read:search` and `read:statuses` for running `patchodon get`
+  - `write:statuses` for running `patchodon post`
+- copy the access token and put it into the patchodon config.
+
+The patchodon config in your `~/.patchodon.ini` should be filled in to look
+roughly like this:
+```ini
+[patchodon]
+instance_url=https://your.mastodon.instance.example/
+api_token=xxxxxx_the_token_you_got_from_mastodon_application_settings_xxxxxxx
+```
+(You can also set the instance and token via command line, but that's much less
+convenient for daily use.)
+
+### Sending patches
+
+Assume you have branched off the `main` branch in your repository, and you want
+to send the patches to someone called "JohnDoe" on the target instance:
+```sh
+$ git format-patch main | patchodon post -r @JohnDoe -s 'this is the patches we talked about last week'
+
+https://your.mastodon.instance.example/@someGuy/34592345923
+```
+`-r` stands for "recipient" (all statuses are going to get tagged with that)
+and `-s` stands for subject (the head status is going to include that text).
+The URL is the "head" of the patch set that contains the metadata (mainly the
+complete hash of the patches) that allow people to safely reassemble your
+patchset.
+
+### Receiving patches
+
+John Doe will see the status, give it a rough examination, see if other
+developers commented anything in the patch series, and if all seems OK, they
+will pull the changes into a new branch as follows:
+```sh
+$ git checkout -b someguy/the-patches-we-talked-about
+$ patchodon get https://your.mastodon.instance.example/@someGuy/34592345923 | git am
+```
+
+And that's it -- the patch was discussed, and got safely transferred to the
+destination.
+
+## Disclaimers and dangers
+
+- Note that the rules of some Mastodon instances may prevent you from using
+  this. Using scripts to post multiple statuses may be considered as an
+  automated use, and might be viewed as very undesirable by both users and
+  admins. **Please verify, very carefully, that your instance is OK with this
+  kind of supervised, semi-automated use.** It's always best to check with the
+  admins before you start spamming the patches around.
+- Patchodon makes some mild effort to prevent others from injecting code into
+  your published patch series. Most notably, all patches are hashed, the hashes
+  are hashed together to form a "full hash", and that is required to match
+  perfectly before `patchodon get` outputs the code into your git. Regardless,
+  you should always be aware of the security implications of downloading things
+  from the Internet and piping them into git-am.
+
+## TODOs
+
+You might have noticed that this is far from complete. The following features
+are on the TODO list:
+
+- support for different pastebins (possibly providing more privacy)
+- likely a better default hash function than SHA1
