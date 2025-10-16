@@ -1,0 +1,137 @@
+{% extends "_base.html" %}
+{% load i18n %}
+{% block content %}
+    {% load static %}
+    <div class="table-header">
+        <div class="flex flex-wrap justify-between">
+            <h1 class="heading">
+                {% if is_archive %}
+                    {% translate "Archived Organizations" %}
+                {% else %}
+                    {% translate "Manage Organizations" %}
+                {% endif %}
+            </h1>
+            <div class="justify-end">
+                {% if is_archive %}
+                    <a href="{% url 'organizations' region_slug=request.region.slug %}"
+                       class="font-bold text-sm text-gray-800 flex items-center gap-1 mb-2 hover:underline">
+                        <span><i icon-name="umbrella" class="align-top h-5"></i> {% translate "Back to organizations" %}</span>
+                    </a>
+                {% else %}
+                    <a href="{% url 'archived_organizations' region_slug=request.region.slug %}"
+                       class="font-bold text-sm text-gray-800 flex items-center pb-3 hover:underline">
+                        <span>
+                            <i icon-name="archive" class="align-top h-5"></i>
+                            {% translate "Archived organizations" %}
+                            ({{ archived_count }})
+                        </span>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex justify-between">
+            {% if is_archive %}
+                {% include "search_input_form.html" with object_type="organization" object_archived=True %}
+            {% else %}
+                {% include "search_input_form.html" with object_type="organization" object_archived=False %}
+                {% if perms.cms.change_organization %}
+                    <a href="{% url 'new_organization' region_slug=request.region.slug %}"
+                       class="btn">
+                        {% translate "Create organization" %}
+                    </a>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    <div class="table-listing">
+        <form id="bulk-action-form" method="post">
+            {% csrf_token %}
+        </form>
+        <table class="w-full mt-4 rounded border border-solid border-gray-200 shadow bg-white">
+            <thead>
+                <tr class="border-b border-solid border-gray-200">
+                    <th class="py-3 pl-4 pr-2 min">
+                        <input form="bulk-action-form" type="checkbox" id="bulk-select-all" />
+                    </th>
+                    <th class="text-sm text-left uppercase py-3 px-2">
+                        {% translate "Name" %}
+                    </th>
+                    <th class="text-sm text-left uppercase py-3 px-2">
+                        {% translate "Members" %}
+                    </th>
+                    <th class="text-sm text-left uppercase py-3 px-2">
+                        {% translate "Maintained contents" %}
+                    </th>
+                    <th class="text-sm text-left uppercase py-3 pr-2">
+                        {% translate "Logo" %}
+                    </th>
+                    <th class="text-sm text-left uppercase py-3 pr-2">
+                        {% translate "Website" %}
+                    </th>
+                    <th class="text-sm text-left uppercase py-3 p2-4 pr-4 min">
+                        {% translate "Options" %}
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for organization in organizations %}
+                    {% include "organizations/organization_list_row.html" %}
+                {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-3">
+                            {% if is_archive %}
+                                {% if search_query %}
+                                    {% translate "No archived organizations found with these filters." %}
+                                {% else %}
+                                    {% translate "No archived organizations." %}
+                                {% endif %}
+                            {% else %}
+                                {% if search_query %}
+                                    {% translate "No organizations found with these filters." %}
+                                {% else %}
+                                    {% translate "No organizations available yet." %}
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if organizations %}
+        <div class="pt-2 px-2">
+            <div class="inline">
+                <span class="text-gray-800 font-bold" data-list-selection-count>0</span> <span class="text-gray-600">{% translate "Organizations selected" %}</span>
+            </div>
+        </div>
+    {% endif %}
+    {% if perms.cms.change_organization %}
+        <div class="flex flex-wrap gap-2 mt-4">
+            <select id="bulk-action" class="w-auto max-w-full">
+                <option>
+                    {% translate "Select bulk action" %}
+                </option>
+                {% if is_archive %}
+                    <option data-bulk-action="{% url 'bulk_restore_organization' region_slug=request.region.slug %}">
+                        {% translate "Restore organizations" %}
+                    </option>
+                {% else %}
+                    <option data-bulk-action="{% url 'bulk_archive_organization' region_slug=request.region.slug %}">
+                        {% translate "Archive organizations" %}
+                    </option>
+                {% endif %}
+                {% if perms.cms.delete_organization %}
+                    <option data-bulk-action="{% url 'bulk_delete_organization' region_slug=request.region.slug %}">
+                        {% translate "Delete organizations" %}
+                    </option>
+                {% endif %}
+            </select>
+            <button form="bulk-action-form" id="bulk-action-execute" class="btn" disabled>
+                {% translate "Execute" %}
+            </button>
+        </div>
+    {% endif %}
+    {% include "../generic_confirmation_dialog.html" %}
+    {% url "organizations" as url %}
+    {% include "pagination.html" with chunk=organizations %}
+{% endblock content %}

@@ -1,0 +1,186 @@
+{% extends "_base.html" %}
+{% load i18n %}
+{% block content %}
+    {% load static %}
+    {% load widget_tweaks %}
+    {% load rules %}
+    <div class="mb-6">
+        <h1 class="heading">
+            {% with translations.first.title as content_title %}
+                {% blocktrans %}"Versions of {{ content_title }}"{% endblocktrans %}
+            {% endwith %}
+        </h1>
+        <a href="{{ edit_url }}" class="btn btn-outline">
+            <i icon-name="arrow-left-circle" class="align-top"></i> {{ back_to_form_label }}
+        </a>
+    </div>
+    <form method="post" action="{{ versions_url }}">
+        {% csrf_token %}
+        <input type="hidden" name="revision" value="" />
+        <div class="w-full m-auto mb-28 flex items-center relative">
+            <div id="button-prev" class="flex-shrink-0 px-4 version-history-control">
+                <i icon-name="chevron-left" class="w-5"></i>
+            </div>
+            <div id="version-history"
+                 class="flex-grow flex items-center font-mono overflow-x-scroll gap-16 relative">
+                {% for translation in translations reversed %}
+                    <div class="z-10 w-8 h-8 rounded-full flex items-center justify-center timeline-item flex-shrink-0"
+                         data-number="{{ translation.version }}">
+                        {{ translation.version }}
+                    </div>
+                {% endfor %}
+            </div>
+            <div id="button-next" class="flex-shrink-0 px-4 version-history-control">
+                <i icon-name="chevron-right" class="w-5"></i>
+            </div>
+        </div>
+        <div id="tooltip"
+             class="hidden absolute text-white p-2 rounded revision-tooltip">
+            <p>
+                <b>{% translate "Version" %}:</b> <span id="version-text">Version Info</span>
+            </p>
+            <p>
+                <b>{% translate "Author" %}:</b> <span id="author-text">Author Info</span>
+            </p>
+            <p>
+                <b>{% translate "Date" %}:</b> <span id="date-text">Date Info</span>
+            </p>
+            {% if translations.first.hix_enabled and not translations.first.hix_ignore %}
+                <p>
+                    <b>{% translate "HIX" %}:</b> <span id="hix-text">HIX Info</span>
+                </p>
+            {% endif %}
+        </div>
+        {% translate "deleted account" as deleted_user_text %}
+        {% for translation in translations %}
+            <div class="w-full hidden revision-wrapper"
+                 id="revision-{{ translation.version }}"
+                 data-date="{{ translation.last_updated }}"
+                 data-editor="{% firstof translation.creator deleted_user_text %}"
+                 data-status="{{ translation.status }}"
+                 data-hix="{{ translation.rounded_hix_score }}">
+                <div class="flex justify-between">
+                    <span>
+                        <label class="inline-block">
+                            {% translate "Publication status" %}:
+                        </label>
+                        {{ translation.get_status_display }}
+                        {% if translation == api_version %}
+                            ({% translate "This is the version shown in the apps." %})
+                        {% elif forloop.first %}
+                            {% if api_version %}
+                                {% with api_version.version as version %}
+                                    ({% blocktrans %}This version is <b>not</b> displayed in the apps - but version {{ version }} instead{% endblocktrans %})
+                                {% endwith %}
+                            {% else %}
+                                ({% translate "This translation is <b>not</b> shown in the apps" %})
+                            {% endif %}
+                        {% endif %}
+                        {% if translation.minor_edit %}
+                            - <i>{% translate "Minor edit" %}</i>
+                        {% endif %}
+                    </span>
+                    <span>
+                        {% if translation.hix_enabled and not translation.hix_ignore and translation.hix_score %}
+                            <span class="pr-4">
+                                <label class="inline-block">
+                                    {% translate "HIX score" %}:
+                                </label>
+                                {{ translation.rounded_hix_score }}
+                            </span>
+                        {% endif %}
+                        <label class="inline-block">
+                            {% translate "Author" %}:
+                        </label>
+                        {% firstof translation.creator deleted_user_text %}
+                    </span>
+                </div>
+                <div class="revision-plain hidden">
+                    <label>
+                        {{ slug_label }}:
+                    </label>
+                    {{ translation.get_absolute_url }}
+                    <label>
+                        {{ title_label }}
+                    </label>
+                    <h1>
+                        {{ translation.title }}
+                    </h1>
+                    <label>
+                        {{ content_label }}
+                    </label>
+                    {{ translation.content|safe }}
+                </div>
+                <div class="revision-diff w-full p-4 mb-4 rounded border border-solid border-gray-200 shadow bg-white">
+                </div>
+            </div>
+        {% endfor %}
+        <div id="revision-0" class="hidden">
+            <div class="revision-plain">
+                <label>
+                    {{ slug_label }}:
+                </label>
+                <label>
+                    {{ title_label }}
+                </label>
+                <label>
+                    {{ content_label }}
+                </label>
+            </div>
+        </div>
+        <div class="w-full p-4 flex justify-end gap-4 action-buttons">
+            {% if not object.archived %}
+                {% if can_publish %}
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} class="btn btn-red hidden" data-status="{{ AUTO_SAVE }}" data-max> {% translate "Discard auto save" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} class="btn btn-red hidden" data-status="{{ REVIEW }}" data-max>
+                        {% translate "Reject changes" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ DRAFT }}" class="btn btn-outline hidden" data-status="{{ PUBLIC }}">
+                        {% translate "Restore as draft" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ DRAFT }}" class="btn btn-outline hidden" data-status="{{ DRAFT }}">
+                        {% translate "Restore as draft" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ DRAFT }}" class="btn btn-outline hidden" data-status="{{ AUTO_SAVE }}">
+                        {% translate "Restore auto save as draft" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ DRAFT }}" class="btn btn-outline hidden" data-status="{{ REVIEW }}">
+                        {% translate "Accept and restore changes as draft" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ DRAFT }}" class="btn btn-outline hidden" data-status="{{ REVIEW }}" data-max>
+                        {% translate "Accept current changes as draft" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ PUBLIC }}">
+                        {% translate "Restore and publish" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ DRAFT }}">
+                        {% translate "Restore and publish" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ AUTO_SAVE }}">
+                        {% translate "Restore and publish auto save" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ REVIEW }}">
+                        {% translate "Accept, restore and publish changes" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ PUBLIC }}" data-max>
+                        {% translate "Refresh date" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ DRAFT }}" data-max>
+                        {% translate "Publish the current draft" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ AUTO_SAVE }}" data-max>
+                        {% translate "Publish auto save" %}
+                    </button>
+                    <button name="status" {% if translations.first.event.external_calendar %} disabled title="{% translate "The status of imported events can't be changed" %}" {% endif %} value="{{ PUBLIC }}" class="btn hidden" data-status="{{ REVIEW }}" data-max>
+                        {% translate "Accept and publish the current changes" %}
+                    </button>
+                {% elif can_edit %}
+                    <button name="status" value="{{ REVIEW }}" class="btn">
+                        {% translate "Restore this version and submit for approval" %}
+                    </button>
+                {% endif %}
+            {% endif %}
+        </div>
+    </form>
+{% endblock content %}

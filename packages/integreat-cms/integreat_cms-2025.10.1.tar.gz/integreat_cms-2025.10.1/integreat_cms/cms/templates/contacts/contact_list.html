@@ -1,0 +1,148 @@
+{% extends "_base.html" %}
+{% load i18n %}
+{% load static %}
+{% block content %}
+    {% get_current_language as LANGUAGE_CODE %}
+    <div class="table-header">
+        <div class="flex flex-wrap justify-between">
+            <h1 class="heading">
+                {% if is_archive %}
+                    {% translate "Archived Contacts" %}
+                {% else %}
+                    {% translate "Contacts" %}
+                {% endif %}
+            </h1>
+            <div class="flex gap-4">
+                <a href="{% url 'potential_targets' region_slug=request.region.slug %}"
+                   class="font-bold text-sm text-gray-800 flex items-center gap-1 hover:underline pb-3">
+                    <i icon-name="lightbulb" class="align-baseline"></i>{% trans "Analysis of content for existing contacts" %}
+                </a>
+                {% if is_archive %}
+                    <a href="{% url 'contacts' region_slug=request.region.slug %}"
+                       class="font-bold text-sm text-gray-800 flex items-center gap-1 pb-3 hover:underline">
+                        <span><i icon-name="book-open" class="align-top h-5"></i> {% translate "Back to contacts" %}</span>
+                    </a>
+                {% else %}
+                    <a href="{% url 'archived_contacts' region_slug=request.region.slug %}"
+                       class="font-bold text-sm text-gray-800 flex items-center pb-3 hover:underline">
+                        <span>
+                            <i icon-name="archive" class="align-top h-5"></i>
+                            {% translate "Archived contacts" %}
+                            ({{ archived_count }})
+                        </span>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex flex-wrap justify-between gap-4">
+            {% if is_archive %}
+                {% include "search_input_form.html" with object_type="contact" object_archived=True language_slug=LANGUAGE_CODE %}
+            {% else %}
+                {% include "search_input_form.html" with object_type="contact" object_archived=False language_slug=LANGUAGE_CODE %}
+                {% if perms.cms.change_contact %}
+                    <a href="{% url 'new_contact' region_slug=request.region.slug %}"
+                       class="btn">
+                        {% translate "Create contact" %}
+                    </a>
+                {% endif %}
+            {% endif %}
+        </div>
+        <div class="table-listing">
+            <form id="bulk-action-form" method="post">
+                {% csrf_token %}
+            </form>
+            <table class="w-full mt-4 rounded border border-solid border-gray-200 shadow bg-white">
+                <thead>
+                    <tr class="border-b border-solid border-gray-200">
+                        <th class="py-3 pl-4 min">
+                            <input form="bulk-action-form" type="checkbox" id="bulk-select-all" />
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "Name of related location" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "Area of responsibility" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "Name" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "E-Mail" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "Phone number" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "Mobile phone number" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 px-2">
+                            {% translate "Website" %}
+                        </th>
+                        <th class="text-sm text-left uppercase py-3 pr-4 min">
+                            {% translate "Options" %}
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for contact in contacts %}
+                        {% include "contacts/contact_list_row.html" %}
+                    {% empty %}
+                        <tr>
+                            <td colspan="8" class="px-4 py-3">
+                                {% if is_archive %}
+                                    {% if search_query %}
+                                        {% translate "No archived contacts found with these filters." %}
+                                    {% else %}
+                                        {% translate "No contacts archived yet." %}
+                                    {% endif %}
+                                {% else %}
+                                    {% if search_query %}
+                                        {% translate "No contacts found with these filters." %}
+                                    {% else %}
+                                        {% translate "No contacts available yet." %}
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% if contacts %}
+        <div class="pt-2 px-2">
+            <div class="inline">
+                <span class="text-gray-800 font-bold" data-list-selection-count>0</span> <span class="text-gray-600">{% translate "Contacts selected" %}</span>
+            </div>
+        </div>
+    {% endif %}
+    {% if perms.cms.archive_contact %}
+        <div class="flex flex-wrap gap-2 mt-4">
+            <select id="bulk-action" class="w-auto max-w-full">
+                <option>
+                    {% translate "Select bulk action" %}
+                </option>
+                {% if is_archive %}
+                    <option data-bulk-action="{% url "bulk_restore_contacts" region_slug=request.region.slug %}">
+                        {% translate "Restore contacts" %}
+                    </option>
+                {% else %}
+                    <option data-bulk-action="{% url "bulk_archive_contacts" region_slug=request.region.slug %}">
+                        {% translate "Archive contacts" %}
+                    </option>
+                {% endif %}
+                {% if perms.cms.delete_contact %}
+                    <option data-bulk-action="{% url "bulk_delete_contacts" region_slug=request.region.slug %}">
+                        {% translate "Delete contacts" %}
+                    </option>
+                {% endif %}
+            </select>
+            <button form="bulk-action-form" id="bulk-action-execute" class="btn" disabled>
+                {% translate "Execute" %}
+            </button>
+        </div>
+    {% endif %}
+    {% include "../generic_confirmation_dialog.html" %}
+    {% url "contacts" as url %}
+    {% include "pagination.html" with chunk=contacts %}
+{% endblock content %}

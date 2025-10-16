@@ -1,0 +1,355 @@
+{% extends "_raw.html" %}
+{% load i18n %}
+{% load static %}
+{% load base_filters %}
+{% block raw_content %}
+    <div id="popup-overlay"
+         class="fixed inset-0 opacity-75 bg-gray-800 hidden">
+    </div>
+    {% if TEST %}
+        <div class="fixed h-6 top-0 inset-x-0 text-center tracking-wide z-50 bg-red-400">
+            <span class="font-bold">
+                <i icon-name="alert-triangle" class="pb-1"></i>
+                {% translate "This is a test system." %}
+            </span>
+            {% translate "Changes you make are only visible in development versions of the app (such as webnext)." %}
+        </div>
+    {% endif %}
+    <header class="fixed h-14 lg:pl-56 {% if TEST %}top-6{% endif %} inset-x-0 flex flex-nowrap justify-end z-50 bg-gray-300 whitespace-nowrap">
+        {% if debug and request.user.is_staff %}
+            <a href="{% url 'admin:index' %}"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="hidden lg:block relative px-2 pt-4 text-gray-800 hover:bg-gray-200 border-r border-gray-400">
+                <i icon-name="sliders"></i>
+                {% translate "Django Admin" %}
+            </a>
+        {% endif %}
+        <a href="{% url 'public:wiki_redirect' %}"
+           target="_blank"
+           rel="noopener noreferrer"
+           class="hidden lg:block relative px-2 pt-4 text-gray-900 hover:bg-gray-200 border-r border-gray-400">
+            <img class="inline-block"
+                 alt="logo"
+                 fill="none"
+                 width="21"
+                 height="21"
+                 src="{% static 'logos/integreat/integreat-icon-flat.svg' %}" />
+            {% translate "Documentation (Wiki)" %}
+        </a>
+        <div id="region-selector"
+             class="relative p-4 cursor-pointer text-gray-800 hover:bg-gray-200 border-r border-gray-400">
+            <div class="truncate">
+                {% if request.region %}
+                    {% if request.quick_access_regions or user.is_superuser or user.is_staff %}
+                        <i icon-name="home"></i>
+                        {{ request.region.full_name }}
+                        <span class="hidden lg:inline">
+                            <i icon-name="chevron-down"></i>
+                        </span>
+                    {% else %}
+                        <a href="{% url 'dashboard' region_slug=request.region.slug %}">
+                            <i icon-name="home"></i>
+                            {{ request.region.full_name }}
+                        </a>
+                    {% endif %}
+                {% else %}
+                    <i icon-name="layout-grid"></i>
+                    {% translate "Network Management" %}
+                    <span class="hidden lg:inline">
+                        <i icon-name="chevron-down"></i>
+                    </span>
+                {% endif %}
+            </div>
+            <div id="region-list"
+                 class="absolute hidden shadow rounded-b top-full right-0 bg-gray-200">
+                {% for region in request.quick_access_regions %}
+                    <a href="{% url 'dashboard' region_slug=region.slug %}"
+                       class="block px-4 py-3 text-gray-800 hover:bg-gray-300">
+                        <i icon-name="home"></i>
+                        {{ region.full_name }}
+                    </a>
+                {% endfor %}
+                {% if user.is_superuser or user.is_staff %}
+                    {% if request.region %}
+                        <a href="{% url 'admin_dashboard' %}"
+                           class="block px-4 py-3 text-gray-800 hover:bg-gray-300 rounded-b">
+                            <i icon-name="layout-grid"></i>
+                            {% translate "Network Management" %}
+                        </a>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div id="user-info"
+             class="relative p-4 text-gray-800 cursor-pointer hover:bg-gray-200">
+            <i icon-name="user"></i>
+            <span class="hidden lg:inline">
+                {{ request.user.full_user_name }}
+                <i icon-name="chevron-down"></i>
+            </span>
+            <div id="user-menu"
+                 class="absolute hidden shadow rounded-b top-full right-0 bg-gray-200">
+                <a href="{% if request.region %}{% url 'user_settings' region_slug=request.region.slug %}{% else %}{% url 'user_settings' %}{% endif %}"
+                   class="block px-4 py-3 text-gray-800 hover:bg-gray-400">
+                    <i icon-name="settings"></i>
+                    {% translate "Account Settings" %}
+                </a>
+                <a href="{% url 'public:logout' %}"
+                   class="block px-4 py-3 text-gray-800 hover:bg-gray-400 rounded-b">
+                    <i icon-name="log-out" class="text-red-500"></i>
+                    {% translate "Log out" %}
+                </a>
+            </div>
+        </div>
+        <div id="mobile-menu"
+             class="flex flex-col justify-center p-4 lg:hidden border-l border-gray-400 cursor-pointer hover:bg-gray-200">
+            <i icon-name="menu"></i>
+        </div>
+    </header>
+    <nav id="primary-navigation"
+         class="w-72 {% if TEST %}testing{% else %}h-full{% endif %}  fixed left-0 inset-y-0 text-gray-200 bg-gray-700 z-50 transform -translate-x-full lg:translate-x-0 motion-safe:transition-transform">
+        <div class="w-full p-1 h-14 bg-gray-800">
+            <a href="{% url 'public:region_selection' %}">
+                <div class="h-full w-full bg-{{ BRANDING }}-logo-white hover:bg-{{ BRANDING }}-logo-hover bg-contain ml-2 bg-no-repeat">
+                </div>
+            </a>
+        </div>
+        <div id="menu" class="pb-10 overflow-y-auto {{ BRANDING }}-branding">
+            {% if request.region %}
+                <a href="{% url 'dashboard' region_slug=request.region.slug %}"
+                   class="{% if current_menu_item == 'region_dashboard' %} active{% endif %}">
+                    <i icon-name="layout-grid"></i>
+                    {% translate "My Dashboard" %}
+                </a>
+                <!-- Analytics Section -->
+                {% if request.region.statistics_enabled and perms.cms.view_statistics or perms.cms.view_translation_report or perms.cms.view_feedback or perms.cms.view_broken_links %}
+                    <div class="min-h-3 pl-2">
+                        <p class="font-bold">
+                            {% translate "Analytics" %}
+                        </p>
+                    </div>
+                    {% if request.region.statistics_enabled and perms.cms.view_statistics %}
+                        <a href="{% url 'statistics' region_slug=request.region.slug %}"
+                           class="{% if current_menu_item == 'statistics' %} active{% endif %}">
+                            <i icon-name="trending-up"></i>
+                            {% translate "Statistics" %}
+                        </a>
+                    {% endif %}
+                    {% if perms.cms.view_translation_report %}
+                        <a href="{% url 'translation_coverage' region_slug=request.region.slug %}"
+                           class="{% if current_menu_item == 'translation_coverage' %} active{% endif %}">
+                            <i icon-name="check-circle"></i>
+                            {% translate "Translation Report" %}
+                        </a>
+                    {% endif %}
+                    {% if perms.cms.view_feedback %}
+                        <a href="{% url 'region_feedback' region_slug=request.region.slug %}"
+                           class="{% if current_menu_item == 'region_feedback' %} active{% endif %}">
+                            <i icon-name="thumbs-up"></i>
+                            {% translate "Feedback" %}
+                        </a>
+                    {% endif %}
+                    {% if perms.cms.view_broken_links %}
+                        <a href="{% url 'linkcheck_landing' region_slug=request.region.slug %}"
+                           class="{% if current_menu_item == 'linkcheck' %} active{% endif %}">
+                            <i icon-name="link"></i>
+                            {% translate "Broken Links" %}
+                        </a>
+                    {% endif %}
+                {% endif %}
+                <!-- Content Section -->
+                <div class="min-h-3 pl-2">
+                    <p class="font-bold">
+                        {% translate "Content" %}
+                    </p>
+                </div>
+                {% if perms.cms.view_directory and perms.cms.view_mediafile %}
+                    <a href="{% url 'media' region_slug=request.region.slug %}"
+                       class="{% if current_menu_item == 'media' %} active{% endif %}">
+                        <i icon-name='file'></i>
+                        {% translate "Media Library" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_page %}
+                    <div class="{% if current_menu_item|in_list:'pages,new_page' %} active {% endif %}">
+                        <a href="{% url 'pages' region_slug=request.region.slug %}">
+                            <i icon-name="layout"></i>
+                            {% translate "Pages" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if perms.cms.view_event %}
+                    <div class="{% if current_menu_item|in_list:'events,events_form' %} active {% endif %}">
+                        <a href="{% url 'events' region_slug=request.region.slug %}">
+                            <i icon-name="calendar"></i>
+                            {% translate "Events" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if perms.cms.view_poi %}
+                    <div class="{% if current_menu_item|in_list:'pois,pois_form' %} active {% endif %}">
+                        <a href="{% url 'pois' region_slug=request.region.slug %}">
+                            <i icon-name="map-pin"></i>
+                            {% translate "Locations" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if request.region.contacts_enabled and perms.cms.view_contact %}
+                    <div class="{% if current_menu_item|in_list:'contacts,contacts_form' %} active {% endif %}">
+                        <a href="{% url 'contacts' region_slug=request.region.slug %}">
+                            <i icon-name="book-open"></i>
+                            {% translate "Contacts" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if FCM_ENABLED and request.region.push_notifications_enabled and perms.cms.view_pushnotification %}
+                    <div class="{% if current_menu_item|in_list:'push_notifications,push_notifications_form' %} active {% endif %}">
+                        <a href="{% url 'push_notifications' region_slug=request.region.slug %}">
+                            <i icon-name="send"></i>
+                            {% translate "News" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if perms.cms.view_imprintpage %}
+                    <a href="{% url 'edit_imprint' region_slug=request.region.slug %}"
+                       class="{% if current_menu_item == 'imprint' %} active{% endif %}">
+                        <i icon-name="file-text"></i>
+                        {% translate "Imprint" %}
+                    </a>
+                {% endif %}
+                {% get_mt_visibility request.region perms as show_mt_section %}
+                {% if show_mt_section or perms.cms.view_user or perms.cms.view_languagetreenode %}
+                    <!-- Settings Section-->
+                    <div class="min-h-3 pl-2">
+                        <p class="font-bold">
+                            {% translate "Settings" %}
+                        </p>
+                    </div>
+                {% endif %}
+                {% if show_mt_section %}
+                    <a href="{% url 'translations_management' region_slug=request.region.slug %}"
+                       class="{% if current_menu_item == 'translations_management' %} active{% endif %}">
+                        <i icon-name='bot'></i>
+                        {% translate "Machine Translations" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_organization %}
+                    <a href="{% url 'organizations' region_slug=request.region.slug %}"
+                       class="{% if current_menu_item == 'organizations' %} active{% endif %}">
+                        <i icon-name="umbrella"></i>
+                        {% translate "Organizations" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_externalcalendar %}
+                    <a href="{% url 'external_calendar_list' region_slug=request.region.slug %}"
+                       class="{% if current_menu_item == 'external_calendar_list' %} active{% endif %}">
+                        <i icon-name="calendar-plus"></i>
+                        {% translate "External Calendars" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_user %}
+                    <div class="{% if current_menu_item|in_list:'region_users,region_user_form' %} active {% endif %}">
+                        <a href="{% url 'region_users' region_slug=request.region.slug %}">
+                            <i icon-name="users"></i>
+                            {% translate "Users" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if perms.cms.view_languagetreenode %}
+                    <a href="{% url 'languagetreenodes' region_slug=request.region.slug %}"
+                       class="{% if current_menu_item|in_list:'languagetreenodes,language_tree_form' %} active {% endif %}">
+                        <i icon-name="flag"></i>
+                        {% translate "Language Tree" %}
+                    </a>
+                {% endif %}
+            {% else %}
+                <a href="{% url 'admin_dashboard' %}"
+                   class="{% if current_menu_item == 'admin_dashboard' %} active{% endif %}">
+                    <i icon-name="layout-grid"></i>
+                    {% translate "Admin Dashboard" %}
+                </a>
+                {% if perms.cms.view_broken_links %}
+                    <a href="{% url 'linkcheck_landing' %}"
+                       class="{% if current_menu_item == 'linkcheck' %} active{% endif %}">
+                        <i icon-name="link"></i>
+                        {% translate "Broken Links" %}
+                    </a>
+                {% endif %}
+                {% if request.user.is_superuser or request.user.is_staff %}
+                    <a href="{% url 'region_condition' %}"
+                       class="{% if current_menu_item == 'region_condition' %} active{% endif %}">
+                        <i icon-name="cctv"></i>
+                        {% translate "Region condition" %}
+                    </a>
+                    <a href="{% url 'regions' %}"
+                       class="{% if current_menu_item == 'regions' %} active{% endif %}">
+                        <i icon-name="map"></i>
+                        {% translate "Regions" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_directory and perms.cms.view_mediafile %}
+                    <a href="{% url 'media_admin' %}"
+                       class="{% if current_menu_item == 'media' %} active{% endif %}">
+                        <i icon-name='file'></i>
+                        {% translate "Media Library" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_language %}
+                    <a href="{% url 'languages' %}"
+                       class="{% if current_menu_item == 'languages' %} active{% endif %}">
+                        <i icon-name="flag"></i>
+                        {% translate "Languages" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_user %}
+                    <div class="{% if current_menu_item|in_list:'users,user_form' %} active {% endif %}">
+                        <a href="{% url 'users' %}">
+                            <i icon-name="users"></i>
+                            {% translate "Users" %}
+                        </a>
+                    </div>
+                {% endif %}
+                {% if perms.auth.view_group %}
+                    <a href="{% url 'roles' %}"
+                       class="{% if current_menu_item == 'roles' %} active{% endif %}">
+                        <i icon-name="key"></i>
+                        {% translate "Roles" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_offertemplate %}
+                    <a href="{% url 'offertemplates' %}"
+                       class="{% if current_menu_item == 'offertemplates' %} active{% endif %}">
+                        <i icon-name="star"></i>
+                        {% translate "Offer Templates" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_feedback %}
+                    <a href="{% url 'admin_feedback' %}"
+                       class="{% if current_menu_item == 'admin_feedback' %} active{% endif %}">
+                        <i icon-name="thumbs-up"></i>
+                        {% translate "Feedback" %}
+                    </a>
+                {% endif %}
+                {% if perms.cms.view_poicategory %}
+                    <a href="{% url 'poicategories' %}"
+                       class="{% if current_menu_item == 'poicategories' %} active{% endif %}">
+                        <i icon-name="tag"></i>
+                        {% translate "Location Categories" %}
+                    </a>
+                {% endif %}
+            {% endif %}
+        </div>
+        <div class="p-2 text-center absolute inset-x-0 bottom-0 bg-gray-600">
+            <a href="{% if request.region %}{% url "release_notes" region_slug=request.region.slug %}{% else %}{% url "release_notes" %}{% endif %}"
+               class="hover:underline">{% translate "Version" %}: {{ version }}</a>
+        </div>
+    </nav>
+    <main class="relative min-h-screen flex lg:pl-72 {% if TEST %}pt-20{% else %}pt-14{% endif %} bg-gray-100">
+        <div class="flex-1 min-w-0 p-6">
+            {% include "messages.html" %}
+            {% block content %}
+            {% endblock content %}
+        </div>
+    </main>
+{% endblock raw_content %}

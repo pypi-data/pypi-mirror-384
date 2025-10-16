@@ -1,0 +1,98 @@
+"""
+Celery worker
+
+Usage example:
+
+.. code-block:: python
+
+    @app.task
+    def wrapper_create_statistics():
+       print("create statistics")
+
+
+    @app.on_after_configure.connect
+    def setup_periodic_tasks(sender, **kwargs):
+       sender.add_periodic_task(
+           84600,
+           wrapper_create_statistics.s(),
+           name="wrapper_create_statistics",
+       )
+
+"""
+
+from __future__ import annotations
+
+import configparser
+import os
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+
+from celery import Celery
+from celery.schedules import crontab
+from celery.signals import setup_logging
+from django.core.management import call_command
+
+if TYPE_CHECKING:
+    from typing import Any
+
+# Read config from config file
+config = configparser.ConfigParser(interpolation=None)
+config.read("/etc/integreat-cms.ini")
+for section in config.sections():
+    for KEY, VALUE in config.items(section):
+        os.environ.setdefault(f"INTEGREAT_CMS_{KEY.upper()}", VALUE)
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "integreat_cms.core.settings")
+app = Celery("celery_app")
+app.config_from_object("django.conf:settings", namespace="CELERY")
+
+
+@setup_logging.connect
+def config_loggers(*args: Any, **kwags: Any) -> None:
+    from logging.config import dictConfig
+
+    from django.conf import settings
+
+    dictConfig(settings.LOGGING)
+
+
+app.autodiscover_tasks()
+
+
+@app.task
+def wrapper_import_events_from_external_calendars() -> None:
+    """
+    Periodic task to import events from the external calendars
+    """
+    call_command("import_events")
+
+
+@app.task
+def wrapper_fetch_page_accesses() -> None:
+    """
+    Periodic task to fetch page accesses of the previous day from Matomo
+    """
+    fetch_date = datetime.today() - timedelta(days=1)
+    fetch_date_str = fetch_date.strftime("%Y-%m-%d")
+    call_command(
+        "fetch_page_accesses",
+        start_date=fetch_date_str,
+        end_date=fetch_date_str,
+    )
+
+
+@app.on_after_configure.connect
+def setup_periodic_tasks(sender: Any, **kwargs: Any) -> None:
+    """
+    Set up periodic jobs
+    """
+    sender.add_periodic_task(
+        crontab(hour=0, minute=23),
+        wrapper_import_events_from_external_calendars.s(),
+        name="wrapper_import_events_from_external_calendars",
+    )
+
+    sender.add_periodic_task(
+        crontab(hour=0, minute=30),
+        wrapper_fetch_page_accesses.s(),
+        name="wrapper_fetch_page_accesses",
+    )

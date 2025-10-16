@@ -1,0 +1,240 @@
+{% extends "_base.html" %}
+{% load i18n %}
+{% load static %}
+{% load widget_tweaks %}
+{% load base_filters %}
+{% load content_filters %}
+{% load page_filters %}
+{% load rules %}
+{% load render_bundle from webpack_loader %}
+{% block content %}
+    {% get_current_language as LANGUAGE_CODE %}
+    {% has_perm 'cms.change_page_object' request.user page as can_edit_page %}
+    {% if page_form.instance.id and can_edit_page and not page.archived %}
+        <form enctype="multipart/form-data"
+              method="post"
+              action="{% url 'refresh_page' page_id=page_form.instance.id region_slug=request.region.slug language_slug=language.slug %}"
+              id="refresh_date_form">
+            {% csrf_token %}
+        </form>
+    {% endif %}
+    <form enctype="multipart/form-data"
+          method="post"
+          id="content_form"
+          data-unsaved-warning>
+        {% csrf_token %}
+        <div class="w-full flex flex-wrap justify-between mb-6 gap-2">
+            <h1 class="heading">
+                {% if page %}
+                    {% if page_translation_form.instance.id %}
+                        {% with page_translation_form.instance.title as page_title %}
+                            {% blocktranslate trimmed %}
+                                Edit page "{{ page_title }}"
+                            {% endblocktranslate %}
+                        {% endwith %}
+                        {% if LANGUAGE_CODE != language.slug %}
+                            {% if page.backend_translation %}
+                                ({% translate "Title in" %} {% translated_language_name LANGUAGE_CODE %}: "{{ page.backend_translation.title }}")
+                            {% endif %}
+                        {% endif %}
+                    {% else %}
+                        {% translate "Create new translation" %}
+                    {% endif %}
+                {% else %}
+                    {% translate "Create new page" %}
+                {% endif %}
+            </h1>
+            <div class="flex flex-wrap grow justify-end gap-2 items-center">
+                {% if page_form.instance.id and not page_form.instance.archived and can_edit_page %}
+                    {% include "generic_auto_save_note.html" with form_instance=page_translation_form.instance %}
+                {% endif %}
+                {% if page_form.instance.id and page_form.instance.archived %}
+                    <a href="{% url 'archived_pages' region_slug=request.region.slug language_slug=language.slug %}"
+                       class="btn btn-ghost">{% translate "Cancel" %}</a>
+                {% else %}
+                    <a href="{% url 'pages' region_slug=request.region.slug language_slug=language.slug %}"
+                       class="btn btn-ghost">{% translate "Cancel" %}</a>
+                {% endif %}
+                {% if not page_form.instance.id or not page_form.instance.archived %}
+                    <button name="preview_page" type="button" data-preview-page data-edit-page-mode data-right-to-left={{ right_to_left }} class="btn btn-ghost">
+                        {% translate "Preview" %}
+                    </button>
+                    {% has_perm 'cms.publish_page_object' request.user page as can_publish_page %}
+                    {% if can_publish_page %}
+                        <button name="status"
+                                value="{{ DRAFT }}"
+                                class="btn btn-outline no-premature-submission">
+                            {% translate "Save as draft" %}
+                        </button>
+                        <button name="status"
+                                value="{{ PUBLIC }}"
+                                class="btn whitespace-nowrap no-premature-submission">
+                            {% if page_translation_form.instance.status == PUBLIC %}
+                                {% translate "Update" %}
+                            {% else %}
+                                {% translate "Publish" %}
+                            {% endif %}
+                        </button>
+                    {% elif can_edit_page %}
+                        <button name="status"
+                                value="{{ REVIEW }}"
+                                class="btn no-premature-submission">
+                            {% translate "Submit for approval" %}
+                        </button>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="3xl:grid grid-cols-2 3xl:grid-cols-[minmax(0px,_1fr)_400px] {% if page %}4xl:grid-cols-[minmax(0px,_1fr)_816px]{% endif %} gap-4">
+            <div class="col-span-2 3xl:col-span-1 flex flex-wrap flex-col flex-auto">
+                {% include "_form_language_tabs.html" with target="edit_page" instance=page_form.instance content_field="page_id" %}
+                <div class="w-full rounded border border-blue-500 bg-white shadow-2xl flex flex-col">
+                    <div class="flex flex-col flex-auto p-4">
+                        {% if page_translation_form.instance.translation_state == translation_status.IN_TRANSLATION %}
+                            <div id="currently-in-translation-warning">
+                                <i icon-name="alert-triangle" class="text-red-500"></i>
+                                <label class="inline-block mb-2 font-bold">
+                                    {% translate "Warning" %}:
+                                </label>
+                                {% translate "Translation in progress" %}
+                                (<a href="#"
+   data-cancel-translation-process
+   data-url="{% url 'cancel_translation_process_ajax' region_slug=request.region.slug language_slug=page_translation_form.instance.language.slug page_id=page.id %}"
+   id="cancel-translation"
+   class="text-blue-500 hover:underline">{% translate "Cancel translation process" %}</a>)
+                                <br />
+                            </div>
+                        {% endif %}
+                        <div class="flex justify-between mr-2">
+                            <label for="{{ page_translation_form.title.id_for_label }}"
+                                   data-slugify-url="{% url 'slugify_ajax' region_slug=request.region.slug language_slug=language.slug model_type='page' %}"
+                                   {% if page_form.instance.id %}data-model-id="{{ page_form.instance.id }}"{% endif %}>
+                                {{ page_translation_form.title.label }}
+                            </label>
+                            {% if page_translation_form.instance.id %}
+                                <div class="grid grid-cols-2 text-right">
+                                    <div class="font-bold pr-2">
+                                        {% translate "Version" %}:
+                                    </div>
+                                    <div>
+                                        {{ page_translation_form.instance.version }}
+                                        (<a href="{% url 'page_versions' page_id=page.id region_slug=request.region.slug language_slug=language.slug %}"
+   class="text-blue-500 hover:underline">{% translate "Show" %}</a>)
+                                    </div>
+                                    <div class="font-bold pr-2">
+                                        {% translate "Publication status" %}:
+                                    </div>
+                                    <div>
+                                        {% if page.explicitly_archived %}
+                                            {% translate "Archived" %}
+                                        {% elif page.implicitly_archived %}
+                                            {% translate "Archived, because a parent page is archived" %}
+                                        {% else %}
+                                            {{ page_translation_form.instance.get_status_display }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </div>
+                        {% render_field page_translation_form.title|add_error_class:"border-red-500" class+="mb-2" %}
+                        {% if page_translation_form.instance.id %}
+                            {% if request.region.short_urls_enabled and request.user.expert_mode %}
+                                <div class="flex items-center">
+                                    <label class="inline-block mr-2">
+                                        {% translate "Short URL" %}:
+                                    </label>
+                                    <a href="{{ page_translation_form.instance.short_url }}"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       class="text-blue-500 hover:underline">{{ page_translation_form.instance.short_url }}</a>
+                                    <a href="#"
+                                       data-copy-to-clipboard="{{ page_translation_form.instance.short_url }}"
+                                       title="{% translate "Copy to clipboard" %}"
+                                       class="ml-2 text-gray-800 hover:text-blue-500">
+                                        <i icon-name="copy"></i>
+                                        <i icon-name="check" class="hidden text-green-500"></i>
+                                    </a>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                        <div id="link-container" class="flex items-center">
+                            <label for="{{ page_translation_form.slug.id_for_label }}"
+                                   class="mr-2 whitespace-nowrap">
+                                {{ page_translation_form.slug.label }}:
+                            </label>
+                            <a id="slug-link"
+                               href="{{ page_translation_form.instance.base_link }}{{ page_translation_form.instance.slug }}"
+                               class="text-blue-500 hover:underline">{{ page_translation_form.instance.base_link }}{{ page_translation_form.instance.slug }}</a>
+                            {% if can_publish_page or can_edit_page %}
+                                <a id="edit-slug-btn"
+                                   title="{% translate "Edit" %}"
+                                   class="ml-2 btn-icon">
+                                    <i icon-name="pen-line"></i>
+                                </a>
+                            {% endif %}
+                            <a id="copy-slug-btn"
+                               data-copy-to-clipboard="{{ page_translation_form.instance.base_link }}{{ page_translation_form.instance.slug }}"
+                               title="{% translate "Copy to clipboard" %}"
+                               class="ml-2 btn-icon">
+                                <i icon-name="copy"></i>
+                                <i icon-name="check" class="hidden text-green-500"></i>
+                            </a>
+                            <div class="slug-field hidden">
+                                <label for="{{ page_translation_form.slug.id_for_label }}">
+                                    {{ page_translation_form.instance.base_link }}
+                                </label>
+                                {% render_field page_translation_form.slug|add_error_class:"slug-error" %}
+                            </div>
+                            <a id="save-slug-btn" class="ml-2 btn-icon hidden">
+                                <i icon-name="save"></i>
+                            </a>
+                            <a id="restore-slug-btn" class="ml-2 btn-icon hidden">
+                                <i icon-name="x-circle"></i>
+                            </a>
+                        </div>
+                        <label for="{{ page_translation_form.content.id_for_label }}">
+                            {{ page_translation_form.content.label }}
+                        </label>
+                        {% render_field page_translation_form.content class+="tinymce_textarea flex-auto" %}
+                    </div>
+                </div>
+            </div>
+            <div class="md:flex mt-4 3xl:mt-0 block 3xl:block 4xl:flex">
+                <div id="left-sidebar-column"
+                     class="md:mr-4 md:w-full 3xl:mr-0 md:mt-0 sm:block md:flex sm:mt-4 flex-wrap flex-col 4xl:mr-4"
+                     {% if request.user.distribute_sidebar_boxes %}data-enable-automatic-sidebar-distribution{% endif %}>
+                    {% if page %}
+                        {% include "./page_form_sidebar/minor_edit_box.html" with box_id="page-minor-edit" %}
+                    {% endif %}
+                    {% if language.slug in TEXTLAB_API_LANGUAGES and request.region.hix_enabled and TEXTLAB_API_ENABLED %}
+                        {% include "../hix_widget.html" with box_id="hix-widget" %}
+                    {% endif %}
+                    {% include "./page_form_sidebar/settings_box.html" with box_id="page-setting" %}
+                </div>
+                {% if page %}
+                    <div id="right-sidebar-column"
+                         class="md:w-full 3xl:col-end-3 4xl:col-end-auto flex flex-wrap flex-col">
+                        {% if show_actions_box %}
+                            {% include "./page_form_sidebar/actions_box.html" with box_id="page-actions" %}
+                        {% endif %}
+                        {% include "./page_form_sidebar/translator_view_box.html" with box_id="page-side-by-side" %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+    {{ media_config_data|json_script:"media_config_data" }}
+    {% if not can_edit_page or page_form.instance.id and page_form.instance.archived %}
+        {% include "../_tinymce_config.html" with readonly=1 %}
+    {% else %}
+        {% include "../_tinymce_config.html" %}
+        {% if page_form.instance.id %}
+            {% include "../_content_edit_lock.html" with lock_key=page.edit_lock_key %}
+        {% endif %}
+    {% endif %}
+    {% include "../generic_confirmation_dialog.html" %}
+    {% include "pages/_page_preview_overlay.html" %}
+{% endblock content %}
+{% block javascript %}
+    {% render_bundle "editor" "js" %}
+{% endblock javascript %}
