@@ -1,0 +1,182 @@
+variables:
+  CI_TEMPLATES_VERSION: &CI_TEMPLATES_VERSION v4.2
+
+  PYTEST_DIR: tests
+  GIT_SUBMODULE_STRATEGY: recursive
+
+include:
+  - project: "breathebatterytechnologies/devops/ci_templates"
+    ref: *CI_TEMPLATES_VERSION
+    file:
+      - "_roles/python-package.yml"
+
+default:
+  tags: ["aks-linux"]
+  image: registry.gitlab.com/breathebatterytechnologies/devops/images/breathe_ci:prod
+
+.dev:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+  variables:
+    # variables for auth access for integration tests
+    AUTH0_SERVICE_ISS: $AUTH0_SERVICE_ISS_DEV
+    AUTH0_AUDIENCE: $AUTH0_AUDIENCE_DEV
+    AUTH0_CLIENT_ID: $AUTH0_CLIENT_ID_DEV
+    AUTH0_CLIENT_SECRET: $AUTH0_CLIENT_SECRET_DEV
+    # endpoint URL
+    API_URL: https://breathe-platform-backend-service-dev.azurewebsites.net/api/v1
+    # pypi upload
+    PYPI_TOKEN: $PYPI_TOKEN_DEV
+    # GitHub repository for testing the public release pipeline
+    GITHUB_REPO: https://github.com/BreatheBatteries/breathe_design_test.git
+    # GitHub token for API access and push operations
+    GITHUB_TOKEN: $GITHUB_TOKEN_DEV
+
+.prod:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+      when: never
+  variables:
+    # variables for auth access
+    AUTH0_SERVICE_ISS: $AUTH0_SERVICE_ISS_PROD
+    AUTH0_AUDIENCE: $AUTH0_AUDIENCE_PROD
+    AUTH0_CLIENT_ID: $AUTH0_CLIENT_ID_PROD
+    AUTH0_CLIENT_SECRET: $AUTH0_CLIENT_SECRET_PROD
+    # endpoint URL
+    API_URL: https://bbt-apim-platform-prod.azure-api.net/platform/api/v1
+    # pypi upload
+    PYPI_TOKEN: $PYPI_TOKEN_PROD
+    # GitHub repository for public release
+    GITHUB_REPO: https://github.com/BreatheBatteries/breathe_design.git
+    # GitHub token for API access and push operations
+    GITHUB_TOKEN: $GITHUB_TOKEN_PROD
+
+test:
+  script:
+    # Run pytest with coverage and junit report
+    - pytest tests --ignore-glob=*notebooks* --ignore-glob=*integration_slow* --cov=./ --cov-report term --cov-report xml:coverage.xml --junitxml=test_report.xml
+
+test_example_notebooks:
+  stage: test
+  environment: dev
+  extends:
+    - test
+  script:
+    # Run pytest with coverage and junit report
+    - pytest tests/integration_example_notebooks --cov=./ --cov-report term --cov-report xml:coverage_example_notebooks.xml --junitxml=test_report_example_notebooks.xml
+  artifacts:
+    reports:
+      junit: test_report_example_notebooks.xml
+      coverage_report:
+        path: coverage_example_notebooks.xml
+    paths:
+      - coverage_example_notebooks.xml # XML coverage report
+      - test_report_example_notebooks.xml # Detailed test results
+  allow_failure: true
+
+# run slow interation tests in a manual step, because they take a very long time
+test_integration_slow:
+  stage: test
+  environment: dev
+  extends:
+    - test
+  script:
+    # Run pytest with coverage and junit report
+    - pytest tests/integration_slow --cov=./ --cov-report term --cov-report xml:coverage_integration_slow.xml --junitxml=test_report_integration_slow.xml --capture=tee-sys --log-cli-level=DEBUG
+  artifacts:
+    reports:
+      junit: test_report_integration_slow.xml
+      coverage_report:
+        path: coverage_integration_slow.xml
+    paths:
+      - coverage_integration_slow.xml # XML coverage report
+      - test_report_integration_slow.xml # Detailed test results
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
+      allow_failure: true
+
+# pages:
+#   image: registry.gitlab.com/breathebatterytechnologies/devops/images/breathe_ci:prod
+#   before_script:
+#     # take the existing steps from
+#     # https://gitlab.com/breathebatterytechnologies/devops/ci_templates/-/blob/b0610bf4cd26087cda9c867d0ec97fd1d2dc8826/pages/pipelines/.mkdocs.yml#L20
+#     - pip install mkdocs mkdocs-material mkdocstrings mike mkdocstrings-python mkdocs-git-committers-plugin-2 mkdocs-git-revision-date-localized-plugin mkdocs-git-committers-plugin-2;
+#     - git config user.name gitlab-bot
+#     - git config user.email gitlab-bot@gitlab.com
+#     - git fetch origin ${PAGES_BRANCH} && git checkout -b ${PAGES_BRANCH} origin/${PAGES_BRANCH} || echo "Pages branch not deployed yet."
+#     - git checkout ${CI_COMMIT_SHA}
+#     # and  install the package
+#     - pip install .[docs]
+# pages doesn't work because the documentation is too large for CI.  So disable it
+pages:
+  rules:
+    - when: never
+
+# Public Release Job
+# CURRENTLY DOESN'T WORK BECAUSE OF RUNNING GIT ON GITLAB ISSUES
+.create_public_release:
+  stage: deploy
+  image: registry.gitlab.com/breathebatterytechnologies/devops/images/breathe_ci:prod
+  before_script:
+    # Install required packages
+    - pip install requests
+    # Configure git for commits
+    - git config --global user.name "GitLab CI"
+    - git config --global user.email "gitlab-ci@breathebatterytechnologies.com"
+    # Configure git authentication for GitHub operations
+    # This allows git pull/push operations on GitHub repositories
+    - git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+  script:
+    - echo "Will push public release to $GITHUB_REPO"
+    - python public_release_scripts/create_public_release.py --skip-manual-review
+    - echo "Release process completed successfully!"
+  timeout: 30m
+
+create_public_release:dev:
+  extends:
+    - .dev
+    - .create_public_release
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
+      allow_failure: true
+
+create_public_release:prod:
+  extends:
+    - .prod
+    - .create_public_release
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: false
+
+upload_to_public_pypi:dev:
+  stage: deploy
+  needs: ["python-build:dev"]
+  extends:
+    - .dev
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
+      allow_failure: true
+  script:
+    - ls
+    - ls dist
+    - echo "Deploying to public TEST PyPI"
+    - twine upload --verbose --repository-url "https://test.pypi.org/legacy/" -u "__token__" -p "${PYPI_TOKEN}" ./dist/*
+
+upload_to_public_pypi:prod:
+  stage: deploy
+  needs: ["python-build:prod"]
+  extends:
+    - .prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: false
+  script:
+    - echo "Deploying to public PyPI"
+    - twine upload --verbose -u "__token__" -p "${PYPI_TOKEN}" ./dist/*
