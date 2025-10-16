@@ -1,0 +1,153 @@
+Metadata-Version: 2.4
+Name: grid-cortex-client
+Version: 0.2.4
+Summary: python client for grid cortex
+Requires-Python: >=3.8
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: msgpack-numpy>=0.4.0
+Requires-Dist: msgpack>=1.0.0
+Requires-Dist: numpy<2
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: requests>=2.20.0
+Requires-Dist: rerun-sdk==0.22.1
+Requires-Dist: websocket-client>=1.7
+Description-Content-Type: text/markdown
+
+<!-- filepath: /home/pranay/GRID/Grid-Cortex-Infra/grid-cortex-client/README.md -->
+# Grid Cortex Client
+
+This Python client library provides a robust and developer-friendly interface for interacting with models deployed on the Grid Cortex Ray Serve infrastructure. It simplifies model inference calls by abstracting away the complexities of request/response handling and data transformations, offering an extensible architecture for various model types.
+
+## Key Features
+
+*   **Simplified Model Interaction**: Use the `CortexClient.run(model_id, **kwargs)` method for straightforward model execution.
+*   **Automatic Handler Dispatch**: The client automatically selects the correct model handler based on the `model_id`.
+*   **Extensible Architecture**: Easily add support for new models by implementing task-specific handlers derived from `BaseModel`.
+*   **Flexible Input Handling**: Supports various input types (image paths, URLs, PIL objects) and model-specific parameters via keyword arguments.
+*   **Standardized Pre/Post-processing**: Model handlers manage their own data transformations, ensuring correct payload formats and user-friendly outputs.
+*   **Robust Error Handling**: Custom exceptions for API and network issues.
+
+## Design Overview
+
+The client is designed with a clear separation of concerns:
+
+1.  **`CortexClient` (`src/grid_cortex_client/cortex_client.py`)**:
+    *   The primary user-facing class.
+    *   Orchestrates model execution by dispatching to the appropriate model handler.
+    *   The main method is `run(model_id: str, **kwargs: Any) -> Any;`:
+        *   Identifies the correct model handler (e.g., `DepthModel`, `DetectionModel`) using an internal registry that maps keywords in the `model_id` to handler classes.
+        *   Instantiates the handler with the given `model_id`.
+        *   Calls the internal `run_model()` method, passing the handler instance and all `**kwargs` as `input_data` to the handler's `preprocess` method.
+    *   The `run_model(model: BaseModel, input_data: Dict[str, Any], ...)` method handles the detailed steps:
+        *   Calls the handler's `preprocess` method with `input_data`.
+        *   Makes the HTTP POST request to the appropriate model endpoint (e.g., `/model_id/run`).
+        *   Calls the handler's `postprocess` method with the server's response.
+
+2.  **`HTTPClient` (`src/grid_cortex_client/client.py`)**:
+    *   Manages low-level HTTP communication, API key authentication, and request/response cycles.
+
+3.  **Model Abstraction (`src/grid_cortex_client/models/`)**:
+    *   **`BaseModel` (`models/base_model.py`)**: An abstract base class defining the contract for all model handlers, requiring `preprocess(self, input_data: Dict[str, Any], **kwargs: Any)` and `postprocess(self, response_data: Dict[str, Any], **kwargs: Any)` methods.
+    *   **Task-Specific Model Handlers** (e.g., `DepthModel`, `DetectionModel`, `SegmentationModel` in `models/depth.py`, `models/detection.py`, `models/segmentation.py`):
+        *   Concrete implementations of `BaseModel`.
+        *   `preprocess`: Converts the `input_data` dictionary (from `**kwargs` in `client.run()`) into the JSON payload expected by the specific model server.
+        *   `postprocess`: Transforms the server's JSON response into a user-friendly Python object (e.g., PIL Image, list of detections, etc.).
+
+4.  **Reusable Utilities (`src/grid_cortex_client/preprocessing.py`, `src/grid_cortex_client/postprocessing.py`)**:
+    *   Contain stateless helper functions for common tasks like image loading/encoding and parsing specific response formats.
+    *   Uses **msgpack** for binary transport (image bytes, NumPy arrays).
+
+## Project Structure
+
+-   **`pyproject.toml`**: Project metadata and dependencies.
+-   **`src/grid_cortex_client/`**: Main library source code.
+    -   `cortex_client.py`: `CortexClient`.
+    -   `client.py`: `HTTPClient`, custom errors.
+    -   `preprocessing.py` & `postprocessing.py`: Utility functions.
+            -   `models/`: Model-specific handlers.
+            -   `base_model.py`: `BaseModel` ABC.
+            -   `depth.py`: `DepthModel`.
+            -   `detection.py`: `DetectionModel`.
+            -   `segmentation.py`: `SegmentationModel`.
+            -   `stereo.py`: `FoundationStereoModel`.
+            -   `grasp.py`: `GraspModel`.
+            -   `graspgen.py`: `GraspGenModel`.
+-   **`examples/`**: Example usage scripts.
+    -   `example.py`: General usage examples.
+    -   `grasp.py`: Grasp generation with M2T2 model.
+    -   `foundationstereo.py`: Stereo depth estimation with FoundationStereo.
+    -   `graspgen.py`: Grasp generation with GraspGen from point clouds.
+-   **`README.md`**: This file.
+
+## Installation
+
+### Prerequisites
+- Python 3.8+ (Recommended: 3.10+)
+
+### Steps
+
+1.  **Navigate to the `grid-cortex-client` directory.**
+2.  **Install using pip:**
+    *   **For development (editable install):**
+        ```bash
+        pip install -e .
+        ```
+        This installs the package in editable mode and includes all dependencies from `pyproject.toml`.
+    *   **To install from a built wheel (if available in `dist/`):**
+        ```bash
+        pip install dist/grid_cortex_client-*.whl
+        ```
+
+## Configuration
+
+The `CortexClient` requires an API key and the base URL for the Cortex API.
+
+1.  **Environment Variables (Recommended):**
+    *   `GRID_CORTEX_API_KEY`: Your API key.
+    *   `GRID_CORTEX_BASE_URL`: Base URL (e.g., `https://cortex-stage.generalrobotics.dev`). Defaults are provided if not set.
+    The client automatically uses these if `api_key` or `base_url` are not passed during instantiation.
+
+2.  **Direct Instantiation:**
+    ```python
+    from grid_cortex_client import CortexClient
+
+    client = CortexClient(api_key="your_api_key_here", base_url="your_custom_base_url_here")
+    ```
+
+
+## Available Models & Handlers
+
+The client uses a keyword-based system to map a given `model_id` to its appropriate handler. The `model_id` you use should typically contain one of the keywords associated with a handler.
+
+| Model Task         | Handler Class         | Keywords for `model_id`                     | Key Input Parameters (`**kwargs` for `client.run`) | Expected Output Type (from `client.run`) |
+|--------------------|-----------------------|---------------------------------------------|----------------------------------------------------|------------------------------------------|
+| Depth Estimation   | `DepthModel`          | `midas`, `marigold`, `depthpro`, `metric3d`, `depthanything2`, `zoedepth` | `image_input` (path, URL, or PIL.Image)            | `PIL.Image.Image` (depth map)            |
+| Stereo Depth Estimation | `FoundationStereoModel` | `foundationstereo`                    | `left_image`, `right_image`, `K` (camera intrinsics), `baseline` (stereo baseline) | `numpy.ndarray` (depth map)              |
+| Object Detection   | `DetectionModel`      | `owlv2`                    | `image_input` (path, URL, or PIL.Image), `prompt` (str or List[str]), `box_threshold` (float, optional) | `List[Dict]` (list of detections)        |
+| Image Segmentation | `SegmentationModel`   | `clipseg`, `lseg`, `gsam2`           | `image_input` (path, URL, or PIL.Image), `prompt` (str) | `PIL.Image.Image` (mask)                 |
+| Grasp Generation   | `GraspModel`          | `m2t2`                     | `xyz` (point cloud), `rgb` (RGB values), `seg` (segmentation labels) | `Dict[str, numpy.ndarray]` (grasps and confidence) |
+| Grasp Generation (Depth Images) | `GraspGenModel` | `graspgen`                 | `depth_image`, `seg_image`, `camera_intrinsics`, `aux_args` (num_grasps, gripper_config, camera_extrinsics) | `Dict[str, numpy.ndarray]` (grasps, confidence, latency_ms) |
+
+## Logging
+
+The client uses the standard Python `logging` module. You can configure the logging level to control verbosity:
+
+```python
+import logging
+
+# For verbose output from the client and underlying HTTP library:
+# logging.basicConfig(level=logging.INFO)
+
+# To reduce verbosity (show only warnings and errors):
+logging.getLogger("grid_cortex_client").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING) # For the HTTPX library
+```
+
+## Contributing
+
+Contributions are welcome! Please refer to the main repository guidelines. When adding support for new models:
+1.  Create a new handler class in `src/grid_cortex_client/models/` inheriting from `BaseModel`.
+2.  Implement the `preprocess` and `postprocess` methods.
+3.  Add relevant keywords and the new handler class to the `_MODEL_ID_TO_HANDLER_CLASS` dictionary in `src/grid_cortex_client/cortex_client.py`.
+4.  Add tests and update documentation (including the "Available Models" table).
+
