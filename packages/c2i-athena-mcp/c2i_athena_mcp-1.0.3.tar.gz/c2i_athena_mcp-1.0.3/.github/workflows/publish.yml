@@ -1,0 +1,87 @@
+name: Build and Publish MCP Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+        
+    - name: Build package
+      run: |
+        cd src/c2i_athena_mcp
+        python -m build
+        
+    - name: Check package
+      run: |
+        cd src/c2i_athena_mcp
+        twine check dist/*
+        
+    - name: Publish to PyPI
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        cd src/c2i_athena_mcp
+        twine upload dist/*
+        
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## Changes
+          
+          See [CHANGELOG.md](CHANGELOG.md) for details.
+          
+          ## Installation
+          
+          ```bash
+          # Install via uvx (recommended)
+          uvx c2i-athena-mcp
+          
+          # Or install via pip
+          pip install c2i-athena-mcp
+          ```
+          
+          ## VS Code Configuration
+          
+          Add to your `~/.vscode/mcp.json`:
+          
+          ```json
+          {
+            "mcpServers": {
+              "c2i-athena": {
+                "command": "uvx",
+                "args": ["c2i-athena-mcp"],
+                "env": {
+                  "AWS_REGION": "us-east-1",
+                  "AWS_PROFILE": "your-aws-profile"
+                }
+              }
+            }
+          }
+          ```
+        draft: false
+        prerelease: false
