@@ -1,0 +1,42 @@
+name: Publish to pypi
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - "main"
+      - "feature/*"
+      - "hotfix/*"
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --group dist
+      - name: Build
+        run: |
+          python -m build
+      - name: Publish
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          twine upload dist/*
