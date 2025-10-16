@@ -1,0 +1,300 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RabbitMQ MCP Tools - Connection Feature",
+  "description": "MCP tools para descoberta semântica e execução de operações de conexão",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "search-ids",
+      "description": "Busca semântica de operações RabbitMQ relacionadas a conexão. Retorna IDs de operações relevantes baseado em query em linguagem natural.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Query em linguagem natural descrevendo a operação desejada",
+            "minLength": 3,
+            "examples": [
+              "connect to rabbitmq",
+              "check connection health",
+              "disconnect from broker",
+              "get connection status"
+            ]
+          },
+          "pagination": {
+            "type": "object",
+            "description": "Parâmetros de paginação opcionais",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 1,
+                "description": "Número da página (base 1)"
+              },
+              "page_size": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 25,
+                "default": 10,
+                "description": "Itens por página (máximo: 25)"
+              }
+            }
+          }
+        },
+        "required": ["query"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Operações encontradas ordenadas por relevância",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operation_id": {
+                  "type": "string",
+                  "description": "ID único da operação (ex: connection.connect)",
+                  "examples": ["connection.connect", "connection.health_check"]
+                },
+                "summary": {
+                  "type": "string",
+                  "description": "Descrição curta da operação"
+                },
+                "relevance_score": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Score de relevância (0-1)"
+                }
+              },
+              "required": ["operation_id", "summary", "relevance_score"]
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": {
+                "type": "integer",
+                "description": "Página atual"
+              },
+              "page_size": {
+                "type": "integer",
+                "description": "Itens por página"
+              },
+              "total_items": {
+                "type": "integer",
+                "description": "Total de itens encontrados"
+              },
+              "total_pages": {
+                "type": "integer",
+                "description": "Total de páginas"
+              },
+              "has_next": {
+                "type": "boolean",
+                "description": "Se há próxima página"
+              },
+              "has_previous": {
+                "type": "boolean",
+                "description": "Se há página anterior"
+              }
+            },
+            "required": ["page", "page_size", "total_items", "total_pages", "has_next", "has_previous"]
+          }
+        },
+        "required": ["items", "pagination"]
+      }
+    },
+    {
+      "name": "get-id",
+      "description": "Obtém schema detalhado de uma operação específica pelo seu ID. Retorna documentação completa, parâmetros, tipos e exemplos.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "description": "ID da operação (obtido via search-ids)",
+            "pattern": "^[a-z_]+\\.[a-z_]+$",
+            "examples": [
+              "connection.connect",
+              "connection.disconnect",
+              "connection.health_check",
+              "connection.get_status",
+              "pool.get_stats"
+            ]
+          }
+        },
+        "required": ["operation_id"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "description": "ID da operação"
+          },
+          "name": {
+            "type": "string",
+            "description": "Nome legível da operação"
+          },
+          "description": {
+            "type": "string",
+            "description": "Descrição detalhada da operação"
+          },
+          "category": {
+            "type": "string",
+            "description": "Categoria da operação",
+            "enum": ["connection", "pool", "monitoring"]
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "Schema JSON dos parâmetros de entrada"
+          },
+          "output_schema": {
+            "type": "object",
+            "description": "Schema JSON da resposta"
+          },
+          "examples": {
+            "type": "array",
+            "description": "Exemplos de uso",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Título do exemplo"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Descrição do exemplo"
+                },
+                "input": {
+                  "type": "object",
+                  "description": "Parâmetros de entrada do exemplo"
+                },
+                "output": {
+                  "type": "object",
+                  "description": "Resposta esperada do exemplo"
+                }
+              },
+              "required": ["title", "input", "output"]
+            }
+          },
+          "errors": {
+            "type": "array",
+            "description": "Possíveis erros e como tratá-los",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Código do erro"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Mensagem de erro"
+                },
+                "resolution": {
+                  "type": "string",
+                  "description": "Como resolver o erro"
+                }
+              },
+              "required": ["code", "message"]
+            }
+          }
+        },
+        "required": ["operation_id", "name", "description", "category", "input_schema", "output_schema"]
+      }
+    },
+    {
+      "name": "call-id",
+      "description": "Executa uma operação RabbitMQ específica com validação dinâmica de parâmetros. Suporta operações síncronas e assíncronas.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "description": "ID da operação a executar",
+            "pattern": "^[a-z_]+\\.[a-z_]+$"
+          },
+          "params": {
+            "type": "object",
+            "description": "Parâmetros específicos da operação (validados dinamicamente)",
+            "additionalProperties": true
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Timeout da operação em segundos",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 30
+          }
+        },
+        "required": ["operation_id", "params"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Se a operação foi bem-sucedida"
+          },
+          "result": {
+            "type": "object",
+            "description": "Resultado da operação (schema varia por operação)",
+            "additionalProperties": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Metadados da execução",
+            "properties": {
+              "operation_id": {
+                "type": "string"
+              },
+              "duration_ms": {
+                "type": "number",
+                "description": "Duração da operação em ms"
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Timestamp da execução"
+              }
+            },
+            "required": ["operation_id", "duration_ms", "timestamp"]
+          },
+          "error": {
+            "type": "object",
+            "description": "Detalhes do erro (presente apenas se success=false)",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Código do erro"
+              },
+              "message": {
+                "type": "string",
+                "description": "Mensagem de erro"
+              },
+              "details": {
+                "type": "object",
+                "description": "Detalhes adicionais do erro",
+                "additionalProperties": true
+              }
+            },
+            "required": ["code", "message"]
+          }
+        },
+        "required": ["success", "metadata"]
+      }
+    }
+  ],
+  "metadata": {
+    "feature": "002-basic-rabbitmq-connection",
+    "version": "1.0.0",
+    "protocol": "MCP",
+    "created": "2025-10-09",
+    "language": "python",
+    "async_support": true
+  }
+}
+
