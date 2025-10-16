@@ -1,0 +1,122 @@
+Metadata-Version: 2.4
+Name: comfy-commander
+Version: 0.1.2
+Summary: A package for programmatically running ComfyUI workloads either locally or remotely
+Home-page: https://github.com/nathanhalko/comfy-commander
+Author: Nathan Halko
+Author-email: Nathan Halko <nathan@halko.us>
+License: MIT
+Project-URL: Homepage, https://github.com/halkony/comfy-commander
+Project-URL: Repository, https://github.com/halkony/comfy-commander
+Project-URL: Issues, https://github.com/halkony/comfy-commander/issues
+Keywords: comfyui,workflow,automation,ai,image-generation
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.32.0
+Requires-Dist: pillow>=11.0.0
+Requires-Dist: attrs>=25.0.0
+Dynamic: author
+Dynamic: home-page
+Dynamic: requires-python
+
+Comfy Commander is a package for programmatically running ComfyUI workloads either locally or remotely
+ - Edit any node and its values from Python
+ - Supports Local and RunPod ComfyUI instances
+ - Convert standard ComfyUI workflows to API format
+ - Execute workflows on local ComfyUI servers
+
+## Quickstart
+
+### Basic Workflow Usage
+```python
+from comfy_commander import Workflow
+
+# Load an API format workflow
+workflow = Workflow.from_file("./image_workflow.json")
+
+# Modify node parameters
+sampler_node = workflow.node(id="31")
+sampler_node.param("seed").set(1234567890)
+sampler_node.param("steps").set(8)
+
+# Access node properties
+print(f"Current seed: {sampler_node.param('seed').value}")
+```
+
+### Direct Execution
+```python
+import asyncio
+from comfy_commander import ComfyUIServer, Workflow
+
+server = ComfyUIServer("http://localhost:8188")
+workflow = Workflow.from_file("./workflow.json")
+
+result = server.execute(workflow)
+for i, image in enumerate(result.media):
+    image.save(f"./image_{i}.png")
+
+```
+
+### Queue for Later Processing
+```python
+from comfy_commander import ComfyUIServer, Workflow
+
+server = ComfyUIServer("http://localhost:8188")
+workflow = Workflow.from_file("./workflow.json")
+
+# Queue workflow and get prompt ID immediately
+prompt_id = server.queue(workflow)
+print(f"Workflow queued with ID: {prompt_id}")
+
+# Later, check status or get results
+history = server.get_history(prompt_id)
+```
+
+## Requirements
+
+### For Standard Workflow Conversion
+To convert standard ComfyUI workflows to API format, you need:
+
+1. **ComfyUI running locally** on `http://localhost:8188`
+2. **Workflow Converter Extension** installed:
+   ```bash
+   cd ComfyUI/custom_nodes
+   git clone https://github.com/SethRobinson/comfyui-workflow-to-api-converter-endpoint
+   ```
+   Then restart ComfyUI.
+
+## Testing
+
+### Unit Tests (Default)
+```bash
+# Runs all unit tests by default (e2e tests are in separate files)
+pytest tests/ -v
+```
+
+### End-to-End Tests
+```bash
+# Make sure ComfyUI is running with the converter extension
+python run_e2e_tests.py
+```
+
+Or run e2e tests directly:
+```bash
+pytest tests/e2e_test_local_server.py -v
+```
+
+### All Tests (Including E2E)
+```bash
+# Run all tests including e2e (requires running ComfyUI instance)
+pytest tests/ tests/e2e_test_local_server.py -v
+```
