@@ -1,0 +1,273 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "CircuitSimulator.hpp"
+
+#include "dd/DDDefinitions.hpp"
+#include "dd/FunctionalityConstruction.hpp"
+#include "dd/Node.hpp"
+#include "dd/Operations.hpp"
+#include "dd/StateGeneration.hpp"
+#include "ir/Definitions.hpp"
+#include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
+#include "ir/operations/OpType.hpp"
+
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <stdexcept>
+#include <string>
+
+std::map<std::string, std::size_t>
+CircuitSimulator::simulate(std::size_t shots) {
+  const auto analysis = analyseCircuit();
+
+  // easiest case: all gates are unitary --> simulate once and sample away on
+  // all qubits
+  if (!analysis.isDynamic && !analysis.hasMeasurements) {
+    singleShot(false);
+    return measureAllNonCollapsing(shots);
+  }
+
+  // single shot is enough, but the sampling should only return actually
+  // measured qubits
+  if (!analysis.isDynamic) {
+    singleShot(true);
+    std::map<std::string, std::size_t> measurementCounter;
+    const auto qubits = qc->getNqubits();
+    const auto cbits = qc->getNcbits();
+
+    // MeasureAllNonCollapsing returns a map from measurement over all qubits to
+    // the number of occurrences
+    for (const auto& [bit_string, count] : measureAllNonCollapsing(shots)) {
+      std::string resultString(qc->getNcbits(), '0');
+
+      for (auto const& [qubit_index, bitIndex] : analysis.measurementMap) {
+        resultString[cbits - bitIndex - 1] =
+            bit_string[qubits - qubit_index - 1];
+      }
+
+      measurementCounter[resultString] += count;
+    }
+
+    return measurementCounter;
+  }
+
+  // the circuit is dynamic and requires single shot simulations :(
+  std::map<std::string, std::size_t> measurementCounter;
+
+  for (unsigned int i = 0; i < shots; i++) {
+    const auto result = singleShot(false);
+    const auto cbits = qc->getNcbits();
+
+    std::string resultString(qc->getNcbits(), '0');
+
+    // result is a map from the cbit index to the Boolean value
+    for (const auto& [bitIndex, value] : result) {
+      resultString[cbits - bitIndex - 1] = value ? '1' : '0';
+    }
+    measurementCounter[resultString]++;
+  }
+  return measurementCounter;
+}
+
+auto CircuitSimulator::analyseCircuit() -> CircuitAnalysis {
+  auto analysis = CircuitAnalysis{};
+
+  for (auto& op : *qc) {
+    if (op->isIfElseOperation() || op->getType() == qc::Reset) {
+      analysis.isDynamic = true;
+    }
+    if (const auto* measure = dynamic_cast<qc::NonUnitaryOperation*>(op.get());
+        measure != nullptr && measure->getType() == qc::Measure) {
+      analysis.hasMeasurements = true;
+
+      const auto& quantum = measure->getTargets();
+      const auto& classic = measure->getClassics();
+
+      if (quantum.size() != classic.size()) {
+        throw std::runtime_error(
+            "Measurement: Sizes of quantum and classic register mismatch.");
+      }
+
+      for (unsigned int i = 0; i < quantum.size(); ++i) {
+        analysis.measurementMap[quantum.at(i)] = classic.at(i);
+      }
+    }
+
+    if (analysis.hasMeasurements && op->isUnitary()) {
+      analysis.isDynamic = true;
+    }
+  }
+  return analysis;
+}
+
+dd::fp
+CircuitSimulator::expectationValue(const qc::QuantumComputation& observable) {
+  // simulate the circuit to get the state vector
+  singleShot(true);
+
+  // construct the DD for the observable
+  const auto observableDD = dd::buildFunctionality(observable, *dd);
+
+  // calculate the expectation value
+  return dd->expectationValue(observableDD, rootEdge);
+}
+
+void CircuitSimulator::initializeSimulation(const std::size_t nQubits) {
+  rootEdge = dd::makeZeroState(static_cast<dd::Qubit>(nQubits), *dd);
+}
+
+char CircuitSimulator::measure(const dd::Qubit i) {
+  return dd->measureOneCollapsing(rootEdge, static_cast<dd::Qubit>(i), mt);
+}
+
+void CircuitSimulator::reset(qc::NonUnitaryOperation* nonUnitaryOp) {
+  rootEdge = dd::applyReset(*nonUnitaryOp, rootEdge, *dd, mt);
+}
+
+void CircuitSimulator::applyOperationToState(
+    std::unique_ptr<qc::Operation>& op) {
+  rootEdge = dd::applyUnitaryOperation(*op, rootEdge, *dd);
+}
+
+std::map<std::size_t, bool>
+CircuitSimulator::singleShot(const bool ignoreNonUnitaries) {
+  singleShots++;
+  const auto nQubits = qc->getNqubits();
+
+  initializeSimulation(nQubits);
+
+  std::size_t opNum = 0;
+  std::map<std::size_t, bool> classicValues;
+
+  const auto approxMod = static_cast<std::size_t>(
+      std::ceil(static_cast<double>(qc->getNops()) /
+                (static_cast<double>(approximationInfo.stepNumber + 1))));
+
+  for (auto& op : *qc) {
+    if (op->isNonUnitaryOperation() && !op->isIfElseOperation()) {
+      if (ignoreNonUnitaries) {
+        continue;
+      }
+      if (auto* nonUnitaryOp =
+              dynamic_cast<qc::NonUnitaryOperation*>(op.get())) {
+        if (op->getType() == qc::Measure) {
+          const auto& quantum = nonUnitaryOp->getTargets();
+          const auto& classic = nonUnitaryOp->getClassics();
+
+          assert(
+              quantum.size() ==
+              classic.size()); // this should not happen do to check in Simulate
+
+          for (std::size_t i = 0; i < quantum.size(); ++i) {
+            auto result = measure(static_cast<dd::Qubit>(quantum.at(i)));
+            assert(result == '0' || result == '1');
+            classicValues[classic.at(i)] = (result == '1');
+          }
+
+        } else if (nonUnitaryOp->getType() == qc::Reset) {
+          reset(nonUnitaryOp);
+        } else {
+          throw std::runtime_error("Unsupported non-unitary functionality.");
+        }
+      } else {
+        throw std::runtime_error("Dynamic cast to NonUnitaryOperation failed.");
+      }
+      dd->garbageCollect();
+    } else {
+      if (op->isIfElseOperation()) {
+        if (auto* ifElseOp = dynamic_cast<qc::IfElseOperation*>(op.get())) {
+          const auto& comparisonKind = ifElseOp->getComparisonKind();
+
+          std::size_t startIndex = 0;
+          std::size_t length = 0;
+          std::uint64_t expectedValue = 0;
+          if (ifElseOp->getControlBit().has_value()) {
+            startIndex = ifElseOp->getControlBit().value();
+            length = 1;
+            expectedValue = ifElseOp->getExpectedValueBit() ? 1U : 0U;
+          } else {
+            startIndex = ifElseOp->getControlRegister()->getStartIndex();
+            length = ifElseOp->getControlRegister()->getSize();
+            expectedValue = ifElseOp->getExpectedValueRegister();
+          }
+
+          std::uint64_t actualValue = 0;
+          for (std::size_t i = 0; i < length; i++) {
+            actualValue |= (classicValues[startIndex + i] ? 1U : 0U) << i;
+          }
+
+          const auto control = [actualValue, expectedValue, comparisonKind]() {
+            switch (comparisonKind) {
+            case qc::ComparisonKind::Eq:
+              return actualValue == expectedValue;
+            case qc::ComparisonKind::Neq:
+              return actualValue != expectedValue;
+            case qc::ComparisonKind::Lt:
+              return actualValue < expectedValue;
+            case qc::ComparisonKind::Leq:
+              return actualValue <= expectedValue;
+            case qc::ComparisonKind::Gt:
+              return actualValue > expectedValue;
+            case qc::ComparisonKind::Geq:
+              return actualValue >= expectedValue;
+            }
+            qc::unreachable();
+          }();
+
+          if (control) {
+            auto thenOp = ifElseOp->getThenOp()->clone();
+            applyOperationToState(thenOp);
+          } else if (ifElseOp->getElseOp() != nullptr) {
+            auto elseOp = ifElseOp->getElseOp()->clone();
+            applyOperationToState(elseOp);
+          } else {
+            continue;
+          }
+        } else {
+          throw std::runtime_error("Dynamic cast to IfElseOperation failed.");
+        }
+      } else {
+        applyOperationToState(op);
+      }
+
+      if (approximationInfo.stepNumber > 0 &&
+          approximationInfo.stepFidelity < 1.0) {
+        if (approximationInfo.strategy == ApproximationInfo::FidelityDriven &&
+            (opNum + 1) % approxMod == 0 &&
+            approximationRuns < approximationInfo.stepNumber) {
+          [[maybe_unused]] const auto sizeBefore = rootEdge.size();
+          const auto apFid = approximateByFidelity(
+              approximationInfo.stepFidelity, false, true);
+          approximationRuns++;
+          finalFidelity *= static_cast<long double>(apFid);
+        } else if (approximationInfo.strategy ==
+                   ApproximationInfo::MemoryDriven) {
+          [[maybe_unused]] const auto sizeBefore = rootEdge.size();
+          if (dd->template getUniqueTable<dd::vNode>()
+                  .possiblyNeedsCollection()) {
+            const auto apFid = approximateByFidelity(
+                approximationInfo.stepFidelity, false, true);
+            approximationRuns++;
+            finalFidelity *= static_cast<long double>(apFid);
+          }
+        }
+      }
+      dd->garbageCollect();
+    }
+    opNum++;
+  }
+  return classicValues;
+}
