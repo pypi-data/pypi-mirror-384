@@ -1,0 +1,102 @@
+repos:
+  path: repos
+  desc: 仓库
+  query_fields:
+  - field: withDocSize
+    required: false
+    default: true
+  methods:
+    list:
+      path: repos
+      method: get
+      default_fields:
+      - name: name
+        alias: 仓库名称
+      - name: app
+        alias: 应用名称
+      - name: appTitle
+        alias: 应用标题
+      - name: type
+        alias: 仓库类型
+      - name: description
+        alias: 仓库描述
+      - name: bytes
+        alias: 仓库大小
+      - name: docTotal
+        alias: 文档总数
+      - name: preset
+        alias: 预设
+      - name: repoReplicas
+        alias: 副本数
+      - name: indexMaxAgeInSecond
+        alias: 索引最大年龄
+        convert: 
+          function: format_duration
+          args:
+            - field: indexMaxAgeInSecond
+            - src_unit: s
+            - dst_unit: d
+      - name: createTime
+        alias: 创建时间
+        convert: 
+          function: format_timestamp
+          args:
+            - format: '%Y-%m-%d %H:%M:%S'
+            - tz: '+08:00'
+      - name: updateTime
+        alias: 更新时间
+        convert: 
+          function: format_timestamp
+          args:
+            - format: '%Y-%m-%d %H:%M:%S'
+            - tz: '+08:00'
+
+      query_fields:
+      - field: withDocSize
+        required: true
+        default: true
+      test_config:
+        assertions:
+        - type: status_code
+          expected: 200
+        - type: json_path
+          path: $.repos
+          expected_type: array
+        - type: json_path
+          path: $.repos[0].name
+          expected_type: string
+    get: repos
+    create:
+      path: repos/{{ name| default(faker.word()) }}
+      method: post
+      data:
+        name: '{{ name | default(faker.word()) }}'
+        type: '{{ repo_type | default(''EVENTS'') }}'
+        groupPathNames: ''
+        globalConfig: true
+        description: ketacli default created repo
+        retention: 1296000000
+        writeRefreshIntervalInSeconds: 10
+        shardMaxDocs: 50000000
+        shardMaxSizeInMB: 51200
+        indexMaxAgeInSecond: 86400
+      test_config:
+        assertions:
+        - type: status_code
+          expected: 200
+        - type: response_time
+          max_time: 10000
+    delete:
+      path: repos:batchDelete
+      method: post
+      data:
+        names:
+        - '{{ name }}'
+      test_config:
+        assertions:
+        - type: status_code
+          expected: 200
+
+    download:
+      path: repos/{{ name }}
+      method: get
