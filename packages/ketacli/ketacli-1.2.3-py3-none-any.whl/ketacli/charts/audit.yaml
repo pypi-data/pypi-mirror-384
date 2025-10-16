@@ -1,0 +1,661 @@
+- layout:
+    rows: 3
+    columns: 2
+    configs:
+      row0: { "size": 0, "ratio": 1 }
+      row1: { "size": 0, "ratio": 2 }
+      row2: { "size": 0, "ratio": 2 }
+  name: "登录审计"
+  theme: clear
+  charts:
+    - type: single
+      spl: | 
+        search2 start="@d" repo="_internal"
+        | where action.name="login"
+        | stats count() as count
+      position: row0-col0
+      title: "今日登录次数"
+      single_field: count
+      prefix: "今日登录 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      child:
+        type: table
+        title: "登录详情"
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="login"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.module:
+            alias: "模块"
+          action.name:
+            alias: "操作"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+
+
+    - type: single
+      spl: |
+        search2 start="@d" repo="_internal" AND action.name="login" AND response.statusName !="OK"
+        | stats count() as count
+      position: row0-col1
+      title: "今日登录失败次数"
+      single_field: count
+      prefix: "今日登录失败 "
+      suffix: " 次"
+      format: int
+      threshold:
+        bold green: [ 0, 0 ]
+        bold yellow: [ 1, 5 ]
+        bold red: [ 5, null ]
+      child:
+        type: table
+        title: "登录详情"
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="login" AND response.statusName !="OK"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.module:
+            alias: "模块"
+          action.name:
+            alias: "操作"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+
+    - type: bar
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="login"
+        | stats count() as count by user.name
+        | eval username='user.name'
+      position: row1-col0
+      title: "今日登录用户占比"
+      x_field: username
+      y_field: [ count ]
+      extra_configs: { width: 0.3 }
+
+    - type: bar
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="login" AND response.statusName !="OK"
+        | stats count() as count by user.name
+        | eval username='user.name'
+      position: row1-col1
+      title: "今日登录失败用户占比"
+      x_field: username
+      y_field: [ count ]
+      extra_configs: { width: 0.3 }
+
+    - type: table
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="login"
+        | fields +_time,user.name,response.statusName
+        | eval response.statusName=if(response.statusName="OK","登录成功","登录失败")
+        | rename _time as '登录时间',user.name as '登录用户名',response.statusName as '登录结果'
+        | sort by '登录时间' desc
+      position: row2-col0
+      title: "登录记录"
+      columns:
+        登录用户名:
+          style: bold
+        登录结果:
+          enum:
+            登录成功:
+              style: green
+            登录失败:
+              style: red
+        登录时间:
+          format: timestamp_ms
+
+    - type: line
+      spl: |
+        search2 start="-7d" repo="_internal"
+        | where action.name="login"
+        | eval response.statusName=if(response.statusName="OK","Success","Failure")
+        | bin _time span="1d"
+        | stats count() as cnt by _time,response.statusName
+        | sort by _time asc
+      x_field: _time
+      title: "7日登录状态趋势"
+      y_field: [ cnt ]
+      group_field: response.statusName
+      position: row2-col1
+      time_format: "%Y-%m-%d"
+
+- layout:
+    rows: 3
+    columns: 2
+    configs:
+      row0: { "size": 0, "ratio": 1 }
+      row1: { "size": 0, "ratio": 2 }
+      row2: { "size": 0, "ratio": 3 }
+      row2-col1: { "size": 0, "ratio": 0 }
+
+  name: "搜索审计"
+  theme: clear
+  charts:
+    - type: single
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="search"
+        | stats count() as count
+      position: row0-col0
+      title: "今日搜索次数"
+      single_field: count
+      prefix: "今日搜索 "
+      suffix: " 次"
+      format: int
+      style: bold green
+
+    - type: single
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="search" AND response.statusName !="OK"
+        | stats count() as count
+      position: row0-col1
+      title: "今日搜索失败次数"
+      single_field: count
+      prefix: "今日搜索失败 "
+      suffix: " 次"
+      format: int
+      threshold:
+        bold green: [ 0, 0 ]
+        bold red: [ 1, null ]
+      child:
+        type: table
+        title: "搜索失败列表"
+        spl: |
+          search2 start="@d" repo="_internal"
+          | where action.name="search" AND response.statusName !="OK"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "SPL"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+    - type: line
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="search"
+        | bin _time span="1h"
+        | stats count() as 'search_count' by _time
+        | sort by _time asc
+      position: row1-col0
+      title: "今日搜索次数趋势"
+      x_field: _time
+      time_format: "%H:%M:%S"
+      y_field: [ 'search_count' ]
+
+    - type: line
+      spl: |
+        search2 start="-7d" repo="_internal"
+        | where action.name="search"
+        | bin _time span="1h"
+        | stats count() as 'search_count' by _time
+        | sort by _time asc
+      position: row1-col1
+      title: "七日搜索次数趋势"
+      x_field: _time
+      time_format: "%m-%d %H:%M"
+      y_field: [ 'search_count' ]
+
+    - type: table
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="search"
+        | sort 10 by handlingTimeInMilli
+        | fields +handlingTimeInMilli,user.name,action.details,_time
+      position: row2-col0
+      title: "今日最耗时的搜索（top10）"
+      columns:
+        action.details:
+          alias: "SPL"
+          style: bold
+          justify: left
+        handlingTimeInMilli:
+          alias: "执行耗时"
+          format: int
+          suffix: "ms"
+          style: yellow
+        user.name:
+          alias: "执行用户"
+          style: bold
+        _time:
+          alias: "执行时间"
+          format: timestamp_ms
+
+- layout:
+    rows: 3
+    columns: 6
+    configs:
+      row0: { "size": 0, "ratio": 1 }
+      row1: { "size": 0, "ratio": 2 }
+      row2: { "size": 0, "ratio": 3 }
+      row1-col1: { "size": 0, "ratio": 0 }
+      row1-col2: { "size": 0, "ratio": 0 }
+      row1-col3: { "size": 0, "ratio": 0 }
+      row1-col4: { "size": 0, "ratio": 0 }
+      row1-col5: { "size": 0, "ratio": 0 }
+      row2-col1: { "size": 0, "ratio": 0 }
+      row2-col2: { "size": 0, "ratio": 0 }
+      row2-col3: { "size": 0, "ratio": 0 }
+      row2-col4: { "size": 0, "ratio": 0 }
+      row2-col5: { "size": 0, "ratio": 0 }
+  name: "搜索审计"
+  theme: clear
+  charts:
+    - type: single
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="create"
+        | stats count() as count
+      position: row0-col0
+      title: "当日新增"
+      single_field: count
+      prefix: "今日\"新增\"次数 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      child:
+        type: table
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="create"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "操作详情"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+        title: 今日新增详情
+    - type: single
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="create" AND response.statusName!="OK"
+        | stats count() as count
+      position: row0-col1
+      title: "当日新增异常"
+      single_field: count
+      prefix: "今日\"新增异常\"次数 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      threshold:
+        bold green: [ 0, 0 ]
+        bold red: [ 1, null ]
+      child:
+        type: table
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="create" AND response.statusName!="OK"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "操作详情"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+        title: 今日新增异常详情
+    - type: single
+      title: 今日更新操作次数
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="update"
+        | stats count() as count
+      single_field: count
+      prefix: "今日\"更新\"次数 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      position: row0-col2
+      child:
+        type: table
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="update"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "操作详情"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+        title: 今日更新详情
+    - type: single
+      title: 今日更新操作失败次数
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="update" AND response.statusName!="OK"
+        | stats count() as count
+      single_field: count
+      prefix: "今日\"更新异常\"次数 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      threshold:
+        bold green: [ 0, 0 ]
+        bold red: [ 1, null ]
+      position: row0-col3
+      child:
+        type: table
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="update" AND response.statusName!="OK"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "操作详情"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+        title: 今日更新异常详情
+    - type: single
+      title: 今日删除操作次数
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="delete"
+        | stats count() as count
+      single_field: count
+      prefix: "今日\"删除\"次数 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      position: row0-col4
+      child:
+        type: table
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="delete" 
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "操作详情"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+        title: 今日删除详情
+    - type: single
+      title: 今日删除操作失败次数
+      spl: |
+        search2 start="@d" repo="_internal"
+        | where action.name="delete" AND response.statusName!="OK"
+        | stats count() as count
+      single_field: count
+      prefix: "今日\"删除异常\"次数 "
+      suffix: " 次"
+      format: int
+      style: bold green
+      threshold:
+        bold green: [ 0, 0 ]
+        bold red: [ 1, null ]
+      position: row0-col5
+      child:
+        type: table
+        spl: |
+          search2 start="@d" repo="_internal" and action.name="delete" AND response.statusName!="OK"
+          | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+        columns:
+          request.id:
+            alias: "请求ID"
+          action.name:
+            alias: "操作"
+          action.details:
+            alias: "操作详情"
+          user.name:
+            alias: "用户名"
+          request.method:
+            alias: "请求方法"
+          request.url:
+            alias: "请求URL"
+          response.code:
+            alias: "响应码"
+            threshold:
+              green: [ 200, 299 ]
+              red: [ 300, 599 ]
+          handlingTimeInMilli:
+            alias: "处理时间"
+            format: "duration_ms"
+          _time:
+            alias: "时间"
+            format: timestamp_ms
+        title: 今日删除异常详情
+    - type: line
+      spl: |
+        search2 start="-7d" repo="_internal"
+        | where action.name!="search"
+        | bin _time span="1d"
+        | stats count() as 'create_count' by _time, action.name
+        | sort by _time asc
+      x_field: _time
+      time_format: "%m-%d"
+      y_field: [ 'create_count' ]
+      group_field: action.name
+      position: row1-col0
+      title: "近七日操作趋势"
+      extra_configs: {}
+
+    - type: table
+      spl: |
+        search2 start="@d" repo="_internal" and action.name="*" AND action.name!="search"
+        | fields _time,action.module,action.name,user.name,response.code,request.url,request.method,request.id,handlingTimeInMilli,action.details
+      columns:
+        request.id:
+          alias: "请求ID"
+        action.name:
+          alias: "操作"
+        action.details:
+          alias: "操作详情"
+        user.name:
+          alias: "用户名"
+        request.method:
+          alias: "请求方法"
+        request.url:
+          alias: "请求URL"
+        response.code:
+          alias: "响应码"
+          threshold:
+            green: [ 200, 299 ]
+            red: [ 300, 599 ]
+        handlingTimeInMilli:
+          alias: "处理时间"
+          format: "duration_ms"
+        _time:
+          alias: "时间"
+          format: timestamp_ms
+      position: row2-col0
+      title: 今日操作详情
+- layout:
+    rows: 2
+    columns: 5
+    configs:
+      row0-col0: { "size": 0, "ratio": 1 }
+      row0-col1: { "size": 0, "ratio": 4 }
+      row0-col2: { "size": 0, "ratio": 0 }
+      row0-col3: { "size": 0, "ratio": 0 }
+      row0-col4: { "size": 0, "ratio": 0 }
+      row1-col2: { "size": 0, "ratio": 0 }
+      row1-col3: { "size": 0, "ratio": 0 }
+      row1-col4: { "size": 0, "ratio": 0 }
+  name: "仓库统计"
+  theme: clear
+  charts:
+    - type: single
+      title: 日增量
+      spl: |
+        search2 start="@d" repo="_internal" AND origin = "_collector"
+        | stats sum(kiloBytesProcessed) as '日增总量'
+      single_field: 日增总量
+      position: row0-col0
+      format: kilobytes
+      prefix: "日增总量："
+      style: bold blue
+    - type: line
+      title: 七日日增量趋势
+      spl: |
+        search2 start="-7d" repo="_internal" AND origin = "_collector"
+        | bin _time span="1d" 
+        | stats sum(kiloBytesProcessed) as '日增量' by _time
+        | sort by _time
+      x_field: _time
+      format: kilobytes
+      y_field: 日增量
+      position: row0-col1
+    - type: bar
+      title: 今日仓库的数据量
+      spl: |
+        search2 start="@d" repo="_internal" AND origin = "_collector" repoName="*"
+        | stats sum(kiloBytesProcessed) as 'dailyIncrement' by repoName
+        | sort by 'dailyIncrement'
+      x_field: repoName
+      y_field: dailyIncrement
+      position: row1-col0
+    - type: bar
+      title: 今日采集任务的数据量
+      spl: |
+        search2 start="@d" repo="_internal" AND origin = "_collector" runnerName="*"
+        | stats sum(kiloBytesProcessed) as 'dailyIncrement' by runnerName
+        | sort by 'dailyIncrement'
+      x_field: runnerName
+      y_field: dailyIncrement
+      position: row1-col1
