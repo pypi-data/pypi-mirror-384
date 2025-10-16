@@ -1,0 +1,2 @@
+class ModuleClass:
+    pass
