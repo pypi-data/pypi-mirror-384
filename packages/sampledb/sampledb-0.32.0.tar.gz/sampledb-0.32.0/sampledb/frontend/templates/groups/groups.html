@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Basic Groups') }} — {{ service_name }}{% endblock %}
+
+{% macro show_group_category_tree(group_category_tree) %}
+  <ul class="groups_list">
+  {% for category in group_categories %}
+    {% if category.id in group_category_tree['child_categories'] %}
+      {% if group_category_tree['child_categories'][category.id]['contains_basic_groups'] %}
+        <li class="groups_list_category">
+          <input type="checkbox" id="groups_list_category_{{ category.id }}_expand"/>
+          <label for="groups_list_category_{{ category.id }}_expand" class="groups_list_category_label">
+            <i class="fa"></i>
+            {{ group_categories_by_id[category.id].name | get_translated_text(default=_('Unnamed Category')) }}
+          </label>
+          {{ show_group_category_tree(group_category_tree['child_categories'][category.id]) }}
+        </li>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  {% for group in groups %}
+    {% if group.id in group_category_tree['basic_group_ids'] %}
+      <li>
+        <a href="{{ url_for('.group', group_id=group.id) }}">{{ group.name | get_translated_text }}</a>{% if group_membership_by_id[group.id] %} <span class="label label-default">{{ _('Member') }}</span>{% endif %}
+      </li>
+    {% endif %}
+  {% endfor %}
+  </ul>
+{% endmacro %}
+
+{% block content %}
+  {% set allowed_language_ids = [] %}
+  {% for language in languages %}
+    {{ allowed_language_ids.append(language.id) or '' }}
+  {% endfor %}
+
+  <h1>{{ _('Basic Groups') }}</h1>
+  <p class="text-muted">{{ _('A basic group consists of equal users which share the object permissions granted to it.') }} <a href="https://scientific-it-systems.iffgit.fz-juelich.de/SampleDB/user_guide/groups.html">{{ _('Read more.')}}</a></p>
+  {% if not current_user.is_readonly and (current_user.is_admin or not config['ONLY_ADMINS_CAN_CREATE_GROUPS'] or not config['ONLY_ADMINS_CAN_MANAGE_GROUP_CATEGORIES']) %}
+  <p>
+    {% if current_user.is_admin or not config['ONLY_ADMINS_CAN_CREATE_GROUPS'] %}
+      <button type="button" class="btn btn-default" data-toggle="modal" data-target="#createGroupModal">{{ _('Create Basic Group') }}</button>
+    {% endif %}
+    {% if current_user.is_admin or not config['ONLY_ADMINS_CAN_MANAGE_GROUP_CATEGORIES'] %}
+      <a href="{{ url_for('.group_categories') }}" class="btn btn-default">{{ _('Manage Group Categories') }}</a>
+    {% endif %}
+  </p>
+  {% endif %}
+  {{ show_group_category_tree(group_category_tree) }}
+  {% if not current_user.is_readonly %}
+  <div class="modal fade" id="createGroupModal" tabindex="-1" role="dialog" aria-labelledby="createGroupModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="createGroupModalLabel">{{ _('Create Basic Group') }}</h4>
+        </div>
+
+          <div class="hidden" id="name-template">
+            <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="">
+                <input type="text" class="form-control" id="input-name-" placeholder="{{ _('Name') }}" data-name="input-name" value="" data-translation-attribute="name" data-empty-text="{{ _('Please enter a group name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter group name (at most 100 characters).') }}">
+                {% if allowed_language_ids | length > 1 %}
+                  <span class="input-group-addon language-addon" data-name="language" style="margin-right: 5px"></span>
+                {% endif %}
+            </div>
+            <span class="help-block" data-name="name"></span>
+          </div>
+
+        <div class="hidden" id="description-template">
+            <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="" style="padding-bottom: 10px">
+                <textarea class="form-control" style="resize: vertical; min-height:2.5em;" id="" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description"></textarea>
+                {% if allowed_language_ids | length > 1 %}
+                  <span class="input-group-addon language-addon" data-name="language" style="margin-right: 5px"></span>
+                {% endif %}
+            </div>
+        </div>
+
+        <form method="post">
+          {{ create_group_form.csrf_token() }}
+          <div class="modal-body">
+
+          <div class="form-group" data-name="input-names">
+                <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+                      <label for="select-language-name" class="control-label col-sm-8" style="margin-top: 5px">{{ _("Name") }}</label>
+                      <select class="selectpicker btn-xs select-language col-sm-4 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs"
+                              id="select-language-name">
+                          {% for language in languages %}
+                              <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" selected="selected" {% endif %} data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                          {% endfor %}
+                      </select>
+                 </div>
+
+                  <div class="form-group">
+                    <div class="{% if allowed_language_ids | length > 1 %}input-group{% endif %} {% if create_group_form.translations.errors %}has-error{% endif %}" data-language-id="{{ ENGLISH.id }}">
+                      <input type="text" class="form-control" id="input-name-{{ ENGLISH.id}}" placeholder="{{ _('Name') }}" data-name="input-name" value="" data-translation-attribute="name" data-empty-text="{{ _('Please enter a group name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter group name (at most 100 characters).') }}">
+                      {% if allowed_language_ids | length > 1 %}
+                        <span class="input-group-addon language-addon" data-name="language">{{ ENGLISH.names | get_translated_text }}</span>
+                      {% endif %}
+                    </div>
+                  <span class="help-block" data-name="name" style="margin-bottom: -5px"></span>
+                  {% for error_message in create_group_form.translations.errors %}<span class="help-block" style="color: red">{{ error_message }}</span>{% endfor %}
+                 </div>
+
+                </div>
+
+            <div class="form-group" data-name="input-descriptions" style="padding-top: 10px">
+                  <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+                      <label for="select-language-description" class="control-label col-sm-8" style="margin-top: 5px">{{ _("Description") }}</label>
+                      <select class="selectpicker btn-xs select-language col-sm-4 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs"  id="select-language-description">
+                          {% for language in languages %}
+                              <option value="{{ language.id }}" {% if language.id == ENGLISH.id %}  disabled="disabled" selected="selected"{% endif %} data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                          {% endfor %}
+                      </select>
+                  </div>
+
+              <div class="{% if allowed_language_ids | length > 1 %}input-group{% endif %}" data-name="description" data-language-id="{{ ENGLISH.id }}" style="margin-bottom: 10px">
+                <textarea class="form-control" style="resize: vertical; min-height:2.5em;" id="input-description-{{ ENGLISH.id }}" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description"></textarea>
+                {% if allowed_language_ids | length > 1 %}
+                  <span class="input-group-addon language-addon" data-name="language">{{ ENGLISH.names | get_translated_text }}</span>
+                {% endif %}
+              </div>
+          </div>
+          {% if group_categories %}
+          <div class="form-group">
+            <label for="select-categories" class="control-label">{{ _("Categories") }}</label>
+            <select class="selectpicker form-control" multiple="multiple" id="select-categories" name="{{ create_group_form.categories.name }}" data-none-selected-text="{{ _('No category selected') }}">
+              {% for category in group_categories %}
+                <option value="{{ category.id }}">
+                  {%- for category_name in group_category_names[category.id] -%}
+                    {%- if not loop.first %} / {% endif -%}
+                    {{ category_name | get_translated_text(default=_('Unnamed Category')) }}
+                  {%- endfor -%}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <input type="hidden" id="input-translations" name="{{ create_group_form.translations.name }}" value="">
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="create" value="create">{{ _('Create Basic Group') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block stylesheets %}
+  {{ super() }}
+<link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-select/css/bootstrap-select.min.css') }}" />
+{% endblock %}
+
+{% block template_values %}
+  {% set language_info_languages = [] %}
+  {% for lang in languages %}
+    {% do language_info_languages.append({"id": lang.id | string, "name": lang.names | get_translated_text, "lang_code": lang.lang_code}) %}
+  {% endfor %}
+  {% do set_template_value("language_info.languages", language_info_languages) %}
+  {% do set_template_value("language_info.english_id", ENGLISH.id) %}
+
+  {% do set_template_value("show_create_form", show_create_form) %}
+
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ fingerprinted_static('bootstrap-select/js/bootstrap-select.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/page/groups.js') }}" type="module"></script>
+{% endblock %}

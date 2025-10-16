@@ -1,0 +1,1927 @@
+{% extends "base.html" %}
+{% block title %}{% if (show_object_type_and_id_on_object_page_text is none and not config['HIDE_OBJECT_TYPE_AND_ID_ON_OBJECT_PAGE']) or show_object_type_and_id_on_object_page_text %}{% if object_type is not none %}{{ object_type }}{% else %}{{ _('Object') }}{% endif %} #{{ object_id }}{% if name %}: {% endif %}{% endif %}{{ name | get_translated_text(default='—') }} — {{ service_name }}{% endblock %}
+
+{% block head %}
+  {{ super() }}
+  <link rel="meta" type="application/rdf+xml" href="{% if link_version_specific_rdf %}{{ url_for('.object_rdf', object_id=object_id, version_id=version_id) }}{% else %}{{ url_for('.object_rdf', object_id=object_id) }}{% endif %}" />
+{% endblock %}
+
+{% block stylesheets %}
+  {{ super() }}
+    <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-datetimepicker/css/bootstrap-datetimepicker.min.css') }}" />
+    <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-select/css/bootstrap-select.min.css') }}" />
+    <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-toggle/css/bootstrap-toggle.min.css') }}"/>
+{% endblock %}
+
+{% set id_prefix_root = "object" %}
+{% set property_path = () %}
+
+{% block sidebar %}
+  <nav>
+    <ul>
+      <li><a href="#information">{{ _('Information') }}</a></li>
+      <li><a href="#tools">{{ _('Tools') }}</a></li>
+      {% if workflow_view_modals %}
+        {% if not only_empty_workflows %}
+          <li><a href="#workflow_views">_('Workflow Views')</a></li>
+        {% endif %}
+      {% else %}
+        {% if schema and 'workflow_view' in schema and workflows | length > 0 and workflows[0] | length > 0 %}
+          <li><a href="#workflow_1">{% if 'title' in schema['workflow_view'] %}{{ schema['workflow_view']['title'] | get_translated_text }}{% else %}{{ _('Workflow') }}{% endif %}</a></li>
+        {% elif schema and 'workflow_views' in schema %}
+          {% for workflow_view in schema['workflow_views'] %}
+            {% if workflows | length > loop.index0 and workflows[loop.index0] | length  %}
+              <li><a href="#workflow_{{ loop.index }}">{% if 'title' in workflow_view %}{{ workflow_view.title | get_translated_text }}{% else %}{{ _('Workflow') }} #{{ loop.index }}{% endif %}</a></li>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endif %}
+      <li><a href="#files">{{ _('Files') }}</a></li>
+      <li><a href="#locations">{{ _('Locations') }}</a></li>
+      <li><a href="#publications">{{ _('Publications') }}</a></li>
+      <li><a href="#comments">{{ _('Comments') }}</a></li>
+      <li><a href="#activity_log">{{ _('Activity Log') }}</a></li>
+      <li><a href="#other_databases">{{ _('Other Databases') }}</a></li>
+      <li><a href="#import">{{ _('Import') }}</a></li>
+      <li><a href="#related_objects">{{ _('Related Objects') }}</a></li>
+    </ul>
+    <a href="#top">{{ _('Back to top') }}</a>
+  </nav>
+{% endblock %}
+
+{% block content %}
+
+  {% if is_archived %}
+  <div class="alert alert-info alert-dismissible" role="alert">
+    <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+    <strong>{{ _('Note') }}:</strong>
+    {% if previous_version_data_diff %}
+      {{ _('This page shows the changes between version #%(previous_version_id)s and version #%(version_id)s.', previous_version_id=version_id-1, version_id=version_id) }}
+    {% elif previous_version_schema %}
+      {{ _('Version #%(version_id)s did not change the data of this object.', version_id=version_id) }}
+    {% elif version_id == current_version_id %}
+      {{ _('This page contains an archived version of the current object information.') }}
+    {% else %}
+      {{ _('This page contains an archived version of previous object information.') }}
+    {% endif %}
+    {{ _('For always up-to-date information, <a href="%(latest_version_url)s">click here</a>.', latest_version_url=url_for('frontend.object', object_id=object_id)) }}
+  </div>
+  {% endif %}
+
+  <h1>
+    {% if (show_object_type_and_id_on_object_page_text is none and not config['HIDE_OBJECT_TYPE_AND_ID_ON_OBJECT_PAGE']) or show_object_type_and_id_on_object_page_text %}{% if object_type is not none %}{{ object_type }}{% else %}{{ _('Object') }}{% endif %} #{{ object_id }}{% if name %}: {% endif %}{% endif %}{{ name | get_translated_text(default='—') }}
+    {{ import_information_symbol(object) }}
+  </h1>
+  <h2 id="information">{{ _('Information') }}</h2>
+  {% if not config['DISABLE_INSTRUMENTS'] %}
+  <div class="row" style="padding-right:0.75em">
+    <label class="col-md-3" style="text-align: right">{{ _('Instrument') }} <i class="fa fa-search" style="visibility:hidden" aria-hidden="true"></i></label>
+    <div class="col-md-9">
+      {% if instrument is not none %}
+        <a href="{{ url_for('frontend.instrument', instrument_id=instrument.id) }}">{{ instrument.name | get_translated_text }}</a>
+        {{ import_information_symbol(instrument) }}
+      {% else %}&mdash;{% endif %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="row" style="padding-right:0.75em">
+    <label class="col-md-3" style="text-align: right">{{ _('Action') }}
+      {% if action is not none %}
+        <a href="{{ url_for('.objects', action_ids=action.id) }}" class="search-helper"><i class="fa fa-search" aria-hidden="true"></i></a>{% else %}<i class="fa fa-search" style="visibility:hidden" aria-hidden="true"></i>
+      {% endif %}
+    </label>
+    <div class="col-md-9">
+      {% if action is not none %}
+        <a href="{{ url_for('frontend.action', action_id=action.id) }}">{{ action.name | get_translated_text(default=_('Unnamed Action')) }}</a>
+        {{ import_information_symbol(action) }}
+      {% else %}&mdash;{% endif %}
+    </div>
+  </div>
+  {% block includes %}
+      {% set indent_level = 0 %}
+      {% set show_indent_border = False %}
+      {% if data is not none and schema is not none %}
+          {% if previous_version_data_diff %}
+            {% set diff = previous_version_data_diff %}
+            {% set previous_schema = previous_version_schema %}
+          {% else %}
+            {% set diff = none %}
+            {% set previous_schema = none %}
+          {% endif %}
+          <div style="margin-left: -15px; margin-right:-15px">
+            {% include "objects/view/any.html" %}
+          </div>
+      {% endif %}
+  {% endblock %}
+  {% if data is none or schema is none %}
+    <div class="row" style="padding-right:0.75em">
+      <label class="col-md-3" style="text-align: right">{{ _('Data') }}<i class="fa fa-search" style="visibility:hidden" aria-hidden="true"></i></label>
+      <div class="col-md-9">
+        <i class="fa fa-share-alt" aria-hidden="true"></i> {{ _('This object has been imported without data.') }}
+      </div>
+    </div>
+  {% endif %}
+  <div class="object-button-bar" id="tools">
+    {% if object_languages | length > 1 %}
+    <div class="form-group">
+      <div class="btn-group" data-toggle="tooltip" data-placement="top" title="{{ _("View object information in a different language.") }}">
+        <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i class="fa fa-language" aria-hidden="true"></i> {{ _("Change Language") }} <span class="caret"></span></button>
+        <ul class="dropdown-menu dropdown-menu-right">
+          {% for language in object_languages %}
+            <li><a href="?language={{ language.lang_code }}{{'&diff' if previous_version_data_diff else ''}}">{{ language.names | get_translated_text }}{% if (metadata_language is none and language.id == get_user_language(current_user).id) or (metadata_language is none and get_user_language(current_user) not in languages and language.lang_code == 'en') or language.lang_code == metadata_language %}  <i class="fa fa-check" aria-hidden="true"> </i>{% endif %}</a></li>
+          {% endfor %}
+          {% if languages | length == 0 %}
+            <li><a>{{ ENGLISH.names | get_translated_text }}  <i class="fa fa-check" aria-hidden="true"> </i></a></li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+  {% if not is_archived %}
+    {% if not current_user.is_readonly %}
+      {% if user_may_edit %}
+        <div class="form-group">
+          <a href="{{ url_for('.object', object_id=object_id, mode='edit') }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('Create a new version of the information for this object.') }}"><i class="fa fa-pencil" aria-hidden="true"></i> {{ _('Edit Object') }}</a>
+        </div>
+      {% endif %}
+      {% if user_may_edit and new_schema_available %}
+        <div class="form-group">
+          <a href="{{ url_for('.object', object_id=object_id, mode='upgrade') }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('Update the schema for the information for this object.') }}"><i class="fa fa-arrow-circle-o-up" aria-hidden="true"></i> {{ _('Update Schema') }}</a>
+        </div>
+      {% endif %}
+      {% if user_may_grant %}
+        <div class="form-group">
+          <a href="{{ url_for('.object_permissions', object_id=object_id) }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('Modify who can read the information for this object, write it or grant permissions to other users.') }}"><i class="fa fa-lock" aria-hidden="true"></i> {{ _('Edit Permissions') }}</a>
+        </div>
+      {% endif %}
+      {% if project and current_user.is_authenticated%}
+        <div class="form-group">
+          <a href="{{ url_for('.project', project_id=project.id) }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('View the Project Group linked to this %(object_type_name)s.', object_type_name=action_type.object_name | get_translated_text(default=_('Object'))) }}"><i class="fa fa-users" aria-hidden="true"></i> {{ _('View Project Group') }}</a>
+        </div>
+      {% endif %}
+      {% if user_may_use_as_template and data and action is not none and not action.disable_create_objects and (current_user.is_admin or not action.admin_only) and action.type_id is not none and not action.type.disable_create_objects %}
+        <div class="form-group">
+          {% if new_schema_available %}
+            <button class="btn btn-primary" title="{{ _('Create a new object based on the information for this object.') }}" data-toggle="modal" data-target="#useAsTemplateModal"><i class="fa fa-files-o" aria-hidden="true"></i> {{ _('Use as Template') }}</button>
+          {% else %}
+            <a href="{{ url_for('.new_object', previous_object_id=object_id) }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('Create a new object based on the information for this object.') }}"><i class="fa fa-files-o" aria-hidden="true"></i> {{ _('Use as Template') }}</a>
+          {% endif %}
+        </div>
+      {% endif %}
+      {% if action is not none and usable_in_action_types and not current_user.is_readonly and current_user.is_authenticated %}
+        {% for usable_in_action_type in usable_in_action_types %}
+          <div class="form-group">
+            <div class="btn-group" data-toggle="tooltip" data-placement="top" title="{{ _('Create a new %(new_object_name_singular)s using this %(current_object_name_singular)s.', new_object_name_singular=usable_in_action_type.object_name|get_translated_text, current_object_name_singular=action.type.object_name|get_translated_text) }}">
+              <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i class="fa fa-bar-chart" aria-hidden="true"></i> {{ _('Use in %(action_type_name)s', action_type_name=usable_in_action_type.name | get_translated_text(default=_('Unnamed Action Type'))) }} <span class="caret"></span></button>
+              <ul class="dropdown-menu dropdown-menu-right">
+                <li><strong style="padding: 3px 20px">{{ _('Favorites') }}:</strong></li>
+                {% if favorite_actions_by_action_type_id %}
+                  {% for action in favorite_actions_by_action_type_id[usable_in_action_type.id] %}
+                  {% if not action.type.disable_create_objects and not action.disable_create_objects and not (action.admin_only and not current_user.is_admin) %}
+                  <li>
+                    <a href="{{ url_for('.new_object', action_id=action.id, object_id=object_id) }}">
+                    {% if action.user_id is not none %}
+                      {% set action_owner = get_user(action.user_id) %}
+                      {{ action_owner.get_name() }} /
+                    {% endif %}
+                    {% if action.instrument is not none %}
+                      {{ action.instrument.name | get_translated_text  }}
+                      &mdash;
+                    {% endif %}
+                      {{ action.name | get_translated_text(default=_('Unnamed Action')) }}
+                    </a>
+                  </li>
+                  {% endif %}
+                  {% endfor %}
+                {% else %}
+                <li><span style="padding: 3px 20px">&mdash;</span></li>
+                {% endif %}
+                <li role="separator" class="divider"></li>
+                <li><a href="{{ url_for('.actions', t=usable_in_action_type.id, object_id=object_id, can_create_objects='') }}">{{ _('See other %(action_type_name)s Actions...', action_type_name=usable_in_action_type.name|get_translated_text(default="Unnamed Action Type")) }}</a></li>
+              </ul>
+            </div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endif %}
+    {% if action is not none and action.type is not none and action.type.enable_labels %}
+      <div class="form-group">
+        <button type="button" class="btn btn-primary" id="button-show-object-label-modal" data-toggle="tooltip" data-placement="top" title="{{ _('Generate a PDF containing labels for this object.') }}"><i class="fa fa-tag" aria-hidden="true"></i> {{ _('Generate Labels') }}</button>
+      </div>
+    {% endif %}
+    <div class="form-group">
+      <button type="button" class="btn btn-primary" id="button-show-object-qrcode-modal" data-toggle="tooltip" data-placement="top" title="{{ _('Show a QR code for a link to this object.') }}"><i class="fa fa-qrcode" aria-hidden="true"></i> {{ _('Show QR Code') }}</button>
+    </div>
+    <div class="form-group">
+      <div data-toggle="tooltip" data-placement="top" title="{{ _('Export object information to an archive or PDF file.') }}"><button type="button" class="btn btn-primary" data-toggle="modal" data-target="#dataExportModal"><i class="fa fa-file-text-o" aria-hidden="true"></i> {{ _('Export Data') }}</button></div>
+    </div>
+    {% if show_scicat_export %}
+    <div class="form-group">
+      <a href="{{ url_for('.scicat_export', object_id=object_id) }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('Export object information to %(scicat_name)s.', scicat_name=config['SCICAT_NAME']) }}">
+        <img src="{{ fingerprinted_static("sampledb/img/scicat-40.png") }}" style="height:1.3em; margin-top:-0.2em;" alt=""/> {{ _('Export to %(scicat_name)s', scicat_name=config['SCICAT_NAME']) }}
+      </a>
+    </div>
+    {% elif scicat_url %}
+      <div class="form-group">
+        <a href="{{ scicat_url }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('View object information on %(scicat_name)s.', scicat_name=config['SCICAT_NAME']) }}">
+          <img src="{{ fingerprinted_static("sampledb/img/scicat-40.png") }}" style="height:1.3em; margin-top:-0.2em;" alt=""/> {{ _('View on %(scicat_name)s', scicat_name=config['SCICAT_NAME']) }}
+        </a>
+      </div>
+    {% endif %}
+    {% if show_dataverse_export %}
+      <div class="form-group">
+        {% if dataverse_export_task_created %}
+          <div class="d-inline-block" tabindex="0" data-toggle="tooltip" data-placement="top" title="{{ _('The object is currently being exported.') }}">
+            <a href="#" class="btn btn-primary disabled" aria-disabled="true">
+              <img src="{{ fingerprinted_static("sampledb/img/dataverse-40.png") }}" style="height:1.3em; margin-top:-0.2em;" alt=""/>{{ _('Export to %(dataverse_name)s', dataverse_name=config['DATAVERSE_NAME']) }}
+            </a>
+          </div>
+        {% else %}
+          <a href="{{ url_for('.dataverse_export', object_id=object_id) }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('Export object information and files to %(dataverse_name)s.', dataverse_name=config['DATAVERSE_NAME']) }}">
+            <img src="{{ fingerprinted_static("sampledb/img/dataverse-40.png") }}" style="height:1.3em; margin-top:-0.2em;" alt=""/>{{ _('Export to %(dataverse_name)s', dataverse_name=config['DATAVERSE_NAME']) }}
+          </a>
+        {% endif %}
+      </div>
+    {% elif dataverse_url %}
+      <div class="form-group">
+        <a href="{{ dataverse_url }}" class="btn btn-primary" data-toggle="tooltip" data-placement="top" title="{{ _('View object information on %(dataverse_name)s.', dataverse_name=config['DATAVERSE_NAME']) }}">
+          <img src="{{ fingerprinted_static("sampledb/img/dataverse-40.png") }}" style="height:1.3em; margin-top:-0.2em;" alt=""/>{{ _('View on %(dataverse_name)s', dataverse_name=config['DATAVERSE_NAME']) }}
+        </a>
+      </div>
+    {% endif %}
+    {% if notebook_templates and jupyterhub_templates_url %}
+      <div class="form-group">
+        <div class="btn-group" data-toggle="tooltip" data-placement="top" title="{{ _('Create a Jupyter Notebook in %(jupyterhub_name)s to analyze this object.', jupyterhub_name=jupyterhub_name) }}">
+          <button class="btn btn-primary dropdown-toggle" type="button" id="notebookDropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            <img src="{{ fingerprinted_static("sampledb/img/jupyter-40.png") }}" style="height:1.3em; margin-top:-0.2em; margin-right: -0.2em;" alt=""/> {{ _('Create Notebook') }} <span class="caret"></span>
+          </button>
+          <ul class="dropdown-menu" aria-labelledby="notebookDropdownMenuButton">
+            {% for notebook_template in notebook_templates %}
+              <li>
+                <form action="{{ jupyterhub_templates_url }}/t/{{ notebook_template.url }}" method="post">
+                <input type="hidden" name="params" value='{{ notebook_template.params | tojson }}'>
+                <input type="submit" value="{{ notebook_template.title }}" class="btn btn-link dropdown-menu-button" />
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+  {% endif %}
+    {% if restore_form is not none and not component %}
+    <div class="form-group">
+      <form class="text-center" action="{{ url_for('.restore_object_version', object_id=object_id, version_id=version_id) }}" method="post">
+        {{ restore_form.csrf_token() }}
+        <button type="submit" class="btn btn-primary"><i class="fa fa-undo" aria-hidden="true"></i> {{ _('Restore Version') }}</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% if schema and ('workflow_view' in schema or 'workflow_views' in schema) %}
+    {% set workflow_views = schema.get('workflow_views', []) %}
+    {% if 'workflow_view' in schema %}
+      {% do workflow_views.append(schema.workflow_view) %}
+    {% endif %}
+    {% if workflow_view_modals %}
+      {% if not only_empty_workflows %}
+        <h2>{{ _('Workflow Views') }}</h2>
+        <div class="object-button-bar">
+        {% for workflow_view in workflow_views %}
+          {% if workflows | length > loop.index0 and workflows[loop.index0] | length > 0 %}
+            {% set workflow_id = "workflow_" ~ loop.index %}
+            <div class="form-group">
+              <button type="button" class="btn btn-primary button-workflow-view-modal" data-workflow_view="{{ workflow_id }}" id="button-show-workflow-view-modal-{{ workflow_id }}">{% if 'title' in workflow_view %}{{ workflow_view.title | get_translated_text }}{% else %}{{ _('Workflow') }} #{{ loop.index }}{% endif %}</button>
+            </div>
+          {% endif %}
+        {% endfor %}
+        </div>
+      {% endif %}
+    {% endif %}
+    {% for workflow_view in workflow_views %}
+      {% if workflows | length > loop.index0 and workflows[loop.index0] | length > 0 %}
+        {% set workflow_id = "workflow_" ~ loop.index %}
+        {% set workflow = workflows[loop.index0] %}
+        {% if workflow_view_modals %}
+          <div style="margin: 10px;" class="modal fade modal-workflow-view" id="workflowModal-{{ workflow_id }}" tabindex="-1" role="dialog" aria-labelledby="workflowModalLabel-{{ workflow_id }}">
+            <div class="modal-dialog modal-lg" role="document">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                  <h4 class="modal-title">{% if 'title' in workflow_view %}{{ workflow_view.title | get_translated_text }}{% else %}{{ _('Workflow') }} #{{ loop.index }}{% endif %}</h4>
+                </div>
+                <div class="modal-body">
+        {% else %}
+          <h2 id="{{ workflow_id }}">{% if 'title' in workflow_view %}{{ workflow_view.title | get_translated_text }}{% else %}{{ _('Workflow') }} #{{ loop.index }}{% endif %}</h2>
+        {% endif %}
+        <div>
+          <button class="btn btn-default btn-xs expand-all-button" data-collapse-group-id="{{ workflow_id }}"><i class="fa fa-plus-square-o"></i> {{ _('Expand All') }}</button>
+          <button class="btn btn-default btn-xs collapse-all-button" data-collapse-group-id="{{ workflow_id }}"><i class="fa fa-minus-square-o"></i> {{ _('Collapse All') }}</button>
+        </div>
+        {% for elem in workflow %}
+          {% set wfpath_object = namespace(name=name, id=object_id) %}
+          <div>
+            {% if elem.path %}
+            <h5>
+              {% for path_elem in elem.path %}
+                {% if path_elem.is_referenced and path_elem.is_current_referenced and path_elem.is_referencing and path_elem.is_current_referencing %}
+                    <span data-toggle="tooltip" data-placement="right" title="{{ _('Referenced by the metadata of %(object_name)s (#%(object_id)s) and references %(object_name)s (#%(object_id)s) in its metadata', object_name = wfpath_object.name | get_translated_text(default='—'), object_id=wfpath_object.id) }}" class="fa-stack" style="position: relative; width: 2em; height: 2em;">
+                      <i class="fa fa-arrow-left fa-stack-1x"></i>
+                      <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                    </span>
+                {% elif path_elem.is_referenced and path_elem.is_current_referenced and path_elem.is_referencing and not path_elem.is_current_referencing %}
+                  <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                    <i class="fa fa-arrow-left fa-stack-1x"></i>
+                    <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                    <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(0.8em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                  </span>
+                {% elif path_elem.is_referenced and not path_elem.is_current_referenced and path_elem.is_referencing and path_elem.is_current_referencing %}
+                  <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                    <i class="fa fa-arrow-left fa-stack-1x"></i>
+                    <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                    <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(-0.25em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                  </span>
+                {% elif path_elem.is_referenced and not path_elem.is_current_referenced and path_elem.is_referencing and not path_elem.is_current_referencing %}
+                  <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                    <i class="fa fa-arrow-left fa-stack-1x"></i>
+                    <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                    <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(0.25em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                  </span>
+                {% elif path_elem.is_referenced and path_elem.is_current_referenced %}
+                  <i class="fa fa-fw fa-arrow-left" style="margin-left: 8px;" aria-hidden="true" data-toggle="tooltip" data-placement="right" title="{{ _('Referenced by the metadata of %(object_name)s (#%(object_id)s)', object_name = wfpath_object.name | get_translated_text(default='—'), object_id=wfpath_object.id) }}"></i>
+                {% elif path_elem.is_referencing and path_elem.is_current_referencing %}
+                  <i class="fa fa-fw fa-arrow-right" style="margin-left: 8px;" aria-hidden="true" data-toggle="tooltip" data-placement="right" title="{{ _('References %(object_name)s (#%(object_id)s) in its metadata', object_name = wfpath_object.name | get_translated_text(default='—'), object_id=wfpath_object.id) }}"></i>
+                {% elif path_elem.is_referenced and not path_elem.is_current_referenced %}
+                  <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                    <i class="fa fa-arrow-left fa-stack-1x"></i>
+                    <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(0.25em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                  </span>
+                {% elif path_elem.is_referencing and not path_elem.is_current_referencing %}
+                  <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                    <i class="fa fa-arrow-right fa-stack-1x"></i>
+                    <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(-0.3em, -0.65em); font-size: 0.6em; color: orangered;"></i>
+                  </span>
+                {% endif %}
+                <a href="{{ url_for('.object', object_id=path_elem.object_id) }}">
+                  {% if ((show_object_type_and_id_on_object_page_text is none and not config['HIDE_OBJECT_TYPE_AND_ID_ON_OBJECT_PAGE']) or show_object_type_and_id_on_object_page_text) or path_elem.object is none %}
+                    {% if path_elem.action is not none and path_elem.action.type is not none %}
+                      {{ path_elem.action.type.object_name | get_translated_text }}
+                    {% else %}
+                      {{ _('Object') }}
+                    {% endif %}
+                    #{{ path_elem.object_id }}{% if path_elem.object and path_elem.object.name %}: {% endif %}
+                  {% endif %}
+                  {% if path_elem.object and path_elem.object.name %}
+                    {{ path_elem.object.name | get_translated_text(default='—') }}
+                    {% set wfpath_object.name = path_elem.object.name %}
+                  {% endif %}
+                  {% set wfpath_object.id = path_elem.object.object_id %}
+                </a>
+                {% if path_elem.object %}
+                  {{ import_information_symbol(path_elem.object) }}
+                {% endif %}
+              {% endfor %}
+            </h5>
+            {% endif %}
+            <h4>
+              {% if elem.path %}
+                <span style="padding-left: 1em; "></span>
+              {% endif %}
+              {% if elem.is_referenced and elem.is_current_referenced and elem.is_referencing and elem.is_current_referencing %}
+                <span data-toggle="tooltip" data-placement="right" title="{{ _('Referenced by the metadata of %(object_name)s (#%(object_id)s) and references %(object_name)s (#%(object_id)s) in its metadata', object_name = wfpath_object.name | get_translated_text(default='—'), object_id=wfpath_object.id) }}" class="fa-stack" style="position: relative; width: 2em; height: 2em;">
+                  <i class="fa fa-arrow-left fa-stack-1x"></i>
+                  <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                </span>
+              {% elif elem.is_referenced and elem.is_current_referenced and elem.is_referencing and not elem.is_current_referencing %}
+                <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                  <i class="fa fa-arrow-left fa-stack-1x"></i>
+                  <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                  <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(0.8em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                </span>
+              {% elif elem.is_referenced and not elem.is_current_referenced and elem.is_referencing and elem.is_current_referencing %}
+                <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                  <i class="fa fa-arrow-left fa-stack-1x"></i>
+                  <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                  <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(-0.25em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                </span>
+              {% elif elem.is_referenced and not elem.is_current_referenced and elem.is_referencing and not elem.is_current_referencing %}
+                <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                  <i class="fa fa-arrow-left fa-stack-1x"></i>
+                  <i class="fa fa-arrow-right fa-stack-1x" style="position: absolute; transform: translate(0.4em, 0em);"></i>
+                  <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(0.25em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                </span>
+              {% elif elem.is_referenced and elem.is_current_referenced %}
+                <i class="fa fa-fw fa-arrow-left" style="margin-left: 8px;" aria-hidden="true" data-toggle="tooltip" data-placement="right" title="{{ _('Referenced by the metadata of %(object_name)s (#%(object_id)s)', object_name = wfpath_object.name | get_translated_text(default='—'), object_id=wfpath_object.id) }}"></i>
+              {% elif elem.is_referencing and elem.is_current_referencing %}
+                <i class="fa fa-fw fa-arrow-right" style="margin-left: 8px;" aria-hidden="true" data-toggle="tooltip" data-placement="right" title="{{ _('References %(object_name)s (#%(object_id)s) in its metadata', object_name = wfpath_object.name | get_translated_text(default='—'), object_id=wfpath_object.id) }}"></i>
+              {% elif elem.is_referenced and not elem.is_current_referenced %}
+                <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                  <i class="fa fa-arrow-left fa-stack-1x"></i>
+                  <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(0.25em, -0.65em); font-size: 0.65em; color: orangered;"></i>
+                </span>
+              {% elif elem.is_referencing and not elem.is_current_referencing %}
+                <span class="fa-stack" style="position: relative; width: 2em; height: 2em;" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('The relationship between these objects is outdated, please check their current information.') }}">
+                  <i class="fa fa-arrow-right fa-stack-1x"></i>
+                  <i class="fa fa-exclamation-triangle fa-stack-1x" style="position: absolute; transform: translate(-0.3em, -0.65em); font-size: 0.6em; color: orangered;"></i>
+                </span>
+              {% endif %}
+              {% if elem.duplicate %}
+                {% if elem.object_id == object_id %}
+                  <i class="fa fa-clone" data-toggle="tooltip" data-placement="top" title="{{ _('This is the object this workflow is based on.') }}"></i>
+                {% else %}
+                  <i class="fa fa-clone" data-toggle="tooltip" data-placement="top" title="{{ _('This object is already included in this workflow.') }}"></i>
+                {% endif %}
+              {% endif %}
+              <a href="{{ url_for('.object', object_id=elem.object_id) }}">
+                {% if ((show_object_type_and_id_on_object_page_text is none and not config['HIDE_OBJECT_TYPE_AND_ID_ON_OBJECT_PAGE']) or show_object_type_and_id_on_object_page_text) or elem.object is none %}
+                  {% if elem.action is not none and elem.action.type is not none %}
+                    {{ elem.action.type.object_name | get_translated_text }}
+                  {% else %}
+                    {{ _('Object') }}
+                  {% endif %}
+                  #{{ elem.object_id }}{% if elem.object and elem.object.name %}: {% endif %}
+                {% endif %}
+                {% if elem.object and elem.object.name %}
+                  {{ elem.object.name | get_translated_text(default='—') }}
+                {% endif %}
+              </a>
+              {% if elem.object %}
+                {{ import_information_symbol(elem.object) }}
+              {% endif %}
+              {% if not elem.duplicate %}
+                <i class="fa fa-w {% if not workflow_view_collapsed %}fa-minus-square-o{% else %}fa-plus-square-o{% endif %} collapse-expand-button" data-id-prefix="{{ workflow_id }}-{{ loop.index }}" data-collapse-group-id="{{ workflow_id }}" style="font-size:0.8em;" data-toggle="tooltip" data-placement="top" title="{% if not workflow_view_collapsed %}{{ _("Collapse") }}{% else %}{{ _("Expand") }}{% endif %}" data-collapse-text="{{ _("Collapse") }}" data-expand-text="{{ _("Expand") }}"></i>
+              {% endif %}
+            </h4>
+            <div
+              {% if (not elem.is_referencing and elem.is_referenced and not elem.is_current_referenced)
+                  or (not elem.is_referenced and elem.is_referencing and not elem.is_current_referencing)
+                  or (elem.is_referenced and elem.is_referencing and not elem.is_current_referencing and not elem.is_current_referenced)
+              %}
+                style="opacity: 50%"
+              {% endif %}
+            >
+            {% if not elem.duplicate %}
+              {% if elem.object is not none and elem.action and not ('show_action_info' in workflow_view and not workflow_view.show_action_info) %}
+                <div class="row" style="padding-right:0.75em">
+                  <label class="col-md-3" style="text-align: right">{{ _('Action') }}
+                    {% if elem.action %}
+                      <a href="{{ url_for('.objects', action_ids=elem.action.id) }}" class="search-helper"><i class="fa fa-search" aria-hidden="true"></i></a>{% else %}<i class="fa fa-search" style="visibility:hidden" aria-hidden="true"></i>
+                    {% endif %}
+                  </label>
+                  <div class="col-md-9">
+                    {% if elem.action %}
+                      {% if elem.action.user is not none %}
+                        <a href="{{ url_for('.user_profile', user_id=elem.action.user_id) }}" title="{{ elem.action.user.get_name() }}">{{ elem.action.user.get_name() }}</a>
+                        {{ import_information_symbol(elem.action.user) }} /
+                      {% endif %}
+                      {% if not config['DISABLE_INSTRUMENTS'] and elem.action.instrument %}
+                        <a href="{{ url_for('frontend.instrument', instrument_id=elem.action.instrument.id) }}">{{ elem.action.instrument.name | get_translated_text }}</a>
+                        {{ import_information_symbol(elem.action.instrument) }} &mdash;
+                      {% endif %}
+                      <a href="{{ url_for('frontend.action', action_id=elem.action.id) }}">{{ elem.action.name | get_translated_text(default=_('Unnamed Action')) }}</a>
+                      {{ import_information_symbol(elem.action) }}
+                    {% else %}&mdash;{% endif %}
+                  </div>
+                </div>
+              {% endif %}
+              <div style="border-left: 1px solid transparent; margin-left: 9px; padding-left: 5px; {% if workflow_view_collapsed %}display:none;{% endif %}" class="collapsible-object-container" data-id-prefix="{{ workflow_id }}-{{ loop.index }}" data-collapse-group-id="{{ workflow_id }}">
+              {% if elem.object is none %}
+                <div class="row" style="padding-right:0.75em">
+                  <label class="col-md-3" style="text-align: right">{{ _('Data') }}<i class="fa fa-search" style="visibility:hidden" aria-hidden="true"></i></label>
+                  <div class="col-md-9">
+                    {{ _('You do not have sufficient <a href="%(help_url)s">permissions</a> to access this object.', help_url='https://scientific-it-systems.iffgit.fz-juelich.de/SampleDB/user_guide/objects.html#permissions') }}
+                  </div>
+                </div>
+              {% elif not elem.duplicate and elem.object.data is none or elem.object.schema is none %}
+                <div class="row" style="padding-right:0.75em">
+                  <label class="col-md-3" style="text-align: right">{{ _('Data') }}<i class="fa fa-search" style="visibility:hidden" aria-hidden="true"></i></label>
+                  <div class="col-md-9">
+                    <i class="fa fa-share-alt" aria-hidden="true"></i> {{ _('This object has been imported without data.') }}
+                  </div>
+                </div>
+              {% else %}
+                {% set workflow_display_mode = True %}
+                {% set object_id = elem.object_id %}
+                {% set id_prefix_root = workflow_id ~ "_" ~ elem.object_id %}
+                {% set property_path = () %}
+                {% set id_prefix = id_prefix_for_property_path(property_path, id_prefix_root) %}
+                {% set data = elem.object.data %}
+                {% set schema = elem.object.schema %}
+                {% set files = elem.files %}
+                {% set indent_level = 0 %}
+                {% set show_indent_border = False %}
+                {% include "objects/view/any.html" %}
+              {% endif %}
+              </div>
+            {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+        {% if workflow_view_modals %}
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+  {% if not is_archived %}
+    {% if action is not none and action.type.enable_files %}
+      <h2 id="files">{{ _('Files') }}</h2>
+      {% if files %}
+      <table class="table" id="file_table">
+        <thead>
+          <tr>
+            <th scope="col" style="white-space: nowrap;width: 1%;"></th>
+            <th scope="col">{{ _('Title') }}</th>
+            <th scope="col" class="text-right" style="white-space: nowrap;width: 1%;">
+              <div class="form-group" style="display: inline-flex">
+                {% if show_download_service %}
+                  <iframe id="download_frame" style="display:none"></iframe>
+                  <div data-toggle="tooltip" data-placement="top" title="{{ _('Download files as zip archive') }}"><a class="btn btn-link" style="padding-top:0;padding-bottom:0;" data-toggle="modal" data-target="#dataFilesDownloadModal"><i class="fa fa-download"></i></a></div>
+                {% else %}
+                  <a href="{{ url_for('.object_files', object_id=object_id) }}" class="btn btn-link" style="padding-top:0;padding-bottom:0;" data-toggle="tooltip" data-placement="top" title="{{ _('Download files as zip archive')}}"><i class="fa fa-download"></i></a>
+                {% endif %}
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for file in files %}
+          {% if not file.is_hidden %}
+            <tr id="file-{{ file.id }}">
+              <td style="white-space: nowrap;width: 1%;">{% if file | has_preview_image %}
+                <img src="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}?preview" alt="{{ file.title }}" style="max-width:100px; max-height:100px;" class="show-fullscreen-image-preview"/>
+                <span class="fullscreen-image-preview">
+                  <span class="close-fullscreen-image-preview"><i class="fa fa-close fa-fw"></i></span>
+                  <a href="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}">
+                    <span class="download-fullscreen-image-preview"><i class="fa fa-download fa-fw"></i></span>
+                  </a>
+                  <img src="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}?preview" alt="{{ _('Fullscreen Image Preview')}}">
+                </span>{% endif %}
+              </td>
+              <td>
+                {{ file.title }}
+                {% if file.description %}
+                  <span class="file-description">{{ file.description }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="pull-right" style="display:flex;">
+                  <button type="button" class="btn btn-link button-file-info" style="padding-top:0;padding-bottom:0;" data-file_id="{{ file.id }}" data-toggle="tooltip" data-placement="top" title="{{ _('View information') }}"><i class="fa fa-info"></i></button>
+                  {% with file_component = get_component_or_none(file.component_id) %}
+                  {% if file.storage == 'database' or file.storage == 'federation' %}
+                  {% if file | has_preview and (file.storage != 'federation' or (file_component and file_component.address and file_component.import_token_available)) %}
+                  <a href="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}?preview" class="btn btn-link" style="padding-top:0;padding-bottom:0;" data-toggle="tooltip" data-placement="top" title="{{ _('View preview') }}"><i class="fa fa-search"></i></a>
+                  {% else %}
+                  <a href="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}?preview" class="btn btn-link" style="padding-top:0;padding-bottom:0;visibility: hidden"><i class="fa fa-search"></i></a>
+                  {% endif %}
+                  {% if file.storage != 'federation' or (file_component and file_component.address and file_component.import_token_available) %}
+                  <a href="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}" class="btn btn-link" style="padding-top:0;padding-bottom:0;" data-toggle="tooltip" data-placement="top" title="{%- if file.storage == 'federation' -%}{{ _('Download file from other database') }}{%- else -%}{{ _('Download file') }}{%- endif -%}"><i class="fa {% if file.storage == 'federation' -%}fa-cloud-download{%- else -%}fa-download{%- endif -%}"></i></a>
+                  {% else %}
+                  <a href="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}" class="btn btn-link" style="padding-top:0;padding-bottom:0;visibility: hidden" data-toggle="tooltip" data-placement="top"><i class="fa fa-download"></i></a>
+                  {% endif %}
+                  {% elif file.storage == 'url' %}
+                  <span data-placement="top" data-trigger="manual" title="{{ _('Copied successfully') }}"><span data-url="{{ file.url }}" class="btn btn-link copy-external-link" style="padding-top:0;padding-bottom:0;" data-toggle="tooltip" data-placement="top" title="{{ _('Copy link to clipboard') }}"><i class="fa fa-clipboard"></i></span></span>
+                    {% if file.url.split(':')[0].lower() in ['http', 'https'] %}
+                      <a href="{{ file.url }}" target="_blank" class="btn btn-link" style="padding-top:0;padding-bottom:0;" data-toggle="tooltip" data-placement="top" title="{{ _('Open external link') }}"><i class="fa fa-external-link"></i></a>
+                    {% else %}
+                      <a href="{{ file.url }}" target="_blank" class="btn btn-link" style="padding-top:0;padding-bottom:0;visibility: hidden" data-toggle="tooltip" data-placement="top" title="{{ _('Open external link') }}"><i class="fa fa-external-link"></i></a>
+                    {% endif %}
+                  {% endif %}
+                  {% endwith %}
+                </span>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td style="white-space: nowrap;width: 1%;"></td>
+              <td>&mdash;</td>
+              <td>
+                <span class="pull-right" style="display:flex;">
+                  <button type="button" class="btn btn-link button-file-info" style="padding-top:0;padding-bottom:0;" data-file_id="{{ file.id }}"><i class="fa fa-question"></i></button>
+                </span>
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p>{{ _('There are no files for this %(object_type)s.', object_type=action_type.object_name | get_translated_text(default=_('Object'))) }}</p>
+      {% endif %}
+
+      {% for file in files %}
+        {% if file.is_hidden %}
+          <div class="modal fade modal-file-info" id="fileInfoModal-{{ file.id }}" tabindex="-1" role="dialog" aria-labelledby="fileInfoModalLabel-{{ file.id }}">
+            <div class="modal-dialog" role="document">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                  <h4 class="modal-title" id="fileInfoModalLabel-{{ file.id }}">{{ _('Hidden File Information') }}</h4>
+                </div>
+                <div class="modal-body">
+                  {% if file.hide_reason %}
+                    {{ _('This file has been hidden for the following reason:') }}
+                    <pre style="font-family: inherit">{{ file.hide_reason }}</pre>
+                  {% else %}
+                    {{ _('This file has been hidden.') }}
+                  {% endif %}
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Close') }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      {% for file in files %}
+        {% if not file.is_hidden %}
+          <div class="modal fade modal-file-info" id="fileInfoModal-{{ file.id }}" tabindex="-1" role="dialog" aria-labelledby="fileInfoModalLabel-{{ file.id }}">
+            <div class="modal-dialog" role="document">
+              <div class="modal-content file-info-main">
+                <form method="post" action="{{ url_for('.update_file_information', object_id=object_id, file_id=file.id) }}">
+                {{ file_information_form.csrf_token() }}
+                  <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="fileInfoModalLabel-{{ file.id }}">{{ _('File Information') }}</h4>
+                  </div>
+                  <div class="modal-body">
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Title') }}:</label></div>
+                    <div class="col-sm-9"><span class="file-info-view-mode">{% if file.title %}{{ file.title }}{% else %}&mdash;{% endif %}</span><span class="file-info-edit-mode"><input type="text" name="{{ file_information_form.title.name }}" class="input-file-info-title" style="width:100%" value="{% if file.title %}{{ file.title }}{% endif %}"></span></div>
+                  </div>
+                  {% if file.storage == 'database' %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Name') }}:</label></div>
+                    <div class="col-sm-9">{{ file.original_file_name }}</div>
+                  </div>
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Uploaded by') }}:</label></div>
+                    {% if file.uploader is not none %}
+                    <div class="col-sm-9"><a href="{{ url_for('.user_profile', user_id=file.uploader.id) }}">{{ file.uploader.get_name() }}{{ import_information_symbol(file.uploader) }}</a></div>
+                    {% else %}
+                    <div class="col-sm-9">&mdash;</div>
+                    {% endif %}
+                  </div>
+                  {% elif file.storage == 'url' %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('URL') }}:</label></div>
+                    <div class="col-sm-9">
+                      <span class="file-info-view-mode">{{ file.url }}</span><span class="file-info-edit-mode"><input type="text" name="{{ file_information_form.url.name }}" class="input-file-info-url has-error" style="width:100%" value="{{ file.url }}"></span>
+                      <div class="help-block file-url-error" id="file-url-error-{{ file.id }}"><span class="text-danger"></span></div>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Linked by') }}:</label></div>
+                    {% if file.uploader is not none %}
+                    <div class="col-sm-9"><a href="{{ url_for('.user_profile', user_id=file.uploader.id) }}">{{ file.uploader.get_name() }}{{ import_information_symbol(file.uploader) }}</a></div>
+                    {% else %}
+                    <div class="col-sm-9">&mdash;</div>
+                    {% endif %}
+                  </div>
+                  {% else %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Posted by') }}:</label></div>
+                    {% if file.uploader is not none %}
+                    <div class="col-sm-9"><a href="{{ url_for('.user_profile', user_id=file.uploader.id) }}">{{ file.uploader.get_name() }}{{ import_information_symbol(file.uploader) }}</a></div>
+                    {% else %}
+                    <div class="col-sm-9">&mdash;</div>
+                    {% endif %}
+                  </div>
+                  {% endif %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Description') }}:</label></div>
+                    <div class="col-sm-9"><span class="file-info-view-mode">{% if file.description %}<pre style="font-family: inherit">{{ file.description }}</pre>{% else %}&mdash;{% endif %}</span><span class="file-info-edit-mode"><textarea name="{{ file_information_form.description.name }}" class="input-file-info-description" style="width:100%;resize: vertical;">{% if file.description %}{{ file.description }}{% endif %}</textarea></span></div>
+                  </div>
+                  {% if file.fed_id is not none %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Other Databases') }}:</label></div>
+                    {% with file_component = get_component(file.component_id) %}
+                    <div class="col-sm-9">{{ _('This file was created as file #%(fed_id)s in database <a href="%(component_url)s">%(component_name)s</a>', fed_id=file.fed_id, component_url=url_for('.component', component_id=file.component_id), component_name=file_component.get_name()) }}</div>
+                    {% endwith %}
+                  </div>
+                  {% endif %}
+                  {% if file.hash is not none %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('Checksum (%(algorithm)s)', algorithm=file.hash.algorithm.upper()) }}:</label></div>
+                    <div class="col-sm-9 text-muted" style="word-break: break-all"><span>{{ file.hash.hexdigest }}</span></div>
+                  </div>
+                  {% endif %}
+                  <div class="row">
+                    <div class="col-sm-3 text-right"><label>{{ _('History') }}:</label></div>
+                    <div class="col-sm-9"><a role="button" data-toggle="collapse" href="#fileInfoModalCollapse-{{ file.id }}" aria-expanded="false" aria-controls="fileInfoModalCollapse-{{ file.id }}">{{ _('Show/Hide') }}</a></div>
+                  </div>
+                  <div class="collapse" id="fileInfoModalCollapse-{{ file.id }}">
+                    <table class="table">
+                      <thead>
+                        <tr>
+                          <th scope="col" style="white-space: nowrap;width: 1%;">{{ _('Datetime') }}</th>
+                          <th scope="col"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td><span data-utc-datetime="{{ file.utc_datetime | generic_format_datetime }}">{{ file.utc_datetime | babel_format_datetime }}</span></td>
+                          {% if file.uploader is not none %}
+                          <td>{{ _('<a href="%(uploader_url)s">%(uploader_name)s</a> has uploaded the file.', uploader_url=url_for('.user_profile', user_id=file.uploader.id), uploader_name=file.uploader.get_name()) }}</td>
+                          {% else %}
+                          <td>{{ _('An unknown user has uploaded the file.') }}</td>
+                          {% endif %}
+                        </tr>
+                        {% for log_entry in file.log_entries %}
+                          {% if log_entry.type == FileLogEntryType.EDIT_TITLE %}
+                            <tr>
+                              <td><span data-utc-datetime="{{ log_entry.utc_datetime | generic_format_datetime }}">{{ log_entry.utc_datetime | babel_format_datetime }}</span></td>
+                              {% if log_entry.user.id is not none %}
+                              <td>{{ _('<a href="%(editor_url)s">%(editor_name)s</a> updated the title to:', editor_url=url_for('.user_profile', user_id=log_entry.user.id), editor_name=log_entry.user.get_name()) }}<br />{{ log_entry.data['title'] }}</td>
+                              {% else %}
+                              <td>{{ _('An unknown user updated the title to:') }}</td>
+                              {% endif %}
+                            </tr>
+                          {% elif log_entry.type == FileLogEntryType.EDIT_URL %}
+                            <tr>
+                              <td><span data-utc-datetime="{{ log_entry.utc_datetime | generic_format_datetime }}">{{ log_entry.utc_datetime | babel_format_datetime }}</span></td>
+                              {% if log_entry.user.id is not none %}
+                              <td>{{ _('<a href="%(editor_url)s">%(editor_name)s</a> updated the URL to:', editor_url=url_for('.user_profile', user_id=log_entry.user.id), editor_name=log_entry.user.get_name()) }} <pre style="font-family: inherit">{{ log_entry.data['url'] }}</pre></td>
+                              {% else %}
+                              <td>{{ _('An unknown user updated the URL to:') }}</td>
+                              {% endif %}
+                            </tr>
+                          {% elif log_entry.type == FileLogEntryType.EDIT_DESCRIPTION %}
+                            <tr>
+                              <td><span data-utc-datetime="{{ log_entry.utc_datetime | generic_format_datetime }}">{{ log_entry.utc_datetime | babel_format_datetime }}</span></td>
+                              {% if log_entry.user.id is not none %}
+                              <td>{{ _('<a href="%(editor_url)s">%(editor_name)s</a> updated the description to:', editor_url=url_for('.user_profile', user_id=log_entry.user.id), editor_name=log_entry.user.get_name()) }} <pre style="font-family: inherit">{{ log_entry.data['description'] }}</pre></td>
+                              {% else %}
+                              <td>{{ _('An unknown user updated the description to:') }}</td>
+                              {% endif %}
+                            </tr>
+                          {% else %}
+                            <tr>{{ log_entry.type }}</tr>
+                          {% endif %}
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  </div>
+                  <div class="modal-footer">
+                    {% if user_may_upload_files %}
+                    <button type="submit" class="btn btn-primary file-info-edit-mode">{{ _('Save') }}</button>
+                    <button type="button" class="btn btn-default file-info-edit-mode button-file-info-cancel">{{ _('Cancel') }}</button>
+                    <button type="button" class="btn btn-primary file-info-view-mode button-file-info-edit">{{ _('Edit') }}</button>
+                    <button type="button" class="btn btn-default file-info-view-mode button-file-info-hide">{{ _('Hide') }}</button>
+                    {% endif %}
+                    {% if file.storage == 'database' %}
+                    <a href="{{ url_for('.object_file', object_id=object_id, file_id=file.id) }}" class="btn btn-default file-info-view-mode">{{ _('Download') }}</a>
+                    {% endif %}
+                    <button type="button" class="btn btn-default file-info-view-mode" data-dismiss="modal">{{ _('Close') }}</button>
+                  </div>
+                </form>
+              </div>
+              <div class="modal-content file-info-hide">
+                <form method="post" action="{{ url_for('.hide_file', object_id=object_id, file_id=file.id) }}">
+                {{ file_hiding_form.csrf_token() }}
+                  <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title">{{ _('Hide File')}}</h4>
+                  </div>
+                  <div class="modal-body">
+                    <div class="form-group">
+                      <label>{{ _('Reason') }}:</label>
+                      <textarea class="form-control" rows="3" name="{{ file_hiding_form.reason.name }}" title="Reason"></textarea>
+                    </div>
+                    <strong>{{ _('Note') }}:</strong> {{ _('Other users will still see that a file has been hidden. The file may be restored by an administrator upon request.')}}
+                  </div>
+                  <div class="modal-footer">
+                    <button type="submit" class="btn btn-danger">{{ _('Hide') }}</button>
+                    <button type="button" class="btn btn-default button-file-info-hide-cancel">{{ _('Cancel') }}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      {% if user_may_upload_files %}
+        <h5>{{ _('Upload File') }}</h5>
+        <div class="form-group row clearfix" style="padding-right:0.75em">
+          <div class="col-md-12">
+            <form class="form" method="post" action="{{ url_for('.post_object_files', object_id=object_id) }}" enctype="multipart/form-data">
+              <div class="input-group" id="upload-area">
+                <span class="input-group-addon"><i class="fa fa-file"></i></span>
+                <input id="input-file-text" type="text" class="form-control disabled" disabled />
+                <span class="input-group-btn">
+                  <input type="hidden" value="" id="input-file-names-hidden" name="{{ file_form.file_names.name }}" />
+                  <input type="hidden" value="" id="input-file-source-hidden" name="{{ file_form.file_source.name }}" />
+                  {{ file_form.csrf_token }}
+                  <div class="btn-group" style="z-index: 3">
+                    <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" style="width:11em; margin-bottom: 0">
+                    <i class="fa fa-folder-open"></i> {{ _('Browse...') }} <span class="caret"></span>
+                    </button>
+                    <ul class="dropdown-menu">
+                      <li>
+                        <label class="btn btn-link btn-file" style="color:#333333;"><i class="fa fa-hdd-o fa-fw"></i> {{ _('Local files') }}<input id="input-file-upload" type="file" name="{{ file_form.local_files.name }}" multiple style="display: none;"></label>
+                      </li>
+                      <li role="separator" class="divider"></li>
+                      <li>
+                        <button type="button" class="btn btn-link" style="color:#333333;" id="button-show-mobile-file-upload-modal"><i class="fa fa-mobile-phone fa-fw"></i> {{ _('Smartphone') }}</button>
+                      </li>
+                    </ul>
+                  </div>
+                  <button type="submit" class="btn btn-primary disabled" style="width:11em;" id="button-upload-files" disabled="disabled"><i class="fa fa-upload fa-fw"></i> {{ _('Upload') }}</button>
+                </span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="modal fade" id="mobileFileLinkModal" tabindex="-1" role="dialog" aria-labelledby="mobileFileLinkModalLabel">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                <h4 class="modal-title" id="mobileFileLinkModalLabel">{{ _('Mobile File Upload') }}</h4>
+              </div>
+              <div class="modal-body">
+                <p class="text-center">{{ _('To upload files from mobile devices, scan this QR code:') }}</p>
+                <a href="{{ mobile_upload_url }}"><img src="{{ mobile_upload_qrcode }}" alt="{{ mobile_upload_url }}" style="width: 100%"/></a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h5 id="anchor-post-link">{{ _('Post Link')}}</h5>
+        <div class="form-group" style="padding-right:0.75em">
+          <form class="form {% if external_link_error in external_link_errors %}has-error{% endif %}" method="post" action="{{ url_for('.post_object_files', object_id=object_id) }}">
+            {{ external_link_form.csrf_token }}
+            <div class="input-group">
+              <span class="input-group-addon"><i class="fa fa-link"></i></span>
+              <input name="url" type="text" class="form-control" required="required" />
+              <span class="input-group-btn">
+                <button type="submit" class="btn btn-primary" style="width:11em;"><i class="fa fa-link fa-fw"></i> {{ _('Submit') }}</button>
+              </span>
+            </div>
+            {% if external_link_error in external_link_errors %}
+              <div class="help-block">{{ external_link_errors[external_link_error] }}</div>
+            {% endif %}
+          </form>
+        </div>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if action is not none and action.type.enable_labels %}
+    <div class="modal fade" id="objectLabelModal" tabindex="-1" role="dialog" aria-labelledby="objectLabelModalLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="objectLabelModalLabel">{{ _('Generate Labels') }}</h4>
+          </div>
+          <form method="get" action="{{ url_for('.print_object_label', object_id=object_id) }}" class="form-horizontal" id="form-generate-labels">
+          <div class="modal-body">
+            <div class="radio">
+              <label class="control-label"><input type="radio" name="mode" value="mixed" checked="checked" />{{ _('Mixed label formats')}}</label>
+            </div>
+            <span class="help-block">{{ _('This will generate labels in a selection of predefined formats. To request adding a new format, please <a href="mailto:%(contact_email)s">contact an administrator</a>.', contact_email=config['CONTACT_EMAIL']) }}.</span>
+            <div class="form-group">
+              <label for="input-label-mixed-paper-format" class="control-label col-sm-4">{{ _('Paper Size:') }}</label>
+              <div class="col-sm-8">
+              <select class="selectpicker form-control" id="input-label-mixed-paper-format" name="mixed-paper-format">
+                <option value="DIN A4 (Portrait)" selected="selected">{{ _('DIN A4 (Portrait)') }}</option>
+                <option value="DIN A4 (Landscape)">{{ _('DIN A4 (Landscape)') }}</option>
+                <option value="Letter (Portrait)">{{ _('Letter / ANSI A (Portrait)') }}</option>
+                <option value="Letter (Landscape)">{{ _('Letter / ANSI A (Landscape)') }}</option>
+              </select>
+              </div>
+            </div>
+            <hr />
+            <div class="radio">
+              <label class="control-label"><input type="radio" name="mode" value="fixed-width" />{{ _('Fixed-width labels')}}</label>
+            </div>
+            <span class="help-block">{{ _('This will generate vertically oriented labels with a fixed width and an optional minimum height.') }}</span>
+            <div class="form-group">
+              <label for="input-label-width-paper-format" class="control-label col-sm-4">{{ _('Paper Size:') }}</label>
+              <div class="col-sm-8">
+              <select class="selectpicker form-control" id="input-label-width-paper-format" name="width-paper-format">
+                <option value="DIN A4 (Portrait)" selected="selected">{{ _('DIN A4 (Portrait)') }}</option>
+                <option value="DIN A4 (Landscape)">{{ _('DIN A4 (Landscape)') }}</option>
+                <option value="Letter (Portrait)">{{ _('Letter / ANSI A (Portrait)') }}</option>
+                <option value="Letter (Landscape)">{{ _('Letter / ANSI A (Landscape)') }}</option>
+              </select>
+              <span class="help-block"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="input-width" class="col-sm-4 control-label">{{ _('Label Width:') }}</label>
+              <div class="col-sm-8">
+                <div class="input-group">
+                  <input type="text" class="form-control" aria-label="Label Width" value="40" name="label-width" id="input-width">
+                  <span class="input-group-addon">mm</span>
+                </div>
+                <span class="help-block"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="input-minimum-height" class="col-sm-4 control-label">{{ _('Minimum Label Height:') }}</label>
+              <div class="col-sm-8">
+                <div class="input-group">
+                  <input type="text" class="form-control" aria-label="Minimum Label Height" value="0" name="label-minimum-height" id="input-minimum-height">
+                  <span class="input-group-addon">mm</span>
+                </div>
+                <span class="help-block"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-4 col-sm-8">
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="side-by-side"> {{ _('QR Code and GHS symbols side-by-side') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-4 col-sm-8">
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="centered" checked="checked"> {{ _('Center QR Code and GHS symbols') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <hr />
+            <div class="radio">
+              <label class="control-label"><input type="radio" name="mode" value="minimum-height" />{{ _('Minimal-height labels')}}</label>
+            </div>
+            <span class="help-block">{{ _('This will generate vertically oriented labels with a height as low as possible and an optional minimum width.') }}</span>
+            <div class="form-group">
+              <label for="input-label-height-paper-format" class="control-label col-sm-4">{{ _('Paper Size:') }}</label>
+              <div class="col-sm-8">
+              <select class="selectpicker form-control" id="input-label-height-paper-format" name="height-paper-format">
+                <option value="DIN A4 (Portrait)" selected="selected">{{ _('DIN A4 (Portrait)') }}</option>
+                <option value="DIN A4 (Landscape)">{{ _('DIN A4 (Landscape)') }}</option>
+                <option value="Letter (Portrait)">{{ _('Letter / ANSI A (Portrait)') }}</option>
+                <option value="Letter (Landscape)">{{ _('Letter / ANSI A (Landscape)') }}</option>
+              </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="input-minimum-width" class="col-sm-4 control-label">{{ _('Minimum Label Width:') }}</label>
+              <div class="col-sm-8">
+                <div class="input-group">
+                  <input type="text" class="form-control" aria-label="Minimum Label Width" value="0" name="label-minimum-width" id="input-minimum-width">
+                  <span class="input-group-addon">mm</span>
+                </div>
+                <span class="help-block"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-4 col-sm-8">
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="include-qrcode"> {{ _('Include QR Code') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <hr />
+            <div class="radio">
+              <label class="control-label"><input type="radio" name="mode" value="qr-code-width">{{ _('QR Code labels') }}</label>
+            </div>
+            <span class="help-block">{{ _('This will generate labels with a qr code and an optional id and label number.') }}</span>
+            {% if config["LABEL_PAPER_FORMATS"] %}
+            <div class="form-group">
+              <label for="input-qr-code-paper-dimension-template" class="control-label col-sm-4">{{ _('Label Paper Format:') }}</label>
+              <div class="col-sm-8">
+                <select class="selectpicker form-control" id="input-qr-code-paper-dimension-template" name="qr-code-paper-dimension-template">
+                    <option value="default" selected="selected">{{ _('Default / No Label Paper') }}</option>
+                    {% for format_definition in config["LABEL_PAPER_FORMATS"] %}
+                      <option value="{{ loop.index0 }}">
+                        {{ format_definition["format_name"] | get_translated_text | trim or _('Format #%(format_index)s', format_index=loop.index) }}
+                      </option>
+                    {% endfor %}
+                </select>
+                <span class="help-block"></span>
+              </div>
+            </div>
+            {% endif %}
+            <div class="form-group defined-by-label-paper">
+              <label for="input-qr-code-paper-format" class="control-label col-sm-4">{{ _('Paper Size:') }}</label>
+              <div class="col-sm-8">
+                <select class="selectpicker form-control" id="input-qr-code-paper-format" name="qr-code-paper-format">
+                  <option value="DIN A4 (Portrait)" selected="selected">{{ _('DIN A4 (Portrait)') }}</option>
+                  <option value="DIN A4 (Landscape)">{{ _('DIN A4 (Landscape)') }}</option>
+                  <option value="Letter (Portrait)">{{ _('Letter / ANSI A (Portrait)') }}</option>
+                  <option value="Letter (Landscape)">{{ _('Letter / ANSI A (Landscape)') }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group defined-by-label-paper">
+              <label for="input-qr-code-width" class="control-label col-sm-4">{{ _('QR Code Width:') }}</label>
+              <div class="col-sm-8">
+                <div class="input-group">
+                  <input type="number" class="form-control" aria-label="QR Code Width" value="7" name="qr-code-width" id="input-qr-code-width">
+                  <span class="input-group-addon">mm</span>
+                </div>
+                <span class="help-block"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="input-qr-code-number" class="control-label col-sm-4">{{ _('Number of Labels:') }}</label>
+              <div class="col-sm-8">
+                <input type="number" class="form-control" aria-label="Number of Labels" value="1" min="1" max="1000" name="qr-code-number" id="input-qr-code-number">
+                <span class="help-block"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="control-label col-sm-4">{{ _('QR Code Content:') }}</label>
+              <div class="col-sm-4 radio">
+                <label style="font-weight: normal;"><input type="radio" name="qr-code-content" value="object-url" checked="checked"> {{ _('Full Object URL') }}</label>
+              </div>
+              <div class="col-sm-4 radio">
+                <label style="font-weight: normal;"><input type="radio" name="qr-code-content" value="object-id"> {{ _('Only Object ID') }}</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-4 col-sm-8">
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="show-id-on-label" checked="checked"> {{ _('Show ID on labels') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-4 col-sm-8">
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="add-label-number"> {{ _('Add Label Number') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="col-sm-offset-4 col-sm-8">
+                <div class="checkbox">
+                  <label>
+                    <input type="checkbox" name="add-maximum-label-number"> {{ _('Add Maximum Label Number') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button class="btn btn-primary" type="submit">{{ _('Generate Labels') }}</button>
+          </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if object_qrcode %}
+    <div class="modal fade" id="mobileObjectLinkModal" tabindex="-1" role="dialog" aria-labelledby="mobileObjectLinkModalLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="mobileObjectLinkModalLabel">{{ _('Object QR Code') }}</h4>
+          </div>
+          <div class="modal-body">
+            <p class="text-center">{{ _('To view this object in the future, scan this QR code:') }}</p>
+            <a href="{{ object_qrcode }}"><img src="{{ object_qrcode }}" alt="{{ object_url }}" style="width: 100%"/></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not is_archived and action is not none and action.type.enable_locations %}
+    <h2 id="locations">{{ _("Locations") }}</h2>
+    {% set allowed_language_ids = [] %}
+    {% for language in all_languages %}
+      {% if language.enabled_for_input %}
+        {% do allowed_language_ids.append(language.id) %}
+      {% endif %}
+    {% endfor %}
+    {% if object_location_assignments %}
+      <table class="table">
+      <thead>
+      <tr>
+        <th>{{ _("Datetime") }}</th><th>{{ _("Location") }}</th><th>{{ _("Responsible User") }}</th><th>{{ _("Assigning User") }}</th><th>{{ _("Description") }}</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for object_location_assignment in object_location_assignments | reverse %}
+        <tr>
+          <td><span data-utc-datetime="{{ object_location_assignment.utc_datetime | generic_format_datetime }}">{{ object_location_assignment.utc_datetime | babel_format_datetime }}</span></td>
+          <td>
+            {% if object_location_assignment.location_id is not none %}
+              {% with location = get_location(object_location_assignment.location_id) %}
+                <a href="{{ url_for('frontend.location', location_id=object_location_assignment.location_id) }}">
+                  {{ location | get_location_name(True) }}
+                </a>
+                {{ import_information_symbol(location) }}
+              {% endwith %}
+            {% else %}&mdash;{% endif %}
+          </td>
+          <td>
+            {% if object_location_assignment.responsible_user_id is not none %}
+              {% with user = get_user(object_location_assignment.responsible_user_id) %}
+                <a href="{{ url_for('frontend.user_profile', user_id=object_location_assignment.responsible_user_id) }}">{{ user.get_name() }}</a>
+                {{ import_information_symbol(user) }}
+                {% if object_location_assignment.confirmed %}
+                  <span class="label label-primary label-responsibility-assigment" data-toggle="tooltip" data-placement="top" title="{{ _('The user has confirmed this responsibility assignment.')}}">&check;</span>
+                {% elif object_location_assignment.declined %}
+                  <span class="label label-danger label-responsibility-assigment" data-toggle="tooltip" data-placement="top" title="{{ _('The user has declined this responsibility assignment.')}}">&cross;</span>
+                {% elif object_location_assignment.responsible_user_id == current_user.id %}
+                  <a class="btn btn-xs btn-primary" href="{{ build_object_location_assignment_confirmation_url(object_location_assignment.id) }}">{{ _('Confirm') }}</a>
+                  <a class="btn btn-xs btn-danger" href="{{ build_object_location_assignment_declination_url(object_location_assignment.id) }}">{{ _('Decline') }}</a>
+                {% else %}
+                  <span class="label label-warning label-responsibility-assigment" data-toggle="tooltip" data-placement="top" title="{{ _('The user has not confirmed this responsibility assignment yet.') }}">?</span>
+                {% endif %}
+              {% endwith %}
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          {% with user = get_user(object_location_assignment.user_id) %}
+            <td>
+              <a href="{{ url_for('frontend.user_profile', user_id=object_location_assignment.user_id) }}">
+                {{ user.get_name() }}
+              </a>
+              {{ import_information_symbol(user) }}
+            </td>
+          {% endwith %}
+          <td><pre class="location-description">{{ object_location_assignment.description | get_translated_text or ('&mdash;' | safe) }}</pre></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      </table>
+    {% else %}
+      {{ _('This object has not been assigned to a location yet.') }}
+    {% endif %}
+    {% if user_may_assign_location %}
+      <form class="form" method="post" action="{{ url_for('frontend.post_object_location', object_id=object_id) }}" id="assign-location-form">
+        {{ location_form.csrf_token }}
+       <span class="help-block" style="color: red" id="object_location-help-block"></span>
+        <div class="form-group {% if location_form.location.name in location_form.errors %}has-error{% endif %}">
+          <label for="input-location" class="control-label">{{ _("Location") }}</label>
+          <select class="treepicker selectpicker form-control" id="input-location" name="{{ location_form.location.name }}" data-live-search="true">
+            {% for location_info in location_form.location.all_choices %}
+            <option {% if location_info.is_fed %}data-icon="fa fa-share-alt"{% endif %} value="{{ location_info.id }}" {% if location_form.location.data == (location_info.id_string) %}selected="selected"{% endif %} {% if location_info.is_disabled %}disabled="disabled"{% endif %} data-content="<span class='{% if location_info.has_subtree %}option-group-{{ location_info.id }}-header{% endif %} closed {% for id in location_info.id_path[:-1] %}option-group-{{ id }}-member option-group-{{ id }}-closed {% endfor %}' style='padding-left:{{ 1.5 * (location_info.id_path | length - 1) }}em'>{% if location_info.has_subtree %}<span class='selectpicker-collapsible-menu'><i class='fa'></i></span> {% endif %}<span class='location_path'>{{ location_info.name_prefix }}</span>{{ location_info.name }}</span>">
+              {{ location_info.full_name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group {% if location_form.responsible_user.name in location_form.errors %}has-error{% endif %}">
+          <label for="input-responsible-user" class="control-label">{{ _('Responsible User') }}</label>
+          <select class="selectpicker form-control" id="input-responsible-user" name="{{ location_form.responsible_user.name }}" data-live-search="true">
+            {% for user_id, user in location_form.responsible_user.choices %}
+            <option {% if user_is_fed[user_id] %}data-icon="fa fa-share-alt"{% endif %} value="{{ user_id }}" {% if location_form.responsible_user.data == user_id %}selected="selected"{% endif %}>{{ user_reference(user, text=true, nolink=true) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="hidden" id="object_location-template">
+            <div class="input-group" data-name="input-group-object_location" style="margin-top: 5px" id="">
+                <textarea class="form-control" rows="3" placeholder="{{ _("Description") }}" style="resize:vertical; min-height:2.5em"></textarea>
+                <span class="input-group-addon language-addon" data-name="language"></span>
+            </div>
+        </div>
+        <div class="form-group {% if location_form.description.name in location_form.errors %}has-error{% endif %}" data-name="input-descriptions">
+          <label for="input-location" class="control-label" style="padding-right: 5px">{{ _('Description') }}</label>
+          <select class="selectpicker pull-right select-language {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs" id="select-language-object_location">
+            {% for language in all_languages %}
+              <option value="{{ language.lang_code }}" {% if language.id == ENGLISH.id %} disabled="disabled" selected="selected"{% endif %}>{{ language.names | get_translated_text }}</option>
+            {% endfor %}
+          </select>
+
+          <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} id="input-group-object_location-{{ ENGLISH.lang_code }}" data-name="input-group-object_location" data-language="{{ ENGLISH.lang_code }}">
+            <textarea class="form-control" rows="3" placeholder="{{ _('Description') }}" style="resize:vertical; min-height:2.5em" id="textarea-object_location-{{ ENGLISH.lang_code }}"></textarea>
+            {% if allowed_language_ids | length > 1 %}
+              <span class="input-group-addon language-addon" data-name="language">{{ ENGLISH.names | get_translated_text }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <input hidden="hidden" type="text" value="" id="input-object_location-translations" name="{{ location_form.description.name }}">
+        <div class="text-right">
+          <button type="submit" class="btn btn-primary" style="width:15em; margin-bottom: 20px;"><i class="fa fa-map-marker fa-fw"></i> {{ _('Assign Location') }}</button>
+        </div>
+      </form>
+    {% endif %}
+  {% endif %}
+
+  {% if not is_archived and action is not none and action.type.enable_publications %}
+    <h2 id="publications">{{ _('Publications') }}</h2>
+    {% if object_publications %}
+      <table class="table">
+      <thead>
+      <tr>
+        <th scope="col" style="white-space: nowrap;width: 1%;">{{ _('DOI') }}</th>
+        <th scope="col">{{ _('Title') }}</th>
+        <th scope="col">{{ _('Object Name') }}</th>
+        <th scope="col" class="text-right" style="white-space: nowrap;width: 1%;"></th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for object_publication in object_publications %}
+        <tr>
+          <td><a href="http://doi.org/{{ object_publication.doi | urlencode }}">{{ object_publication.doi }}</a></td>
+          <td>{% if object_publication.title is none %}&mdash;{% else %}{{ object_publication.title }}{% endif %}</td>
+          <td>{% if object_publication.object_name is none %}&mdash;{% else %}{{ object_publication.object_name }}{% endif %}</td>
+          <td><a href="{{ url_for('.objects', doi=object_publication.doi) }}">{{ _('View&nbsp;Objects') }}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      </table>
+    {% else %}
+      <p>{{ _('This object has not been linked to a publication yet.') }}</p>
+    {% endif %}
+    {% if user_may_link_publication %}
+      {% for message in get_flashed_messages() %}
+      {% if 'Please enter a valid DOI' in message %}
+        {% do publication_form.errors.__setitem__(publication_form.doi.name, _('Please enter a valid DOI.')) %}
+      {% endif %}
+      {% endfor %}
+      <form class="form" method="post" action="{{ url_for('frontend.post_object_publication', object_id=object_id) }}" id="assign-publication-form">
+        {{ publication_form.csrf_token }}
+        <div class="form-group {% if publication_form.doi.name in publication_form.errors %}has-error{% endif %}">
+          <label for="input-location" class="control-label">{{ _('DOI') }}</label>
+          <input type="text" class="form-control" placeholder="{{ _('DOI') }}" style="margin-bottom: 10px;" name="{{ publication_form.doi.name }}" value="{% if publication_form.doi.data %}{{ publication_form.doi.data }}{% endif %}"/>
+          {% if publication_form.doi.name in publication_form.errors %}
+            <span class="help-block">{{ publication_form.errors[publication_form.doi.name] }}</span>
+          {% endif %}
+        </div>
+        <div class="form-group {% if publication_form.title.name in publication_form.errors %}has-error{% endif %}">
+          <label for="input-location" class="control-label">{{ _('Title') }}</label>
+          <input type="text" class="form-control" placeholder="{{ _('Title') }}" style="margin-bottom: 10px;" name="{{ publication_form.title.name }}" value="{% if publication_form.title.data %}{{ publication_form.title.data }}{% endif %}"/>
+        </div>
+        <div class="form-group {% if publication_form.object_name.name in publication_form.errors %}has-error{% endif %}">
+          <label for="input-location" class="control-label">{{ _('Object Name') }}</label>
+          <input type="text" class="form-control" placeholder="{{ _('Object Name') }}" style="margin-bottom: 10px;" name="{{ publication_form.object_name.name }}" value="{% if publication_form.object_name.data %}{{ publication_form.object_name.data }}{% endif %}"/>
+        </div>
+        <div class="text-right">
+          <button type="submit" class="btn btn-primary" style="width:15em; margin-bottom: 20px;"><i class="fa fa-book fa-fw"></i> {{ _('Link Publication') }}</button>
+        </div>
+      </form>
+    {% endif %}
+  {% endif %}
+
+  {% if not is_archived %}
+    {% if action is not none and action.type.enable_comments %}
+      <h2 id="comments">{{ _('Comments') }}</h2>
+      {% if comments %}
+        {% for comment in comments %}
+          <div class="well" id="comment-{{ comment.id }}">
+            <pre class="comment">{{ comment.content }}</pre>
+            <div class="text-right">
+              &mdash;
+              {% if comment.author is none %}
+                <span class="text-muted fst-italic">{{ _('Unknown User') }}</span>
+              {% else %}
+                {% set federated_user, imported_user = get_federated_identity(comment.author) %}
+                <a href="{{ url_for('frontend.user_profile', user_id=comment.author.id) }}">{{ federated_user.get_name() }}</a>
+                {{ import_information_symbol(comment.author) }}
+              {% endif %}, <span data-utc-datetime="{{ comment.utc_datetime | generic_format_datetime }}">{{ comment.utc_datetime | babel_format_datetime }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p>{{ _('There are no comments for this object.') }}</p>
+      {% endif %}
+      {% if user_may_comment %}
+        <form class="form" method="post" action="{{ url_for('frontend.post_object_comments', object_id=object_id) }}" id="new-comment-form">
+          {{ comment_form.csrf_token }}
+          <div class="form-group">
+            <textarea class="form-control" rows="3" placeholder="{{ _('Comment') }}" style="resize:vertical; min-height:2.5em; margin-bottom: 10px;" name="{{ comment_form.content.name }}">{% if comment_form.content.data %}{{ comment_form.content.data }}{% endif %}</textarea>
+          </div>
+          <div class="text-right">
+            <button type="submit" class="btn btn-primary" style="width:15em; margin-bottom: 20px;"><i class="fa fa-comment fa-fw"></i> {{ _('Post Comment') }}</button>
+          </div>
+        </form>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if not is_archived and action is not none and action.type.enable_activity_log %}
+    {% if object_log_entries %}
+      {% set imported_object_log_entries = [] %}
+      {% for object_log_entry in object_log_entries %}
+        {% if object_log_entry.is_imported %}
+          {% do imported_object_log_entries.append(object_log_entry) %}
+        {% endif %}
+      {% endfor %}
+      {% set any_object_log_entry_is_imported = imported_object_log_entries | length > 0 %}
+      <h2 id="activity_log">{{ _('Activity Log')}}</h2>
+      <table class="table" id="activity_log_table">
+        <thead>
+          <tr>
+            {% if any_object_log_entry_is_imported %}
+              <th scope="col" style="white-space: nowrap;width: 1%;"></th>
+            {% endif %}
+            <th scope="col" style="white-space: nowrap;width: 1%;">{{ _('Datetime') }}</th>
+            <th scope="col"></th>
+            <th scope="col" class="text-right" style="white-space: nowrap;width: 1%;">
+              <button type="button" class="btn btn-sm btn-primary" data-container="body" data-toggle="popover" data-placement="left" data-html="true" data-content="
+                <label style='font-weight:400'><input type='checkbox' id='activity_log_filter_versions' /> {{ _('Versions') }}</label><br />
+                <label style='font-weight:400'><input type='checkbox' id='activity_log_filter_measurements' /> {{ _('Measurements') }}</label><br />
+                <label style='font-weight:400'><input type='checkbox'  id='activity_log_filter_comments' /> {{ _('Comments') }}</label><br />
+                <label style='font-weight:400'><input type='checkbox'  id='activity_log_filter_files' /> {{ _('Files') }}</label><br />
+                <label style='font-weight:400'><input type='checkbox'  id='activity_log_filter_locations' /> {{ _('Locations') }}</label><br />
+                <label style='font-weight:400'><input type='checkbox'  id='activity_log_filter_references' /> {{ _('References') }}</label><br />
+                <label style='font-weight:400'><input type='checkbox' id='activity_log_filter_other' /> {{ _('Other') }}</label>
+              ">
+                <i class="fa fa-filter" style="font-size: 1.5rem"></i> <span class="badge" id="activity_log_counter"></span>
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for object_log_entry in object_log_entries %}
+          {% set ns = namespace(object_log_entry_message='—', object_log_entry_view_html=none, object_log_entry_view_url=none) %}
+          {% if object_log_entry.type == ObjectLogEntryType.CREATE_OBJECT %}
+            {% if 'previous_object_id' in object_log_entry.data %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s created the object using data from <a href="%(previous_object_url)s">object #%(previous_object_id)s</a>.', user_ref=user_reference(object_log_entry.user), previous_object_url=url_for('.object', object_id=object_log_entry.data['previous_object_id']), previous_object_id=object_log_entry.data['previous_object_id']) %}
+            {% else %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s created the object.', user_ref=user_reference(object_log_entry.user)) %}
+            {% endif %}
+              {% set ns.object_log_entry_view_url = url_for('.object_version', object_id=object_id, version_id=0) %}
+          {% elif object_log_entry.type == ObjectLogEntryType.CREATE_BATCH %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s created the object as part of a <a href="%(batch_url)s">batch</a>.', user_ref=user_reference(object_log_entry.user), batch_url=url_for('.objects', ids=(object_log_entry.data['object_ids'] | tojson)[1:-1])) %}
+            {% set ns.object_log_entry_view_url = url_for('.object_version', object_id=object_id, version_id=0) %}
+          {% elif object_log_entry.type == ObjectLogEntryType.EDIT_OBJECT %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s edited the object.', user_ref=user_reference(object_log_entry.user)) %}
+              {% if 'version_id' in object_log_entry.data %}
+                {% set ns.object_log_entry_view_html = _('<a href="%(view_version_url)s">View&nbsp;Version</a>&nbsp;/&nbsp;<a href="%(view_version_url_with_diff)s">View&nbsp;Changes</a>', view_version_url=url_for('.object_version', object_id=object_id, version_id=object_log_entry.data['version_id']),view_version_url_with_diff=url_for('.object_version', object_id=object_id, version_id=object_log_entry.data['version_id'], diff='')) %}
+              {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.RESTORE_OBJECT_VERSION %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s restored object <a href="%(version_url)s">version #%(version_id)s</a>.', user_ref=user_reference(object_log_entry.user), version_url=url_for('.object_version', object_id=object_id, version_id=object_log_entry.data['restored_version_id']), version_id=object_log_entry.data['restored_version_id']) %}
+            {% if 'version_id' in object_log_entry.data %}
+              {% set ns.object_log_entry_view_url = url_for('.object_version', object_id=object_id, version_id=object_log_entry.data['version_id']) %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.USE_OBJECT_IN_MEASUREMENT %}
+            {% if object_log_entry.data['measurement_id'] %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s used the object in <a href="%(measurement_url)s">%(measurement_name)s (#%(measurement_id)s)</a>.', user_ref=user_reference(object_log_entry.user), measurement_url=url_for('.object', object_id=object_log_entry.data['measurement_id']), measurement_id=object_log_entry.data['measurement_id'], measurement_name=object_log_entry.data['measurement'].name | get_translated_text) %}
+              {% set ns.object_log_entry_view_url = url_for('.object', object_id=object_log_entry.data['measurement_id']) %}
+            {% else %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s used the object in a measurement.', user_ref=user_reference(object_log_entry.user)) %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.USE_OBJECT_IN_SAMPLE_CREATION %}
+            {% if object_log_entry.data['sample_id'] %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s used the object to create <a href="%(sample_url)s">%(sample_name)s (#%(sample_id)s)</a>.', user_ref=user_reference(object_log_entry.user), sample_url=url_for('.object', object_id=object_log_entry.data['sample_id']), sample_id=object_log_entry.data['sample_id'], sample_name=object_log_entry.data['sample'].name | get_translated_text) %}
+              {% set ns.object_log_entry_view_url = url_for('.object', object_id=object_log_entry.data['sample_id']) %}
+            {% else %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s used the object to create a sample.', user_ref=user_reference(object_log_entry.user)) %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.POST_COMMENT %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s posted a comment for this object.', user_ref=user_reference(object_log_entry.user)) %}
+            {% if action is not none and action.type.enable_comments %}
+              {% if 'comment_id' in object_log_entry.data %}
+                {% set ns.object_log_entry_view_url = "#comment-" + (object_log_entry.data['comment_id'] | string) %}
+              {% endif %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.UPLOAD_FILE %}
+            {% for file in files %}
+              {% if file.id == object_log_entry.data['file_id'] %}
+                {% if file.storage == 'database' or file.storage == 'federation' %}
+                  {% if action is not none and action.type.enable_files %}
+                    {% set ns.object_log_entry_message = _('%(user_ref)s uploaded <a href="%(file_url)s">%(file_name)s</a>.', user_ref=user_reference(object_log_entry.user), file_url='#file-' + object_log_entry.data['file_id'] | string, file_name=file.original_file_name) %}
+                  {% else %}
+                    {% set ns.object_log_entry_message = _('%(user_ref)s uploaded %(file_name)s.', user_ref=user_reference(object_log_entry.user), file_name=file.original_file_name) %}
+                  {% endif %}
+                {% elif file.storage == 'url' %}
+                  {% set ns.object_log_entry_message = _('%(user_ref)s linked <a href="%(link_url)s">%(link_url)s</a>.', user_ref=user_reference(object_log_entry.user), link_url=file.url) %}
+                {% else %}
+                  {% if action is not none and action.type.enable_files %}
+                    {% set ns.object_log_entry_message = _('%(user_ref)s posted <a href="%(file_url)s">file #%(file_id)s</a>.', user_ref=user_reference(object_log_entry.user), file_url='#file-' + object_log_entry.data['file_id'] | string, file_id=object_log_entry.data['file_id']) %}
+                  {% else %}
+                    {% set ns.object_log_entry_message = _('%(user_ref)s posted a file.', user_ref=user_reference(object_log_entry.user)) %}
+                  {% endif %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% if action is not none and action.type.enable_files %}
+              {% if 'file_id' in object_log_entry.data %}
+                {% set ns.object_log_entry_view_url = "#file-" + (object_log_entry.data['file_id'] | string) %}
+              {% endif %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.ASSIGN_LOCATION %}
+            {% set object_location_assignment = get_object_location_assignment(object_log_entry.data['object_location_assignment_id']) %}
+            {% if object_location_assignment.location_id is not none and object_location_assignment.responsible_user_id is not none %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s assigned this object to location <a href="%(location_url)s">%(location_name)s</a> and user %(other_user_ref)s.', user_ref=user_reference(object_log_entry.user), location_url=url_for('.location', location_id=object_location_assignment.location_id), location_name=object_location_assignment.location_id | get_location_name(True), other_user_ref=user_reference(get_user(object_location_assignment.responsible_user_id))) %}
+            {% elif object_location_assignment.location_id is not none %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s assigned this object to location <a href="%(location_url)s">%(location_name)s</a>.', user_ref=user_reference(object_log_entry.user), location_url=url_for('.location', location_id=object_location_assignment.location_id), location_name=object_location_assignment.location_id | get_location_name(True)) %}
+            {% elif object_location_assignment.responsible_user_id is not none %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s assigned this object to user %(other_user_ref)s.', user_ref=user_reference(object_log_entry.user), other_user_ref=user_reference(get_user(object_location_assignment.responsible_user_id))) %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.LINK_PUBLICATION %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s linked publication <a href="https://doi.org/%(url_doi)s">%(doi)s</a> to the object.', user_ref=user_reference(object_log_entry.user), url_doi=object_log_entry.data['doi'] | urlencode, doi=object_log_entry.data['doi']) %}
+            {% if action is not none and action.type.enable_publications %}
+              {% set ns.object_log_entry_view_url = "#publications" %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.REFERENCE_OBJECT_IN_METADATA %}
+            {% if object_log_entry.data['object_id'] %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s referenced the object in the metadata of <a href="%(object_url)s">%(object_name)s (#%(object_id)s)</a>.', user_ref=user_reference(object_log_entry.user), object_url=url_for('.object', object_id=object_log_entry.data['object_id']), object_name=object_log_entry.data['object'].name | get_translated_text, object_id=object_log_entry.data['object_id']) %}
+              {% set ns.object_log_entry_view_url = url_for('.object', object_id=object_log_entry.data['object_id']) %}
+            {% else %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s referenced the object in the metadata of another object.', user_ref=user_reference(object_log_entry.user)) %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.EXPORT_TO_DATAVERSE %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s exported this object to a Dataverse.', user_ref=user_reference(object_log_entry.user)) %}
+            {% if object_log_entry.data.get('dataverse_url') %}
+              {% set ns.object_log_entry_view_url = object_log_entry.data['dataverse_url'] %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.LINK_PROJECT %}
+            {% with project = get_project(object_log_entry.data.project_id) %}
+              {% if project is not none %}
+                {% set ns.object_log_entry_message = _('%(user_ref)s linked this object to <a href="%(project_url)s">%(project_name)s (#%(project_id)s)</a>.', user_ref=user_reference(object_log_entry.user), project_url=url_for('.project', project_id=project.id), project_name=project.name | get_translated_text, project_id=project.id) %}
+                {% set ns.object_log_entry_view_url = url_for('.project', project_id=project.id) %}
+              {% else %}
+                {% set ns.object_log_entry_message = _('%(user_ref)s linked this object to a project group.', user_ref=user_reference(object_log_entry.user)) %}
+              {% endif %}
+            {% endwith %}
+          {% elif object_log_entry.type == ObjectLogEntryType.UNLINK_PROJECT %}
+            {% if object_log_entry.data.project_deleted %}
+              {% set ns.object_log_entry_message = _('%(user_ref)s deleted the project group this object was linked to.', user_ref=user_reference(object_log_entry.user)) %}
+            {% else %}
+              {% with project = get_project(object_log_entry.data.project_id) %}
+                {% if project is not none %}
+                  {% set ns.object_log_entry_message = _('%(user_ref)s removed the link of this object to <a href="%(project_url)s">%(project_name)s (#%(project_id)s)</a>.', user_ref=user_reference(object_log_entry.user), project_url=url_for('.project', project_id=project.id), project_name=project.name | get_translated_text, project_id=project.id) %}
+                  {% set ns.object_log_entry_view_url = url_for('.project', project_id=project.id) %}
+                {% else %}
+                  {% set ns.object_log_entry_message = _('%(user_ref)s removed the link of this object to a project group.', user_ref=user_reference(object_log_entry.user)) %}
+                {% endif %}
+              {% endwith %}
+            {% endif %}
+          {% elif object_log_entry.type == ObjectLogEntryType.IMPORT_FROM_ELN_FILE %}
+            {% set ns.object_log_entry_message = _('%(user_ref)s imported this object from an .eln file.', user_ref=user_reference(object_log_entry.user)) %}
+            {% if object.eln_import_id is not none %}
+              {% set ns.object_log_entry_view_url = url_for('.eln_import', eln_import_id=object.eln_import_id) %}
+            {% endif %}
+          {% else %}
+            {% set ns.object_log_entry_message = _('Unknown event') %}
+          {% endif %}
+          <tr data-activity-log-type="{{ object_log_entry.type.name.lower() }}">
+            {% if any_object_log_entry_is_imported %}
+              <td style="white-space: nowrap;width: 1%;">
+                {% if object_log_entry.is_imported %}
+                  {% if object.component %}
+                    <i class="fa fa-fw fa-share-alt" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('Log entry from %(component_name)s', component_name=object.component.get_name()) }}"></i>
+                  {% elif object.eln_import %}
+                    {% set signed_by = get_import_signed_by(object.eln_import_id) %}
+                    {% if signed_by != None %}
+                      <span class="fa-stack" data-toggle="tooltip" data-placement="top" title="" data-original-title="./objects/3 @ .eln file #{{ object.eln_import_id }} {{ _('Signed by') }} {{ signed_by }}">
+                        <i aria-hidden="true" class="fa fa-file-archive-o fa-stack-1x"></i>
+                        <i class="fa fa-lock fa-stack-1x" aria-hidden="true" style="padding-left: .8em; padding-top: .3em;"></i>
+                      </span>
+                    {% else %}
+                      <i class="fa fa-fw fa-file-archive-o" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('Log entry from .eln file #%(eln_import_id)s', eln_import_id=object.eln_import_id) }}"></i>
+                    {% endif %}
+                  {% else %}
+                    <i class="fa fa-fw fa-question-circle" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="{{ _('Imported log entry') }}"></i>
+                  {% endif %}
+                {% endif %}
+              </td>
+            {% endif %}
+            <td style="white-space: nowrap;width: 1%;"><span data-utc-datetime="{{ object_log_entry.utc_datetime | generic_format_datetime }}">{{ object_log_entry.utc_datetime | babel_format_datetime }}</span></td>
+            <td>
+              {{ ns.object_log_entry_message }}
+            </td>
+            <td class="text-right">
+              {% if ns.object_log_entry_view_html %}
+                {{ ns.object_log_entry_view_html }}
+              {% else %}
+                {% if ns.object_log_entry_view_url %}
+                  <a href="{{ ns.object_log_entry_view_url }}">{{ _('View') }}</a>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <label id="activity_log_show_all_wrapper" for="activity_log_show_all_toggle" class="btn btn-default btn-xs"><input type="checkbox" id="activity_log_show_all_toggle" autocomplete="off" {% if object_log_entries | length <= 15 %}checked="checked"{% endif %}> <span>{{ _('Show more') }}</span></label>
+    {% endif %}
+  {% endif %}
+
+  {% if not is_archived %}
+    {% if component %}
+      {% set shares = [] %}
+    {% else %}
+      {% set shares = get_shares_for_object(object.object_id) %}
+    {% endif %}
+    {% if component or shares or fed_object_log_entries %}
+      <h2 id="other_databases">{{ _('Other Databases') }}</h2>
+      <div class="federation-information">
+        {% if component %}
+          {{ _('This object version was created as object #%(fed_object_id)s, version %(fed_version_id)s in database <a href="%(component_url)s">%(component_name)s</a>.', fed_object_id=fed_object_id, fed_version_id=fed_version_id, component_url=url_for('.component', component_id=component.id), component_name=component.get_name()) }}
+        {% endif %}
+        {% if shares %}
+          {{ _('This object is being shared with users from the following databases:') }}
+          <ul>
+            {% for share in shares %}
+              <li>
+                <a href="{{ url_for('.component', component_id=share.component.id) }}">{{ share.component.get_name() }}</a>
+                {% if share.import_status.success %}
+                  {% if share.import_status.object_id %}
+                    {% if share.component.address %}
+                      {{ _('(imported as object <a href="%(remote_object_url)s">#%(object_id)s</a>)', remote_object_url=share.component.address + relative_url_for('.object', object_id=share.import_status.object_id), object_id=share.import_status.object_id) }}
+                    {% else %}
+                      {{ _('(imported as object #%(object_id)s)', object_id=share.import_status.object_id) }}
+                    {% endif %}
+                  {% else %}
+                    {{ _('(imported)') }}
+                  {% endif %}
+                {% else %}
+                  {{ _('(not imported)') }}
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+          {% if user_may_grant %}
+            <div class="text-right" style="min-width:15em; margin-bottom: 20px;">
+              <a href="{{ url_for('.object_permissions', object_id=object_id, _anchor='other-databases') }}" class="btn btn-primary">
+                <i class="fa fa-lock" aria-hidden="true"></i>
+                {{ _('Edit Permissions') }}
+              </a>
+            </div>
+          {% endif %}
+        {% endif %}
+        {% if fed_object_log_entries %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th scope="col" style="white-space: nowrap; width: 1%;">{{ _('Datetime') }}</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log_entry in fed_object_log_entries %}
+                <tr>
+                  <td style="white-space: nowrap">
+                    <span data-utc-datetime="{{ log_entry.utc_datetime | generic_format_datetime }}">{{ log_entry.utc_datetime | babel_format_datetime }}</span>
+                  </td>
+                  <td>
+                    {% if log_entry.user_id %}
+                      {% set user_ref = user_reference(log_entry.user_id) %}
+                    {% else %}
+                      {% set user_ref = _('An unknown user') %}
+                    {% endif %}
+                    {% if log_entry.type == FedObjectLogEntryType.IMPORT_OBJECT %}
+                      {% if not log_entry.user_id %}
+                        {% set user_ref = _('an unknown user') %}
+                      {% endif %}
+                      {% if 'version_id' in log_entry.data %}
+                        {% set version_id = log_entry.data.version_id %}
+                      {% else %}
+                        {% set version_id = '?' %}
+                      {% endif %}
+                      {% if log_entry.data.import_notes %}
+                        {{ _('Version #%(version_id)s of the object shared by %(user_ref)s was imported with the following notes:', version_id=version_id, user_ref=user_ref) }}
+                        <ul>
+                          {% for note in log_entry.data.import_notes %}
+                            <li>{{ note }}</li>
+                          {% endfor %}
+                        </ul>
+                      {% else %}
+                        {{ _('Version #%(version_id)s of the object shared by %(user_ref)s was imported.', version_id=version_id, user_ref=user_ref) }}
+                      {% endif %}
+                    {% elif log_entry.type == FedObjectLogEntryType.UPDATE_OBJECT %}
+                      {% if not log_entry.user_id %}
+                        {% set user_ref = _('an unknown user') %}
+                      {% endif %}
+                      {% if 'version_id' in log_entry.data %}
+                        {% set version_id = log_entry.data.version_id %}
+                      {% else %}
+                        {% set version_id = '?' %}
+                      {% endif %}
+                      {% if log_entry.data.import_notes %}
+                        {{ _('A new version (#%(version_id)s) of the object shared by %(user_ref)s was imported with the following notes:', version_id=log_entry.data.version_id, user_ref=user_ref) }}
+                        <ul>
+                          {% for note in log_entry.data.import_notes %}
+                            <li>{{ note }}</li>
+                          {% endfor %}
+                        </ul>
+                      {% else %}
+                        {{ _('A new version (#%(version_id)s) of the object shared by %(user_ref)s was imported.', version_id=log_entry.data.version_id, user_ref=user_ref) }}
+                      {% endif %}
+                    {% elif log_entry.type == FedObjectLogEntryType.ADD_POLICY %}
+                      {% set log_entry_component = get_component(log_entry.component_id) %}
+                      {% if log_entry_component %}
+                         {{ _('%(user_ref)s has shared the object with <a href="%(component_url)s">%(component_name)s</a>.', user_ref=user_ref, component_url=url_for('.component', component_id=log_entry.component_id), component_name=log_entry_component.get_name()) }}
+                      {% else %}
+                        {{ _('%(user_ref)s has shared the object with an unknown database.', user_ref=user_ref) }}
+                      {% endif %}
+                    {% elif log_entry.type == FedObjectLogEntryType.UPDATE_OBJECT_POLICY %}
+                      {% set log_entry_component = get_component(log_entry.component_id) %}
+                      {% if log_entry_component %}
+                         {{ _('%(user_ref)s has updated the settings for sharing this object with <a href="%(component_url)s">%(component_name)s</a>.', user_ref=user_ref, component_url=url_for('.component', component_id=log_entry.component_id), component_name=log_entry_component.get_name()) }}
+                      {% else %}
+                        {{ _('%(user_ref)s has updated the settings for sharing this object with an unknown database.', user_ref=user_ref) }}
+                      {% endif %}
+                    {% elif log_entry.type == FedObjectLogEntryType.REMOTE_IMPORT_OBJECT %}
+                      {% set log_entry_component = get_component(log_entry.component_id) %}
+                      {% if log_entry.data.import_status.success %}
+                        {% if log_entry_component %}
+                           {{ _('<a href="%(component_url)s">%(component_name)s</a> has imported the object.', user_ref=user_ref, component_url=url_for('.component', component_id=log_entry.component_id), component_name=log_entry_component.get_name()) }}
+                        {% else %}
+                          {{ _('An unknown database has imported the object.', user_ref=user_ref) }}
+                        {% endif %}
+                        {% if log_entry.data.import_status.object_id %}
+                          {% if log_entry_component.address %}
+                            {{ _('The object was created as <a href="%(remote_object_url)s">object #%(remote_object_id)s</a>.', remote_object_url=log_entry_component.address + relative_url_for('.object', object_id=log_entry.data.import_status.object_id), remote_object_id=log_entry.data.import_status.object_id) }}
+                          {% else %}
+                            {{ _('The object was created as object #%(remote_object_id)s.', remote_object_id=log_entry.data.import_status.object_id) }}
+                          {% endif %}
+                        {% endif %}
+                      {% else %}
+                        {% if log_entry_component %}
+                           {{ _('<a href="%(component_url)s">%(component_name)s</a> has failed to import the object.', component_url=url_for('.component', component_id=log_entry.component_id), component_name=log_entry_component.get_name()) }}
+                        {% else %}
+                          {{ _('An unknown database has failed to import the object.') }}
+                        {% endif %}
+                      {% endif %}
+                      {% if log_entry.data.import_status.notes %}
+                        {{ _('The other database returned the following notes:') }}
+                        <ul>
+                          {% for note in log_entry.data.import_status.notes %}
+                            <li>{{ note }}</li>
+                          {% endfor %}
+                        </ul>
+                      {% endif %}
+                    {% else %}
+                      {{ _('Unknown event') }}
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if object.eln_import_id is not none %}
+      <h2 id="import">{{ _('Import') }}</h2>
+      <p>
+        {{ _('This object was imported from <a href="%(eln_import_url)s">.eln file #%(eln_import_id)s</a> by %(user_ref)s.', eln_import_id=object.eln_import_id, eln_import_url=url_for('.eln_import', eln_import_id=object.eln_import_id), user_ref=user_reference(object.eln_import.user)) }} {% if eln_import_url is not none and eln_import_url.startswith('http') %}{{ _('The original URL is <a href="%(eln_import_url)s">%(eln_import_url)s</a>.', eln_import_url=eln_import_url) }}{% endif %}
+        {% set signed_by = get_import_signed_by(object.eln_import_id) %}
+        {% if signed_by is not none %}
+          {{ _('The .eln file was signed by <a href="%(signed_by)s">%(signed_by)s.</a>', signed_by=signed_by) }}
+        {% endif %}
+      </p>
+    {% endif %}
+  {% endif %}
+
+  {% if not is_archived and action is not none and action.type.enable_related_objects %}
+    <h2 id="related_objects">{{ _('Related Objects') }}</h2>
+
+    <div class="related-objects">
+      <i class="fa fa-spinner fa-pulse fa-2x fa-fw" data-toggle="tooltip" title="{{ _('Loading related objects...') }}" data-placement="right"></i>
+    </div>
+  {% endif %}
+
+  {% if not is_archived %}
+    {% if new_schema_available %}
+      <div class="modal fade" id="useAsTemplateModal" tabindex="-1" role="dialog" aria-labelledby="useAsTemplateModalLabel">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+              <h4 class="modal-title" id="useAsTemplateModalLabel">{{ _('Use as Template') }}</h4>
+            </div>
+            <div class="modal-body">
+              <p>{{ _('The schema for this object is out-of-date and the action it was created with has a new schema available. Do you want to use the new schema?') }}</p>
+            </div>
+            <div class="modal-footer">
+              <a href="{{ url_for('.new_object', previous_object_id=object_id, mode='upgrade') }}" class="btn btn-primary">{{ _('Use new schema') }}</a>
+              {% if not config['DISABLE_OUTDATED_USE_AS_TEMPLATE'] %}
+                <a href="{{ url_for('.new_object', previous_object_id=object_id) }}" class="btn btn-default">{{ _('Keep outdated schema') }}</a>
+              {% endif %}
+              <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="modal fade" id="dataExportModal" tabindex="-1" role="dialog" aria-labelledby="dataExportModalLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="dataExportModalLabel">{{ _('Export Data') }}</h4>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="select-export-format" class="control-label">{{ _('Export Format') }}</label>
+              <select id="select-export-format" class="selectpicker" data-width="100%">
+                <option value=".pdf" selected="selected">{{ _('PDF file') }}</option>
+                {% for file_extension in export_file_formats %}
+                  <option value="{{ file_extension }}">{{ _(export_file_formats[file_extension][0]) }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group" id="pdf–export-sections">
+              <div>{{ _('PDF Export Sections') }}</div>
+              <label><input type="checkbox" checked="checked" disabled="disabled" class="disabled"> {{ _('Information') }}</label>
+              {% if action is not none and action.type.enable_activity_log %}
+              <label><input type="checkbox" checked="checked" name="activity_log"> {{ _('Activity Log') }}</label>
+              {% endif %}
+              {% if action is not none and action.type.enable_locations %}
+              <label><input type="checkbox" checked="checked" name="locations"> {{ _('Locations') }}</label>
+              {% endif %}
+              {% if action is not none and action.type.enable_publications %}
+              <label><input type="checkbox" checked="checked" name="publications"> {{ _('Publications') }}</label>
+              {% endif %}
+              {% if action is not none and action.type.enable_files %}
+              <label><input type="checkbox" checked="checked" name="files"> {{ _('Files') }}</label>
+              {% endif %}
+              {% if action is not none and action.type.enable_comments %}
+              <label><input type="checkbox" checked="checked" name="comments"> {{ _('Comments') }}</label>
+              {% endif %}
+              <div style="text-align: left">
+                <label style="font-weight: bold" for="select-pdf-export-language">{{ _('PDF Export Language') }}</label>
+                <select class="selectpicker" name="language" id="select-pdf-export-language">
+                  {% for language in all_languages %}
+                    {% if language.enabled_for_user_interface and language.lang_code in SUPPORTED_LOCALES %}
+                    <option value="{{ language.lang_code }}" {% if language.id == get_user_language(current_user).id %}selected="selected"{% endif %}>
+                      {{ language.names | get_translated_text }}
+                    </option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            {% if action is not none and action.type.enable_related_objects %}
+            <strong>{{ _('Objects') }}</strong>
+            <div class="related-objects">
+              <i class="fa fa-spinner fa-pulse fa-2x fa-fw" data-toggle="tooltip" title="{{ _('Loading related objects...') }}" data-placement="right"></i>
+            </div>
+            {% endif %}
+          </div>
+          <div class="modal-footer">
+            {% if action is not none and action.type.enable_related_objects %}
+            <button type="button" class="btn btn-default" id="button-related-objects-select-all">{{ _('Select All') }}</button>
+            <button type="button" class="btn btn-default" id="button-related-objects-deselect-all">{{ _('Deselect All') }}</button>
+            {% endif %}
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <a href="{{ url_for('.export_data', object_id=object_id) }}" class="btn btn-primary" id="button-related-objects-export-data">{{ _('Export Data')}}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+    {% if show_download_service and not is_archived and action is not none and action.type is not none and action.type.enable_files and files %}
+    <div class="modal fade" id="dataFilesDownloadModal" tabindex="-1" role="dialog" aria-labelledby="dataFilesDownloadModalLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="dataFilesDownloadModalLabel">{{ _('Export Data') }}</h4>
+          </div>
+          <div class="modal-body">
+            <div class="form-group" id="modal-file-sections">
+              <table style="width: 100%">
+                <tbody>
+                  {% for file in files %}
+                    {% if not (file.is_hidden or file.storage == 'url') %}
+                      <tr>
+                        <td><label>{{ file.title }}</label></td>
+                        <td><label><input type="checkbox" id="data_download_service_checked_{{ file.id }}" name="data_download_service_checked_{{ file.id }}" data-object-id="{{ file.id }}"></label></td>
+                      </tr>
+                    {% endif %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" id="button-modal-files-select-all">{{ _('Select All') }}</button>
+            <button type="button" class="btn btn-default" id="button-modal-files-deselect-all">{{ _('Deselect All') }}</button>
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <a class="btn btn-primary" id="button-modal-files-download-zip">{{ _('Export Data')}}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% include "objects/view/timeseries_modals.html" %}
+{% endblock %}
+
+{% block template_values %}
+
+  {% do set_template_value("object_id", object_id) %}
+  {% set languages = [] %}
+  {% for lang in all_languages %}
+    {% do languages.append(
+      {
+        'id': lang.id | string,
+        'name': lang.names | get_translated_text,
+        'lang_code': lang.lang_code
+      }
+    ) %}
+  {% endfor %}
+  {% do set_template_value("languages", languages) %}
+  {% if object_log_entries %}
+    {% set filter_type_list = {
+        "versions": [ObjectLogEntryType.CREATE_OBJECT, ObjectLogEntryType.CREATE_BATCH, ObjectLogEntryType.EDIT_OBJECT, ObjectLogEntryType.RESTORE_OBJECT_VERSION],
+        "measurements": [ObjectLogEntryType.USE_OBJECT_IN_MEASUREMENT],
+        "comments": [ObjectLogEntryType.POST_COMMENT],
+        "files": [ObjectLogEntryType.UPLOAD_FILE],
+        "locations": [ObjectLogEntryType.ASSIGN_LOCATION],
+        "references": [ObjectLogEntryType.REFERENCE_OBJECT_IN_METADATA, ObjectLogEntryType.USE_OBJECT_IN_MEASUREMENT, ObjectLogEntryType.USE_OBJECT_IN_SAMPLE_CREATION],
+       }
+    %}
+    {% set activity_log_filter_type_dict = {"other": []} %}
+    {% set handled_entry_types = [] %}
+    {% for filter_label, entry_types in filter_type_list.items() %}
+      {% do activity_log_filter_type_dict.update({filter_label: []}) %}
+      {% for entry_type in entry_types %}
+          {% do activity_log_filter_type_dict[filter_label].append(entry_type.name.lower()) %}
+          {% do handled_entry_types.append(entry_type) %}
+      {% endfor %}
+    {% endfor %}
+    {% for entry_type in ObjectLogEntryType %}
+      {% if entry_type not in handled_entry_types %}
+        {% do activity_log_filter_type_dict.other.append(entry_type.name.lower()) %}
+      {% endif %}
+    {% endfor %}
+    {% do set_template_value("activity_log_filter_type_dict", activity_log_filter_type_dict) %}
+  {% endif %}
+  {% if not is_archived %}
+    {% do set_template_value("horizontal_label_margin", HORIZONTAL_LABEL_MARGIN) %}
+    {% do set_template_value("vertical_label_margin", VERTICAL_LABEL_MARGIN) %}
+    {% do set_template_value("label_paper_formats", config["LABEL_PAPER_FORMATS"]) %}
+    {% set page_sizes = {} %}
+    {% for paper_format in PAGE_SIZES %}
+      {% do page_sizes.update({
+        paper_format: [
+          PAGE_SIZES[paper_format][0],
+          PAGE_SIZES[paper_format][1]
+        ]
+      }) %}
+    {% endfor %}
+    {% do set_template_value("page_sizes", page_sizes) %}
+  {% endif %}
+  {% do set_template_value("download_service_url", url_for('.download_service', object_id=object_id)) %}
+  {% do set_template_value("export_data_url", url_for('.export_data', object_id=object_id)) %}
+  {% if edit_external_link_file and edit_external_link_file is not none and edit_external_link_file | int(-1) != -1 and edit_external_link_error in external_link_errors %}
+    {% do set_template_value("edit_external_link_file", edit_external_link_file | int) %}
+    {% do set_template_value("external_link_error", external_link_errors[edit_external_link_error]) %}
+  {% else %}
+    {% do set_template_value("edit_external_link_file", -1) %}
+  {% endif %}
+  {% do set_template_value("template_mode", template_mode) %}
+  {% do set_template_value("is_archived", is_archived or False) %}
+  {% do set_template_value("labels_enabled", action is not none and action.type.enable_labels) %}
+  {% do set_template_value("files_enabled", action is not none and action.type.enable_files) %}
+  {% do set_template_value("user_may_comment", user_may_comment and action is not none and action.type.enable_comments) %}
+  {% do set_template_value("user_may_upload_files", user_may_upload_files) %}
+  {% do set_template_value("has_object_log_entries", (object_log_entries and action is not none and action.type.enable_activity_log) | bool) %}
+  {% do set_template_value("has_related_objects_tree", (action is not none and action.type.enable_related_objects) | bool) %}
+  {% do set_template_value("related_objects_entries_url", url_for('.related_objects_entries', object_id=object_id)) %}
+  {% do set_template_value("show_download_service", (show_download_service and action is not none and action.type is not none and action.type.enable_files and files) | bool) %}
+  {% do set_template_value("translations.select_responsible_user_or_location", _("Please select one responsible user or one location")) %}
+  {% do set_template_value("translations.files_selected", _('files selected')) %}
+  {% do set_template_value("translations.select_a_paper_format", _('Please select a paper format.')) %}
+  {% do set_template_value("translations.enter_a_number_between_minimum_and_maximum", _('Please enter a number between {minimum} and {maximum}.')) %}
+  {% do set_template_value("translations.select_an_existing_label_paper_format", _('Please select an existing label paper format.')) %}
+  {% do set_template_value("translations.select_qr_code_data", _('Please select which data should be stored in the qr codes.')) %}
+  {% do set_template_value("translations.referenced_relationship_text", _('Referenced by the metadata of %(object_name)s (#%(object_id)s)', object_name='OBJECT_NAME_PLACEHOLDER', object_id='OBJECT_ID_PLACEHOLDER')) %}
+  {% do set_template_value("translations.referencing_relationship_text", _('References %(object_name)s (#%(object_id)s) in its metadata', object_name='OBJECT_NAME_PLACEHOLDER', object_id='OBJECT_ID_PLACEHOLDER')) %}
+  {% do set_template_value("translations.include_object_in_export", _('Include #%(object_id)s in Export', object_id='OBJECT_ID_PLACEHOLDER')) %}
+  {% do set_template_value("translations.failed_to_load_related_objects", _('Failed to load related objects.')) %}
+
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ fingerprinted_static('bootstrap-datetimepicker/js/bootstrap-datetimepicker.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('bootstrap-select/js/bootstrap-select.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('bootstrap-toggle/js/bootstrap-toggle.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('js-cookie/js/js.cookie.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/markdown_image_viewer.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('plotly/js/plotly-latest.min.js') }}"></script>
+  {% if get_user_language(current_user).lang_code == 'de' %}
+    <script src="{{ fingerprinted_static('plotly/js/plotly-locale-de.js') }}"></script>
+  {% endif %}
+  <script src="{{ fingerprinted_static('sampledb/js/treepicker.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/timeseries.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/timeline_arrays.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/view-object-data.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/sampledb-internationalization.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/view-base.js') }}" type="module"></script>
+{% endblock %}

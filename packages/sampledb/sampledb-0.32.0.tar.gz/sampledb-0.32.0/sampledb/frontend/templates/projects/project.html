@@ -1,0 +1,547 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Project Group') }} #{{ project.id }}: {{ project.name | get_translated_text }} — {{ service_name }}{% endblock %}
+
+{% block stylesheets %}
+  {{ super() }}
+    <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-select/css/bootstrap-select.min.css') }}" />
+{% endblock %}
+
+{% block content %}
+  {% set allowed_language_ids = [] %}
+  {% for language in languages %}
+    {{ allowed_language_ids.append(language.id) or '' }}
+  {% endfor %}
+  <h1>{{ _('Project Group') }} #{{ project.id }}: {{ project.name | get_translated_text }}</h1>
+  {% if object_id is not none %}
+  <p class="text-muted">{{ _('This project group is linked to <a href=\"%(object_url)s\">%(object_type)s #%(object_id)d%(object_name)s</a>.', object_type=((object_action.type.object_name | get_translated_text) if object_action else _('Object')), object_id=object_id, object_name=((': ' + (object.data.name.text | get_translated_text)) if object else ''), object_url=url_for(".object", object_id=object_id)) }}</p>
+  {% endif %}
+  {% if project_group_categories %}
+    <p>
+      <strong>{{ _('Categories') }}:</strong>
+      {% for category in project_group_categories %}
+        {%- if not loop.first %}, {% endif -%}
+        {%- for category_name in group_category_names[category.id] -%}
+          {%- if not loop.first %} / {% endif -%}
+          {{ category_name | get_translated_text(default=_('Unnamed Category')) }}
+        {%- endfor -%}
+      {% endfor %}
+    </p>
+  {% endif %}
+  <p>{{ project.description | get_translated_text }}</p>
+  {% if not config['DISABLE_SUBPROJECTS'] %}
+  {% if parent_project_ids %}
+    {{ _('This project group is a part of') }}
+      {% if parent_project_ids | length > 2 %}
+      {% for project_id in parent_project_ids[:-2] %}
+        {% with project = get_project(project_id) %}
+          <a href="{{ url_for('.project', project_id=project_id) }}">{{ project.name | get_translated_text }}</a>,
+        {% endwith %}
+      {% endfor %}
+      {% endif %}
+      {% if parent_project_ids | length > 1 %}
+      {% with project = get_project(parent_project_ids[-2]) %}
+        <a href="{{ url_for('.project', project_id=parent_project_ids[-2]) }}">{{ project.name | get_translated_text }}</a> {{ _('and') }}
+      {% endwith %}
+      {% endif %}
+      {% if parent_project_ids | length > 0 %}
+      {% with project = get_project(parent_project_ids[-1]) %}
+        <a href="{{ url_for('.project', project_id=parent_project_ids[-1]) }}">{{ project.name | get_translated_text }}</a>.
+      {% endwith %}
+      {% endif %}
+  {% endif %}
+  {% if child_project_ids %}
+    <h2>{{ _('Child Project Groups') }}</h2>
+    <ul>
+      {% for project_id in child_project_ids %}
+        {% with project = get_project(project_id) %}
+          <li><a href="{{ url_for('.project', project_id=project_id) }}">{{ project.name | get_translated_text }}</a>{% if child_project_ids_can_add_to_parent.get(project_id, False) %} <span class="label label-default"><span data-toggle="tooltip" data-placement="bottom" title="{{ _('Users of this child project group may invite other users to its parent project group.') }}">{{ _('Grant') }} <i class="fa fa-question-circle" aria-hidden="true"></i></span></span>{% endif %}</li>
+        {% endwith %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% endif %}
+  <h2>{{ _('Members') }}</h2>
+  <ul>
+    {% for user_id, user_permissions in project_member_user_ids_and_permissions.items() %}
+      <li><i class="fa fa-user" aria-hidden="true"></i>
+        {{ user_reference(user_id) }}
+      <span class="label label-default">
+      {% if user_permissions == user_permissions.READ %}{{ _('Read') }}{% endif %}
+      {% if user_permissions == user_permissions.WRITE %}{{ _('Write') }}{% endif %}
+      {% if user_permissions == user_permissions.GRANT %}{{ _('Grant') }}{% endif %}
+      </span>
+      {% if remove_project_member_form and user_id != current_user.id %}
+      <form method="post" style="display: inline;margin-left:0.5em" action="{{ url_for('.project', project_id=project.id) }}" id="removeProjectMember{{ user_id }}Form">
+        {{ remove_project_member_form.csrf_token() }}
+        <button type="submit" class="btn btn-danger btn-xs" name="remove_member" value="{{ user_id }}">{{ _('Remove') }}</button>
+      </form>
+      {% endif %}
+      </li>
+    {% endfor %}
+    {% for group_id in project_member_group_ids_and_permissions %}
+      {% with group = get_group(group_id) %}
+        <li><i class="fa fa-users" aria-hidden="true"></i> <a href="{{ url_for('.group', group_id=group_id) }}">{{ group.name | get_translated_text }}</a>
+        {% if remove_project_group_form %}
+        <form method="post" style="display: inline;margin-left:0.5em" action="{{ url_for('.project', project_id=project.id) }}" id="removeProjectGroup{{ group_id }}Form">
+          {{ remove_project_group_form.csrf_token() }}
+          <button type="submit" class="btn btn-danger btn-xs" name="remove_group" value="{{ group_id }}">{{ _('Remove') }}</button>
+        </form>
+        {% endif %}</li>
+      {% endwith %}
+    {% endfor %}
+  </ul>
+  {% if show_invitation_log %}
+    {% with all_invitations = project_invitations %}
+      {% include "invitation_log.html" %}
+    {% endwith %}
+  {% elif project_invitations %}
+    {% with pending_invitations = project_invitations %}
+      {% include "pending_invitations.html" %}
+    {% endwith %}
+  {% endif %}
+  <div class="button-row">
+  {% if show_objects_link %}
+    <div class="btn-group">
+      <a href="{{ url_for('.objects', project=project.id) }}" class="btn btn-default">{{ _('View Objects') }}</a>
+      <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        <span class="caret"></span>
+        <span class="sr-only">{{ _('Toggle Dropdown') }}</span>
+      </button>
+      <ul class="dropdown-menu">
+        <li><a href="{{ url_for('.objects', project=project.id, project_permissions='READ') }}">{{ _('… with <b>READ</b> permissions') }}</a></li>
+        <li><a href="{{ url_for('.objects', project=project.id, project_permissions='WRITE') }}">{{ _('… with <b>WRITE</b> permissions') }}</a></li>
+        <li><a href="{{ url_for('.objects', project=project.id, project_permissions='GRANT') }}">{{ _('… with <b>GRANT</b> permissions') }}</a></li>
+      </ul>
+    </div>
+  {% endif %}
+  {% if not current_user.is_readonly %}
+  {% if edit_project_form %}
+    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#editProjectModal">{{ _('Edit Project Group') }}</button>
+  {% endif %}
+  {% if not config['DISABLE_SUBPROJECTS'] %}
+  {% if add_subproject_form %}
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addSubprojectModal">{{ _('Add Child Project Group') }}</button>
+  {% endif %}
+  {% if remove_subproject_form %}
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#removeSubprojectModal">{{ _('Remove Child Project Group') }}</button>
+  {% endif %}
+  {% endif %}
+  {% if invite_user_form %}
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#inviteUserModal">{{ _('Invite User') }}</button>
+  {% endif %}
+  {% if invite_group_form %}
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#inviteGroupModal">{{ _('Add Basic Group') }}</button>
+  {% endif %}
+  {% if user_may_edit_permissions %}
+  <a href="{{ url_for('.project_permissions', project_id=project.id) }}" class="btn btn-primary" >{{ _('Edit Permissions') }}</a>
+  {% endif %}
+  {% endif %}
+  {% if not current_user.is_readonly and not object_id and object_link_form %}
+  <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#linkObjectModal" id="linkObjectButton" disabled="disabled">{{ _('Link Object') }}</button>
+  {% endif %}
+  {% if not current_user.is_readonly and object_id and object_link_form %}
+  <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#unlinkObjectModal">{{ _('Unlink Object') }}</button>
+  {% endif %}
+  {% if leave_project_form %}
+  <form method="post" style="display: inline" action="{{ url_for('.project', project_id=project.id) }}" id="leaveProjectForm">
+    {{ leave_project_form.csrf_token() }}
+    <button type="submit" class="btn btn-danger" name="leave" value="leave">{{ _('Leave Project Group') }}</button>
+  </form>
+  {% endif %}
+  {% if not current_user.is_readonly %}
+  {% if delete_project_form %}
+  <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#deleteProjectModal">{{ _('Delete Project Group') }}</button>
+  {% endif %}
+  {% endif %}
+  </div>
+
+  {% if not current_user.is_readonly and object_id and object_link_form %}
+  <div class="modal fade" id="unlinkObjectModal" tabindex="-1" role="dialog" aria-labelledby="unlinkObjectModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="unlinkObjectModalLabel">{{ _('Unlink Object') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.unlink_object', project_id=project.id) }}" class="form-horizontal">
+          {{ object_link_form.csrf_token() }}
+          <input type="hidden" name="{{ object_link_form.object_id.name }}" value="{{ object_id }}">
+          <div class="modal-body">
+            {{ _('Are you certain you want to unlink this project group from the object?') }}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-danger" name="delete" value="delete">{{ _('Unlink Object') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not current_user.is_readonly and not object_id and object_link_form %}
+  <div class="modal fade" id="linkObjectModal" tabindex="-1" role="dialog" aria-labelledby="linkObjectModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="linkObjectModalLabel">{{ _('Link Object') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.link_object', project_id=project.id) }}" class="form-horizontal">
+          {{ object_link_form.csrf_token() }}
+          <div class="modal-body">
+            <p>
+            {{ _('Select an object to link this project group to:') }}
+            </p>
+            <select class="selectpicker" name="{{ object_link_form.object_id.name }}" data-live-search="true" data-width="100%" data-sampledb-remove="{% for object_id in already_linked_object_ids %}{{ object_id }},{% endfor %}" data-sampledb-valid-action-ids="{% if not linkable_action_ids %}-100{% endif %},{% for action_id in linkable_action_ids %}{{ action_id }},{% endfor %}" data-sampledb-required-perm="3" data-sampledb-empty-disable="#linkObjectButton" data-sampledb-nonempty-enable="#linkObjectButton">
+            </select>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="delete" value="delete">{{ _('Link Object') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if edit_project_form %}
+  <div class="modal fade" id="editProjectModal" tabindex="-1" role="dialog" aria-labelledby="editProjectModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="editProjectModalLabel">{{ _('Edit Project Group') }}</h4>
+        </div>
+
+        <div class="hidden" id="name-template">
+          <div class="input-group" data-language-id="">
+            <input type="text" class="form-control" id="input-name-" placeholder="{{ _('Name') }}" data-name="input-name" value="" data-translation-attribute="name" data-empty-text="{{ _('Please enter a group name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter group name (at most 100 characters).') }}">
+            <span class="input-group-addon language-addon" data-name="language" style="margin-right: 5px"></span>
+          </div>
+          <span class="help-block"></span>
+        </div>
+
+        <div class="hidden" id="description-template">
+          <div class="input-group" data-language-id="">
+            <textarea class="form-control" style="resize: vertical; min-height:2.5em;" id="" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description"></textarea>
+            <span class="input-group-addon language-addon" data-name="language" style="margin-right: 5px"></span>
+          </div>
+          <span class="help-block"></span>
+        </div>
+        <form method="post" action="{{ url_for('.project', project_id=project.id) }}">
+          {{ edit_project_form.csrf_token() }}
+          <div class="modal-body">
+
+          <div class="form-group" data-name="input-names">
+            <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+              <label for="select-language-name" class="control-label col-sm-8" style="margin-top: 5px">{{ _("Name") }}</label>
+              <select class="selectpicker btn-xs select-language col-sm-4 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs" id="select-language-name">
+                  {% for language in languages %}
+                      <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" selected="selected"{% endif %} {% if language.id in name_language_ids %} selected="selected" {% endif %} data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                  {% endfor %}
+              </select>
+            </div>
+              {% for translation in translations %}
+                {% if translation.language_id in allowed_language_ids %}
+                {% if translation['name'] != '' %}
+                  <div class="{% if allowed_language_ids | length > 1 %}input-group{% endif %} {% if edit_project_form.translations.errors and translation.language_id == ENGLISH.id %}has-error {% endif %}" data-language-id="{{ translation.language_id }}"  {% if translation.language_id != ENGLISH.id %} {% endif %}>
+                    <input type="text" class="form-control" id="input-name-{{ translation.language_id}}" placeholder="{{ _('Name') }}" data-name="input-name" value="{{ translation.name }}" data-translation-attribute="name" data-empty-text="{{ _('Please enter a group name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter group name (at most 100 characters).') }}">
+                    {% if allowed_language_ids | length > 1 %}
+                    <span class="input-group-addon language-addon" data-name="language">{{ translation.lang_name }}</span>
+                    {% endif %}
+                  </div>
+                  <span class="help-block"></span>
+                {% endif %}
+                {% endif %}
+              {% endfor %}
+              {% for error_message in edit_project_form.translations.errors %}<span class="help-block" style="color: red">{{ error_message }}</span>{% endfor %}
+          </div>
+
+          <div class="form-group" data-name="input-descriptions">
+            <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+              <label for="select-language-description" class="control-label col-sm-8" style="margin-top: 5px">{{ _("Description") }}</label>
+              <select class="selectpicker btn-xs select-language col-sm-4 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs" id="select-language-description">
+                {% for language in languages %}
+                  <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" selected="selected"{% endif %} {% if language.id in description_language_ids %} selected="selected" {% endif %} data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            {% for translation in translations %}
+                {% if translation.language_id in allowed_language_ids %}
+              {% if translation['description'] != '' or translation.language_id == ENGLISH.id  %}
+                <div class="{% if allowed_language_ids | length > 1 %}input-group{% endif %}" data-language-id="{{ translation.language_id }}">
+                  <textarea class="form-control" style="resize: vertical; min-height:2.5em;" id="input-description-{{ translation.language_id }}" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description">{{ translation.description }}</textarea>
+                  {% if allowed_language_ids | length > 1 %}
+                    <span class="input-group-addon language-addon" data-name="language">{{ translation.lang_name }}</span>
+                  {% endif %}
+                </div>
+                  <span class="help-block"></span>
+              {% endif %}
+              {% endif %}
+           {% endfor %}
+          </div>
+
+          <input type="hidden" id="input-translations" name="{{ edit_project_form.translations.name }}" value="">
+
+          {% if group_categories %}
+            <div class="form-group">
+              <label for="select-categories" class="control-label">{{ _("Categories") }}</label>
+              <select class="selectpicker form-control" multiple="multiple" id="select-categories" name="{{ edit_project_form.categories.name }}" data-none-selected-text="{{ _('No category selected') }}">
+                {% for category in group_categories %}
+                  <option value="{{ category.id }}" {% if category in project_group_categories %}selected="selected"{% endif %}>
+                    {%- for category_name in group_category_names[category.id] -%}
+                      {%- if not loop.first %} / {% endif -%}
+                      {{ category_name | get_translated_text(default=_('Unnamed Category')) }}
+                    {%- endfor -%}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endif %}
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="edit" value="edit">{{ _('Save') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if invite_user_form %}
+  <div class="modal fade" id="inviteUserModal" tabindex="-1" role="dialog" aria-labelledby="inviteUserModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="inviteUserModalLabel">{{ _('Invite User') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.project', project_id=project.id) }}" class="form-horizontal">
+          {{ invite_user_form.csrf_token() }}
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="inviteUserId" class="col-sm-3 control-label">{{ _('User') }}</label>
+              <div class="col-sm-9">
+                <select class="selectpicker" name="{{ invite_user_form.user_id.name }}" id="inviteUserId" data-width="100%" data-live-search="true">
+                {% for user in invitable_user_list | sort(attribute='name') %}
+                  <option value="{{ user.id }}" {% if invite_user_form.user_id.data == user_id %}selected="selected"{% endif %}>{{ user.get_name() }}</option>
+                {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="inviteUserPermissions" class="col-sm-3 control-label">{{ _('Permissions') }}</label>
+              <div class="col-sm-9">
+                <select class="selectpicker" name="{{ invite_user_form.permissions.name }}" id="inviteUserPermissions" data-width="100%">
+                  <option value="1" selected="selected">{{ _('READ') }}</option>
+                  <option value="2">{{ _('WRITE') }}</option>
+                  <option value="3">{{ _('GRANT') }}</option>
+                </select>
+              </div>
+              <div class="help-block col-sm-9 col-sm-offset-3">
+                {{ _('Permissions limit what a user can do, regarding the project group itself as well as objects that the project group has permissions for.<br />These can also be changed later on by using the <strong>Edit Permissions</strong> button.') }}
+              </div>
+            </div>
+            {% if current_user.is_admin %}
+              <div class="form-group">
+                <div class="col-sm-offset-3 col-sm-9">
+                  <div class="checkbox">
+                    <label>
+                      <input type="checkbox" name="{{ invite_user_form.add_directly.name }}"> {{ _('Add user directly, without sending an invitation') }}
+                    </label>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+            {% if not config['DISABLE_SUBPROJECTS'] %}
+            {% if invite_user_form.other_project_ids %}
+            <strong>{{ _('Invite user to parent project groups:') }}</strong>
+            {% endif %}
+            {% for other_project_id_form in invite_user_form.other_project_ids %}
+              {% set parent_project = get_project(other_project_id_form.project_id.data | int) %}
+              <div class="row">
+              <div class="col-sm-3">
+                <div class="checkbox text-right">
+                  <input type="checkbox" name="{{ other_project_id_form.add_user.name }}" id="{{ other_project_id_form.add_user.id }}" />
+                </div>
+              </div>
+              {{ other_project_id_form.csrf_token() }}
+              <input type="hidden" name="{{ other_project_id_form.project_id.name }}" value="{{ parent_project.id }}" />
+              <label for="{{ other_project_id_form.add_user.id }}" class="col-sm-9 control-label" style="text-align: left">{{ parent_project.name | get_translated_text }} (#{{ parent_project.id }})</label>
+            </div>
+            {% endfor %}
+            {% endif %}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="add_user" value="add_user">{{ _('Invite User') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if invite_group_form %}
+  <div class="modal fade" id="inviteGroupModal" tabindex="-1" role="dialog" aria-labelledby="inviteGroupModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="inviteFroupModalLabel">{{ _('Add Basic Group') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.project', project_id=project.id) }}" class="form-horizontal">
+          {{ invite_group_form.csrf_token() }}
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="inviteGroupId" class="col-sm-3 control-label">{{ _('Basic Group') }}</label>
+              <div class="col-sm-9">
+                <select class="selectpicker" name="{{ invite_group_form.group_id.name }}" id="inviteGroupId" data-width="100%" data-live-search="true">
+{#               TODO: Sort list by name? #}
+                {% for group in invitable_group_list %}
+                  <option value="{{ group.id }}" {% if invite_group_form.group_id.data == group_id %}selected="selected"{% endif %}>{{ group.name | get_translated_text}} (#{{ group.id }})</option>
+                {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="add_group" value="add_group">{{ _('Add Basic Group') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not config['DISABLE_SUBPROJECTS'] %}
+  {% if add_subproject_form %}
+  <div class="modal fade" id="addSubprojectModal" tabindex="-1" role="dialog" aria-labelledby="addSubprojectModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="addSubprojectModalLabel">{{ _('Add Child Project Group') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.project', project_id=project.id) }}" class="form-horizontal" id="addSubprojectForm">
+          {{ add_subproject_form.csrf_token() }}
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="addSubprojectId" class="col-sm-2 control-label">{{ _('Project Group') }}</label>
+              <div class="col-sm-10">
+                <select class="selectpicker" name="{{ add_subproject_form.child_project_id.name }}" id="addSubprojectId" data-width="100%">
+                {% for project in addable_projects %}
+                    <option value="{{ project.id }}" {% if add_subproject_form.child_project_id.data == project.id %}selected="selected"{% endif %}>{{ project.name | get_translated_text }} (#{{ project.id }})</option>
+                {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="childCanAddUsersToParentId" class="col-sm-11 control-label">{{ _('Child project groups may add users to this project group') }}</label>
+              <div class="col-sm-1 checkbox">
+                <input type="checkbox" name="{{ add_subproject_form.child_can_add_users_to_parent.name }}" id="childCanAddUsersToParentId" />
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="add_subproject" value="add_subproject">{{ _('Add Child Project Group') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if remove_subproject_form %}
+  <div class="modal fade" id="removeSubprojectModal" tabindex="-1" role="dialog" aria-labelledby="removeSubprojectModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="removeSubprojectModalLabel">{{ _('Remove Child Project Group') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.project', project_id=project.id) }}" class="form-horizontal" id="removeSubprojectForm">
+          {{ remove_subproject_form.csrf_token() }}
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="addSubprojectId" class="col-sm-2 control-label">{{ _('Project Group') }}</label>
+              <div class="col-sm-10">
+                <select class="selectpicker" name="{{ remove_subproject_form.child_project_id.name }}" id="removeSubprojectId" data-width="100%">
+                {% for project_id in child_project_ids %}
+                  {% with project = get_project(project_id) %}
+                    <option value="{{ project_id }}" {% if remove_subproject_form.child_project_id.data == project_id %}selected="selected"{% endif %}>{{ project.name | get_translated_text }} (#{{ project.id }})</option>
+                  {% endwith %}
+                {% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" name="remove_subproject" value="remove_subproject">{{ _('Remove Child Project Group') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  {% if delete_project_form %}
+  <div class="modal fade" id="deleteProjectModal" tabindex="-1" role="dialog" aria-labelledby="deleteProjectModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="deleteProjectModalLabel">{{ _('Delete Project Group') }}</h4>
+        </div>
+        <form method="post" action="{{ url_for('.project', project_id=project.id) }}" class="form-horizontal" id="deleteProjectForm">
+          {{ delete_project_form.csrf_token() }}
+          <div class="modal-body">
+            {{ _('Are you certain you want to delete this project group?') }}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-danger" name="delete" value="delete">{{ _('Delete Project Group') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block template_values %}
+  {% set language_info_languages = [] %}
+  {% for lang in languages %}
+    {% do language_info_languages.append({"id": lang.id | string, "name": lang.names | get_translated_text, "lang_code": lang.lang_code}) %}
+  {% endfor %}
+  {% do set_template_value("language_info.languages", language_info_languages) %}
+  {% do set_template_value("language_info.english_id", ENGLISH.id) %}
+
+  {% do set_template_value("translations", translations) %}
+  {% do set_template_value("translations.invite_user", _('Invite User')) %}
+  {% do set_template_value("translations.add_user", _('Add User')) %}
+  {% do set_template_value("name_language_ids", name_language_ids) %}
+  {% do set_template_value("description_language_ids", description_language_ids) %}
+  {% do set_template_value("show_edit_form", show_edit_form) %}
+
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ fingerprinted_static('bootstrap-select/js/bootstrap-select.min.js') }}"></script>
+  {% if object_link_form and not object_id and not current_user.is_readonly %}
+    <script src="{{ fingerprinted_static('sampledb/js/sampledb-load-objects.js') }}" type="module"></script>
+  {% endif %}
+  <script src="{{ fingerprinted_static('sampledb/js/page/project.js') }}" type="module"></script>
+{% endblock %}

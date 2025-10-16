@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}{% if location %}{{ _('Location') }} #{{ location.id }}: {{ location | get_location_name(False) }}{% else %}{{ _('Location') }}{% endif %} — {{ service_name }}{% endblock %}
+
+{% block stylesheets %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-select/css/bootstrap-select.min.css') }}" />
+  <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-toggle/css/bootstrap-toggle.min.css') }}" />
+{% endblock %}
+
+{% block template_values %}
+  {% set language_info_languages = [] %}
+  {% for lang in languages %}
+    {% do language_info_languages.append({"id": lang.id | string, "name": lang.names | get_translated_text, "lang_code": lang.lang_code}) %}
+  {% endfor %}
+  {% do set_template_value("language_info.languages", language_info_languages) %}
+  {% do set_template_value("language_info.english_id", ENGLISH.id) %}
+
+  {% do set_template_value("translations", translations) %}
+  {% if submit_text == 'Create' %}
+    {% do set_template_value("name_language_ids", [ENGLISH.id]) %}
+    {% do set_template_value("description_language_ids", [ENGLISH.id]) %}
+  {% else %}
+    {% do set_template_value("name_language_ids", name_language_ids) %}
+    {% do set_template_value("description_language_ids", description_language_ids) %}
+  {% endif %}
+
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ fingerprinted_static('bootstrap-select/js/bootstrap-select.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('bootstrap-toggle/js/bootstrap-toggle.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/page/location_form.js') }}" type="module"></script>
+{% endblock %}
+
+{% block content %}
+  {% if submit_text == 'Create' %}
+    <div class="alert alert-info">
+      <p><strong>{{ _('Note:') }}</strong> {{ _('Please verify that the location you want to create does not exist already to avoid duplicates.') }}</p>
+    </div>
+  {% endif %}
+    <div class="hidden" id="name-template">
+      <div class="input-group" data-language-id="">
+        <input type="text" class="form-control" id="input-name-" placeholder="{{ _('Name') }}" data-name="input-name" value="" data-translation-attribute="name" data-empty-text="{{ _('Please enter a location name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter location name (at most 100 characters).') }}">
+        <span class="input-group-addon language-addon" data-name="language" style="margin-right: 5px"></span>
+      </div>
+      <span class="help-block"></span>
+    </div>
+
+    <div class="hidden" id="description-template">
+      <div class="input-group" data-language-id="" style="padding-bottom: 10px">
+        <textarea class="form-control" rows="3" id="" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description"></textarea>
+        <span class="input-group-addon language-addon" data-name="language" style="margin-right: 5px"></span>
+      </div>
+      <span class="help-block"></span>
+    </div>
+
+  <form method="post">
+  {{ location_form.hidden_tag() }}
+    <div class="col-md-12">
+
+      <div class="form-group" data-name="input-names">
+        <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+          <label for="select-language-name" class="control-label col-md-10" style="margin-top: 5px">{{ _("Name") }}</label>
+          {% if languages | length > 1 %}
+          <select class="selectpicker btn-xs select-language col-md-2" multiple="multiple" data-style="btn-default btn-xs" id="select-language-name">
+            {% for language in languages %}
+              <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" selected="selected"{% endif %} data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </div>
+
+        {% if submit_text == 'Create' %}
+          <div class="{% if languages | length > 1 %}input-group col-md-12{% endif %} {% if location_form.translations.errors %}has-error{% endif %}" data-language-id="{{ ENGLISH.id }}">
+            <input type="text" class="form-control" id="input-name-{{ ENGLISH.id}}" placeholder="{{ _('Name') }}" data-name="input-name" value="" data-translation-attribute="name" data-empty-text="{{ _('Please enter a location name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter location name (at most 100 characters).') }}">
+            {% if languages | length > 1 %}<span class="input-group-addon language-addon" data-name="language">{{ ENGLISH.names | get_translated_text }}</span>{% endif %}
+          </div>
+          <span class="help-block"></span>
+          {% for error_message in location_form.translations.errors %}<span class="help-block" style="color: red">{{ error_message }}</span>{% endfor %}
+        {% else %}
+          {% for translation in translations %}
+            {% if translation['name'] != '' %}
+              <div class="{% if languages | length > 1 %}input-group{% endif %} {% if location_form.translations.errors and translation.lang_id == ENGLISH.id %}has-error{% endif %}" data-language-id="{{ translation.language_id }}">
+                <input type="text" class="form-control" id="input-name-{{ translation.language_id}}" placeholder="{{ _('Name') }}" data-name="input-name" value="{{ translation.name }}" data-translation-attribute="name" data-empty-text="{{ _('Please enter a location name.') }}" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter location name (at most 100 characters).') }}">
+                {% if languages | length > 1 %}<span class="input-group-addon language-addon" data-name="language">{{ translation.lang_name }}</span>{% endif %}
+              </div>
+              <span class="help-block"></span>
+            {% endif %}
+          {% endfor %}
+          {% for error_message in location_form.translations.errors %}<span class="help-block" style="color: red">{{ error_message }}</span>{% endfor %}
+        {% endif %}
+      </div>
+
+    {% if location_types | length == 1 and location_form.type.data == location_types[0].id | string %}
+      <input type="hidden" name="{{ location_form.type.name }}" value="{{ location_form.type.data }}" />
+    {% else %}
+      <div class="form-group {% if location_form.type.name in location_form.errors %}has-error{% endif %} may-have-error">
+        <label for="input-location-type" class="control-label">{{ _('Location Type') }}</label>
+          <select class="selectpicker form-control" id="input-location-type" name="{{ location_form.type.name }}" data-none-selected-text="{{ _('No location type selected') }}">
+          {% for location_type_id, location_type_name in location_form.type.choices %}
+          <option {% if location_type_is_fed[location_type_id] %}data-icon="fa fa-share-alt"{% endif %} value="{{ location_type_id }}" {% if location_form.type.data == location_type_id %}selected="selected"{% endif %} data-enable-parent-location="{{ location_type_enable_parent_location[location_type_id] | tojson }}" data-enable-responsible-users="{{ location_type_enable_responsible_users[location_type_id] | tojson }}" data-enable-capacities="{{ location_type_enable_capacities[location_type_id] | tojson }}">{% if location_type_id == '-1' %}&mdash;{% else %}{{ location_type_name | get_translated_text }}{% endif %}</option>
+          {% endfor %}
+        </select>
+        {% for error_message in location_form.type.errors %}<span class="help-block">{{ error_message }}</span>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if location_types | length == 1 and location_form.type.data == location_types[0].id | string and not location_types[0].enable_parent_location %}
+      <input type="hidden" name="{{ location_form.parent_location.name }}" value="-1" />
+    {% else %}
+      <div class="form-group {% if location_form.parent_location.name in location_form.errors %}has-error{% endif %} may-have-error">
+        <input type="hidden" name="{{ location_form.parent_location.name }}" value="-1" disabled="disabled" id="input-parent-location-replacement" />
+        <label for="input-parent-location" class="control-label">{{ _('Parent Location') }}</label>
+          <select class="selectpicker form-control" id="input-parent-location" name="{{ location_form.parent_location.name }}" data-none-selected-text="{{ _('No location selected') }}">
+          {% for location_id, location_name in location_form.parent_location.choices %}
+          <option {% if location_is_fed[location_id] %}data-icon="fa fa-share-alt"{% endif %} value="{{ location_id }}" {% if location_form.parent_location.data == location_id %}selected="selected"{% endif %}>{% if location_id == '-1' %}&mdash;{% else %}{{ location_name | get_translated_text }}{% endif %}</option>
+          {% endfor %}
+        </select>
+        {% for error_message in location_form.parent_location.errors %}<span class="help-block">{{ error_message }}</span>{% endfor %}
+        {% if previous_parent_location_is_invalid %}
+          <span class="help-block">{{ _('The previous parent location may not have any sub-locations.') }}</span>
+        {% endif %}
+      </div>
+    {% endif %}
+
+      <div class="form-group" data-name="input-descriptions">
+        <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+          <label for="select-language-description" class="control-label col-md-10" style="margin-top: 5px">{{ _("Description") }}</label>
+          {% if languages | length > 1 %}
+          <select class="selectpicker btn-xs select-language col-md-2" multiple="multiple" data-style="btn-default btn-xs" id="select-language-description">
+            {% for language in languages %}
+              <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" selected="selected"{% endif %} data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        {% if submit_text == 'Create' %}
+          <div {% if languages | length > 1 %}class="input-group"{% endif %} data-name="description" data-language-id="{{ ENGLISH.id }}" style="margin-bottom: 10px">
+            <textarea class="form-control" rows="3" id="input-description-{{ ENGLISH.id }}" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description"></textarea>
+            {% if languages | length > 1 %}<span class="input-group-addon language-addon" data-name="language">{{ ENGLISH.names | get_translated_text }}</span>{% endif %}
+          </div>
+        {% else %}
+          {% for translation in translations %}
+            {% if translation['description'] != '' or translation.language_id == ENGLISH.id %}
+              <div {% if languages | length > 1 %}class="input-group"{% endif %} data-language-id="{{ translation.language_id }}" style="margin-bottom: 10px">
+                <textarea class="form-control" style="resize: vertical; min-height:2.5em;" id="input-description-{{ translation.language_id }}" data-name="input-description" placeholder="{{ _('Description') }}" data-translation-attribute="description">{{ translation.description }}</textarea>
+                {% if languages | length > 1 %}<span class="input-group-addon language-addon" data-name="language">{{ translation.lang_name }}</span>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <input type="hidden" id="input-translations" name="{{ location_form.translations.name }}" value="">
+
+      {% if not config['DISABLE_TOPICS'] %}
+        <div class="form-group">
+          <label for="input-location-topics" class="control-label">{{ _('Topics')}}</label>
+          <select id="input-location-topics" name="{{ location_form.topics.name }}" class="selectpicker form-control" multiple="multiple" data-none-selected-text="{{ _('No topic selected') }}">
+            {% for topic_id_str, topic in location_form.topics.choices %}
+              <option value="{{ topic_id_str }}" {% if (location_form.topics.data and topic_id_str in location_form.topics.data) or (not location_form.topics.data and location_form.topics.default and topic_id_str in location_form.topics.default) %}selected="selected"{% endif %}>{{ topic.name | get_translated_text(default='—') }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
+
+      <div id="capacity-field-list">
+      {% if not (location_types | length == 1 and location_form.type.data == location_types[0].id | string and not location_types[0].enable_capacities) %}
+        <label>{{ _('Storage Capacities') }}</label>
+        {% for action_type in valid_action_types %}
+          {% for entry in location_form.capacities.entries %}
+            {% if entry.action_type_id.data == action_type.id %}
+              {{ entry.hidden_tag() }}
+              <input type="hidden" name="{{ entry.action_type_id.name }}" value="{{ entry.action_type_id.data }}" />
+              <div class="form-group row">
+                <span class="col-md-2">
+                  <label for="{{ entry.capacity.name }}" style="font-weight: normal">{{ action_type.object_name_plural | get_translated_text }}</label>
+                </span>
+                <span class="col-md-2">
+                  <input type="checkbox" data-toggle="toggle" data-on="{{ _('Unlimited') }}" data-off="{{ _('Limited') }}" data-size="small" data-width="100%" {% if entry.capacity.data is none %}checked="checked"{% endif %} class="capacity-toggle">
+                </span>
+                <span class="col-md-8">
+                  <input type="number" name="{{ entry.capacity.name }}" id="{{ entry.capacity.name }}" value="{% if entry.capacity.data is not none %}{{ entry.capacity.data }}{% endif %}" {% if entry.capacity.data is none %}disabled="disabled"{% endif %} min="0" max="1000000000" class="form-control" />
+                </span>
+              </div>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      {% endif %}
+      </div>
+
+      {% if submit_text == 'Create' %}
+        <label for="input-public">
+          <input type="checkbox" id="input-public" name="{{ location_form.is_public.name }}" {% if location_form.is_public.data != False %}checked="checked"{% endif %}> {{ _('Public') }}
+        </label>
+      {% endif %}
+
+    {% if has_grant_permissions and not (location_types | length == 1 and location_form.type.data == location_types[0].id | string and not location_types[0].enable_responsible_users) %}
+      <div class="form-group">
+        <label for="input-responsible_users" class="control-label">{{ _('Responsible Users')}}</label>
+        <select id="input-responsible_users" name="{{ location_form.responsible_users.name }}" class="selectpicker form-control" multiple="multiple" data-live-search="true" data-none-selected-text="{{ _('No user selected') }}">
+          {% for user_id, user_name in location_form.responsible_users.choices %}
+            <option value="{{ user_id }}" {% if user_id in location_form.responsible_users.data %}selected="selected"{% endif %}>{{ user_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {% if may_change_hidden %}
+      <label for="input-hidden" style="font-weight:400">
+        <input type="checkbox" id="input-hidden" name="{{ location_form.is_hidden.name }}" {% if location_form.is_hidden.data != False %}checked="checked"{% endif %}> {{ _('Hide this location from location lists') }}
+      </label>
+    {% endif %}
+
+    {% if may_change_enable_object_assignments %}
+      <div>
+        <label for="input-enable_object_assignments" style="font-weight:400">
+          <input type="checkbox" id="input-enable_object_assignments" name="{{ location_form.enable_object_assignments.name }}" {% if location_form.enable_object_assignments.data != False %}checked="checked"{% endif %}> {{ _('Objects may be assigned to this location') }}
+        </label>
+      </div>
+    {% endif %}
+    </div>
+
+    <div class="form-group row clearfix" style="padding-right:0.75em">
+      <div class="col-md-3 col-md-offset-6">
+        <a href="{{ url_for('.locations') }}" class="btn btn-default pull-right" style="width:20em">{{ _('Cancel') }}</a>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" name="action_submit" class="btn btn-primary pull-right" style="width:20em">{{ _(submit_text) }}</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}

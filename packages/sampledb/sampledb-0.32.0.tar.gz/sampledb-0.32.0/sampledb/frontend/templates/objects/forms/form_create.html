@@ -1,0 +1,208 @@
+{% extends "objects/forms/form_base.html" %}
+
+{% block title %}{{ _('New Object') }} — {{ service_name }}{% endblock %}
+
+{% block content %}
+  {{ super() }}
+  {% if possible_properties|length > 1 and passed_object_ids and show_selecting_modal %}
+  <div class="modal fade" id="selectionModal" tabindex="-1" role="dialog" data-target="selectionModalLabel">
+    <div class="modal-dialog" role="document">
+      <form class="form" method="post" action="{{ url_for('.new_object', action_id=action_id, object_id=passed_object_ids, fields_selected=True) }}">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="selectionModalLabel">{{ _('Select fields to insert reference') }}</h4>
+          </div>
+          <div class="modal-body">
+            <ul id="fieldsModalList" class="list-group">
+              {% for property_name, property_data in possible_properties.items() %}
+                <li class="list-group-item">
+                  <input type="checkbox" name="{{ property_name }}" id="propertyCheckbox{{loop.index}}" data-value="{{ property_name }}">
+                  <label for="propertyCheckbox{{loop.index}}">{{ property_data['title'] | get_translated_text }}</label>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal"> {{ _('Cancel') }} </button>
+            <button type="submit" class="btn btn-primary"> {{ _('Apply') }} </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <form class="form-horizontal" method="post" action="{% if previous_object_id and previous_schema %}{{ url_for('.new_object', action_id=action_id, previous_object_id=previous_object_id, mode='upgrade') }}{% elif previous_object_id %}{{ url_for('.new_object', action_id=action_id, previous_object_id=previous_object_id) }}{% else %}{{ url_for('.new_object', action_id=action_id) }}{% endif %}">
+    {{ form.csrf_token() }}
+    <input type="hidden" name="context_id_token" value="{{ context_id_token }}" />
+    <input type="hidden" name="array_buttons" id="input-array_buttons" value="[]" />
+    {% if 'batch' in schema and schema['batch'] %}
+    <strong style="font-size:1.5em; margin-bottom: 1em; display:block;">{{ _('Batch Information') }}</strong>
+    <div class="form-group row{% if 'input_num_batch_objects' in errors %} has-error{% elif 'input_num_batch_objects' in form_data %} has-success{% endif %}" style="padding-right:0.75em">
+      <label class="control-label col-md-3 required-label">{{ _('Number of Objects in Batch') }}</label>
+      <div class="col-md-9">
+        <input type="number" min="1" max="{{ config['MAX_BATCH_SIZE'] }}" step="1" value="{% if 'input_num_batch_objects' in form_data %}{{ form_data['input_num_batch_objects'] }}{% else %}1{% endif %}" class="form-control" name="input_num_batch_objects" />
+        {% if 'input_num_batch_objects' in errors %}<span class="help-block"><strong>{{ _('Error:') }}</strong> {{ errors['input_num_batch_objects'] }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="form-group row{% if 'input_first_number_batch' in errors %} has-error{% elif 'input_first_number_batch' in form_data %} has-success{% endif %}" style="padding-right:0.75em">
+      <label class="control-label col-md-3 required-label">{{ _('First Number') }}</label>
+      <div class="col-md-3">
+        <input type="number" step="1" value="{% if 'input_first_number_batch' in form_data %}{{ form_data['input_first_number_batch'] }}{% else %}1{% endif %}" class="form-control" name="input_first_number_batch" />
+        {% if 'input_first_number_batch' in errors %}<span class="help-block"><strong>{{ _('Error:') }}</strong> {{ errors['input_first_number_batch'] }}</span>{% endif %}
+      </div>
+      <label class="control-label col-md-3 required-label">{{ _('Last Number') }}</label>
+      <div class="col-md-3">
+        <input disabled type="number" step="1" value="" class="form-control" name="input_last_number_batch" />
+      </div>
+    </div>
+      {% if 'batch' in errors %}
+        <div class="alert alert-danger" role="alert">
+          {{ _('The generated batch object names resulted in the following errors:') }}
+          <div>
+            <ul>
+              {% for error in errors['batch'].split('\n') %}
+                <li>{{ error }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+    {% set id_prefix_root = "object" %}
+    {% set property_path = () %}
+    {% set id_prefix = id_prefix_for_property_path(property_path, id_prefix_root) %}
+    {% include "objects/forms/form_any.html" %}
+    <strong style="font-size:1.5em; margin-bottom: 1em; display:block;">{{ _('Initial Permissions') }}</strong>
+    <div class="form-group clearfix" style="padding:0 0.75em">
+      <div class="col-md-9 col-md-offset-3" style="padding-top: 12px">
+        <label style="font-weight: 400">
+          <input type="radio" name="permissions_method" value="default_permissions" {% if request.form.get('permissions_method') == 'default_permissions' or 'action_submit' not in request.form %}checked="checked"{% endif %} /> {{ _('Use default permissions') }}
+        </label>
+      </div>
+      {% if user_groups %}
+      <div class="col-md-4 col-md-offset-3" style="padding-top: 12px">
+        <label style="font-weight: 400">
+          <input type="radio" name="permissions_method" value="permissions_for_group" {% if request.form.get('permissions_method') == 'permissions_for_group' %}checked="checked"{% endif %}/> {{ _('Give permissions to basic group') }}
+        </label>
+      </div>
+      {% set selected_group_id = request.form.get('permissions_for_group_group_id') %}
+      <div class="col-md-5 clearfix">
+        <select class="selectpicker pull-right" data-width="280px" name="permissions_for_group_group_id" data-live-search="true" data-none-selected-text="{{ _("No group selected") }}">
+          {% for group in user_groups %}
+          <option value="{{ group.id }}" {% if group.id | string == selected_group_id %}selected="selected"{% endif %}>{{ group.name | get_translated_text }} (#{{ group.id }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      {% if user_projects %}
+      <div class="col-md-4 col-md-offset-3" style="padding-top: 12px">
+        <label style="font-weight: 400">
+          <input type="radio" name="permissions_method" value="permissions_for_project" {% if request.form.get('permissions_method') == 'permissions_for_project' %}checked="checked"{% endif %} /> {{ _('Give permissions to project group') }}
+        </label>
+      </div>
+      {% set selected_project_id = request.form.get('permissions_for_project_project_id') %}
+      <div class="col-md-5 clearfix">
+        <select class="selectpicker pull-right" data-width="280px" name="permissions_for_project_project_id" data-live-search="true" data-none-selected-text="{{ _("No project selected") }}">
+          {% for project in user_projects %}
+          <option value="{{ project.id }}" {% if project.id | string == selected_project_id %}selected="selected"{% endif %}>{{ project.name | get_translated_text}} (#{{ project.id }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      {% if can_copy_permissions %}
+      <div class="col-md-4 col-md-offset-3" style="padding-top: 12px">
+        <label style="font-weight: 400">
+          <input type="radio" name="permissions_method" value="copy_permissions" {% if request.form.get('permissions_method') == 'copy_permissions' or ('previous_object_id' in request.args and has_grant_for_previous_object and not 'action_submit' in request.form) %}checked="checked"{% endif %} id="copyPermissionsChkBox">
+          <div style="display: inline">
+            <i class="fa fa-spinner fa-spin copyPermissionsLoading" style="display: none;"></i>
+            <span class="sr-only copyPermissionsLoading" style="display: none;">{{ _('Loading...') }}</span>
+          </div>
+          {{ _('Copy Permissions from other object') }}
+        </label>
+      </div>
+      <div class="col-md-5 clearfix">
+        {% set selected_obj_id = request.form.get('copy_permissions_object_id') %}
+        {% if has_grant_for_previous_object and not 'action_submit' in request.form and request.args.get('previous_object_id') %}
+        {% set selected_obj_id = request.args.get('previous_object_id') %}
+        {% elif has_grant_for_first_passed_object and not 'action_submit' in request.form and passed_object_ids %}
+          {% set selected_obj_id = passed_object_ids[0] %}
+        {% endif %}
+        {% if config['USE_TYPEAHEAD_FOR_OBJECTS'] %}
+          <div class="pull-right objectpicker-container" style="width:280px">
+          <input id="copyPermissionsSelect" type="text" class="form-control typeahead" value="" placeholder="{{ _("No object selected") }}" data-sampledb-default-selected="{{ selected_obj_id }}" data-sampledb-required-perm="3" data-sampledb-start-show=".copyPermissionsLoading" data-sampledb-start-hide="#copyPermissionsChkBox" data-sampledb-empty-disable="#copyPermissionsChkBox, #copyPermissionsSelect" data-sampledb-stop-hide=".copyPermissionsLoading" data-sampledb-stop-show="#copyPermissionsChkBox" />
+          <input type="hidden" name="copy_permissions_object_id" value="" />
+          </div>
+        {% else %}
+        <select id="copyPermissionsSelect" class="selectpicker pull-right" data-width="280px" name="copy_permissions_object_id" data-live-search="true" data-sampledb-default-selected="{{ selected_obj_id }}" data-sampledb-required-perm="3" data-sampledb-start-show=".copyPermissionsLoading" data-sampledb-start-hide="#copyPermissionsChkBox" data-sampledb-empty-disable="#copyPermissionsChkBox, #copyPermissionsSelect" data-sampledb-stop-hide=".copyPermissionsLoading" data-sampledb-stop-show="#copyPermissionsChkBox" data-none-selected-text="{{ _("No object selected") }}">
+        </select>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="col-md-9 col-md-offset-3" style="padding-top: 12px">
+        <label style="font-weight: 400">
+          <input type="checkbox" name="all_users_read_permissions" value="1" {% if request.form.get('all_users_read_permissions') == '1' or ('permissions_method' not in request.form and action.objects_readable_by_all_users_by_default) %}checked="checked"{% endif %}>
+          {{ _('Also grant READ permissions to all signed-in users') }}
+        </label>
+      </div>
+      <div class="col-md-offset-3 col-md-9">
+          <span class="help-block" id="permissionsHelpBlock">
+          </span>
+      </div>
+    </div>
+    {% if may_create_log_entry and not config['DISABLE_INSTRUMENTS']%}
+    <div class="form-group clearfix" style="padding:0 0.75em">
+      <div class="col-md-9 col-md-offset-3">
+        <div class="input-group pull-right">
+        {% if instrument_log_categories %}
+          <span class="input-group-addon" style="width:20em; height: 34px; display: inline-block">
+            <label style="font-weight: 400">
+              <input type="checkbox" name="create_instrument_log_entry" {% if 'create_instrument_log_entry' in request.form or (create_log_entry_default and not 'action_submit' in request.form) %}checked="checked"{% endif %}>
+              {{ _('Create Instrument Log Entry') }}
+            </label>
+          </span>
+          <select class="selectpicker" multiple="multiple" data-width="280px" name="instrument_log_categories" data-none-selected-text="{{ _("No category selected") }}">
+            {% for category in instrument_log_categories %}
+            <option value="{{ category.id }}" {% if category.id | string in request.form.getlist('instrument_log_categories') %}selected="selected"{% endif %}>{{ category.title }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <span class="input-group-addon" style="width:20em; border: 1px solid #ccc; border-radius: 4px">
+            <label style="font-weight: 400">
+              <input type="checkbox" name="create_instrument_log_entry" {% if 'create_instrument_log_entry' in request.form or (create_log_entry_default and not 'action_submit' in request.form) %}checked="checked"{% endif %}>
+              {{ _('Create Instrument Log Entry') }}
+            </label>
+          </span>
+        {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    <div class="form-group row clearfix" style="padding-right:0.75em; margin-top: 15px">
+      <div class="col-md-3 text-muted">* {{ _('required') }}</div>
+      <div class="col-md-9">
+        <button type="submit" name="action_submit" class="btn btn-primary pull-right" style="width:20em">{{ _('Save') }}</button>
+      </div>
+    </div>
+  </form>
+{% endblock %}
+
+{% block template_values %}
+  {% do set_template_value("user_has_basic_groups", user_groups | length > 0) %}
+  {% do set_template_value("user_has_project_groups", user_projects | length > 0) %}
+  {% do set_template_value("permissions_for_group_group_id", request.form.get('permissions_for_group_group_id', None)) %}
+  {% do set_template_value("permissions_for_project_project_id", request.form.get('permissions_for_project_project_id', None)) %}
+  {% do set_template_value("user_can_copy_permissions", can_copy_permissions) %}
+  {% do set_template_value("show_selecting_modal", possible_properties|length > 1 and passed_object_ids and show_selecting_modal) %}
+  {% do set_template_value("translations.select_an_object_to_copy_permissions_from", _("Please select an object to copy the permissions from.")) %}
+  {% do set_template_value("translations.select_a_project_group_to_give_permissions_to", _("Please select a project group to give permissions to.")) %}
+  {% do set_template_value("translations.select_a_basic_group_to_give_permissions_to", _("Please select a basic group to give permissions to.")) %}
+
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+
+  <script src="{{ fingerprinted_static('sampledb/js/page/form-create.js') }}" type="module"></script>
+{% endblock %}

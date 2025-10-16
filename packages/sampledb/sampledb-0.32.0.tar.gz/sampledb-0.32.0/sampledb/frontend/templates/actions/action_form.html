@@ -1,0 +1,619 @@
+{% extends "base.html" %}
+
+{% block title %}{{  _("Action") }} — {{ service_name }}{% endblock %}
+
+{% block stylesheets %}
+  {{ super() }}
+<link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-select/css/bootstrap-select.min.css') }}" />
+<link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-toggle/css/bootstrap-toggle.min.css') }}" />
+<link rel="stylesheet" href="{{ fingerprinted_static('inscrybmde/css/inscrybmde.min.css') }}" />
+<link rel="stylesheet" href="{{ fingerprinted_static('codemirror/css/codemirror.min.css') }}" />
+<link rel="stylesheet" href="{{ fingerprinted_static('sampledb/css/schema_editor.css') }}">
+{% endblock %}
+
+{% block template_values %}
+  {% do set_template_value("error_message", error_message) %}
+  {% for name, translated_text in {
+    'object_must_have_name_text': _("Objects must have a property 'name' as a <i>Text (Simple)</i> property."),
+    'object_name_must_be_text': _("Object name must be a <i>Text (Simple)</i> property."),
+    'object_name_must_be_required': _("Object name must be required."),
+    'enter_title': _("Please enter a title."),
+    'objects_need_one_property': _("Objects must have at least one property."),
+    'enter_number': _("Please enter a number."),
+    'enter_nonnegative_number': _("Please enter a number greater than or equal to zero."),
+    'enter_at_most_max_length': _("Please enter a number less than or equal to the maximum length."),
+    'enter_at_least_min_length': _("Please enter a number greater than or equal to the minimum length."),
+    'name_must_be_unique': _("Name must be unique."),
+    'name_must_not_be_hazards_or_tags': _("Name must not be 'hazards' or 'tags'."),
+    'name_must_begin_with_character': _("Name must begin with a character."),
+    'name_must_end_with_character_or_number': _("Name must end with a character or a number."),
+    'name_must_contain_valid_chars': _("Name must only contain characters, numbers and individual underscores."),
+    'title_must_not_be_empty': _("Title must not be empty."),
+    'title_must_not_be_whitespace': _("Title must not be whitespace only."),
+    'tooltip_must_not_be_empty': _("Tooltip must not be empty."),
+    'tooltip_must_not_be_whitespace': _("Tooltip must not be whitespace only."),
+    'note_must_not_be_empty': _("Note must not be empty."),
+    'note_must_not_be_whitespace': _("Note must not be whitespace only."),
+    'choices_must_not_be_empty': _("Choices must not be empty."),
+    'enter_units': _("Please enter units or 1."),
+    'enter_default_magnitude': _("Please enter the default magnitude (in base units) as a number."),
+    'enter_valid_units': _("Please enter valid units"),
+    'schema_template_must_be_set': _("Schema Template input must not be empty"),
+    'enter_display_digits': _("Please enter a number between 0 and 15."),
+    'enter_extensions': _("Please enter allowed file extensions."),
+  }.items() %}
+    {% do set_template_value("translations." + name, translated_text) %}
+  {% endfor %}
+
+  {% do set_template_value("tags_translations", tags_translations) %}
+  {% do set_template_value("hazards_translations", hazards_translations) %}
+  {% do set_template_value("error_lines", error_lines or []) %}
+
+  {% set language_info_languages = [] %}
+  {% set allowed_language_ids = [] %}
+  {% for lang in languages %}
+    {{ allowed_language_ids.append(lang.id) or '' }}
+    {% do language_info_languages.append({"id": lang.id | string, "name": lang.names | get_translated_text, "lang_code": lang.lang_code}) %}
+  {% endfor %}
+  {% do set_template_value("language_info.languages", language_info_languages) %}
+  {% do set_template_value("language_info.english_id", ENGLISH.id) %}
+
+  {% set translations = [] %}
+  {% for translation in action_translations %}
+    {% if translation.language_id in allowed_language_ids %}
+      {% do translations.append({"language_id": translation.language_id | string, "name": translation.name, "description": translation.description, "short_description": translation.short_description}) %}
+    {% endif %}
+  {% endfor %}
+  {% do set_template_value("translations", translations) %}
+
+  {% do set_template_value("load_translations", load_translations) %}
+
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ fingerprinted_static('bootstrap-select/js/bootstrap-select.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('bootstrap-toggle/js/bootstrap-toggle.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('inscrybmde/js/inscrybmde.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('codemirror/js/codemirror.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('codemirror/js/javascript.min.js') }}"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/schema_editor.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/page/action_form.js') }}" type="module"></script>
+{% endblock %}
+
+{% block content %}
+  {% set allowed_language_ids = [] %}
+  {% for language in languages %}
+    {{ allowed_language_ids.append(language.id) or '' }}
+  {% endfor %}
+
+  {% if not current_user.is_admin %}
+    <div class="alert alert-warning">
+      <p>{{ _('<strong>Warning:</strong> Custom Actions are an advanced feature that most users of %(service_name)s will not need. See the <a href="https://scientific-it-systems.iffgit.fz-juelich.de/SampleDB/user_guide/actions.html">User Guide</a> for more information.', service_name=service_name) }}</p>
+    </div>
+  {% endif %}
+
+    <form method="post" id="form-action">
+        {{ action_form.hidden_tag() }}
+        <div class="col-md-12">
+
+        <div class="hidden" id="name-template">
+          <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="">
+            <input type="text" class="form-control" id="input-name" placeholder="{{ _('Name') }}" data-name="input-name" data-translation-attribute="name" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter action name (at most 100 characters).') }}" data-empty-text="{{ _('Please enter an action name in English.') }}">
+            {% if allowed_language_ids | length > 1 %}
+              <span class="input-group-addon language-addon" data-name="language"></span>
+            {% endif %}
+          </div>
+          <span class="help-block"></span>
+        </div>
+
+        <div class="hidden" id="short-description-template">
+          <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="">
+            <textarea class="form-control input-short-description" style="resize: vertical; min-height: 171px" id="input-short-description" data-name="input-short-description" placeholder="{{_("Short Description") }}" data-translation-attribute="short_description"></textarea>
+            {% if allowed_language_ids | length > 1 %}
+              <span class="input-group-addon language-addon" data-name="language"></span>
+            {% endif %}
+          </div>
+          <span class="help-block"></span>
+        </div>
+
+        <div class="hidden" id="description-template">
+          <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="">
+            <textarea class="form-control input-description" style="resize: vertical; min-height: 371px"
+                        id="input-description" data-name="input-description"
+                        placeholder="{{ _('Description') }}" data-translation-attribute="description"></textarea>
+            {% if allowed_language_ids | length > 1 %}
+              <span class="input-group-addon language-addon" data-name="language"></span>
+            {% endif %}
+          </div>
+          <span class="help-block"></span>
+        </div>
+
+        <input type="hidden" id="input-translations" name="{{ action_form.translations.name }}" value="">
+
+        <div class="form-group" data-name="input-names">
+            <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+                <label for="input-name" class="control-label col-md-10" style="margin-top: 5px">{{ _("Name") }}</label>
+                <select class="selectpicker btn-xs select-language col-md-2 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs" id="select-language-name">
+                    {% for language in languages %}
+                  <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" {% endif %}
+                  {% if language.id in action_language_ids and (language.id == ENGLISH.id or action_translations[language.id].name) %} selected="selected"{% endif %}
+                  data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                     {% endfor %}
+                </select>
+            </div>
+            <div hidden="hidden"></div>
+            {% for translation in action_translations.values() %}
+              {% if (translation.language_id == ENGLISH.id or translation.name) and translation.language_id in allowed_language_ids %}
+                <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="{{ translation.language_id }}">
+                  <input type="text" class="form-control" id="input-name-{{ translation.language_id }}" placeholder="{{ _('Name') }}" data-name="input-name" value="{{ translation.name }}" data-translation-attribute="name" data-max-length="100" data-max-length-text="{{ _('Please enter a shorter action name (at most 100 characters).') }}" data-empty-text="{{ _('Please enter an action name in English.') }}">
+                {% if allowed_language_ids | length > 1 %}
+                  {% if loop.index > 1 %}
+                  <span class="input-group-addon language-addon" data-name="language">{{ translation.language.names | get_translated_text }}</span>
+                  {% else %}
+                  <span class="input-group-addon language-addon" data-name="language">{{ translation.language.names | get_translated_text }}</span>
+                  {% endif %}
+                {% endif %}
+                </div>
+                {% if loop.index == 1 %}
+                 <span class="help-block"></span>
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="form-group" data-name="input-descriptions">
+        <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+            <label for="input-description" class="control-label col-md-8" style="margin-top: 5px">{{ _('Description') }} <span class="text-muted" style="font-weight: normal">{{ _('shown on the action site') }}</span></label>
+            <label for="input-markdown" style="font-weight:400; padding-left: 10px" class="text-right {% if allowed_language_ids | length <= 1 %}col-md-offset-2{% endif %} col-md-2">
+              <input type="checkbox" id="input-markdown" name="{{ action_form.is_markdown.name }}" {% if action_form.is_markdown.data %}checked="checked"{% endif %}>
+                {{ _("Use Markdown") }}
+            </label>
+            <select class="selectpicker btn-xs select-language col-md-2 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs" id="select-language-description">
+                {% for language in languages %}
+                    <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" {% endif %}
+                    {% if language.id in action_language_ids and (language.id == ENGLISH.id or action_translations[language.id].description) %} selected="selected"{% endif %}
+                     data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="input-group" hidden="hidden"></div>
+        {% for translation in action_translations.values() %}
+          {% if (translation.language_id == ENGLISH.id or translation.description) and translation.language_id in allowed_language_ids %}
+            <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="{{ translation.language_id }}">
+              <textarea class="form-control input-description" style="resize: vertical; min-height: 371px" id="input-description-{{ translation.language_id }}" data-name="input-description"  placeholder="{{ _('Description') }}" data-translation-attribute="description">{{ translation.description }}</textarea>
+              {% if allowed_language_ids | length > 1 %}
+                <span class="input-group-addon language-addon" data-name="language">{{ translation.language.names | get_translated_text }}</span>
+              {% endif %}
+              </div>
+            <span class="help-block"></span>
+          {% endif %}
+        {% endfor %}
+    </div>
+
+     <div class="form-group" data-name="input-short-descriptions">
+        <div class="form-group row" style="padding-right: 10px; margin-bottom: 0">
+            <label for="input-short-description" class="control-label col-md-8" style="margin-top: 5px">{{ _('Short Description') }} <span class="text-muted" style="font-weight: normal">{{ _('shown in action lists') }}</span></label>
+            <label for="input-short-description-is-markdown" style="font-weight:400; padding-left: 10px" class="text-right {% if allowed_language_ids | length <= 1 %}col-md-offset-2{% endif %} col-md-2">
+              <input type="checkbox" id="input-short-description-is-markdown" name="{{ action_form.short_description_is_markdown.name }}" {% if action_form.short_description_is_markdown.data %}checked="checked"{% endif %}>
+                {{ _("Use Markdown") }}
+            </label>
+            <select class="selectpicker btn-xs select-language col-md-2 {% if allowed_language_ids | length <= 1 %}hidden{% endif %}" multiple="multiple" data-style="btn-default btn-xs" id="select-language-short-description">
+                {% for language in languages %}
+              <option value="{{ language.id }}" {% if language.id == ENGLISH.id %} disabled="disabled" {% endif %}
+              {% if language.id in action_language_ids and (language.id == ENGLISH.id or action_translations[language.id].short_description) %} selected="selected"{% endif %}
+              data-name="{{ language.names | get_translated_text }}">{{ language.names | get_translated_text }}</option>
+                 {% endfor %}
+            </select>
+        </div>
+        <div hidden="hidden"></div>
+        {% for translation in action_translations.values() %}
+          {% if (translation.language_id == ENGLISH.id or translation.short_description) and translation.language_id in allowed_language_ids %}
+            <div {% if allowed_language_ids | length > 1 %}class="input-group"{% endif %} data-language-id="{{ translation.language_id }}">
+              <textarea class="form-control input-short-description" style="resize: vertical; min-height: 171px" data-name="input-short-description" id="input-short-description-{{ translation.language_id }}" placeholder="{{ _('Short Description') }}" data-translation-attribute="short_description">{{ translation.short_description }}</textarea>
+              {% if allowed_language_ids | length > 1 %}
+                <span class="input-group-addon language-addon" data-name="language">{{ translation.language.names | get_translated_text }}</span>
+              {% endif %}
+            </div>
+            <span class="help-block"></span>
+          {% endif %}
+        {% endfor %}
+    </div>
+
+      {% if may_set_user_specific %}
+      <div class="checkbox">
+        <label for="input-is_user_specific" style="font-weight:700">
+          <input type="checkbox" id="input-is_user_specific" name="{{ action_form.is_user_specific.name }}" {% if action_form.is_user_specific.data %}checked="checked"{% endif %}> {{ _('User specific action') }}
+        </label>
+      </div>
+      {% endif %}
+
+        <label for="input-public">
+          <input type="checkbox" id="input-public" name="{{ action_form.is_public.name }}" {% if action_form.is_public.data %}checked="checked"{% endif %}> {{ _('Public') }}
+        </label>
+      <div class="form-group {% if action_form.type.name in action_form.errors %}has-error{% endif %}">
+        <label for="input-type" class="control-label">{{ _("Type") }}</label>
+        <select class="selectpicker form-control" id="input-type" name="{{ action_form.type.name }}" {% if not may_change_type %}disabled="disabled"{% endif %}>
+          {% for action_type in action_types %}
+            {% if not action_type.admin_only or current_user.is_admin or action_form.type.data == action_type.id %}
+          <option {% if action_type.component_id is not none %}data-icon="fa fa-share-alt"{% endif %} value="{{ action_type.id }}" data-is-template="{{ action_type.is_template }}" {% if action_form.type.data == action_type.id %}selected="selected"{% endif %}>{{ action_type.name | get_translated_text(default=_('Unnamed Action Type')) }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      <div class="alert alert-warning alert-dismissible schema-editor-type-is-template" role="alert" style="display: none; margin-top: 5px">
+         <strong>{{ _('Note:') }}</strong> {{ _("The 'name', 'tags', and 'hazards' properties will be removed when using this schema template in other actions.") }}
+         <button type="button" id="schema-editor-type-is-template-close" class="close" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+         </button>
+      </div>
+        {% if action_form.type.name in action_form.errors %}
+          <div class="help-block">{{ " ".join(action_form.errors[action_form.type.name]) }}</div>
+        {% endif %}
+      </div>
+
+      {% set hide_instrument_choice = action_form.instrument.choices | length == 1 and action_form.instrument.choices[0][0] == '-1' %}
+      {% if not config['DISABLE_INSTRUMENTS'] %}
+      <div class="form-group {% if action_form.instrument.name in action_form.errors %}has-error{% endif %}" {% if hide_instrument_choice %}style="display: none"{% endif %}>
+        <label for="input-instrument" class="control-label">{{ _('Instrument') }}</label>
+        <select class="selectpicker form-control" id="input-instrument" name="{{ action_form.instrument.name }}" {% if not may_change_instrument %}disabled="disabled"{% endif %} data-none-selected-text="{{ _('No instrument selected') }}">
+          {% for instrument_id, instrument_name in action_form.instrument.choices %}
+          <option {% if instrument_is_fed[instrument_id] %}data-icon="fa fa-share-alt"{% elif instrument_is_fav[instrument_id] %}data-icon="fa fa-star"{% endif %} value="{{ instrument_id }}" {% if action_form.instrument.data == instrument_id %}selected="selected"{% endif %}>{% if instrument_id == '-1' %}&mdash;{% else %}{{ instrument_name }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+        <input name="{{ action_form.instrument.name }}" type="hidden" value="-1" {% if not may_change_instrument %}disabled="disabled"{% endif %} />
+      {% endif %}
+
+      {% if not config['DISABLE_TOPICS'] %}
+      <div class="form-group {% if action_form.topics.name in action_form.errors %}has-error{% endif %}" {% if not action_form.topics.choices %}style="display: none"{% endif %}>
+        <label for="input-topics" class="control-label">{{ _('Topics') }}</label>
+        {% if not config['DISABLE_INSTRUMENTS'] %}
+          <label class="control-label pull-right" style="font-weight: normal; {% if hide_instrument_choice %}display: none;{% endif %}"><input type="checkbox" id="input-use-instrument-topics" name="{{ action_form.use_instrument_topics.name }}" {% if action_form.use_instrument_topics.data %}checked="checked"{% endif %} /> {{ _('Use the Topics of the Instrument') }}</label>
+        {% endif %}
+        <select class="selectpicker form-control" id="input-topics" name="{{ action_form.topics.name }}" data-none-selected-text="{{ _('No topic selected') }}" multiple="multiple">
+          {% for topic_id, topic_name in action_form.topics.choices %}
+            <option value="{{ topic_id }}"{% if topic_id in action_form.topics.data %}selected="selected"{% endif %}>{{ topic_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+        <input type="hidden" name="{{ action_form.use_instrument_topics.name }}" value="{% if action_form.use_instrument_topics.data %}yes{% endif %}">
+      {% endif %}
+
+      <div class="checkbox">
+        <label for="input-is_hidden" style="font-weight:400">
+          <input type="checkbox" id="input-is_hidden" name="{{ action_form.is_hidden.name }}" {% if action_form.is_hidden.data %}checked="checked"{% endif %}> {{ _('Hide this action from action lists') }}
+        </label>
+      </div>
+
+      <div class="checkbox">
+        <label for="input-objects_readable_by_all_users_by_default" style="font-weight:400">
+          <input type="checkbox" id="input-objects_readable_by_all_users_by_default" name="{{ action_form.objects_readable_by_all_users_by_default.name }}" {% if action_form.objects_readable_by_all_users_by_default.data %}checked="checked"{% endif %}> {{ _('When creating objects with this action, grant READ permissions to all signed-in users by default') }}
+        </label>
+      </div>
+
+      <div class="radio">
+        <label>
+          <input type="radio" name="{{ action_form.usable_by.name }}" value="with_permissions" {% if action_form.usable_by.data is none or action_form.usable_by.data == 'with_permissions' %}checked="checked"{% endif %}>
+          {{ _('All users with Read permissions can create objects using this action') }}
+        </label>
+      </div>
+      <div class="radio">
+        <label>
+          <input type="radio" name="{{ action_form.usable_by.name }}" value="admins" {% if action_form.usable_by.data == 'admins' %}checked="checked"{% endif %}>
+          {{ _('Only administrators can create objects using this action') }}
+        </label>
+      </div>
+      <div class="radio">
+        <label>
+          <input type="radio" name="{{ action_form.usable_by.name }}" value="nobody" {% if action_form.usable_by.data == 'nobody' %}checked="checked"{% endif %}>
+          {{ _('Creating objects using this action is disabled') }}
+        </label>
+      </div>
+
+      <div class="form-group {% if action_form.schema.name in action_form.errors %}has-error{% endif %}">
+        <label for="input-schema" class="control-label">{{ _('Schema') }}</label>
+        <label class="pull-right" data-placement="top" data-trigger="manual" data-title="{{ _('Invalid JSON input, can not use graphical editor') }}">
+          <span class="sr-only">{{ _('Use Graphical Editor') }}</span>
+          <input id="toggle-schema-editor" type="checkbox" data-toggle="toggle" data-size="mini" data-on="{{ _('Graphical Editor') }}" data-off="{{ _('JSON Editor') }}" data-width="150px" name="{{ action_form.use_json_editor.name }}" {% if action_form.use_json_editor.data %}checked="checked"{% endif %} />
+        </label>
+        <div class="schema-editor" id="schema-editor"></div>
+        <textarea class="form-control" rows="{% if schema_json %}{{ schema_json.splitlines() | length }}{% else %}5{% endif %}" id="input-schema" name="{{ action_form.schema.name }}" placeholder="{{ _('Schema') }}">{{ action_form.schema.data or ''}}</textarea>
+      </div>
+
+    {% if error_message is not none %}
+      <div class="schema-error-message"><strong>Error:</strong> {{ error_message }}</div>
+    {% endif %}
+
+    </div>
+    <div class="form-group col-md-12" style="display: flex; justify-content: flex-end">
+        <a href="{% if current_action %}{{ url_for('.action', action_id=current_action.id) }}{% else %}{{ url_for('.actions') }}{% endif %}" class="btn btn-default" style="width:20em">{{ _("Cancel") }}</a>
+        <button type="submit" name="action_submit" class="btn btn-primary" style="width:20em; margin-left: 0.5em">{{ _(submit_text) }}</button>
+    </div>
+  </form>
+
+  {% set enabled_languages = [] %}
+  {% for language in languages %}
+    {% if language.enabled_for_user_interface %}
+      {{ enabled_languages.append(language) or '' }}
+    {% endif %}
+  {% endfor %}
+
+  <div id="schema-editor-templates">
+    <div class="well schema-editor-root-object">
+      <div class="schema-editor-property-settings">
+        {% for language in enabled_languages %}
+          <div class="schema-editor-form-group">
+            <label class="control-label schema-editor-root-object-title-label">{{ _('Title') }} ({{ language.names | get_translated_text }})</label>
+            <input type="text" class="form-control schema-editor-root-object-title-input" placeholder="{{ _('Title') }} ({{ language.names | get_translated_text }})" value="" data-sampledb-lang-code="{{ language.lang_code }}">
+            <div class="help-block"></div>
+          </div>
+        {% endfor %}
+        <div class="schema-editor-form-group">
+          <label class="control-label">{{ _('Tags') }}</label>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" data-onstyle="default" data-width="176" data-on="{{ _('Enabled') }}" data-off="{{ _('Disabled') }}" class="schema-editor-root-object-tags-input">
+              <span class="sr-only">{{ _('Tags') }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="schema-editor-form-group">
+          <label class="control-label schema-editor-root-object-hazards-label">{{ _('Hazards') }}</label>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" data-onstyle="default" data-width="176" data-on="{{ _('Enabled') }}" data-off="{{ _('Disabled') }}" class="schema-editor-root-object-hazards-input">
+              <span class="sr-only">{{ _('Hazards') }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div><span class="help-block schema-editor-global-help"></span></div>
+      <div><span class="schema-editor-property-label">{{ _('Properties') }}</span></div>
+      <div class="schema-editor-root-object-properties"></div>
+      <div class="schema-editor-new-property-controls">
+        <i class="fa fa-fw fa-plus fa-lg schema-editor-create-property-button" aria-hidden="true" data-toggle="tooltip" data-placement="right" data-html="true" title="{{ _('Add&nbsp;property') }}"></i>
+      </div>
+    </div>
+
+    <div class="well schema-editor-property schema-editor-generic-property">
+      <div class="schema-editor-property-controls">
+        <i class="fa fa-fw fa-times fa-lg schema-editor-delete-property-button" aria-hidden="true" data-toggle="tooltip" data-placement="right" data-html="true" title="{{ _('Remove&nbsp;property') }}"></i>
+        <i class="fa fa-fw fa-arrow-up fa-lg schema-editor-move-property-up-button" aria-hidden="true" data-toggle="tooltip" data-placement="right" data-html="true" title="{{ _('Move&nbsp;property&nbsp;up') }}"></i>
+        <i class="fa fa-fw fa-arrow-down fa-lg schema-editor-move-property-down-button" aria-hidden="true" data-toggle="tooltip" data-placement="right" data-html="true" title="{{ _('Move&nbsp;property&nbsp;down') }}"></i>
+      </div>
+      <div class="schema-editor-property-settings">
+        <div class="schema-editor-form-group">
+          <label class="control-label schema-editor-generic-property-name-label" data-toggle="tooltip" data-placement="top" title="{{ _('The internal name of the property, e.g. for use in search queries. Must only consist of characters, numbers and single underscores. Examples: name, temperature, distance_z') }}">{{ _('Name') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-generic-property-name-input" placeholder="{{ _('Name') }}" value="">
+          <div class="help-block"></div>
+        </div>
+        {% for language in enabled_languages %}
+        <div class="schema-editor-form-group">
+          <label class="control-label schema-editor-generic-property-title-label" data-toggle="tooltip" data-placement="top" title="{{ _('The title of the property. Examples: Name, Temperature, Distance Z') }}">{{ _('Title') }} ({{ language.names | get_translated_text }}) <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-generic-property-title-input" placeholder="{{ _('Title') }} ({{ language.names | get_translated_text }})" value="" data-sampledb-lang-code="{{ language.lang_code }}">
+          <span class="help-block"></span>
+        </div>
+        {% endfor %}
+        <div class="schema-editor-form-group">
+          <label class="control-label schema-editor-generic-property-type-label">{{ _('Type') }}</label>
+          <select class="form-control schema-editor-generic-property-type-input">
+            <option value="text">{{ _('Text (Simple)') }}</option>
+            <option value="multiline">{{ _('Text (Multiline)') }}</option>
+            <option value="markdown">{{ _('Text (Markdown)') }}</option>
+            <option value="choice">{{ _('Text (Choice)') }}</option>
+            <option value="quantity">{{ _('Quantity') }}</option>
+            <option value="bool">{{ _('Boolean') }}</option>
+            <option value="datetime">{{ _('Datetime') }}</option>
+            <option value="sample">{{ sample_action_type.object_name | get_translated_text(default=_('Object')) }}</option>
+            <option value="measurement">{{ measurement_action_type.object_name | get_translated_text(default=_('Object')) }}</option>
+            <option value="user">{{ _('User') }}</option>
+            <option value="object_reference">{{ _('Object Reference') }}</option>
+            <option value="timeseries">{{ _('Time Series') }}</option>
+            <option value="file">{{ _('File') }}</option>
+            <option value="plotly_chart">{{ _('Plotly Chart') }}</option>
+            <option value="template">{{ _('Schema Template') }}</option>
+          </select>
+        </div>
+        <div class="schema-editor-form-group">
+          <label class="control-label schema-editor-generic-property-required-label">{{ _('Required') }}</label>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" data-onstyle="default" data-width="176" data-on="{{ _('Yes') }}" data-off="{{ _('No') }}" class="schema-editor-generic-property-required-input">
+              <span class="sr-only">{{ _('Required') }}</span>
+            </label>
+          </div>
+        </div>
+        {% for language in enabled_languages %}
+        <div class="schema-editor-form-group">
+          {% if language.lang_code == 'en' %}<label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-generic-property-note-checkbox"></label>{% endif %}<label class="control-label schema-editor-generic-property-default-label" data-toggle="tooltip" data-placement="top" title="{{ _('Additional information on the property.') }}">{{ _('Note') }} ({{ language.names | get_translated_text }}) <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-generic-property-note-input" placeholder="{{ _('Note') }} ({{ language.names | get_translated_text }})" value="" data-sampledb-lang-code="{{ language.lang_code }}">
+          <span class="help-block"></span>
+        </div>
+        {% endfor %}
+        {% for language in enabled_languages %}
+        <div class="schema-editor-form-group">
+          {% if language.lang_code == 'en' %}<label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-generic-property-tooltip-checkbox"></label>{% endif %}<label class="control-label schema-editor-generic-property-tooltip-label" data-toggle="tooltip" data-placement="top" title="{{ _('A tooltip text, shown when holding the mouse cursor over the title.') }}">{{ _('Tooltip') }} ({{ language.names | get_translated_text }}) <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-generic-property-tooltip-input" placeholder="{{ _('Tooltip') }} ({{ language.names | get_translated_text }})" value="" data-sampledb-lang-code="{{ language.lang_code }}">
+          <span class="help-block"></span>
+        </div>
+        {% endfor %}
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-text-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-text-property-placeholder-checkbox"></label><label class="control-label schema-editor-text-property-placeholder-label">{{ _('Placeholder') }}</label>
+          <input type="text" class="form-control schema-editor-text-property-placeholder-input" placeholder="{{ _('Placeholder') }}" value="">
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-text-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-text-property-default-checkbox"></label><label class="control-label schema-editor-text-property-default-label">{{ _('Default') }}</label>
+          <input type="text" class="form-control schema-editor-text-property-default-input" placeholder="{{ _('Default') }}" value="">
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-text-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-text-property-pattern-checkbox"></label><label class="control-label schema-editor-text-property-pattern-label" data-toggle="tooltip" data-placement="top" title="{{ _('A regular expression to restrict what values are valid for the property. Examples: ^.*$, ^Sample-[0-9]+$') }}">{{ _('Pattern') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-text-property-pattern-input" placeholder="{{ _('Pattern') }}" value="">
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-text-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-text-property-minlength-checkbox"></label><label class="control-label schema-editor-text-property-minlength-label">{{ _('Minimum Length') }}</label>
+          <input type="text" class="form-control schema-editor-text-property-minlength-input" placeholder="{{ _('Minimum Length') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-text-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-text-property-maxlength-checkbox"></label><label class="control-label schema-editor-text-property-maxlength-label">{{ _('Maximum Length') }}</label>
+          <input type="text" class="form-control schema-editor-text-property-maxlength-input" placeholder="{{ _('Maximum Length') }}" value="">
+          <span class="help-block"></span>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-choice-property-setting">
+          <label class="control-label schema-editor-choice-property-choices-label" data-toggle="tooltip" data-placement="top" title="{{ _('A list of values the user can choose from, one per line.') }}">{{ _('Choices') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <textarea rows="3" class="form-control schema-editor-choice-property-choices-input" placeholder="{{ _('Choices') }}"></textarea>
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-choice-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-choice-property-default-checkbox"></label><label class="control-label schema-editor-choice-property-default-label">{{ _('Default') }}</label>
+          <input type="text" class="form-control schema-editor-choice-property-default-input" placeholder="{{ _('Default') }}" value="">
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-multiline-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-multiline-property-placeholder-checkbox"></label><label class="control-label schema-editor-multiline-property-placeholder-label">{{ _('Placeholder') }}</label>
+          <input type="text" class="form-control schema-editor-multiline-property-placeholder-input" placeholder="{{ _('Placeholder') }}" value="">
+        </div>
+        <div class="schema-editor-form-group-wide schema-editor-property-setting schema-editor-multiline-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-multiline-property-default-checkbox"></label><label class="control-label schema-editor-multiline-property-default-label">{{ _('Default') }}</label>
+          <textarea rows="1" class="form-control schema-editor-multiline-property-default-input" placeholder="{{ _('Default') }}"></textarea>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-multiline-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-multiline-property-minlength-checkbox"></label><label class="control-label schema-editor-multiline-property-minlength-label">{{ _('Minimum Length') }}</label>
+          <input type="text" class="form-control schema-editor-multiline-property-minlength-input" placeholder="{{ _('Minimum Length') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-multiline-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-multiline-property-maxlength-checkbox"></label><label class="control-label schema-editor-multiline-property-maxlength-label">{{ _('Maximum Length') }}</label>
+          <input type="text" class="form-control schema-editor-multiline-property-maxlength-input" placeholder="{{ _('Maximum Length') }}" value="">
+          <span class="help-block"></span>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-markdown-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-markdown-property-placeholder-checkbox"></label><label class="control-label schema-editor-markdown-property-placeholder-label">{{ _('Placeholder') }}</label>
+          <input type="text" class="form-control schema-editor-markdown-property-placeholder-input" placeholder="{{ _('Placeholder') }}" value="">
+        </div>
+        <div class="schema-editor-form-group-wide schema-editor-property-setting schema-editor-markdown-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-markdown-property-default-checkbox"></label><label class="control-label schema-editor-markdown-property-default-label">{{ _('Default') }}</label>
+          <textarea rows="1" class="form-control schema-editor-markdown-property-default-input" placeholder="{{ _('Default') }}"></textarea>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-markdown-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-markdown-property-minlength-checkbox"></label><label class="control-label schema-editor-markdown-property-minlength-label">{{ _('Minimum Length') }}</label>
+          <input type="text" class="form-control schema-editor-markdown-property-minlength-input" placeholder="{{ _('Minimum Length') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-markdown-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-markdown-property-maxlength-checkbox"></label><label class="control-label schema-editor-markdown-property-maxlength-label">{{ _('Maximum Length') }}</label>
+          <input type="text" class="form-control schema-editor-markdown-property-maxlength-input" placeholder="{{ _('Maximum Length') }}" value="">
+          <span class="help-block"></span>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-bool-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-bool-property-default-checkbox"></label><label class="control-label schema-editor-bool-property-default-label">{{ _('Default') }}</label>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" data-onstyle="default" data-width="176" data-on="{{ _('Yes') }}" data-off="{{ _('No') }}" class="schema-editor-bool-property-default-input">
+              <span class="sr-only">{{ _('Default') }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-user-property-setting">
+          <label class="control-label schema-editor-user-property-default-label" data-toggle="tooltip" data-placement="top" title="{{ _('Use the user creating the object as the default value for this field.') }}">{{ _('Default') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" data-onstyle="default" data-width="176" data-on="{{ _('Yes') }}" data-off="{{ _('No') }}" class="schema-editor-user-property-default-input">
+              <span class="sr-only">{{ _('Default') }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="schema-editor-property-setting schema-editor-plotly_chart-property-setting">
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-quantity-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-quantity-property-placeholder-checkbox"></label><label class="control-label schema-editor-quantity-property-placeholder-label">{{ _('Placeholder') }}</label>
+          <input type="text" class="form-control schema-editor-quantity-property-placeholder-input" placeholder="{{ _('Placeholder') }}" value="">
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-quantity-property-setting">
+          <label class="control-label schema-editor-quantity-property-units-label" data-toggle="tooltip" data-placement="top" title="{{ _('Unit or a list of units the user can choose from, separated by commas.') }}">{{ _('Units') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-quantity-property-units-input" placeholder="{{ _('Units') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-quantity-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-quantity-property-default-checkbox"></label><label class="control-label schema-editor-quantity-property-default-label" data-toggle="tooltip" data-placement="top" title="{{ _('Standard magnitude in base units.') }}">{{ _('Default') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-quantity-property-default-input" placeholder="{{ _('Default') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-quantity-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-quantity-property-display_digits-checkbox"></label><label class="control-label schema-editor-quantity-property-display_digits-label" data-toggle="tooltip" data-placement="top" title="{{ _('Number of decimal digits to display.') }}">{{ _('Decimal Digits') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="number" class="form-control schema-editor-quantity-property-display_digits-input" placeholder="{{ _('Decimal Digits') }}" value="" min="0">
+          <span class="help-block"></span>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-timeseries-property-setting">
+          <label class="control-label schema-editor-timeseries-property-units-label" data-toggle="tooltip" data-placement="top" title="{{ _('Unit or a list of units the user can choose from, separated by commas.') }}">{{ _('Units') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-timeseries-property-units-input" placeholder="{{ _('Units') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-timeseries-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-timeseries-property-display_digits-checkbox"></label><label class="control-label schema-editor-timeseries-property-display_digits-label" data-toggle="tooltip" data-placement="top" title="{{ _('Number of decimal digits to display.') }}">{{ _('Decimal Digits') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="number" class="form-control schema-editor-timeseries-property-display_digits-input" placeholder="{{ _('Decimal Digits') }}" value="" min="0">
+          <span class="help-block"></span>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-file-property-setting">
+          <label class="schema-editor-checkbox"><input type="checkbox" class="schema-editor-file-property-extensions-checkbox"></label><label class="control-label schema-editor-file-property-extensions-label" data-toggle="tooltip" data-placement="top" title="{{ _('Limit files to specific file extensions, e.g. &quot;.png, .jpg, .jpeg&quot;') }}">{{ _('File Extensions') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <input type="text" class="form-control schema-editor-file-property-extensions-input" placeholder="{{ _('File Extensions') }}" value="">
+          <span class="help-block"></span>
+        </div>
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-file-property-setting">
+          <label class="control-label schema-editor-file-property-preview-label" data-toggle="tooltip" data-placement="top" title="{{ _('Show previews for image files.') }}">{{ _('Preview') }} <i class="fa fa-question-circle" aria-hidden="true"></i></label>
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" data-onstyle="default" data-width="176" data-on="{{ _('Yes') }}" data-off="{{ _('No') }}" class="schema-editor-file-property-preview-input">
+              <span class="sr-only">{{ _('Preview') }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="schema-editor-form-group schema-editor-property-setting schema-editor-template-property-setting">
+          <label class="schema-editor-generic-property-template-id-label">{{ _('Schema Template') }}</label>
+          <select class="form-control schema-editor-generic-property-template-id-input template-select">
+            <option value="">&mdash;</option>
+            {% for template in get_templates(current_user.id) %}
+              {% if current_action is none or current_action.id != template.id %}
+                <option value="{{ template.id }}">{{ template.name | get_translated_text }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <span class="help-block"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="schemaEditorWarningModal" tabindex="-1" role="dialog" aria-labelledby="schemaEditorWarningModalLabel">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+          <h4 class="modal-title" id="schemaEditorWarningModalLabel">{{ _('Schema Editor Warning') }}</h4>
+        </div>
+        <div class="modal-body">
+          <p>{{ _('The schema for this action contains advanced features which the graphical schema editor does not support. If you continue, these might be removed from the schema.') }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Use Graphical Editor') }}</button>
+          <button type="button" class="btn btn-primary" data-dismiss="modal" id="button-use-text-editor">{{ _('Use JSON Editor') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}

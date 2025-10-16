@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+{% from 'macros.j2.html' import import_information_symbol, user_reference %}
+<head>
+  <meta charset="UTF-8">
+  <title>{{ service_name }} {{ _('Export') }}</title>
+  <style>
+        html {
+            font-family: 'Helvetica', sans-serif;
+            font-size: 10pt;
+            line-height: 1.3;
+            hyphens:auto;
+        }
+        @page {
+            margin: 20mm 30mm 20mm 25mm;
+
+            @top-right {
+                content: element(header);
+            }
+            @top-left {
+                content: element(footer);
+            }
+
+            @bottom-center {
+                content: counter(page);
+                height: 1cm;
+                text-align: center;
+                width: 1cm;
+            }
+        }
+        header {
+            display: none;
+        }
+        .logo {
+            display: none;
+        }
+        @media print {
+        {% if config.internal.PDFEXPORT_LOGO_URL and include_logo %}
+            .logo {
+                display: block;
+            }
+        {% endif %}
+        article {
+            page-break-after: always;
+        }
+        header {
+            display: block;
+            background-repeat: no-repeat;
+            background-size: 17mm 17mm;
+            background-position: center top;
+            position: running(header);
+            width: 17.5mm;
+            height: 40mm;
+            margin-bottom: -61mm;
+            padding-top: 17.5mm;
+            margin-right: -21mm;
+            hyphens: none;
+            text-align: center;
+            font-size: 8pt;
+            line-height: 1.2;
+        }
+        }
+        {% if config.internal.PDFEXPORT_LOGO_URL and include_logo %}
+          {% set logo_width = config.internal.PDFEXPORT_LOGO_WIDTH %}
+          {% set logo_height = logo_width / config.internal.PDFEXPORT_LOGO_ASPECT_RATIO %}
+          .logo {
+              position: fixed;
+              top: -10mm;
+          {% if config.PDFEXPORT_LOGO_ALIGNMENT == 'center' %}
+              left: 50%;
+              margin-left: -{{ logo_width / 2 }}mm;
+          {% elif config.PDFEXPORT_LOGO_ALIGNMENT == 'left' %}
+              left: -15mm;
+          {% else %}
+              right: -20mm;
+          {% endif %}
+              width: {{ logo_width }}mm;
+              height: {{ logo_height }}mm;
+              background-image: url({{ config.internal.PDFEXPORT_LOGO_URL }});
+              background-repeat: no-repeat;
+              background-size: {{ logo_width }}mm {{ logo_height }}mm;
+          }
+          header {
+            margin-bottom: -{{ 61 + 2 * logo_height }}mm;
+          }
+        {% endif %}
+        article > ul {
+            padding-left: 0;
+            list-style-type: none;
+        }
+        ul.object-property-list {
+            list-style-type: none;
+            padding-left: 0.5em;
+        }
+        article a {
+            hyphens: none;
+            color:black;
+            text-decoration: none;
+        }
+        .object-user-content {
+            border-left: 0.5px solid black;
+            padding: 10px;
+            margin: 1px;
+        }
+        .object-user-content img {
+            max-width:100%;
+            max-height: 10cm;
+        }
+        .object-user-content table {
+            border-collapse: collapse;
+            width:100%;
+        }
+        .object-user-content th, .object-user-content td {
+            padding: 5px;
+        }
+        .object-user-content tr:first-of-type th {
+            border-top: 2px solid black;
+            border-bottom: 1px solid black;
+        }
+        .object-user-content tr:last-of-type td {
+            border-bottom: 2px solid black;
+        }
+        .object-user-content.multiline {
+            white-space: pre-wrap;
+        }
+        .object-user-content .headerlink {
+            display: none;
+        }
+        .object-file-image {
+            max-width: 100%;
+            max-height:20cm;
+        }
+    </style>
+</head>
+<body>
+  {% if config.internal.PDFEXPORT_LOGO_URL %}
+    <div class="logo"></div>
+  {% endif %}
+{% for object, action, activity_log_entries, location_entries, publications, comments, files, qrcode_url in objects %}
+  <article>
+  <header style="background-image: url({{ qrcode_url }})">
+    #{{ object.object_id }} {{ _('Exported&nbsp;on %(export_date)s', export_date=export_date | babel_format_date) }}
+  </header>
+  <h1>{{ get_object_type_name(action) }} #{{ object.object_id }}: {{ object.name | get_translated_text(metadata_language) }}</h1>
+  <h2>{{ _('Information') }}</h2>
+  {% with data = object.data %}
+  {% with schema = object.schema %}
+    {% include "pdfexport/object.html" %}
+  {% endwith %}
+  {% endwith %}
+
+  {% if object.eln_import_id is not none %}
+    <h2>{{ _('Import') }}</h2>
+    <p>
+      {% set eln_import_url = eln_import_urls.get(object.object_id) %}
+      {{ _('This object was imported from <a href="%(eln_import_url)s">.eln file #%(eln_import_id)s</a> by %(user_ref)s.', eln_import_id=object.eln_import_id, eln_import_url=url_for('frontend.eln_import', eln_import_id=object.eln_import_id), user_ref=user_reference(object.eln_import.user)) }} {% if eln_import_url is not none and eln_import_url.startswith('http') %}{{ _('The original URL is <a href="%(eln_import_url)s">%(eln_import_url)s</a>.', eln_import_url=eln_import_url) }}{% endif %}
+    </p>
+  {% endif %}
+
+  {% if activity_log_entries %}
+  <h2>{{ _('Activity Log') }}</h2>
+  <ul>
+  {% for entry in activity_log_entries %}
+    <li style="text-indent: -11em; margin-left: 11em; hyphens: none">{{ entry | safe }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if location_entries %}
+  <h2>{{ _('Locations') }}</h2>
+  <ul>
+  {% for entry in location_entries %}
+    <li style="text-indent: -11em; margin-left: 11em;">
+      {{ entry.utc_datetime | babel_format_datetime }} &mdash;
+      {% if entry.assigning_user_id %}
+        {% with user = get_user(entry.assigning_user_id) %}
+          {{ user_reference(user, external=True, text=true) }}:
+        {% endwith %}
+      {% else %}
+        {{ _('Unknown User') }}:
+      {% endif %}
+    {% if entry.location_id %}
+      <a href="{{ url_for('.location', location_id=entry.location_id, _external=True) }}">{{ entry.location_name }}</a>
+    {% endif %}
+    {% if entry.responsible_user_id %}
+      {% if entry.location_id %}/{% endif %}
+      {% with user = get_user(entry.responsible_user_id) %}
+        {{ user_reference(user, external=True, text=true) }}
+      {% endwith %}
+    {% endif %}
+    {% if entry.description %}
+      <div style="text-indent: 0">
+        {{ _('Description') }}:
+        <div class="object-user-content multiline">{{ entry.description | get_translated_text(metadata_language) }}</div>
+      </div>
+    {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if publications %}
+  <h2>{{ _('Publications') }}</h2>
+    <ul>
+    {% for publication in publications %}
+      <li style="text-indent: -11em; margin-left: 11em;">
+        <a href="https://dx.doi.org/{{ publication.doi }}">{{ publication.doi }}</a> &mdash; {{ publication.title }} {% if publication.object_name %}({{ publication.object_name }}){% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if comments %}
+  <h2>{{ _('Comments') }}</h2>
+    <ul>
+    {% for comment in comments %}
+      <li style="text-indent: -11em; margin-left: 11em;">
+        {{ comment.utc_datetime | babel_format_datetime }} &mdash;
+        {% if comment.author is none %}
+          <span>{{ _('Unknown User') }}:</span>
+        {% else %}
+          {{ user_reference(comment.author, external=True, text=true) }}:
+        {% endif %}
+        <div class="object-user-content multiline" style="text-indent: 0;">{{ comment.content }}</div>
+      </li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if files %}
+  <h2>{{ _('Files') }}</h2>
+    <ul>
+    {% for file in files %}
+      <li>{{ file.utc_datetime | babel_format_datetime }} &mdash;
+        {% if file.uploader is none %}
+          <span>{{ _('Unknown User') }}:</span>
+        {% else %}
+          {{ user_reference(file.uploader, external=True, text=true) }}:
+        {% endif %}
+        {% if file.is_hidden %}({{ _('hidden') }}){% else %}{{ file.title }} (#{{ file.id }}){% endif %}</li>
+    {% endfor %}
+    </ul>
+
+    {% for file in files %}
+      {% if not file.is_hidden and file.storage == 'database' %}
+        {% for file_extension in IMAGE_FORMATS %}
+          {% if file.original_file_name.lower().endswith(file_extension) %}
+            <h3>{{ _('File') }} #{{ file.id }}: {{ file.title }}</h3>
+            <img src="{{ url_for('.object_file', object_id=object.id, file_id=file.id) }}" class="object-file-image"/>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+  </article>
+{% endfor %}
+</body>
+</html>

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %} {{ _('Actions') }} — {{ service_name }}{% endblock %}
+
+{% block content %}
+  <h1>{% if action_type %}{{ _('%(action_type)s Actions', action_type=action_type.name | get_translated_text(default=_('Unnamed Action Type'))) }} {% else %}{{ _('Actions') }}{% endif %}</h1>
+  {% if filter_topic_infos %}
+    <ul>
+    {% if filter_topic_infos %}
+      <li>
+        {% if filter_topic_infos | length == 1 %}
+          {{ _('for topic:') }}
+        {% else %}
+          {{ _('for topics:') }}
+        {% endif %}
+        {% for topic_info in filter_topic_infos %}
+          <a href="{{ topic_info.url }}">{{ topic_info.name }}</a>{% if loop.index + 1 < filter_topic_infos | length %},{% elif loop.index + 1 == filter_topic_infos | length %} {{ _('or') }} {% endif %}
+        {% endfor %}
+      </li>
+    {% endif %}
+    </ul>
+  {% endif %}
+  <p class="text-muted">{% if action_type and action_type.description %}{{ action_type.description | get_translated_text(default='—') }}{% else %}{{ _('Actions represent processes like creating a sample or performing a measurement.') }}{% endif %} <a href="https://scientific-it-systems.iffgit.fz-juelich.de/SampleDB/user_guide/actions.html">{{ _("Read more.") }}</a></p>
+  {% if (current_user.is_admin or user_is_instrument_scientist) and not current_user.is_readonly and (not action_type or not action_type.admin_only or current_user.is_admin) %}
+    {% if action_type and filter_topic_infos %}
+    <a href="{{ url_for('.new_action', action_type_id=action_type.id, topic_ids=filter_topic_ids | join(',')) }}" class="btn btn-default">{{ _("Create Action") }} </a>
+    {% elif action_type %}
+    <a href="{{ url_for('.new_action', action_type_id=action_type.id) }}" class="btn btn-default">{{ _("Create Action") }} </a>
+    {% elif filter_topic_ids %}
+    <a href="{{ url_for('.new_action', topic_ids=filter_topic_ids | join(',')) }}" class="btn btn-default">{{ _("Create Action") }} </a>
+    {% else %}
+    <a href="{{ url_for('.new_action') }}" class="btn btn-default">{{ _("Create Action") }}</a>
+    {% endif %}
+  {% endif %}
+  {% if not config['DISABLE_TOPICS'] and topics %}
+    <a class="btn btn-default" data-toggle="modal" data-target="#filtersModal">
+      {{ _('Filters') }}
+    </a>
+
+    <div class="modal fade" id="filtersModal" tabindex="-1" role="dialog" aria-labelledby="filtersModalLabel">
+      <div class="modal-dialog" role="document">
+        <form method="get" class="form">
+          {% for key in request.args %}
+            {% if key not in ['action_list_filters', 'topic_ids'] %}
+              {% for value in request.args.getlist(key) %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}" />
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+          <input type="hidden" name="action_list_filters" value="" />
+          <div class="modal-content">
+            <div class="modal-header">
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+              <h4 class="modal-title" id="filtersModalLabel">{{ _('Filters') }}</h4>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label for="input-topics" class="control-label">{{ _('Filter by Topics') }}</label>
+                <select class="selectpicker form-control" id="input-topics" name="topic_ids" data-none-selected-text="{{ _('No topic selected') }}" multiple>
+                  {% for topic in topics %}
+                  <option value="{{ topic.id }}"{% if topic.id in filter_topic_ids %}selected="selected"{% endif %}>{{ topic.name | get_translated_text }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-default" name="save_default_action_filters" formmethod="post">{{ _('Save') }}</button>
+              <button type="submit" class="btn btn-default" name="clear_default_action_filters" formmethod="post">{{ _('Clear') }}</button>
+              <button type="button" class="btn btn-default" data-dismiss="modal">{{ _('Close') }}</button>
+              <button type="submit" class="btn btn-primary">{{ _('Apply') }}</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+  {% for action in actions %}
+    <h2>
+      {% if action.user is not none %}
+        {% set action_owner = get_user(action.user_id) %}
+        {% set federated_user, imported_user = get_federated_identity(action_owner) %}
+        <a href="{{ url_for('.user_profile', user_id=federated_user.id) }}" title="{{ federated_user.get_name() }}">{{ federated_user.get_name() }}</a>
+        {% if imported_user is not none %}
+          {{ import_information_symbol(imported_user) }} /
+        {% else %}
+          {{ import_information_symbol(action_owner) }} /
+        {% endif %}
+      {% endif %}
+      {% if action.instrument is not none and not config['DISABLE_INSTRUMENTS'] %}
+        <a href="{{ url_for('.instrument', instrument_id=action.instrument.id) }}" title="{{ action.instrument.name | get_translated_text(default=_('Unnamed Instrument')) }}">{{ action.instrument.name | get_translated_text(default=_('Unnamed Instrument')) }}</a>
+        {{ import_information_symbol(action.instrument) }} &mdash;
+      {% endif %}
+      <a href="{{ url_for('.action', action_id=action.id, object_id=request.args.getlist('object_id')) }}" title="{{ action.name | get_translated_text(default=_('Unnamed Action')) }}">{{ action.name | get_translated_text(default=_('Unnamed Action')) }}</a>
+      {{ import_information_symbol(action) }}
+      {% if action.id in user_favorite_action_ids or not current_user.is_readonly %}
+        <button type="button" class="fa {% if action.id in user_favorite_action_ids %}fav-star-on{% else %}fav-star-off{% endif %}" value="" {% if not current_user.is_readonly %}data-action-id="{{ action.id }}"{% endif %}></button>
+      {% endif %}
+    </h2>
+    {% if action.is_hidden %}
+    <p class="text-muted"><i class="fa fa-eye-slash" aria-hidden="true"></i> {{ _("This action has been hidden from action lists.") }} </p>
+    {% endif %}
+
+    {% if not config['DISABLE_TOPICS'] and action.topics %}
+    <p>{{ _('Topics') }}:
+    {% for topic in action.topics %}
+      <a class="badge badge-secondary" href="{{ url_for('.topic', topic_id=topic.id) }}">{{ topic.name | get_translated_text }}</a>
+    {% endfor %}
+    </p>
+    {% endif %}
+
+    {% if action.short_description | get_translated_text %}
+      <div class="action-user-content">
+        {% if action.short_description_is_markdown %}{{ action.short_description | get_translated_text | markdown_to_safe_html(anchor_prefix='action-short-description') | safe }}{% else %}<p class="multiline-text-wrapper">{{ action.short_description | get_translated_text }}</p>{% endif %}
+      </div>
+    {% endif %}
+    {% if not config['DISABLE_INSTRUMENTS'] %}
+    {% with instrument = action.instrument %}
+      {% include "instruments/instrument_scientists.html" %}
+    {% endwith %}
+    {% endif %}
+    {% if action.type_id is none or not action.type.disable_create_objects %}
+    <p>
+      <a href="{{ url_for('.objects', action_ids=action.id) }}" class="btn btn-default">{{ action.type.view_text | get_translated_text(default=_('View Objects')) if action.type_id else _('View Objects') }}</a>
+      {% if not current_user.is_readonly and action.type_id is not none and action.schema is not none and (not action.disable_create_objects) and (not action.admin_only or current_user.is_admin) %}
+      <a href="{{ url_for('.new_object', action_id=action.id, object_id=request.args.getlist('object_id')) }}" class="btn btn-primary">{{ action.type.perform_text | get_translated_text(default=_('Create Object')) if action.type_id else _('Create Object') }}</a>
+      {% endif %}
+    </p>
+    {% endif %}
+  {% endfor %}
+{% endblock %}
+
+{% block stylesheets %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ fingerprinted_static('bootstrap-select/css/bootstrap-select.min.css') }}" />
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ fingerprinted_static('sampledb/js/markdown_image_viewer.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('sampledb/js/favorites.js') }}" type="module"></script>
+  <script src="{{ fingerprinted_static('bootstrap-select/js/bootstrap-select.min.js') }}"></script>
+{% endblock %}
