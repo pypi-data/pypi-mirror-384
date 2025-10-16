@@ -1,0 +1,352 @@
+{% extends "se/base.html" %}
+{% load static %}
+
+{% block head %}
+    <script type="text/javascript" src="{% static "se/index.js" %}"></script>
+    <link rel="search" type="application/opensearchdescription+xml" title="Sosse" href="/opensearch.xml">
+    <script src="{% static 'se/tags.js' %}"></script>
+{% endblock %}
+
+{% block css %}
+    .res {
+        margin: 6px 0px 6px 0px;
+        padding: 10px 10px 10px 10px;
+        border-radius: 10px;
+    }
+    body.light-mode .res:hover {
+        background-color: #f4f4f4;
+    }
+    body.dark-mode .res:hover {
+        background-color: #1a1a1a;
+    }
+    .res-img {
+        height: 16px;
+        width: 16px;
+        display: inline;
+    }
+    .res-title {
+        margin-bottom: 0px;
+        display: inline;
+    }
+    .res-title > a:visited {
+        color: #9e4efe;
+    }
+    .res-url {
+        color: #080;
+        font-size: 13px;
+    }
+    .res-url:visited {
+        color: #080;
+        font-size: 13px;
+    }
+    .res-rank {
+        font-size: 10px;
+        display: inline;
+    }
+    .res-rank > a:visited {
+        color: #9e4efe;
+    }
+    a.res-headline {
+        color: var(--text);
+    }
+    a.res-headline:visited {
+        color: var(--text);
+    }
+    .res-highlight {
+        background-color: #c6dcff;
+    }
+    .res .tag {
+      min-height: 15px;
+    }
+
+    #home-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        grid-auto-rows: minmax(100px, auto);
+    }
+
+    #home-grid a {
+        text-decoration: none;
+    }
+
+    .res-home {
+        display: block;
+        position: relative;
+        grid-column: auto;
+        grid-row: auto;
+        width: 200px;
+        height: 200px;
+        text-align: center;
+        overflow: hidden;
+    }
+    .res-home-icon {
+        padding-top: 30%;
+        width: 100%;
+    }
+    .res-home-icon > img.res-home-icon-img {
+        width: 64px;
+        height: 64px;
+    }
+    img.res-home-title-icon {
+        width: 16px;
+        height: 16px;
+    }
+    .res-home-fade-text {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      margin: 0;
+      width: 100%;
+      height: 24px;
+    }
+
+    body.light-mode .res .res-home-fade-text {
+      background-image: linear-gradient(to bottom, transparent, white);
+    }
+
+    body.light-mode .res:hover .res-home-fade-text {
+      background-image: linear-gradient(to bottom, transparent, #f4f4f4);
+    }
+
+    body.dark-mode .res .res-home-fade-text {
+      background-image: linear-gradient(to bottom, #00000000, #000000ff);
+    }
+
+    body.dark-mode .res:hover .res-home-fade-text {
+      background-image: linear-gradient(to bottom, #00000000, #1a1a1a);
+    }
+
+    #search_field {
+        text-align: center;
+    }
+    #more {
+        text-decoration: none;
+        font-size: 13px;
+        color: var(--text);
+    }
+    #adv_search {
+        padding-top: 20px;
+    }
+    #atom_menu {
+        right: 8px;
+        width: 160px;
+        top: 88px;
+    }
+    .dyn_button {
+        width: 38px;
+        text-align: center;
+    }
+    #clear_button {
+        background-size: 20px;
+        width: 40px;
+        height: 40px;
+        border-left-style: none;
+    }
+    #clear_button:focus {
+        border-left-style: solid;
+    }
+    #search_button {
+        margin-left: 5px;
+        width: 40px;
+        height: 40px;
+    }
+    #atom_button {
+        background-image: url('{% static "se/icon-atom.svg" %}');
+    }
+    #top_bar {
+        min-height: 157px;
+        padding-bottom: 10px;
+    }
+    input[name="fv"] {
+        min-width: 350px;
+    }
+    #previous_search {
+      background-color: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px;
+      padding-left: 29%;
+      width: 30%;
+    }
+    .quick-history-link {
+      color: var(--text);
+      display: inline-block;
+      margin-right: 10px;
+      overflow: hidden;
+      text-align: left;
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      width: 143%;
+    }
+    .quick-history-link:visited {
+      color: var(--text);
+    }
+{% endblock %}
+
+{% block js %}
+  {{ block.super }}
+  document.addEventListener("DOMContentLoaded", function() {
+    console.log('sosseArchiveLinks', localStorage.getItem('sosseArchiveLinks'));
+    if (localStorage.getItem('sosseArchiveLinks') === 'true') {
+      const links = document.querySelectorAll("#home-grid a");
+      links.forEach(link => {
+        link.href = `/archive/${link.href}`;
+      });
+    }
+  });
+{% endblock %}
+
+{% block top_bar %}
+    <form method="get" id="search_form">
+        <div id="search_field">
+            {% for field in form.hidden_fields %}
+                {{ field }}
+            {% endfor %}
+
+            {{ form.q }}<!--
+            --><input id="search_button" class="img_button" type="submit" value=" " onclick="return on_submit()">
+            {% if search_history %}
+              <div id="previous_search">
+                <span title="Last searches" style="position: absolute; margin-left: -20px">
+                  <a href="{% url 'history' %}">
+                    🕑
+                  </a>
+                </span>
+                {% for e in search_history %}
+                  <a class="quick-history-link" href="{{ e.search_url }}">
+                    {% for tag in e.tags %}
+                      {% include "se/components/tag.html" with suffix="-history" %}
+                    {% endfor %}
+                    {{ e.query }}
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
+            <div id="more_div">
+                <a id="more" href="#" onclick="search_more()">⮟ params</a>
+            </div>
+        </div>
+
+        <template id="adv_search_tmpl">
+            <input class="dyn_button" type="button" value="+">
+            <input class="dyn_button" type="button" value="-">
+            <select name="ft">
+                <option value="inc">Keep</option>
+                <option value="exc">Exclude</option>
+            </select>
+            <select name="ff">
+                {% for value, title in FILTER_FIELDS %}
+                    <option value="{{ value }}">{{ title }}</option>
+                {% endfor %}
+            </select>
+            <select name="fo">
+                <option value="contain">Containing</option>
+                <option value="equal">Equal to</option>
+                <option value="regexp">Matching Regex</option>
+            </select>
+            <input name="fv" type="text">
+            <input name="fc" type="checkbox" id="fc">
+            <label for="fc">Case sensitive</label>
+        </template>
+
+        <div id="adv_search" style="display: none">
+            <div style="padding-left: 20px; padding-bottom: 15px;">
+                <span style="margin-right: 8px;">Language</span>
+                <select id="doc_lang" name="doc_lang">
+                    <option value="">Any</option>
+                    {% for key, val in sosse_langdetect_to_postgres.items %}
+                        <option value="{{ key }}">{{ val.flag }} {{ val.name|title }}</option>
+                    {% endfor %}
+                </select>
+
+                <span style="margin-left: 20px; margin-right: 8px;">Collection</span>{{ form.collection }}
+
+                <span style="margin-left: 20px; margin-right: 8px;">Sort</span>{{ form.s }}
+
+                {% if perms.se.can_change_document %}
+                    <span style="margin-left: 20px;">{{ form.i }}</span>
+                    <label for="id_i" style="margin-left: 8px;">Include hidden documents</label>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+{% endblock %}
+
+{% block body %}
+    {% include "se/components/modal.html" with id="tags" title="⭐ Filtering" %}
+    <div id="search_tags" style="display: flow-root">
+        {% if tags %}
+            Filters:
+            {% for tag in tags %}
+                {% include "se/components/tag.html" with suffix="-search" bold=True %}
+            {% endfor %}
+            {% include "se/components/tag_action.html" with id="clear_tags" text="⨉ Clear" href=clear_tags_href padding=True %}
+        {% endif %}
+        <div style="float: right">
+            {% include "se/components/tag_action.html" with id="edit_search_tags" onclick="show_tags()" %}
+        </div>
+    </div>
+    {% if has_query %}
+        {% if results_count == '0' %}
+            <div>
+                <div style="display: inline; font-size: 24px;">{{ animal }}</div>
+                No results found.
+            </div>
+        {% else %}
+            <div>
+                <div style="display: inline; font-size: 24px;">{{ animal }}</div>
+                {{ results_count }} site{{ results|pluralize:"s" }} found
+            </div>
+        {% endif %}
+        <div class="menu" id="atom_menu">
+            <button id="atom_button" title="Atom feeds" class="menu_button img_button"></button>
+            <div id="atom_menu_panel" class="panel">
+                <a href="/atom/?{{ request.META.QUERY_STRING }}" class="links menu_links">Atom results feed</a>
+                <a href="/atom/?{{ request.META.QUERY_STRING }}&archive=1" class="links menu_links">Atom archive feed</a>
+                {% if settings.SOSSE_CSV_EXPORT %}
+                    <a href="{% url "csv" %}?{{ request.META.QUERY_STRING }}" class="links menu_links">CSV export</a>
+                {% endif %}
+            </div>
+        </div>
+        {% for r in paginated %}
+            <div class="res" {% if r.preview %}style="min-height: 100px"{% endif %}>
+                <div>
+                    {% if r.preview %}
+                        <a href="{{ r.link }}" {{ r.link_flag }}>
+                            <img src="{{ r.preview }}" class="archive-preview" />
+                        </a>
+                    {% endif %}
+                    {% if r.favicon and not r.favicon.missing %}
+                        <img class="res-img" src="{% url 'favicon' r.favicon.id %}" alt="icon">
+                    {% endif %}
+                    <h3 class="res-title">
+                      <a href="{{ r.link }}" {{ r.link_flag }}>
+                        {{ r.title }}
+                      </a>
+                    </h3>
+                </div>
+
+                <a href="{{ r.link }}" class="res-url" {{ r.link_flag }}>
+                    {{ r.url }}
+                </a>
+                {% if r.ordered_tags %}
+                    <div class="res-rank">
+                        {% for tag in r.ordered_tags %}
+                            {% include "se/components/tag.html" with cursor_pointer=True %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <div class="res-rank"> · {{ r.rank|floatformat:"1" }}</div>
+                <div class="res-rank"> · {{ r.lang_flag }}</div>
+                <div class="res-rank"> · <a href="{{ r.extra_link }}" {{ r.extra_link_flag }}>{{ extra_link_txt }}</a></div>
+                <br/>
+                <a href="{{ r.link }}" class="res-headline" {{ r.link_flag }}>{{ r.headline }}</a>
+            </div>
+        {% endfor %}
+
+        {% include 'se/pagination.html' %}
+    {% elif settings.SOSSE_BROWSABLE_HOME %}
+        {% include 'se/home_browse.html' %}
+    {% endif %}
+
+{% endblock %}
