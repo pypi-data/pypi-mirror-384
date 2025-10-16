@@ -1,0 +1,165 @@
+/**
+ * @file   soma_geometry_dataframe.h
+ *
+ * @section LICENSE
+ *
+ * Licensed under the MIT License.
+ * Copyright (c) TileDB, Inc. and The Chan Zuckerberg Initiative Foundation
+ *
+ * @section DESCRIPTION
+ *
+ *   This file defines the SOMAGeometryDataFrame class.
+ */
+
+#ifndef SOMA_GEOMETRY_DATAFRAME
+#define SOMA_GEOMETRY_DATAFRAME
+
+#include <filesystem>
+#include <vector>
+
+#include "../tiledb_adapter/platform_config.h"
+#include "soma_array.h"
+#include "soma_coordinates.h"
+
+namespace tiledbsoma {
+
+class ArrayBuffers;
+
+using namespace tiledb;
+
+class SOMAGeometryDataFrame : virtual public SOMAArray {
+   public:
+    //===================================================================
+    //= public static
+    //===================================================================
+
+    /**
+     * @brief Create a SOMAGeometryDataFrame object at the given URI.
+     *
+     * @param uri URI to create the SOMAGeometryDataFrame
+     * @param schema Arrow schema
+     * @param index_columns The index column names with associated domains
+     * and tile extents per dimension
+     * @param spatial_columns The spatial column names with associated domains
+     * and tile extents per dimension
+     * @param ctx SOMAContext
+     * @param platform_config Optional config parameter dictionary
+     * @param timestamp Optional the timestamp range to write SOMA metadata info
+     */
+    static void create(
+        std::string_view uri,
+        const managed_unique_ptr<ArrowSchema>& schema,
+        const ArrowTable& index_columns,
+        const SOMACoordinateSpace& coordinate_space,
+        std::shared_ptr<SOMAContext> ctx,
+        PlatformConfig platform_config = PlatformConfig(),
+        std::optional<TimestampRange> timestamp = std::nullopt);
+
+    /**
+     * @brief Open and return a SOMAGeometryDataFrame object at the given URI.
+     *
+     * @param uri URI to create the SOMAGeometryDataFrame
+     * @param mode read or write
+     * @param ctx SOMAContext
+     * @param column_names A list of column names to use as user-defined index
+     * columns (e.g., ``['cell_type', 'tissue_type']``). All named columns must
+     * exist in the schema, and at least one index column name is required.
+     * @param result_order Read result order: automatic (default), rowmajor, or
+     * colmajor
+     * @param timestamp If specified, overrides the default timestamp used to
+     * open this object. If unset, uses the timestamp provided by the context.
+     * @return std::unique_ptr<SOMAGeometryDataFrame> SOMAGeometryDataFrame
+     */
+    static std::unique_ptr<SOMAGeometryDataFrame> open(
+        std::string_view uri,
+        OpenMode mode,
+        std::shared_ptr<SOMAContext> ctx,
+        std::optional<TimestampRange> timestamp = std::nullopt);
+
+    /**
+     * @brief Check if the SOMAGeometryDataFrame exists at the URI.
+     *
+     * @param uri URI to create the SOMAGeometryDataFrame
+     * @param ctx SOMAContext
+     */
+    static inline bool exists(std::string_view uri, std::shared_ptr<SOMAContext> ctx) {
+        return SOMAArray::_exists(uri, "SOMAGeometryDataFrame", ctx);
+    }
+
+    //===================================================================
+    //= public non-static
+    //===================================================================
+
+    /**
+     * @brief Construct a new SOMAGeometryDataFrame object.
+     *
+     * @param mode read or write
+     * @param uri URI of the array
+     * @param ctx TileDB context
+     * @param column_names Columns to read
+     * @param result_order Read result order: automatic (default), rowmajor, or
+     * colmajor
+     * @param timestamp Timestamp
+     */
+    SOMAGeometryDataFrame(
+        OpenMode mode,
+        std::string_view uri,
+        std::shared_ptr<SOMAContext> ctx,
+        std::optional<TimestampRange> timestamp = std::nullopt)
+        : SOMAArray(mode, uri, ctx, timestamp) {
+        initialize();
+    }
+
+    SOMAGeometryDataFrame(const SOMAArray& other)
+        : SOMAArray(other) {
+        initialize();
+    }
+
+    SOMAGeometryDataFrame() = delete;
+    SOMAGeometryDataFrame(const SOMAGeometryDataFrame&) = default;
+    SOMAGeometryDataFrame(SOMAGeometryDataFrame&&) = delete;
+    ~SOMAGeometryDataFrame() = default;
+
+    using SOMAArray::open;
+
+    /**
+     * Return the data schema, in the form of a ArrowSchema.
+     *
+     * @return std::unique_ptr<ArrowSchema>
+     */
+    managed_unique_ptr<ArrowSchema> schema() const;
+
+    /**
+     * Return the index (dimension) column names.
+     *
+     * @return std::vector<std::string>
+     */
+    const std::vector<std::string> index_column_names() const;
+
+    inline const SOMACoordinateSpace& coordinate_space() const {
+        return coord_space_;
+    };
+
+    /**
+     * Return the number of rows.
+     *
+     * @return int64_t
+     */
+    uint64_t count();
+
+   private:
+    //===================================================================
+    //= private non-static
+    //===================================================================
+
+    /**
+     * @brief Initialized GeometryDataframe specific additional fields
+     * serialized and stored in metadata.
+     */
+    void initialize();
+
+    SOMACoordinateSpace coord_space_;
+};
+}  // namespace tiledbsoma
+
+#endif  // SOMA_GEOMETRY_DATAFRAME
