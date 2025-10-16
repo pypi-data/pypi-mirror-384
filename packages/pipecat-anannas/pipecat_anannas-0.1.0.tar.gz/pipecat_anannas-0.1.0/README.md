@@ -1,0 +1,217 @@
+# Anannas AI Integration for Pipecat
+
+An OpenAI-compatible LLM service integration for Pipecat that provides access to 500+ models through Anannas AI's unified gateway.
+
+## About Anannas AI
+
+Anannas AI is a unified inference gateway that provides access to 500+ models from OpenAI, Anthropic, Mistral, Gemini, DeepSeek, and other providers through a single OpenAI-compatible API. Key features include:
+
+- **Unified API**: Access 500+ models through one consistent interface
+- **Built-in Observability**: Cache hit rate analytics, token-level metrics, tool/function call analytics, and model efficiency scoring
+- **Smart Routing**: Automatic provider health monitoring and failover with ~0.48ms overhead
+- **Cost Optimization**: 5% markup with transparent pricing
+- **Enterprise Ready**: BYOK (Bring Your Own Key) support for secure deployments
+- **Production Proven**: Powering deployments with 100k+ requests and 100M+ tokens processed
+
+## Installation
+
+Install the package from PyPI:
+
+```bash
+pip install pipecat-anannas
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/upsurgeio/anannas-pipecat-integration.git
+cd anannas-pipecat-integration
+pip install -e .
+```
+
+## Quick Start
+
+```python
+import os
+from pipecat_anannas import AnannasLLMService
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineTask
+
+# Initialize Anannas LLM service
+llm = AnannasLLMService(
+    api_key=os.getenv("ANANNAS_API_KEY"),
+    model="gpt-4o"  # or any supported model
+)
+
+# Use in your Pipecat pipeline
+pipeline = Pipeline([
+    # ... your pipeline components
+    llm,
+    # ... more components
+])
+```
+
+## Supported Models
+
+Anannas AI provides access to models from multiple providers:
+
+- **OpenAI**: gpt-4o, gpt-4-turbo, gpt-3.5-turbo, and more
+- **Anthropic**: claude-3-5-sonnet-20241022, claude-3-opus, claude-3-sonnet
+- **Mistral**: mistral-large, mistral-medium, mistral-small
+- **Google**: gemini-pro, gemini-1.5-pro
+- **DeepSeek**: deepseek-chat, deepseek-coder
+- And 500+ more models...
+
+## Usage with Pipecat Pipeline
+
+### Basic Example
+
+```python
+import os
+from dotenv import load_dotenv
+
+from pipecat_anannas import AnannasLLMService
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.task import PipelineTask
+from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.azure.tts import AzureTTSService
+
+load_dotenv()
+
+# Create services
+stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+llm = AnannasLLMService(api_key=os.getenv("ANANNAS_API_KEY"), model="gpt-4o")
+tts = AzureTTSService(
+    api_key=os.getenv("AZURE_SPEECH_API_KEY"),
+    region=os.getenv("AZURE_SPEECH_REGION")
+)
+
+# Build pipeline
+pipeline = Pipeline([stt, llm, tts])
+task = PipelineTask(pipeline)
+```
+
+### Function Calling Example
+
+See the complete function calling example in `examples/function_calling_example.py`. This demonstrates:
+
+- Setting up Anannas LLM service
+- Registering function handlers
+- Using function calling in a voice conversation
+- Streaming responses
+
+To run the example:
+
+```bash
+# Set required environment variables
+export ANANNAS_API_KEY=your_api_key
+export DEEPGRAM_API_KEY=your_deepgram_key
+export AZURE_SPEECH_API_KEY=your_azure_key
+export AZURE_SPEECH_REGION=your_azure_region
+
+# Run the example
+python examples/function_calling_example.py
+```
+
+## Configuration
+
+### Environment Variables
+
+- `ANANNAS_API_KEY`: Your Anannas AI API key (required)
+
+### Service Parameters
+
+```python
+AnannasLLMService(
+    api_key: Optional[str] = None,  # API key or use ANANNAS_API_KEY env var
+    model: str = "gpt-4o",           # Model to use
+    base_url: str = "https://api.anannas.ai/v1",  # API endpoint
+    **kwargs                          # Additional OpenAI-compatible parameters
+)
+```
+
+## Observability
+
+Anannas AI provides built-in observability through its dashboard:
+
+- **Cache Analytics**: Monitor cache hit rates to optimize costs
+- **Token Metrics**: Track token usage across models and requests
+- **Function Call Analytics**: Analyze tool/function call patterns
+- **Model Efficiency**: Compare performance across different models
+- **Provider Health**: Real-time monitoring of provider availability
+
+Access your dashboard at: https://anannas.ai/dashboard
+
+## Enterprise Features
+
+### BYOK (Bring Your Own Key)
+
+For enterprise deployments requiring direct API keys to providers:
+
+- Use your own OpenAI, Anthropic, or other provider API keys
+- Maintain full control over credentials
+- Transparent cost tracking
+
+Learn more: https://docs.anannas.ai/UseCases/BYOK
+
+## Pipecat Compatibility
+
+**Tested with Pipecat:** v0.0.86+
+
+This integration extends `OpenAILLMService` and is compatible with all Pipecat features:
+
+- ✅ Streaming responses
+- ✅ Function calling / tool use
+- ✅ Context management
+- ✅ Multi-modal support
+- ✅ Interruption handling
+
+## Development
+
+### Setting Up for Development
+
+```bash
+git clone https://github.com/upsurgeio/anannas-pipecat-integration.git
+cd anannas-pipecat-integration
+pip install -e ".[dev]"
+```
+
+### Running Tests
+
+```bash
+pytest tests/
+```
+
+## Links
+
+- **Anannas AI Homepage**: https://anannas.ai
+- **Documentation**: https://docs.anannas.ai
+- **Quickstart Guide**: https://docs.anannas.ai/quickstart
+- **Enterprise**: https://anannas.ai/enterprise
+- **BYOK Documentation**: https://docs.anannas.ai/UseCases/BYOK
+- **Pipecat Documentation**: https://docs.pipecat.ai
+
+## Support
+
+- **Issues**: https://github.com/upsurgeio/anannas-pipecat-integration/issues
+- **Pipecat Discord**: https://discord.gg/pipecat (#community-integrations channel)
+- **Anannas Support**: support@anannas.ai
+
+## Maintainer
+
+This integration is maintained by the Anannas AI team. We're committed to keeping this integration up-to-date with the latest Pipecat releases and providing ongoing support.
+
+## License
+
+BSD 2-Clause License - see [LICENSE](LICENSE) file for details.
+
+This license is compatible with Pipecat's BSD 2-Clause License, ensuring seamless integration.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and updates.
+
