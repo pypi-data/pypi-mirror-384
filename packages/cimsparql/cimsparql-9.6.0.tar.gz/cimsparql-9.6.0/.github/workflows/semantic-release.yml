@@ -1,0 +1,51 @@
+
+name: Semantic release
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  semantic-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Semantic Release
+        id: create_release
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          semantic_version: 24.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Github Release
+        uses: softprops/action-gh-release@v2.3.4
+        if: ${{ steps.create_release.outputs.new_release_published == 'true' }}
+        with:
+          tag_name: ${{ steps.create_release.outputs.new_release_git_tag }}
+          body: ${{ steps.create_release.outputs.new_release_notes }}
+    outputs:
+      release_created: ${{ steps.create_release.outputs.new_release_published }}
+      new_tag: ${{ steps.create_release.outputs.new_release_git_tag }}
+      release_notes: ${{ steps.create_release.outputs.new_release_notes }}
+
+
+  publish-to-pypi:
+    needs: semantic-release
+    if: needs.semantic-release.outputs.release_created == 'true'
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml

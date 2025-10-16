@@ -1,0 +1,32 @@
+# Name: Borders
+PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>
+PREFIX SN: <http://www.statnett.no/CIM-schema-cim15-extension#>
+SELECT ?mrid ?name ?market_code ?area_1 ?area_2 ?t_mrid_1 ?t_mrid_2 WHERE {
+  # Extract mRID, name and optionally market_code for aclines
+  ?acline a cim:ACLineSegment ;
+          cim:IdentifiedObject.mRID ?mrid ;
+          cim:IdentifiedObject.name ?name .
+  OPTIONAL {
+    ?acline cim:Equipment.EquipmentContainer/SN:Line.marketCode ?market_code
+  } .
+  OPTIONAL {
+    ?acline SN:Equipment.networkAnalysisEnable ?_analysis_enabled .
+  }
+  # Extract properties for the terminal connected to one end of the acline (sequenceNumber 1)
+  ?terminal1 a cim:Terminal ;
+             cim:Terminal.ConductingEquipment ?acline ;
+             cim:Terminal.sequenceNumber | cim:ACDCTerminal.sequenceNumber 1 ;
+             cim:Terminal.ConnectivityNode/cim:ConnectivityNode.ConnectivityNodeContainer/cim:VoltageLevel.Substation/cim:Substation.Region/cim:SubGeographicalRegion.Region/cim:IdentifiedObject.name ?area_1 ;
+             cim:IdentifiedObject.mRID ?t_mrid_1 .
+  # Extract properties for the terminal connected to the other end of the acline (sequenceNumber 2)
+  ?terminal2 a cim:Terminal ;
+             cim:Terminal.ConductingEquipment ?acline ;
+             cim:Terminal.sequenceNumber | cim:ACDCTerminal.sequenceNumber 2 ;
+             cim:Terminal.ConnectivityNode/cim:ConnectivityNode.ConnectivityNodeContainer/cim:VoltageLevel.Substation/cim:Substation.Region/cim:SubGeographicalRegion.Region/cim:IdentifiedObject.name ?area_2 ;
+             cim:IdentifiedObject.mRID ?t_mrid_2 .
+  FILTER (?area_1 != ?area_2)
+  FILTER (REGEX(?area_1,'${region}') || REGEX(?area_2,'${region}'))
+  FILTER (!REGEX(?name,'HVDC')) # Ignore HVDC
+  BIND (COALESCE(?_analysis_enabled, True) AS ?analysis_enabled)
+  FILTER (?analysis_enabled)
+}

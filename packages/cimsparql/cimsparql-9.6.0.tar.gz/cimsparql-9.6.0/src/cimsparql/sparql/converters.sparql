@@ -1,0 +1,67 @@
+# Name: Converters
+PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX SN: <http://www.statnett.no/CIM-schema-cim15-extension#>
+PREFIX ALG: <http://www.alstom.com/grid/CIM-schema-cim15-extension#>
+SELECT ?mrid ?name ?alias ?p ?q ?substation_mrid ?status ?connectivity_node ?controller ?controller_factor ?pole_loss ?loss0 ?loss1 ?loss2 ?vdcn ?un WHERE {
+  {
+    SELECT * WHERE {
+      ?_eq_subject <http://entsoe.eu/CIM/EquipmentCore/3/1> ?eq_repo .
+      SERVICE ?eq_repo {
+        # Extract mrid, name, substation and optionally aliasName of the converter
+        ?converter cim:IdentifiedObject.mRID ?mrid ;
+                   cim:IdentifiedObject.name ?name ;
+                   ALG:VoltageSourceConverter.DCPole | ALG:DCConverter.DCPole ?pole .
+        ?pole ALG:DCPole.DCController/cim:IdentifiedObject.mRID ?controller .
+        {
+          SELECT ?pole (MAX(xsd:float(STR(?controller_factor))) / COUNT(*) AS ?controller_factor) {
+            ?converter ALG:VoltageSourceConverter.DCPole | ALG:DCConverter.DCPole ?pole .
+            ?pole ALG:DCPole.participationFactor ?controller_factor .
+          }
+          GROUP BY ?pole
+        }
+        OPTIONAL {
+          ?converter cim:IdentifiedObject.aliasName ?alias .
+        }
+        # Extract properties for the terminals for the converter
+        ?terminal cim:Terminal.ConductingEquipment ?converter ;
+                  cim:Terminal.ConnectivityNode ?con_node ;
+                  cim:Terminal.sequenceNumber | cim:ACDCTerminal.sequenceNumber 1 .
+        ?con_node cim:IdentifiedObject.mRID ?connectivity_node ;
+                  cim:ConnectivityNode.ConnectivityNodeContainer ?con_node_container .
+        ?con_node_container cim:VoltageLevel.Substation ?substation ;
+                            cim:VoltageLevel.BaseVoltage/cim:BaseVoltage.nominalVoltage ?un .
+        ?substation cim:IdentifiedObject.mRID ?substation_mrid ;
+                    cim:Substation.Region/cim:SubGeographicalRegion.Region/cim:IdentifiedObject.name ?area .
+        OPTIONAL {
+          ?converter SN:Equipment.networkAnalysisEnable ?_analysis_enabled .
+        }
+        OPTIONAL {
+          ?converter ALG:VoltageSourceConverter.loss0 ?_loss0 ;
+                     ALG:VoltageSourceConverter.loss1 ?_loss1 ;
+                     ALG:VoltageSourceConverter.loss2 ?_loss2 .
+          ?pole cim:ConductingEquipment.BaseVoltage/cim:BaseVoltage.nominalVoltage ?_vdcn ;
+        }
+        BIND (COALESCE(?_analysis_enabled, True) AS ?analysis_enabled)
+        BIND (COALESCE(?_loss0, 0.0) AS ?loss0)
+        BIND (COALESCE(?_loss1, 0.0) AS ?loss1)
+        BIND (COALESCE(?_loss2, 0.0) AS ?loss2)
+        BIND (COALESCE(?_vdcn, 0.0) AS ?vdcn)
+        FILTER (?analysis_enabled)
+      }
+    }
+  }
+  # Extract active and reactive power for the converter
+  ?converter cim:ACDCConverter.p ?p ;
+             cim:ACDCConverter.q ?q .
+  OPTIONAL {
+    ?converter cim:ACDCConverter.poleLossP ?_pole_loss .
+  }
+  OPTIONAL {
+    ?converter ^cim:SvStatus.ConductingEquipment/cim:SvStatus.inService ?in_service .
+  }
+  # Extract connected and optionally the mrid for the topological node associated with the terminal
+  ?terminal cim:ACDCTerminal.connected ?connected .
+  BIND (COALESCE(?in_service, ?connected) AS ?status)
+  BIND (COALESCE(?_pole_loss, 0.0) AS ?pole_loss)
+}

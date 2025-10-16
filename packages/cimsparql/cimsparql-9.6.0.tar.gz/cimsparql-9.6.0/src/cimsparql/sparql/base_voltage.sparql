@@ -1,0 +1,19 @@
+# Name: Base voltage
+PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?mrid ?un ?operating_voltage {
+  {
+    SELECT ?base_voltage (AVG(xsd:double(STR(?voltage))) AS ?operating_voltage) {
+      ?top_node ^cim:SvVoltage.TopologicalNode/cim:SvVoltage.v ?voltage ;
+                cim:TopologicalNode.BaseVoltage ?base_voltage .
+      FILTER (xsd:double(STR(?voltage)) > 0.0)
+    }
+    GROUP BY ?base_voltage
+  }
+  ?_eq_subject <http://entsoe.eu/CIM/EquipmentCore/3/1> ?eq_repo .
+  SERVICE ?eq_repo {
+    # Find the nominal voltage from the base voltage associated with the topological node
+    ?base_voltage cim:BaseVoltage.nominalVoltage ?un ;
+                  cim:IdentifiedObject.mRID ?mrid
+  }
+}

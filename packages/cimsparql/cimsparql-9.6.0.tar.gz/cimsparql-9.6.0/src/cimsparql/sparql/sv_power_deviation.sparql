@@ -1,0 +1,39 @@
+# Name: Sv power deviation
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>
+SELECT ?node (SUM(xsd:double(STR(?p))) AS ?sum_terminal_flow) (MAX(xsd:double(STR(?p_inj))) AS ?reported_sv_injection) (GROUP_CONCAT(DISTINCT (?con_node_mrid); SEPARATOR=",") AS ?connectivity_nodes) (GROUP_CONCAT(?terminal_name; SEPARATOR=",") AS ?terminal_names) WHERE {
+  {
+    SELECT * {
+      ?_eq_subject <http://entsoe.eu/CIM/EquipmentCore/3/1> ?eq_repo .
+      SERVICE ?eq_repo {
+        ?terminal cim:Terminal.ConnectivityNode ?con_node ;
+                  cim:Terminal.ConductingEquipment ?equipment ;
+                  cim:IdentifiedObject.name ?terminal_name .
+        ?con_node cim:IdentifiedObject.mRID ?con_node_mrid
+      }
+    }
+  }
+  {
+    ?sv_power_flow cim:SvPowerFlow.Terminal ?terminal ;
+                   cim:SvPowerFlow.p ?p
+  }
+  UNION {
+    ?equipment cim:ACDCConverter.p ?p
+    FILTER NOT EXISTS {
+      ?sv_power_flow cim:SvPowerFlow.Terminal ?terminal
+    }
+  }
+  {
+    ?con_node cim:ConnectivityNode.TopologicalNode ?tp_node
+  }
+  UNION {
+    FILTER NOT EXISTS {
+      ?con_node cim:ConnectivityNode.TopologicalNode ?tp_node
+    }
+    ?terminal cim:Terminal.TopologicalNode ?tp_node
+  }
+  ?tp_node cim:IdentifiedObject.mRID ?node ;
+           cim:IdentifiedObject.name ?name ;
+           ^cim:SvInjection.TopologicalNode/cim:SvInjection.pInjection ?p_inj
+}
+GROUP BY ?node

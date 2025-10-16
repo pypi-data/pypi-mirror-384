@@ -1,0 +1,29 @@
+# Name: Transformers
+PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>
+PREFIX SN: <http://www.statnett.no/CIM-schema-cim15-extension#>
+SELECT ?name ?p_mrid ?w_mrid ?end_number ?un ?t_mrid ?r ?x ?rate WHERE {
+  # Extract mRID for each power transformer
+  ?p_transformer a cim:PowerTransformer ;
+                 cim:IdentifiedObject.mRID ?p_mrid ;
+                 cim:Equipment.EquipmentContainer/cim:Substation.Region/cim:SubGeographicalRegion.Region/cim:IdentifiedObject.name ?area .
+  ?winding cim:PowerTransformerEnd.PowerTransformer ?p_transformer ;
+           cim:PowerTransformerEnd.ratedU ?un ;
+           cim:PowerTransformerEnd.r ?r ;
+           cim:PowerTransformerEnd.x ?x ;
+           cim:IdentifiedObject.mRID ?w_mrid ;
+           cim:IdentifiedObject.name ?name ;
+           cim:TransformerEnd.endNumber ?end_number ;
+           cim:TransformerEnd.Terminal/cim:IdentifiedObject.mRID ?t_mrid ;
+  FILTER REGEX(?area,'${region}') .
+  OPTIONAL {
+    ?p_lim cim:OperationalLimit.OperationalLimitSet/cim:OperationalLimitSet.Equipment ?winding ;
+           a cim:ActivePowerLimit ;
+           cim:IdentifiedObject.name '${rate}' ;
+           cim:ActivePowerLimit.value ?rate
+  }
+  OPTIONAL {
+    ?p_transformer SN:Equipment.networkAnalysisEnable ?_analysis_enabled .
+  }
+  FILTER (?analysis_enabled)
+  BIND (COALESCE(?_analysis_enabled, True) AS ?analysis_enabled)
+}

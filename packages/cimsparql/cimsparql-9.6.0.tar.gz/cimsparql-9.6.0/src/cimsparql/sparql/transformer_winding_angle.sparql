@@ -1,0 +1,17 @@
+# Name: Winding transformer angle
+PREFIX cim: <http://iec.ch/TC57/2013/CIM-schema-cim16#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT ?mrid ?angle WHERE {
+  ?tap_changer cim:TapChanger.step ?ssh_position .
+  OPTIONAL {
+    ?tap_changer ^cim:SvTapStep.TapChanger/cim:SvTapStep.position ?sv_position
+  } .
+  ?_eq_subject <http://entsoe.eu/CIM/EquipmentCore/3/1> ?eq_repo .
+  SERVICE ?eq_repo {
+    ?tap_changer cim:PhaseTapChangerLinear.stepPhaseShiftIncrement ?inc ;
+                 cim:TapChanger.neutralStep ?neutralstep ;
+                 ^cim:TransformerEnd.PhaseTapChanger/cim:IdentifiedObject.mRID ?mrid .
+  }
+  BIND (COALESCE(?sv_position, ?ssh_position) AS ?position)
+  BIND ((xsd:double(STR(?position)) - xsd:double(STR(?neutralstep))) * xsd:double(STR(?inc)) AS ?angle)
+}
