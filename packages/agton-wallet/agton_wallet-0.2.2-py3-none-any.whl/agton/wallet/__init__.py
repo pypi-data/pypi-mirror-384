@@ -1,0 +1,1 @@
+from .wallet_v3r2 import WalletV3R2
