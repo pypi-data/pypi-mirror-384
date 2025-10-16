@@ -1,0 +1,156 @@
+# biforge 🔨
+
+**Scaffold Power BI projects instantly from templates.**
+
+Create ready-to-use Power BI Projects (.pbip) with intelligent renaming and path updates—all from a single command.
+
+---
+
+<br>
+
+<!-- Demo placeholder -->
+![biforge demo](https://media2.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3MmhjOHBsYjZubzQ2czNhN3V5OWFqcW03ZWVucWRtaGhhNHVmMG42MSZlcD12MV9naWZzX3JlbGF0ZWQmY3Q9Zw/UiWG8AoIf4dtVEP4Bi/200.webp) 
+*<p align="center">From template to working project in seconds.</p>*
+
+<br>
+
+## ✨ Quick Start
+
+### First-Time Setup
+
+The first time you run biforge, a setup wizard will ask for your `.pbip` template folder location.
+
+```bash
+# Try creating your first project - the wizard launches automatically
+biforge "My First Report"
+
+# 🪄 The wizard will start:
+# 🚀 Welcome! Let's configure your .pbip project template.
+# Drag your template folder here and press Enter: _
+```
+
+### Create Projects
+
+Once configured, just pass the project name:
+
+```bash
+# The main way (recommended):
+biforge "Q4 Sales Dashboard"
+
+# ✓ Success! Project created at '202410 - Q4 Sales Dashboard'
+```
+
+**Alternative:** You can also use the explicit `create` command or the `yeet` alias (same result):
+
+```bash
+# These all do the same thing:
+biforge create "Annual Report"
+yeet "Annual Report"  # if you're feeling fancy
+```
+
+<br>
+
+<details>
+  <summary><strong>🤔 Installation Options</strong></summary>
+  
+  **Recommended: Using `uvx` (no installation needed)**
+  
+  ```bash
+  uvx biforge "My Project"
+  ```
+  
+  `uvx` is part of `uv`, a modern Python tool that runs scripts in isolated environments.
+
+  **Alternative: Manual setup**
+
+  If you prefer to install dependencies yourself:
+  
+  ```bash
+  # 1. Install dependencies
+  pip install "typer[all]" rich
+  
+  # 2. Run with python
+  python biforge.py "My Project"
+  ```
+
+  **Pro setup: Install as command**
+
+  To use `biforge` and `yeet` as global commands:
+  
+  ```bash
+  # Clone the repo
+  git clone https://github.com/yourusername/biforge.git
+  cd biforge
+  
+  # Install with pip
+  pip install -e .
+  
+  # Now use anywhere:
+  biforge "My Project"
+  yeet "Quick Report"  # alias works too!
+  ```
+</details>
+
+<br>
+
+## 🔧 How It Works
+
+biforge doesn't just copy files—it performs intelligent scaffolding:
+
+- **🔍 Discovery**: Analyzes your `.pbip` template and automatically detects the base project structure
+- **✏️ Rename**: Updates folder names, `.pbip` file, and `.Report`/`.SemanticModel` directories to match your new project
+- **🔄 Update**: Edits internal JSON configs (`.pbip`, `.pbir`, `.platform`) so all paths and display names work correctly in Fabric
+
+**Result:** Zero manual fixes. Your project just works.
+
+<br>
+
+## 🎨 Creating Your Template
+
+The power of biforge is that it works with **your own template**. Here's how:
+
+1.  **Design Your Base Report**: Open Power BI Desktop and create your ideal starting point—add logos, themes, common pages, standard visuals.
+
+2.  **Save as Project**: Go to `File > Save As`. In the file type dropdown, choose **`Power BI Project (*.pbip)`** instead of `.pbix`.
+
+3.  **That's Your Template**: Power BI creates a folder with the project structure. Point the biforge setup wizard to this folder.
+
+> **Living Template**: Update your base report anytime. Just save it as `.pbip` again in the same location. All future projects will inherit the changes automatically.
+
+<br>
+
+## 🧰 Commands
+
+| Command                    | Action                                                      |
+| -------------------------- | ----------------------------------------------------------- |
+| `"<Name>"` (no command)    | **Main action.** Creates a new project. Fast and direct.    |
+| `create "<Name>"`          | Explicit alias for the main action.                         |
+| `setup`                    | Rerun wizard to change template location.                   |
+| `--help`                   | Show all commands and options.                              |
+
+<br>
+
+## 💡 Why biforge?
+
+- **Zero Config Needed**: Works with any `.pbip` template structure
+- **Intelligent Updates**: Automatically fixes all internal paths and references
+- **Date Prefixing**: Auto-adds `YYYYMM -` prefix to keep projects organized
+- **Error Prevention**: Validates names and prevents overwrites
+
+<br>
+
+## 🚀 Aliases
+
+For those who want to yeet their projects into existence:
+
+```bash
+yeet "Instant Dashboard"  # same as biforge, just cooler
+```
+
+Both commands do exactly the same thing. Use whichever fits your vibe.
+
+---
+
+**Built for analysts and developers who value their time.**
+
+*Forge your Power BI projects. Don't fight with folder structures.*
