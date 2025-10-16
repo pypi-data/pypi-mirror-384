@@ -1,0 +1,89 @@
+# ArcGIS MCP Server
+
+[![PyPI Version](https://img.shields.io/pypi/v/arcgis-mcp-server)](https://pypi.org/project/arcgis-mcp-server/)
+[![PyPI - License](https://img.shields.io/pypi/l/arcgis-mcp-server)](https://opensource.org/licenses/MIT)
+
+An AI agent tool for searching ArcGIS content (layers, maps, etc.) with natural language in VS Code using GitHub Copilot.
+
+---
+
+## 🚀 Quickstart Guide
+
+This guide provides the essential steps to get the server running reliably.
+
+### **Step 1: Installation**
+
+First, create a clean Python environment and install the package.
+
+1.  **Create & Activate Conda Environment**:
+
+    ```bash
+    conda create -n arcgis-tool-env python=3.11 -y
+    conda activate arcgis-tool-env
+    ```
+
+2.  **Install from PyPI**:
+    ```bash
+    pip install arcgis-mcp-server==1.1.3
+    ```
+
+---
+
+### **Step 2: VS Code Configuration (Required)**
+
+A one-time manual configuration is required to guarantee VS Code can find and run the tool. This example is for developers who want to bypass the login prompt for faster testing by including credentials directly.
+
+1.  **Create a Config File**: In your project folder, create a file at this exact path: `.vscode/mcp.json`.
+
+2.  **Paste the following JSON** into the `mcp.json` file:
+
+    ```json
+    {
+      "servers": {
+        "arcgis-mcp-server": {
+          "type": "stdio",
+          "command": "C:\\Users\\YOUR_USERNAME\\miniconda3\\envs\\arcgis-tool-env\\python.exe",
+          "args": ["-m", "arcgis_mcp"],
+          "env": {
+            "ARCGIS_URL": "[https://your-portal.maps.arcgis.com](https://your-portal.maps.arcgis.com)",
+            "ARCGIS_USERNAME": "your_username",
+            "ARCGIS_PASSWORD": "your_password"
+          }
+        }
+      }
+    }
+    ```
+
+3.  **Update the Paths and Credentials**:
+
+    - **IMPORTANT**: You must replace `C:\\Users\\YOUR_USERNAME\\...` with the actual path to the `python.exe` in your `arcgis-tool-env`. Find it by running `where python` in your activated terminal.
+    - **Replace the placeholder credentials** in the `"env"` block with your actual ArcGIS URL, username, and password.
+
+4.  **Set Interpreter & Reload VS Code**:
+    - In VS Code, open the Command Palette (`Ctrl+Shift+P`).
+    - Run **`Python: Select Interpreter`** and choose the `arcgis-tool-env` environment.
+    - Run **`Developer: Reload Window`** from the Command Palette to apply all changes.
+
+<details>
+<summary><b>Want the login prompt instead?</b></summary>
+
+For the standard user experience, simply remove the entire `"env": { ... }` block from your `mcp.json` file. This will cause the secure authentication pop-up to appear when you first use the tool.
+
+</details>
+
+---
+
+### **Step 3: Usage**
+
+Now you can interact with the tool.
+
+1.  **Open Copilot Chat** in the VS Code sidebar.
+2.  **Ask a Question**: Tell Copilot to use your tool to find data.
+    ```
+    Using your ArcGIS tool, find feature layers about roads
+    ```
+3.  The tool will connect automatically using the credentials you provided and show the results.
+
+---
+
+mcp-name: io.github.esrisaudiarabia/arcgis-mcp-server
