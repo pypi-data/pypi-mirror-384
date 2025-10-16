@@ -1,0 +1,401 @@
+# Copyright (c) 2023, Auterion AG
+# SPDX-License-Identifier: BSD-3-Clause
+
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/sched/sched_addreadytorun.c b/platforms/nuttx/NuttX/nuttx/sched/sched/sched_addreadytorun.c
+index 1b2abd47a3..7551b92366 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/sched/sched_addreadytorun.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/sched/sched_addreadytorun.c
+@@ -27,6 +27,7 @@
+ #include <stdbool.h>
+ #include <queue.h>
+ #include <assert.h>
++#include <nuttx/itm/itm.h>
+
+ #include "irq/irq.h"
+ #include "sched/sched.h"
+@@ -108,6 +109,7 @@ bool nxsched_add_readytorun(FAR struct tcb_s *btcb)
+       ret = false;
+     }
+
++  if (!ret) EMDBG_LOG_TASK_RUNNABLE(btcb);
+   return ret;
+ }
+ #endif /* !CONFIG_SMP */
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/task/task_prctl.c b/platforms/nuttx/NuttX/nuttx/sched/task/task_prctl.c
+index 017ee5b55b..bcd193ecc0 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/task/task_prctl.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/task/task_prctl.c
+@@ -31,6 +31,7 @@
+ #include <debug.h>
+
+ #include <nuttx/sched.h>
++#include <nuttx/itm/itm.h>
+
+ #include "sched/sched.h"
+ #include "task/task.h"
+@@ -128,6 +129,7 @@ int prctl(int option, ...)
+
+               strncpy(tcb->name, name, CONFIG_TASK_NAME_SIZE);
+               tcb->name[CONFIG_TASK_NAME_SIZE] = '\0';
++              EMDBG_LOG_TASK_START(tcb);
+             }
+           else
+             {
+diff --git a/platforms/nuttx/src/px4/common/cpuload.cpp b/platforms/nuttx/src/px4/common/cpuload.cpp
+index 62c5c6205d..2c22732b32 100644
+--- a/platforms/nuttx/src/px4/common/cpuload.cpp
++++ b/platforms/nuttx/src/px4/common/cpuload.cpp
+@@ -48,6 +48,7 @@
+ #if defined(__PX4_NUTTX) && defined(CONFIG_SCHED_INSTRUMENTATION)
+ __BEGIN_DECLS
+ # include <nuttx/sched_note.h>
++# include <nuttx/itm/itm.h>
+ 
+ __EXPORT struct system_load_s system_load;
+ 
+@@ -110,6 +111,7 @@ void cpuload_initialize_once()
+ 
+ void sched_note_start(FAR struct tcb_s *tcb)
+ {
++  EMDBG_LOG_TASK_START(tcb);
+   // find first free slot
+   if (system_load.initialized) {
+      for (auto &task : system_load.tasks) {
+@@ -128,6 +130,7 @@ void sched_note_start(FAR struct tcb_s *tcb)
+ 
+ void sched_note_stop(FAR struct tcb_s *tcb)
+ {
++  EMDBG_LOG_TASK_STOP(tcb);
+   if (system_load.initialized) {
+      for (auto &task : system_load.tasks) {
+         if (task.tcb && task.tcb->pid == tcb->pid) {
+@@ -143,8 +146,10 @@ void sched_note_stop(FAR struct tcb_s *tcb)
+   }
+ }
+ 
++static uint8_t emdbg_prev_state = 0;
+ void sched_note_suspend(FAR struct tcb_s *tcb)
+ {
++  emdbg_prev_state = tcb->task_state;
+   if (system_load.initialized) {
+      if (tcb->pid == 0) {
+         system_load.tasks[0].total_runtime += hrt_elapsed_time(&system_load.tasks[0].curr_start_time);
+@@ -170,6 +175,7 @@ void sched_note_suspend(FAR struct tcb_s *tcb)
+ 
+ void sched_note_resume(FAR struct tcb_s *tcb)
+ {
++  EMDBG_LOG_TASK_RESUME(tcb, emdbg_prev_state);
+   if (system_load.initialized) {
+      if (tcb->pid == 0) {
+         hrt_store_absolute_time(&system_load.tasks[0].curr_start_time);
+diff --git a/platforms/common/px4_work_queue/WorkQueue.cpp b/platforms/common/px4_work_queue/WorkQueue.cpp
+index fa32017912..1b2aa522b1 100644
+--- a/platforms/common/px4_work_queue/WorkQueue.cpp
++++ b/platforms/common/px4_work_queue/WorkQueue.cpp
+@@ -39,6 +39,7 @@
+ #include <px4_platform_common/tasks.h>
+ #include <px4_platform_common/time.h>
+ #include <drivers/drv_hrt.h>
++#include <nuttx/itm/itm.h>
+
+ namespace px4
+ {
+@@ -183,8 +184,10 @@ void WorkQueue::Run()
+                        WorkItem *work = _q.pop();
+
+                        work_unlock(); // unlock work queue to run (item may requeue itself)
++                       EMDBG_LOG_WORKQUEUE_START(work);
+                        work->RunPreamble();
+                        work->Run();
++                       EMDBG_LOG_WORKQUEUE_STOP(work);
+                        // Note: after Run() we cannot access work anymore, as it might have been deleted
+                        work_lock(); // re-lock
+                }
+diff --git a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_free.c b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_free.c
+index 5513ba1772..8cf297e747 100644
+--- a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_free.c
++++ b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_free.c
+@@ -29,6 +29,7 @@
+ 
+ #include <nuttx/arch.h>
+ #include <nuttx/mm/mm.h>
++#include <nuttx/itm/itm.h>
+ 
+ #include "mm_heap/mm.h"
+ #include "kasan/kasan.h"
+@@ -94,6 +95,7 @@ void mm_free(FAR struct mm_heap_s *heap, FAR void *mem)
+       mm_add_delaylist(heap, mem);
+       return;
+     }
++  EMDBG_LOG_HEAP_FREE(mem);
+ 
+   kasan_poison(mem, mm_malloc_size(mem));
+ 
+diff --git a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_initialize.c b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_initialize.c
+index 3b5ac7ed8a..f65319bafb 100644
+--- a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_initialize.c
++++ b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_initialize.c
+@@ -29,6 +29,7 @@
+ #include <debug.h>
+ 
+ #include <nuttx/mm/mm.h>
++#include <nuttx/itm/itm.h>
+ 
+ #include "mm_heap/mm.h"
+ #include "kasan/kasan.h"
+@@ -152,6 +153,7 @@ void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
+   mm_addfreechunk(heap, node);
+ 
+   mm_givesemaphore(heap);
++  EMDBG_LOG_HEAP_ADDREGION(heapbase, heapend - heapbase);
+ }
+ 
+ /****************************************************************************
+diff --git a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_malloc.c b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_malloc.c
+index a38633bbfe..d7594d860c 100644
+--- a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_malloc.c
++++ b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_malloc.c
+@@ -117,6 +118,7 @@ FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
+ 
+   if (size < 1)
+     {
++      EMDBG_LOG_HEAP_MALLOC_RESULT(0);
+       return NULL;
+     }
+ 
+@@ -125,10 +127,12 @@ FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
+    */
+ 
+   alignsize = MM_ALIGN_UP(size + SIZEOF_MM_ALLOCNODE);
++  EMDBG_LOG_HEAP_MALLOC(size);
+   if (alignsize < size)
+     {
+       /* There must have been an integer overflow */
+ 
++      EMDBG_LOG_HEAP_MALLOC_RESULT(0);
+       return NULL;
+     }
+ 
+@@ -234,6 +238,7 @@ FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
+ 
+   DEBUGASSERT(ret == NULL || mm_heapmember(heap, ret));
+   mm_givesemaphore(heap);
++  EMDBG_LOG_HEAP_MALLOC_RESULT(ret);
+ 
+   if (ret)
+     {
+diff --git a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_memalign.c b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_memalign.c
+index 47c27d61ba..ad4cad92f0 100644
+--- a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_memalign.c
++++ b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_memalign.c
+@@ -27,6 +27,7 @@
+ #include <assert.h>
+ 
+ #include <nuttx/mm/mm.h>
++#include <nuttx/itm/itm.h>
+ 
+ #include "mm_heap/mm.h"
+ #include "kasan/kasan.h"
+@@ -228,5 +229,6 @@ FAR void *mm_memalign(FAR struct mm_heap_s *heap, size_t alignment,
+   kasan_unpoison((FAR void *)alignedchunk,
+                  mm_malloc_size((FAR void *)alignedchunk));
+ 
++  EMDBG_LOG_HEAP_MEMALIGN(rawchunk, size, alignedchunk);
+   return (FAR void *)alignedchunk;
+ }
+diff --git a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_realloc.c b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_realloc.c
+index 6331465d34..c225edd2ec 100644
+--- a/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_realloc.c
++++ b/platforms/nuttx/NuttX/nuttx/mm/mm_heap/mm_realloc.c
+@@ -30,6 +30,7 @@
+ #include <assert.h>
+ 
+ #include <nuttx/mm/mm.h>
++#include <nuttx/itm/itm.h>
+ 
+ #include "mm_heap/mm.h"
+ #include "kasan/kasan.h"
+diff --git a/platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32_dma.c b/platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32_dma.c
+index f097e905da..a059f5456d 100644
+--- a/platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32_dma.c
++++ b/platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32_dma.c
+@@ -34,6 +34,7 @@
+ #include <nuttx/irq.h>
+ #include <nuttx/arch.h>
+ #include <arch/stm32h7/chip.h>
++#include <nuttx/itm/itm.h>
+ 
+ #include "arm_internal.h"
+ #include "sched/sched.h"
+@@ -137,6 +138,7 @@ struct stm32_dmach_s
+   uint32_t       base;      /* DMA register channel base address */
+   dma_callback_t callback;  /* Callback invoked when the DMA completes */
+   void          *arg;       /* Argument passed to callback function */
++  stm32_dmacfg_t cfg;
+ };
+ 
+ typedef struct stm32_dmach_s *DMA_CHANNEL;
+@@ -1110,6 +1112,7 @@ static void stm32_sdma_disable(DMA_CHANNEL dmachan)
+     }
+ 
+   dmabase_putreg(dmachan, regoffset, (DMA_STREAM_MASK << dmachan->shift));
++  EMDBG_LOG_DMA_STOP(dmachan);
+ }
+ 
+ /****************************************************************************
+@@ -1196,6 +1199,7 @@ static int stm32_sdma_interrupt(int irq, void *context, void *arg)
+     }
+ 
+   dmabase_putreg(dmachan, regoffset, (status << dmachan->shift));
++  EMDBG_LOG_DMA_STOP(dmachan);
+ 
+   /* Invoke the callback */
+ 
+@@ -1229,6 +1233,7 @@ static void stm32_sdma_setup(DMA_HANDLE handle, stm32_dmacfg_t *cfg)
+   dmainfo("paddr: %08" PRIx32 " maddr: %08" PRIx32 " ndata: %" PRIu32 " "
+           "scr: %08" PRIx32 "\n",
+           cfg->paddr, cfg->maddr, cfg->ndata, cfg->cfg1);
++  EMDBG_LOG_DMA_CONFIGURE(dmachan, cfg);
+ 
+ #ifdef CONFIG_STM32H7_DMACAPABLE
+   DEBUGASSERT(stm32_sdma_capable(cfg));
+@@ -1406,6 +1411,7 @@ static void stm32_sdma_start(DMA_HANDLE handle, dma_callback_t callback,
+ 
+   DEBUGASSERT(handle != NULL);
+   DEBUGASSERT(dmachan->ctrl == DMA1 || dmachan->ctrl == DMA2);
++  EMDBG_LOG_DMA_START(dmachan);
+ 
+   /* Save the callback info.  This will be invoked when the DMA completes */
+ 
+@@ -1758,6 +1764,7 @@ static void stm32_bdma_disable(DMA_CHANNEL dmachan)
+ 
+   dmabase_putreg(dmachan, STM32_BDMA_IFCR_OFFSET,
+                    (BDMA_CHAN_MASK << dmachan->shift));
++  EMDBG_LOG_DMA_STOP(dmachan);
+ }
+ 
+ /****************************************************************************
+@@ -1787,6 +1794,7 @@ static int stm32_bdma_interrupt(int irq, void *context, void *arg)
+ 
+   dmabase_putreg(dmachan, STM32_BDMA_IFCR_OFFSET,
+                  (status << dmachan->shift));
++  EMDBG_LOG_DMA_STOP(dmachan);
+ 
+   /* Invoke the callback */
+ 
+@@ -1854,6 +1862,7 @@ static void stm32_bdma_setup(DMA_HANDLE handle, stm32_dmacfg_t *cfg)
+   dmainfo("paddr: %08" PRIx32 " maddr: %08" PRIx32 " ndata: %" PRIu32 " "
+           "scr: %08" PRIx32 "\n",
+           cfg->paddr, cfg->maddr, cfg->ndata, cfg->cfg1);
++  EMDBG_LOG_DMA_CONFIGURE(dmachan, cfg);
+ 
+ #ifdef CONFIG_STM32H7_DMACAPABLE
+   DEBUGASSERT(stm32_bdma_capable(cfg));
+@@ -1975,6 +1984,7 @@ static void stm32_bdma_start(DMA_HANDLE handle, dma_callback_t callback,
+ 
+   DEBUGASSERT(handle != NULL);
+   DEBUGASSERT(dmachan->ctrl == BDMA);
++  EMDBG_LOG_DMA_START(dmachan);
+ 
+   /* Save the callback info.  This will be invoked when the DMA completes */
+ 
+diff --git a/platforms/nuttx/NuttX/nuttx/libs/libc/semaphore/sem_init.c b/platforms/nuttx/NuttX/nuttx/libs/libc/semaphore/sem_init.c
+index 785403599d..fa3d4e4745 100644
+--- a/platforms/nuttx/NuttX/nuttx/libs/libc/semaphore/sem_init.c
++++ b/platforms/nuttx/NuttX/nuttx/libs/libc/semaphore/sem_init.c
+@@ -29,6 +29,7 @@
+ #include <errno.h>
+ 
+ #include <nuttx/semaphore.h>
++#include <nuttx/itm/itm.h>
+ 
+ /****************************************************************************
+  * Public Functions
+@@ -72,6 +73,7 @@ int nxsem_init(FAR sem_t *sem, int pshared, unsigned int value)
+       /* Initialize the semaphore count */
+ 
+       sem->semcount         = (int16_t)value;
++      EMDBG_LOG_SEMAPHORE_INIT(sem);
+ 
+       /* Initialize to support priority inheritance */
+ 
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_post.c b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_post.c
+index a16150d00d..4a4d953d5f 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_post.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_post.c
+@@ -111,6 +111,7 @@ int nxsem_post(FAR sem_t *sem)
+ 
+       nxsem_release_holder(sem);
+       sem->semcount++;
++      EMDBG_LOG_SEMAPHORE_INCR(sem);
+ 
+ #ifdef CONFIG_PRIORITY_INHERITANCE
+       /* Don't let any unblocked tasks run until we complete any priority
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_recover.c b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_recover.c
+index 40f297bd65..b9a92419dd 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_recover.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_recover.c
+@@ -98,6 +98,7 @@ void nxsem_recover(FAR struct tcb_s *tcb)
+        */
+ 
+       sem->semcount++;
++      EMDBG_LOG_SEMAPHORE_INCR(sem);
+ 
+       /* Clear the semaphore to assure that it is not reused.  But leave the
+        * state as TSTATE_WAIT_SEM.  This is necessary because this is a
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_trywait.c b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_trywait.c
+index dc1dbe83ae..2ab0004245 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_trywait.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_trywait.c
+@@ -91,6 +91,7 @@ int nxsem_trywait(FAR sem_t *sem)
+           /* It is, let the task take the semaphore */
+ 
+           sem->semcount--;
++          EMDBG_LOG_SEMAPHORE_DECR(sem);
+           nxsem_add_holder(sem);
+           rtcb->waitsem = NULL;
+           ret = OK;
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_wait.c b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_wait.c
+index 29580d72cc..c9f15058fe 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_wait.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_wait.c
+@@ -97,6 +98,7 @@ int nxsem_wait(FAR sem_t *sem)
+           /* It is, let the task take the semaphore. */
+ 
+           sem->semcount--;
++          EMDBG_LOG_SEMAPHORE_DECR(sem);
+           nxsem_add_holder(sem);
+           rtcb->waitsem = NULL;
+           ret = OK;
+@@ -117,6 +119,7 @@ int nxsem_wait(FAR sem_t *sem)
+           /* Handle the POSIX semaphore (but don't set the owner yet) */
+ 
+           sem->semcount--;
++          EMDBG_LOG_SEMAPHORE_DECR(sem);
+ 
+           /* Save the waited on semaphore in the TCB */
+ 
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_waitirq.c b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_waitirq.c
+index 08170b55cc..df9a424478 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_waitirq.c
++++ b/platforms/nuttx/NuttX/nuttx/sched/semaphore/sem_waitirq.c
+@@ -96,6 +96,7 @@ void nxsem_wait_irq(FAR struct tcb_s *wtcb, int errcode)
+        */
+ 
+       sem->semcount++;
++      EMDBG_LOG_SEMAPHORE_INCR(sem);
+ 
+       /* Indicate that the semaphore wait is over. */
+ 
+diff --git a/platforms/nuttx/NuttX/nuttx/sched/semaphore/semaphore.h b/platforms/nuttx/NuttX/nuttx/sched/semaphore/semaphore.h
+index 71578176ab..208a2347b9 100644
+--- a/platforms/nuttx/NuttX/nuttx/sched/semaphore/semaphore.h
++++ b/platforms/nuttx/NuttX/nuttx/sched/semaphore/semaphore.h
+@@ -29,6 +29,7 @@
+ #include <nuttx/compiler.h>
+ #include <nuttx/semaphore.h>
+ #include <nuttx/sched.h>
++#include <nuttx/itm/itm.h>
+ 
+ #include <stdint.h>
+ #include <stdbool.h>
