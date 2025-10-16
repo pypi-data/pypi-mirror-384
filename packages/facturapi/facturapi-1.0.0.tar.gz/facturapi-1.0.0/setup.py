@@ -1,0 +1,35 @@
+from importlib.machinery import SourceFileLoader
+
+from setuptools import find_packages, setup
+
+version = SourceFileLoader('version', 'facturapi/version.py').load_module()
+
+
+with open('README.md', 'r') as f:
+    long_description = f.read()
+
+
+setup(
+    name='facturapi',
+    version=version.__version__,
+    author='Cuenca',
+    author_email='dev@cuenca.com',
+    description='Facturapi API Client',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    url='https://github.com/cuenca-mx/facturapi-python',
+    packages=find_packages(),
+    include_package_data=True,
+    package_data=dict(facturapi=['py.typed']),
+    python_requires='>=3.10',
+    install_requires=['httpx>=0.28.0,<1.0.0', 'pydantic>=2.10.0,<3.0.0'],
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent',
+    ],
+)
