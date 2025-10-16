@@ -1,0 +1,153 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import expr
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+df = spark.read.csv("/content/all countries global temperature.csv", header=True, inferSchema=True)
+year_cols = [str(y) for y in range(1970, 2022)]
+stack_expr = "stack({}, {}) as (Year, Temperature)".format(
+    len(year_cols),
+    ", ".join(["'{}', `{}`".format(y, y) for y in year_cols])
+)
+df_long = df.select("Country Name", expr(stack_expr))
+df_long = df_long.filter(df_long.Temperature.isNotNull())
+from pyspark.sql.functions import max, min
+max_row = df_long.orderBy(df_long.Temperature.desc()).first()
+min_row = df_long.orderBy(df_long.Temperature.asc()).first()
+print("Max Temp:", max_row)
+print("Min Temp:", min_row)
+import pandas as pd
+df = pd.read.csv("/content/all countries global temperature.csv")
+df.to_csv("temperature.txt", index=False, header=False)
+from pyspark.sql import SparkSession
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+sc = spark.sparkContext
+rdd = sc.textFile("/content/temperature.txt")
+header = rdd.first()
+data = rdd.filter(lambda row: row != header)
+data_split = data.map(lambda x: x.split(","))
+def safe_float(val):
+    try:
+        return float(val)
+    except:
+        return None
+country_temp_1970 = data_split.map(lambda x: (x[1], safe_float(x[4])))
+country_temp_1970 = country_temp_1970.filter(lambda x: x[1] is not None)
+max_temp = country_temp_1970.max(key=lambda x: x[1])
+min_temp = country_temp_1970.min(key=lambda x: x[1])
+print("Max:", max_temp)
+print("Min:", min_temp)
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import expr, max, min
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+csv_path = "/content/all countries global temperature.csv"
+df = spark.read.csv(csv_path, header=True, inferSchema=True)
+json_path = "/content/temperature_json"
+df.write.mode("overwrite").json(json_path)
+print("✅ CSV converted to JSON format at", json_path)
+df_json = spark.read.json(json_path)
+year_cols = [str(y) for y in range(1970, 2022)]
+stack_expr = "stack({}, {}) as (Year, Temperature)".format(
+    len(year_cols),
+    ", ".join(["'{}', `{}`".format(y, y) for y in year_cols])
+)
+df_long = df_json.select("Country Name", expr(stack_expr))
+df_long = df_long.filter(df_long.Temperature.isNotNull())
+max_row = df_long.orderBy(df_long.Temperature.desc()).first()
+min_row = df_long.orderBy(df_long.Temperature.asc()).first()
+print("\n🌡️ Maximum Temperature:")
+print(f"Country: {max_row['Country Name']}, Year: {max_row['Year']}, Temp: {max_row['Temperature']}")
+print("\n❄️ Minimum Temperature:")
+print(f"Country: {min_row['Country Name']}, Year: {min_row['Year']}, Temp: {min_row['Temperature']}")
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import expr
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+csv_path = "/content/all countries global temperature.csv"
+df = spark.read.csv(csv_path, header=True, inferSchema=True)
+tsv_path = "/content/temperature_tsv"
+df.write.option("sep", "\t").option("header", True).mode("overwrite").csv(tsv_path)
+print("✅ CSV converted to TSV format at", tsv_path)
+df_tsv = spark.read.option("sep", "\t").option("header", True).csv(tsv_path, inferSchema=True)
+year_cols = [str(y) for y in range(1970, 2022)]
+stack_expr = "stack({}, {}) as (Year, Temperature)".format(
+    len(year_cols),
+    ", ".join(["'{}', `{}`".format(y, y) for y in year_cols])
+)
+df_long = df_tsv.select("Country Name", expr(stack_expr))
+df_long = df_long.filter(df_long.Temperature.isNotNull())
+max_row = df_long.orderBy(df_long.Temperature.desc()).first()
+min_row = df_long.orderBy(df_long.Temperature.asc()).first()
+print("\n🌡️ Maximum Temperature:")
+print(f"Country: {max_row['Country Name']}, Year: {max_row['Year']}, Temp: {max_row['Temperature']}")
+print("\n❄️ Minimum Temperature:")
+print(f"Country: {min_row['Country Name']}, Year: {min_row['Year']}, Temp: {min_row['Temperature']}")
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import expr
+import pandas as pd
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+csv_path = "/content/all countries global temperature.csv"
+df = spark.read.csv(csv_path, header=True, inferSchema=True)
+xlsx_path = "/content/temperature.xlsx"
+df.toPandas().to_excel(xlsx_path, index=False)
+print("✅ CSV converted to XLSX at", xlsx_path)
+pdf = pd.read_excel(xlsx_path)
+df_xlsx = spark.createDataFrame(pdf)
+year_cols = [str(y) for y in range(1970, 2022)]
+stack_expr = "stack({}, {}) as (Year, Temperature)".format(
+    len(year_cols),
+    ", ".join(["'{}', `{}`".format(y, y) for y in year_cols])
+)
+df_long = df_xlsx.select("Country Name", expr(stack_expr))
+df_long = df_long.filter(df_long.Temperature.isNotNull())
+max_row = df_long.orderBy(df_long.Temperature.desc()).first()
+min_row = df_long.orderBy(df_long.Temperature.asc()).first()
+print("\n🌡️ Maximum Temperature:")
+print(f"Country: {max_row['Country Name']}, Year: {max_row['Year']}, Temp: {max_row['Temperature']}")
+print("\n❄️ Minimum Temperature:")
+print(f"Country: {min_row['Country Name']}, Year: {min_row['Year']}, Temp: {min_row['Temperature']}")
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import max, min
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+df = spark.read.csv("/content/all countries global temperature.csv", header=True, inferSchema=True)
+df.write.mode("overwrite").parquet("/content/temperature.parquet")
+parquet_df = spark.read.parquet("/content/temperature.parquet")
+max_temp = parquet_df.agg(max("1970")).collect()[0][0]
+min_temp = parquet_df.agg(min("1970")).collect()[0][0]
+print("Max Temperature in 1970:", max_temp)
+print("Min Temperature in 1970:", min_temp)
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import expr
+import pandas as pd
+spark = SparkSession.getActiveSession()
+if spark is None:
+    spark = SparkSession.builder.appName("Temperature_Global").getOrCreate()
+csv_path = "/content/all countries global temperature.csv"
+df = spark.read.csv(csv_path, header=True, inferSchema=True)
+html_path = "/content/temperature.html"
+pdf = df.toPandas().round(2).fillna("")
+pdf.to_html(html_path, index=False, border=0)
+print(f"✅ CSV converted to HTML: {html_path}")
+df_spark = spark.createDataFrame(pdf)
+year_cols = [str(y) for y in range(1970, 2022)]
+stack_expr = "stack({}, {}) as (Year, Temperature)".format(
+    len(year_cols),
+    ", ".join(["'{}', `{}`".format(y, y) for y in year_cols])
+)
+df_long = df_spark.select("Country Name", expr(stack_expr))
+df_long = df_long.filter(df_long.Temperature.isNotNull())
+max_row = df_long.orderBy(df_long.Temperature.desc()).first()
+min_row = df_long.orderBy(df_long.Temperature.asc()).first()
+print("\n🌡️ Maximum Temperature:")
+print(f"Country: {max_row['Country Name']}, Year: {max_row['Year']}, Temp: {max_row['Temperature']}")
+print("\n❄️ Minimum Temperature:")
+print(f"Country: {min_row['Country Name']}, Year: {min_row['Year']}, Temp: {min_row['Temperature']}")

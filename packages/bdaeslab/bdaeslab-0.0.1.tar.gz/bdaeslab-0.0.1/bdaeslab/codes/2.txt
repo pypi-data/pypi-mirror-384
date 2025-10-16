@@ -1,0 +1,115 @@
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("Data Processing Pipeline").getOrCreate()
+df = spark.read.csv("/content/crop_data.csv", header=True, inferSchema=False)
+print(df.show())
+type(df)
+df.select(df['State'],df['Crop']).show(n=3)
+print("The datatype of columns is:")
+print(df.dtypes)
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+spark = SparkSession.builder.appName("NestedStructExample").getOrCreate()
+schema = StructType([
+    StructField("id", IntegerType(), True),
+    StructField("name", StringType(), True),
+    StructField("address", StructType([
+        StructField("street", StringType(), True),
+        StructField("city", StringType(), True),
+        StructField("zip", StringType(), True)
+    ]), True)
+])
+data = [
+    (101, "Charlie", ("789 Oak Ave", "Metropolis", "54321")),
+    (102, "Diana", ("321 Pine Rd", "Gotham", "98765")),
+    (103, "Bruce", ("100 Wayne Manor", "Gotham", "10001")),
+    (104, "Clark", ("101 Kent Farm", "Smallville", "20002"))
+]
+df = spark.createDataFrame(data, schema)
+df.show(truncate=False)
+df.show()
+print(df.dtypes)
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, IntegerType, StringType
+spark = SparkSession.builder.appName("NullableVsNonNullable").getOrCreate()
+schema_nullable = StructType([
+    StructField("id", IntegerType(), True),
+    StructField("name", StringType(), True)
+])
+schema_non_nullable = StructType([
+    StructField("id", IntegerType(), False),
+    StructField("name", StringType(), True)
+])
+data_nullable = [
+    (1, "kani"),
+    (2, None),
+    (3, "mani")
+]
+data_non_nullable = [
+    (1, "kani"),
+    (2, "mani"),
+    (3, "funny")
+]
+df_nullable = spark.createDataFrame(data_nullable, schema_nullable)
+df_non_nullable = spark.createDataFrame(data_non_nullable, schema_non_nullable)
+print("DataFrame with Nullable Fields:")
+df_nullable.show()
+print("DataFrame with Non-Nullable ID Field:")
+df_non_nullable.show()
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("PipeSeparatedCSV").getOrCreate()
+df = spark.read.csv("/content/crop_data.csv", sep='|', header=True, inferSchema=True)
+print("Preview of the DataFrame:")
+df.show(truncate=False)
+print("Schema:")
+df.printSchema()
+df.write.format("csv").mode('overwrite').save("/content/res")
+df=spark.read.text("/content/crop_data.csv")
+type(df)
+df.show(truncate=True)
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("example").getOrCreate()
+json_path = "/content/iris_renamed.json"
+df = spark.read.option("multiline", "true").json(json_path)
+df.printSchema()
+df.count()
+df.select(df["petalLength"], df["petalLength"]).show(n=5)
+df.filter(df["petalLength"]==1.4).show()
+df.orderBy(df["sepalLength"].asc(), df["sepalLength"].desc()).show(n=5, truncate=False)
+df.dtypes
+df.groupBy("petalLength").sum("sepalWidth").show(2)
+df.groupBy("petalLength").count().show(2)
+df_clean = df.dropna(subset=["petalLength", "sepalWidth", "petalWidth"])
+df_clean.show(5)
+df.select("petalLength").distinct().show(5)
+from pyspark.sql.functions import col
+df.filter(col("petalLength").startswith("5.5")).show()
+from pyspark.sql.functions import when, col, avg
+df = df.withColumn(
+    "species",
+    when(col("target") == 0, "Setosa")
+    .when(col("target") == 1, "Versicolor")
+    .otherwise("Virginica")
+)
+print("Iris Data with Species Mapping:")
+df.select("sepalLength", "sepalWidth", "petalLength", "petalWidth", "target", "species").show(5)
+df = df.withColumn(
+    "PetalSepalRatio",
+    (col("petalLength") + col("petalWidth")) / (col("sepalLength") + col("sepalWidth"))
+)
+print("Iris Data with Petal-to-Sepal Ratio:")
+df.select("species", "petalLength", "sepalLength", "PetalSepalRatio").show(5)
+print("Average measurements by Species:")
+avg_stats = (
+    df.groupBy("species")
+      .agg(
+          avg("sepalLength").alias("avg_sepalLength"),
+          avg("sepalWidth").alias("avg_sepalWidth"),
+          avg("petalLength").alias("avg_petalLength"),
+          avg("petalWidth").alias("avg_petalWidth")
+      )
+)
+avg_stats.show()
+spark.stop()
+
+
+

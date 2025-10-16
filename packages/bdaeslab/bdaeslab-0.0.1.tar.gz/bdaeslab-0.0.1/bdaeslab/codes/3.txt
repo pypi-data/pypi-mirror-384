@@ -1,0 +1,159 @@
+!pip install pyspark
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("sparkdataframes").getOrCreate()
+data = [
+    (1, "Jaswanth", "Developer", 30000, "Sundar"),
+    (2, "Prabu", "Tester", 27000, "Meena"),
+    (3, "Karthikeyan", "TeamLead", 42000, "Ravi"),
+    (4, "Kathir", "Engineer", 32000, "Divya"),
+    (5, "Murugan", "Manager", 50000, "Arjun"),
+    (6, "Charlie", "Intern", 10000, "Priya")
+]
+columns = ["Empid", "EMP_NAME", "POSITION", "SALARY", "Manager"]
+df=spark.createDataFrame(data,columns)
+df.show()
+df.printSchema()
+df.show(n=2,truncate=25)
+df.show(n=3,truncate=2)
+df.select("*").show()
+df.select(df.columns[0:2]).show(3)
+datacollect=df.collect()
+print(datacollect)
+df.collect()
+df.filter(df.Manager=="Sundar").show(truncate=False)
+df.filter(~(df.Manager=="Sundar")).show(truncate=False)
+df.filter(df.Manager!="Sundar").show()
+df.filter("Manager<>'Sundar'").show()
+df.filter((df.POSITION=="Manager") & (df.Empid=="5")).show()
+df.filter((df.POSITION=="Manager") | (df.Empid=="4")).show()
+list= ["Kavi", "Kani", "Sundar"]
+df.filter(df.Manager.isin(list)).show()
+list=["Nalini","Meena"]
+df.filter(df.Manager.isin(list)).show(truncate="3")
+list=["Nalini","Meena"]
+df.filter(df.Manager.isin(list)).show(truncate="3")
+list=["Nalini","Meena"]
+df.filter(df.Manager.isin(list)==True).show()
+df.filter(df.EMP_NAME.startswith("B")).show()
+df.filter(df.EMP_NAME.endswith("a")).show()
+df.filter(df.EMP_NAME.contains("C")).show()
+df.filter(df.POSITION.like("%n%")).show()
+df.sort("EMP_NAME").show()
+df.sort("Empid","EMP_NAME").show()
+df.orderBy("SALARY","Empid").show()
+df.sort(df.POSITION.asc(),df.Manager.asc()).show()
+df.sort(df.POSITION.desc(),df.Manager.asc()).show()
+customerdata = [
+    (1, "Ravi", 9012345678, "Tamil Nadu", 25, 4500),
+    (2, "Sneha", 9123456780, "Kerala", 32, 1100),
+    (3, "Manoj", 9234567890, "Karnataka", 41, 2300),
+    (4, "Divya", 9345678901, "Telangana", 29, 1500),
+    (5, "Karthik", 9456789012, "Andhra Pradesh", 36, 999),
+    (6, "Nisha", 9567890123, "Madhya Pradesh", 22, 3900),
+    (7, "Harish", 9678901234, "Jammu & Kashmir", 31, 450),
+    (8, "Swetha", 9789012345, "Goa", 27, 760),
+    (9, "Ajay", 9890123456, "Punjab", 43, 880),
+    (10, "Ramya", 9001234567, "Odisha", 38, 2000),
+    (11, "Arjun", 9112345670, "Rajasthan", 19, 3100),
+    (12, "Lavanya", 9223456781, "Gujarat", 21, 2900),
+    (13, "Kaviya", 9334567892, "Uttar Pradesh", 20, 1700),
+    (14, "Sathish", 9445678903, "Tamil Nadu", 24, 3245),
+]
+schema=["Id","Name","Phone","state","age","cost"]
+df=spark.createDataFrame(data=customerdata,schema=schema)
+df.printSchema()
+df.show(truncate=False)
+df.groupBy("Name").sum("cost").show()
+df.groupBy("Name").count().show()
+df.groupBy("state").min("cost").show()
+df.groupBy("state").max("cost").show()
+df.groupBy("state").avg("cost").show()
+df.groupBy("Name").mean("cost").show()
+df.groupBy("state","age").sum("cost").show()
+from pyspark.sql.functions import sum, avg, max
+df.groupBy("state").agg(sum("cost").alias("sum_cost"),
+avg("cost").alias("avg_cost"),
+max("cost").alias("max_cost")).show()
+from pyspark.sql.functions import sum, avg, max, col
+df.groupBy("state").agg(sum("cost").alias("sum_cost"),
+avg("cost").alias("avg_cost"),
+max("cost").alias("max_cost")).where(col("sum_cost")>=1000).show()
+from pyspark.sql.functions import col
+df.withColumn("BONUS", col("cost") * 0.10).show()
+df.drop("Phone").show()
+df = df.withColumnRenamed("cost", "amount").withColumnRenamed("age", "years")
+df.show()
+from pyspark.sql.functions import when, col
+df = df.withColumn("age_group", when(col("years") < 30, "Young").otherwise("Senior"))
+df.show()
+df.orderBy(df.amount.desc()).show()
+# Install Spark (if not already installed)
+# !pip install pyspark
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, when, rand
+import pyspark.sql.functions as F
+# Create Spark session
+spark = SparkSession.builder.appName("EmployeeDataAnalysis").getOrCreate()
+# Sample employee data
+data = [
+    (1, "Jaswanth", "Developer", 30000, "Sundar"),
+    (2, "Prabu", "Tester", 27000, "Meena"),
+    (3, "Karthikeyan", "TeamLead", 42000, "Ravi"),
+    (4, "Kathir", "Engineer", 32000, "Divya"),
+    (5, "Murugan", "Manager", 50000, "Arjun"),
+    (6, "Charlie", "Intern", 10000, "Priya")
+]
+columns = ["Empid", "EMP_NAME", "POSITION", "SALARY", "Manager"]
+# Create DataFrame
+df = spark.createDataFrame(data, columns)
+print("Initial Employee Data:")
+df.show()
+# ----------------------------
+# FEATURE 1: Employee Performance Analysis
+# ----------------------------
+performance_levels = ["Excellent", "Good", "Average", "Poor"]
+# Assign random performance levels
+df = df.withColumn(
+    "PERFORMANCE",
+    when(rand() < 0.25, "Excellent")
+    .when(rand() < 0.50, "Good")
+    .when(rand() < 0.75, "Average")
+    .otherwise("Poor")
+)
+print("Employee Data with Performance Ratings:")
+df.show()
+# Average salary by performance
+print("Average Salary by Performance:")
+df.groupBy("PERFORMANCE").agg(F.avg("SALARY").alias("AVG_SALARY")).show()
+# ----------------------------
+# FEATURE 2: Salary Hike Simulation
+# ----------------------------
+df = df.withColumn(
+    "NEW_SALARY",
+    when(col("PERFORMANCE") == "Excellent", col("SALARY") * 1.20)
+    .when(col("PERFORMANCE") == "Good", col("SALARY") * 1.10)
+    .when(col("PERFORMANCE") == "Average", col("SALARY") * 1.05)
+    .otherwise(col("SALARY"))
+)
+print("Employee Data with Salary Hike based on Performance:")
+df.show()
+# ----------------------------
+# FEATURE 3: Department-wise Statistics
+# ----------------------------
+df = df.withColumn(
+    "DEPARTMENT",
+    when(col("POSITION").isin("Developer", "Engineer", "Intern"), "IT")
+    .when(col("POSITION").isin("Tester"), "QA")
+    .when(col("POSITION").isin("Manager", "TeamLead"), "Management")
+    .otherwise("Others")
+)
+print("Employee Data with Departments:")
+df.show()
+print("Average Salary by Department:")
+df.groupBy("DEPARTMENT").agg(F.avg("SALARY").alias("AVG_SALARY")).show()
+print("Employee Count by Department:")
+df.groupBy("DEPARTMENT").count().show()
+# Stop Spark session
+spark.stop()
+
+
