@@ -1,0 +1,3 @@
+#!python
+from cmeel.run import cmeel_run
+cmeel_run()
