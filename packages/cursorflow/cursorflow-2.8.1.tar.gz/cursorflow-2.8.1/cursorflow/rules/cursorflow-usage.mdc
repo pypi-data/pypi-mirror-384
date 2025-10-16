@@ -1,0 +1,1250 @@
+---
+title: CursorFlow CLI Usage Guide for Cursor AI
+description: Complete guide for using CursorFlow CLI with comprehensive page intelligence and data collection
+alwaysApply: true
+---
+
+# CursorFlow Usage Rules for Cursor AI
+
+## 🎯 **AI AGENT QUICK START - Read This First**
+
+### Instant Decision Tree
+
+**User reports error?**
+→ `cursorflow test --base-url URL --path /page`
+→ `cat .cursorflow/artifacts/sessions/session_XXX/data_digest.md`
+→ `cursorflow query session_XXX --errors --with-server-logs --with-network`
+→ Analyze correlated data, make fix
+
+**User wants CSS/styling change?**
+→ Python API: `css_iteration_persistent()`
+→ Test 2-3 CSS variations
+→ Apply best result
+
+**User reports slow page?**
+→ `cursorflow query session_XXX --network --over 500ms`
+→ `cursorflow query session_XXX --performance`
+→ Identify bottlenecks
+
+**User debugging network failure?**
+→ `cursorflow query session_XXX --network --failed --with-errors`
+→ See errors that happened around network failure
+→ `cursorflow query session_XXX --server-logs --pattern "api"`
+
+---
+
+## 🔍 **Common Debugging Patterns - Copy These**
+
+### Pattern 1: "Page has JavaScript error"
+```bash
+# 1. Capture current state
+cursorflow test --base-url http://localhost:3000 --path /page
+
+# 2. Get error context
+cursorflow query session_XXX --errors --export markdown
+
+# 3. Find what triggered it
+cursorflow query session_XXX --context-for-error 0 --window 10
+
+# 4. Check server logs
+cursorflow query session_XXX --server-logs --level error
+```
+
+### Pattern 2: "API call failing"
+```bash
+# 1. Find failed request
+cursorflow query session_XXX --network --failed
+
+# 2. Get full context
+cursorflow query session_XXX --network --url-contains "/api/" --with-errors
+
+# 3. Check server side
+cursorflow query session_XXX --server-logs --pattern "api" --level error
+```
+
+### Pattern 3: "Feature broken after deployment"
+```bash
+# 1. Test current version
+cursorflow test --base-url https://staging.com --path /feature
+
+# 2. Compare with baseline
+cursorflow query session_new --compare-with session_baseline --errors
+cursorflow query session_new --compare-with session_baseline --network
+
+# 3. Identify regressions
+# Shows: new_errors, fixed_errors, timing_changes
+```
+
+### Pattern 4: "Element not visible/clickable"
+```bash
+# 1. Inspect element
+cursorflow inspect --base-url URL --path /page --selector ".element"
+
+# 2. Query DOM
+cursorflow query session_XXX --dom --selector ".element"
+
+# 3. Check if hidden
+cursorflow query session_XXX --dom --visible
+```
+
+### Pattern 5: "Slow page load"
+```bash
+# 1. Find slow requests
+cursorflow query session_XXX --network --over 1000ms
+
+# 2. Group by URL
+cursorflow query session_XXX --group-by-url "/api/slow"
+
+# 3. Check performance
+cursorflow query session_XXX --performance
+```
+
+### Pattern 6: "Need to test authenticated app (SSO/OAuth)"
+```bash
+# 1. Capture session (one command, no manual steps)
+cursorflow capture-auth \
+  --base-url http://localhost:3001 \
+  --path /dashboard \
+  --save-as-session "sso" \
+  --test-immediately
+
+# 2. Use session for testing (localStorage automatically restored!)
+cursorflow test --use-session "sso" --path /protected-page
+
+# 3. Debug if session doesn't work
+cursorflow test --use-session "sso" --path /dashboard --debug-session
+
+# Output shows localStorage injection step-by-step:
+# ✅ [Session Debug] Added 102 cookies
+# 🔍 [Session Debug] Navigating to domain: http://localhost:3001
+# ✅ [Session Debug] localStorage injected: 3 keys
+```
+
+**Key Points for AI Agents:**
+- `--save-as-session` saves directly to `.cursorflow/sessions/` (ready to use!)
+- `--test-immediately` validates session works after capture
+- `--debug-session` shows detailed localStorage restoration logging
+- Sessions expire (typical: 24h JWT) - just re-capture when needed
+
+---
+
+## 💡 **What Each Query Reveals - AI Agent Guide**
+
+**`--errors`** → Error message, source file, line number, stack trace  
+**`--errors --with-network`** → Errors + network requests within ±5s (find API failures)  
+**`--errors --with-server-logs`** → Errors + backend logs (complete picture)  
+**`--network --failed`** → All 4xx/5xx responses with headers and timing  
+**`--network --over 500ms`** → Slow requests (bottleneck identification)  
+**`--server-logs --level error`** → Backend errors with timestamps  
+**`--context-for-error 0`** → Everything within ±5s of error (deep debugging)  
+**`--group-by-url "/api/X"`** → All data for specific endpoint  
+**`session_A --compare-with session_B`** → New/fixed errors, timing changes
+
+---
+
+## 🔥 **CursorFlow: AI-Native Testing with Optimized Output**
+
+**CursorFlow v2.7.0 provides comprehensive data collection + AI-optimized output:**
+
+- 🎯 **AI-Optimized Output** - Multi-file format, each <100K tokens (v2.7.0)
+- 🔍 **Query Interface** - Instant data extraction, no manual JSON parsing (v2.7.0)
+- 🔥 **Hot Reload Intelligence** - Auto-detects Vite, Webpack, Next.js, Parcel, Laravel Mix
+- 🧠 **Advanced Element Intelligence** - 7 selector strategies + accessibility analysis
+- 📊 **Comprehensive Page Analysis** - Fonts, animations, resources, storage state
+- 🎯 **Enhanced Error Context** - Smart screenshot deduplication
+- ⚡ **Enhanced Browser Data** - Playwright traces + network interception
+
+## ⚡ **CRITICAL: Test Output Now AI-Readable (v2.7.0)**
+
+**Before v2.7.0:** Single 3.7M token JSON (exceeded AI context limits)  
+**After v2.7.0:** Organized multi-file structure, AI digest, query interface
+
+```bash
+# Test generates AI-optimized output automatically
+cursorflow test --base-url http://localhost:3000 --path /app --logs local
+
+# Output structure (ALL data types captured automatically):
+.cursorflow/artifacts/sessions/session_XXX/
+├── summary.json       # Core metrics (2-5KB, ~500 tokens)
+├── errors.json        # Console errors (10-50KB, ~8K tokens)
+├── network.json       # Network data (50-200KB, ~35K tokens)
+├── console.json       # Console messages (20-100KB)
+├── server_logs.json   # SERVER LOGS (SSH/local/Docker) ⭐
+├── dom_analysis.json  # DOM data (500KB-2MB, ~440K tokens)
+├── performance.json   # Performance metrics (10-30KB)
+├── timeline.json      # Event timeline (20-50KB)
+├── screenshots.json   # Screenshot metadata
+├── data_digest.md     # AI summary (10-20KB, ~3.5K tokens) ⭐
+└── screenshots/       # Visual artifacts
+
+# Optional data (if specific features used):
+├── mockup_comparison.json  # If compare-mockup used
+├── responsive_results.json # If --responsive used
+└── css_iterations.json     # If css_iteration_session used
+
+# WORKFLOW FOR AI AGENTS:
+# 1. Read data_digest.md first (instant overview - includes server logs!)
+# 2. Query specific data as needed
+# 3. Compare sessions for regression detection
+```
+
+## 🔍 **Query Interface - Use This Instead of Reading JSON**
+
+**Fast data extraction without manual parsing - ALL data types supported:**
+
+### Core Data Queries
+
+```bash
+# List recent sessions
+cursorflow query --list
+
+# Browser console errors
+cursorflow query session_123 --errors
+cursorflow query session_123 --errors --severity critical
+
+# Server logs (SSH/local/Docker/systemd)
+cursorflow query session_123 --server-logs
+cursorflow query session_123 --server-logs --level error,warning
+cursorflow query session_123 --server-logs --source ssh
+cursorflow query session_123 --server-logs --pattern "database"
+cursorflow query session_123 --server-logs --contains "timeout"
+
+# Network requests
+cursorflow query session_123 --network
+cursorflow query session_123 --network --failed
+cursorflow query session_123 --network --status 4xx,5xx
+
+# Console messages
+cursorflow query session_123 --console
+cursorflow query session_123 --console --type error,warning
+
+# Performance & summary
+cursorflow query session_123 --performance
+cursorflow query session_123 --summary
+```
+
+### Advanced Data Queries
+
+```bash
+# DOM analysis
+cursorflow query session_123 --dom --selector "button"
+
+# Screenshots
+cursorflow query session_123 --screenshots
+cursorflow query session_123 --screenshots --with-errors
+
+# Timeline events
+cursorflow query session_123 --timeline --around 1234567890
+
+# Responsive results (if used --responsive)
+cursorflow query session_123 --responsive --viewport mobile
+
+# Mockup comparison (if used compare-mockup)
+cursorflow query session_123 --mockup
+
+# CSS iterations (if used css_iteration_session)
+cursorflow query session_123 --css-iterations --iteration 3
+```
+
+### Export & Comparison
+
+```bash
+# Export formats
+cursorflow query session_123 --errors --export markdown
+cursorflow query session_123 --server-logs --export csv
+
+# Session comparison (regression detection)
+cursorflow query session_baseline --compare-with session_current
+cursorflow query session_A --compare-with session_B --errors
+cursorflow query session_A --compare-with session_B --server-logs
+```
+
+**AI Agent Workflow:**
+1. Run test: `cursorflow test ...`
+2. Read AI digest: `cat .cursorflow/artifacts/sessions/session_XXX/data_digest.md`
+3. Query details: `cursorflow query session_XXX --errors` or `--server-logs`
+4. Make decisions based on organized data
+
+### Enhanced Query Capabilities
+
+**Smart Filtering:**
+```bash
+# Filter errors by source/content/time
+cursorflow query session_XXX --errors --from-file "app.js"
+cursorflow query session_XXX --errors --contains "undefined"
+cursorflow query session_XXX --errors --matches "TypeError.*"
+
+# Filter network by URL/timing/method
+cursorflow query session_XXX --network --url-contains "/api/"
+cursorflow query session_XXX --network --over 500ms  # Slow requests
+cursorflow query session_XXX --network --method POST
+
+# Filter DOM by visibility/interaction
+cursorflow query session_XXX --dom --visible
+cursorflow query session_XXX --dom --interactive
+cursorflow query session_XXX --dom --role button
+```
+
+**Cross-Referencing (time-based correlation):**
+```bash
+# Errors with related data (±5s window)
+cursorflow query session_XXX --errors --with-network
+cursorflow query session_XXX --errors --with-server-logs
+cursorflow query session_XXX --network --failed --with-errors
+```
+
+**Contextual Queries:**
+```bash
+# Full context for error
+cursorflow query session_XXX --context-for-error 2 --window 10
+# Returns: Error + network/console/server logs within ±10s
+
+# Group by pattern
+cursorflow query session_XXX --group-by-url "/api/users"
+cursorflow query session_XXX --group-by-selector "#button"
+```
+
+**Enhanced Comparison:**
+```bash
+# Message-level comparison
+cursorflow query session_A --compare-with session_B --errors
+# Shows: new_errors, fixed_errors, frequency_changes
+```
+
+---
+
+## 📊 **Server Log Monitoring (AUTOMATIC CAPTURE)**
+
+**Server logs are captured automatically during every test** - correlated with browser events by timestamp for complete visibility.
+
+**Configuration (Python API):**
+```python
+# SSH Remote Logs
+flow = CursorFlow(
+    base_url="https://staging.example.com",
+    log_config={
+        "source": "ssh",
+        "ssh_config": {
+            "hostname": "staging-server",
+            "username": "deploy",
+            "key_file": "~/.ssh/staging_key"
+        },
+        "paths": ["/var/log/app/error.log", "/var/log/httpd/error_log"]
+    }
+)
+
+# Local Logs
+flow = CursorFlow(
+    base_url="http://localhost:3000",
+    log_config={
+        "source": "local",
+        "paths": ["logs/app.log", "logs/error.log"]
+    }
+)
+
+# Docker Logs
+flow = CursorFlow(
+    base_url="http://localhost:3000",
+    log_config={
+        "source": "docker",
+        "container_name": "app-container",
+        "paths": ["/var/log/app.log"]
+    }
+)
+```
+
+**Configuration (CLI via config file):**
+```json
+{
+  "environments": {
+    "staging": {
+      "base_url": "https://staging.example.com",
+      "logs": "ssh",
+      "ssh_config": {
+        "hostname": "staging-server",
+        "username": "deploy",
+        "key_file": "~/.ssh/staging_key"
+      },
+      "log_paths": {
+        "app_error": "/var/log/app/error.log",
+        "apache_error": "/var/log/httpd/error_log"
+      }
+    },
+    "local": {
+      "base_url": "http://localhost:3000",
+      "logs": "local",
+      "log_paths": {
+        "app": "logs/app.log"
+      }
+    }
+  }
+}
+```
+
+**CLI Usage:**
+```bash
+# Use configured log source
+cursorflow test --base-url http://localhost:3000 --logs local
+cursorflow test --base-url https://staging.example.com --logs ssh --config config.json
+
+# Server logs appear in results:
+# - server_logs.json (dedicated file)
+# - timeline.json (correlated with browser events)
+# - data_digest.md (server errors section)
+```
+
+## When to Use CursorFlow
+
+### **UI Testing & Development (PRIMARY USE CASE)**
+- CSS styling, layout adjustments, responsive design
+- Visual hierarchy improvements, spacing, typography
+- Component styling and design system work
+- UI bug fixes and visual improvements
+- Design iteration and rapid prototyping
+- Form submissions and user interactions  
+- Authentication flows and session handling
+- Frontend-backend interaction problems
+- Error reproduction and debugging
+- Cross-browser compatibility testing
+
+## 🔥 **Hot Reload Intelligence (v2.0.0)**
+
+CursorFlow auto-detects and integrates with development frameworks:
+
+### **Supported Frameworks:**
+- **Vite** (port 5173, WebSocket `/__vite_hmr`)
+- **Webpack Dev Server** (port 3000, WebSocket `/sockjs-node`)
+- **Next.js** (port 3000, WebSocket `/_next/webpack-hmr`)
+- **Parcel** (port 1234, WebSocket `/hmr`)
+- **Laravel Mix** (port 3000, WebSocket `/browser-sync/socket.io`)
+
+### **Hot Reload Usage Pattern:**
+```python
+from cursorflow import CursorFlow
+
+# Initialize with HMR auto-detection
+flow = CursorFlow(
+    base_url="http://localhost:3000",  # Your dev server
+    log_config={"source": "local", "paths": ["logs/app.log"]},
+    browser_config={"headless": True}
+)
+
+# CursorFlow automatically:
+# 1. Detects your framework (Vite, Webpack, Next.js, etc.)
+# 2. Monitors WebSocket for HMR events
+# 3. Waits for CSS updates instead of arbitrary delays
+# 4. Captures precise timing of hot reload events
+
+# Execute test with HMR intelligence
+results = await flow.execute_and_collect(
+    actions=[
+        {"navigate": "/dashboard"},
+        {"wait_for": "body"},
+        {"screenshot": "initial"}
+    ]
+)
+
+# HMR status available in results
+hmr_status = results.get('hmr_status', {})
+print(f"Framework detected: {hmr_status.get('detected_framework', 'None')}")
+```
+
+## 🧠 **Advanced Element Intelligence (v2.0.0)**
+
+Every screenshot captures comprehensive element data:
+
+### **7 Selector Strategies:**
+- **CSS Selectors**: `#id`, `.class`, `tag[attr]`
+- **XPath**: `//div[@class='container']`
+- **Text-based**: Elements containing specific text
+- **Role-based**: `[role='button']`, `[role='navigation']`
+- **Test ID**: `[data-testid='submit-button']`
+- **ARIA Labels**: `[aria-label='Close dialog']`
+- **Unique CSS**: Auto-generated unique selectors
+
+### **Comprehensive Element Data:**
+```python
+# Every screenshot includes detailed element analysis
+results = await flow.execute_and_collect([
+    {"navigate": "/dashboard"},
+    {"screenshot": "dashboard"}
+])
+
+# Access rich element data
+screenshot_data = results['artifacts']['screenshots'][0]
+elements = screenshot_data['dom_analysis']['elements']
+
+for element in elements:
+    print(f"Tag: {element['tagName']}")
+    print(f"Unique Selector: {element['uniqueSelector']}")
+    print(f"Accessibility Role: {element['accessibility']['role']}")
+    print(f"Is Interactive: {element['accessibility']['isInteractive']}")
+    print(f"Bounding Box: {element['boundingBox']}")
+    print(f"Computed Styles: {element['computedStyles']}")
+    print(f"Visual Context: {element['visual_context']}")
+```
+
+## 📊 **Comprehensive Page Analysis (v2.0.0)**
+
+Every screenshot captures complete page intelligence:
+
+### **Font Loading Analysis:**
+- Total fonts loaded/loading/failed
+- Font family details and loading metrics
+- Used font families on the page
+
+### **Animation State Tracking:**
+- Running/paused/finished animations
+- CSS transitions and their states
+- Performance impact analysis
+
+### **Resource Loading Intelligence:**
+- Total resources by type (JS, CSS, images)
+- Loading performance metrics
+- Critical resource identification
+- Cache hit rates and compression ratios
+
+### **Storage State Analysis:**
+- localStorage and sessionStorage contents
+- Cookie count and sizes
+- IndexedDB availability
+
+### **Usage Example:**
+```python
+results = await flow.execute_and_collect([
+    {"navigate": "/app"},
+    {"screenshot": "comprehensive"}
+])
+
+screenshot_data = results['artifacts']['screenshots'][0]
+
+# Access comprehensive analysis
+print(f"Fonts loaded: {screenshot_data['font_status']['total_loaded_fonts']}")
+print(f"Animations running: {screenshot_data['animation_status']['total_running_animations']}")
+print(f"Resources loaded: {screenshot_data['resource_status']['total_resources']}")
+print(f"Storage items: {screenshot_data['storage_state']['localStorage']['item_count']}")
+```
+
+## 🎯 **Enhanced Error Context Collection (v2.0.0)**
+
+CursorFlow automatically captures rich error context with smart deduplication:
+
+### **Automatic Error Detection:**
+- Console errors and warnings
+- Network request failures (4xx, 5xx responses)
+- JavaScript exceptions and unhandled promises
+- Page crashes and navigation failures
+
+### **Smart Screenshot Deduplication:**
+- Reuses screenshots when page content hasn't changed
+- Avoids duplicate captures for multiple errors in close proximity
+- Maintains comprehensive diagnostic coverage
+
+### **Comprehensive Error Context:**
+```python
+# Errors are automatically detected and context collected
+results = await flow.execute_and_collect([
+    {"navigate": "/page"},
+    {"click": "#nonexistent-button"}  # This will trigger error collection
+])
+
+# Access error context summary
+error_summary = flow.get_error_context_summary()
+print(f"Total errors: {error_summary['total_errors_collected']}")
+print(f"Error types: {error_summary['unique_error_types']}")
+print(f"Screenshot dedup rate: {error_summary['screenshot_deduplication_rate']}")
+
+# Diagnostic screenshots saved to: .cursorflow/artifacts/diagnostics/
+```
+
+## ⚡ **Enhanced Browser Data Capture (v2.0.0)**
+
+Every screenshot includes comprehensive browser intelligence:
+
+### **Playwright Trace Integration:**
+- Full interaction traces for debugging
+- Network request/response details
+- Performance timeline data
+- Console message correlation
+
+### **Network Intelligence:**
+- Request/response headers and bodies
+- Performance timing data
+- Failed request analysis
+- Resource loading optimization insights
+
+### **Console Intelligence:**
+- JavaScript errors with stack traces
+- Application logs and debug messages
+- Performance warnings
+- Framework-specific messages
+
+### **Usage Example:**
+```python
+# Start session with trace recording
+results = await flow.execute_and_collect(
+    actions=[
+        {"navigate": "/app"},
+        {"click": "#submit-form"},
+        {"screenshot": "result"}
+    ],
+    session_options={'start_trace': True}
+)
+
+# Access comprehensive data
+screenshot_data = results['artifacts']['screenshots'][0]
+print(f"Network requests: {len(screenshot_data['network_data']['requests'])}")
+print(f"Console messages: {len(screenshot_data['console_data']['messages'])}")
+print(f"Performance metrics: {screenshot_data['performance_data']}")
+
+# Playwright trace available at: .cursorflow/artifacts/traces/session.zip
+```
+
+## 🚀 **CursorFlow CLI Usage**
+
+### **Basic Testing:**
+```bash
+# Simple page capture
+cursorflow test --base-url http://localhost:3000 --path /dashboard
+
+# Inline actions (no JSON needed)
+cursorflow test --base-url http://localhost:3000 \
+  --path /messages \
+  --wait-for ".message-item" \
+  --wait 2 \
+  --hover ".message-item:first-child" \
+  --click ".message-item:first-child" \
+  --screenshot "result" \
+  --show-console \
+  --open-trace
+
+# Custom actions with JSON
+cursorflow test --base-url http://localhost:3000 --actions '[
+  {"navigate": "/page"},
+  {"hover": ".menu"},
+  {"click": "#button"},
+  {"screenshot": "result"}
+]'
+```
+
+### **All CLI Commands:**
+```bash
+cursorflow test              # Test UI with comprehensive data capture
+cursorflow inspect           # Comprehensive element analysis (CSS, dimensions, accessibility)
+cursorflow measure           # Surgical dimension checking (quick CSS verification)
+cursorflow rerun             # Re-run last test
+cursorflow count             # Count matching elements
+cursorflow timeline          # View event timeline
+cursorflow sessions          # Manage saved sessions
+cursorflow cleanup           # Clean artifacts (use --yes for autonomous)
+cursorflow install-rules     # Install Cursor rules (use --yes)
+```
+
+### **Inline Action Flags:**
+```bash
+--click ".selector"              # Click element
+--hover ".selector"              # Hover element
+--fill "#input=value"            # Fill form field
+--wait 2                         # Wait seconds
+--wait-for ".selector"           # Wait for element
+--wait-for-network-idle          # Wait for network idle
+--screenshot "name"              # Capture screenshot
+--show-console                   # Show console errors
+--open-trace                     # Auto-open Playwright trace
+--save-session "name"            # Save authenticated state (requires auth_config)
+--use-session "name"             # Restore authenticated state (requires auth_config)
+```
+
+### **Available Actions (94+ via Pass-Through):**
+
+CursorFlow passes actions directly to Playwright - ANY Page method works:
+- `click`, `dblclick`, `hover`, `tap`, `press`
+- `fill`, `type`, `check`, `uncheck`, `select_option`
+- `focus`, `blur`, `drag_and_drop`
+- `wait_for_selector`, `wait_for_load_state`, `wait_for_timeout`
+- `goto`, `reload`, `evaluate`, `route`
+- And 80+ more: https://playwright.dev/python/docs/api/class-page
+
+## Common Usage Patterns
+
+### Form Testing
+```bash
+cursorflow test \
+  --base-url http://localhost:3000 \
+  --actions '[
+    {"navigate": "/contact"},
+    {"wait_for": "form"},
+    {"fill": {"selector": "#name", "value": "John Doe"}},
+    {"fill": {"selector": "#email", "value": "john@example.com"}},
+    {"click": "#submit"},
+    {"wait_for": ".success, .error"},
+    {"screenshot": "result"}
+  ]'
+```
+
+### 🆕 Responsive Testing (Parallel Viewports)
+```bash
+# Simple responsive test across mobile, tablet, desktop
+cursorflow test --base-url http://localhost:3000 --path "/dashboard" --responsive
+
+# Custom responsive test with actions
+cursorflow test --base-url http://localhost:3000 --responsive --actions '[
+  {"navigate": "/dashboard"},
+  {"wait_for": "#main-content"},
+  {"screenshot": "responsive-dashboard"},
+  {"click": "#menu-toggle"},
+  {"screenshot": "responsive-menu"}
+]'
+
+# Results include:
+# - Performance comparison across viewports
+# - Layout differences analysis
+# - Responsive behavior insights
+# - Cross-viewport screenshots
+```
+
+### 🆕 Enhanced Screenshot Options
+```bash
+# Component-focused screenshots
+cursorflow test --base-url http://localhost:3000 --actions '[
+  {"navigate": "/page"},
+  {"screenshot": {"name": "header", "options": {"clip": {"selector": "#header"}}}}
+]'
+
+# Privacy-aware screenshots (mask sensitive data)
+cursorflow test --base-url http://localhost:3000 --actions '[
+  {"navigate": "/profile"},
+  {"screenshot": {"name": "profile", "options": {"mask": [".user-email", ".api-key"]}}}
+]'
+
+# High-quality JPEG screenshots
+cursorflow test --base-url http://localhost:3000 --actions '[
+  {"navigate": "/page"},
+  {"screenshot": {"name": "page.jpg", "options": {"quality": 95, "full_page": true}}}
+]'
+```
+
+### Login Flow Testing
+```bash
+cursorflow test \
+  --base-url http://localhost:3000 \
+  --actions '[
+    {"navigate": "/login"},
+    {"wait_for": "#login-form"},
+    {"fill": {"selector": "#username", "value": "testuser"}},
+    {"fill": {"selector": "#password", "value": "testpass"}},
+    {"click": "#login-button"},
+    {"wait_for": ".dashboard, .error-message"},
+    {"screenshot": "login-result"}
+  ]'
+```
+
+### Shopping Cart Testing
+```bash
+cursorflow test \
+  --base-url http://localhost:3000 \
+  --actions '[
+    {"navigate": "/products"},
+    {"click": ".product:first-child .add-to-cart"},
+    {"wait_for": ".cart-notification"},
+    {"click": "#cart-icon"},
+    {"screenshot": "cart-contents"}
+  ]'
+```
+
+### CSS Debugging & Element Analysis
+```bash
+# Comprehensive element inspection (full CSS analysis)
+cursorflow inspect --base-url http://localhost:3000 --selector "#messages-panel"
+
+# Output includes:
+# - Computed CSS (all properties: display, flex, width, etc.)
+# - Rendered dimensions (actual width × height on screen)
+# - Position (x, y coordinates)
+# - Unique selector for targeting
+# - Accessibility info (role, interactive state)
+# - Visual context (visibility, z-index)
+# - Screenshot saved to artifacts
+
+# Show ALL computed CSS properties (verbose mode)
+cursorflow inspect -u http://localhost:3000 -p /dashboard -s ".card" --verbose
+
+# Quick dimension check (surgical precision)
+cursorflow measure --base-url http://localhost:3000 --selector "#panel"
+
+# Measure multiple elements at once
+cursorflow measure -u http://localhost:3000 -s "#panel1" -s "#panel2"
+
+# Verify CSS changes with all properties
+cursorflow measure -u http://localhost:3000 -s ".button" --verbose
+```
+
+**When to use inspect vs measure:**
+- **`inspect`**: Deep CSS debugging, complex layout issues, need accessibility info
+- **`measure`**: Quick dimension verification, CSS change validation, multiple elements
+
+**Workflow example:**
+```bash
+# 1. Quick check dimensions
+cursorflow measure -u http://localhost:3000 -s "#panel"
+# Output: 260w × 900h
+
+# 2. Dimensions seem wrong, get full analysis
+cursorflow inspect -u http://localhost:3000 -s "#panel" --verbose
+# Output: Full CSS, flex: 1 1 0%, flex-basis: 260px, etc.
+
+# 3. Make CSS changes based on insights
+
+# 4. Verify fix
+cursorflow measure -u http://localhost:3000 -s "#panel"
+# Output: 532w × 900h ✅
+```
+
+### Visual Comparison & Iteration
+```bash
+# Compare mockup to implementation (pure measurement)
+cursorflow compare-mockup MOCKUP_URL -u BASE_URL -ia '[{"navigate": "/page"}]'
+# Output: Similarity percentage, diff images, element data
+
+# Test CSS variations (observe real rendering)
+cursorflow iterate-mockup MOCKUP_URL -u BASE_URL --css-improvements '[
+  {"name": "test1", "css": ".header { padding: 2rem; }"},
+  {"name": "test2", "css": ".header { padding: 1rem; }"}
+]'
+# Output: Similarity for each variation - Cursor decides which to apply
+```
+
+**Philosophy**: 
+- CursorFlow observes mockup and implementation (both are reality)
+- Provides quantified measurements (similarity %, diff images, element data)
+- Temporarily injects CSS to observe what reality WOULD look like
+- Cursor analyzes the data and makes decisions
+
+**When to use**:
+- User has design mockup and needs to match it
+- Testing multiple CSS approaches before applying
+- Measuring progress toward design specifications
+
+## Analyzing Results
+
+### **Hot Reload CSS Iteration Results** 
+CursorFlow generates comprehensive analysis optimized for CSS decisions:
+
+```json
+{
+  "session_id": "css_session_123",
+  "hot_reload_used": true,
+  "execution_time": 4.2,
+  
+  "session_context": {
+    "session_persistent": true,
+    "hot_reload_available": true,
+    "iteration_count": 15
+  },
+  
+  "persistent_analysis": {
+    "hot_reload_effectiveness": {
+      "hot_reload_usage_rate": 0.95,
+      "time_saved_seconds": 45.2,
+      "quality": "excellent"
+    },
+    "iteration_speed_metrics": {
+      "iterations_per_minute": 12.5,
+      "average_iteration_time": 4.8
+    }
+  },
+  
+  "iterations": [
+    {
+      "name": "improve-spacing",
+      "hot_reload_used": true,
+      "screenshot": ".cursorflow/artifacts/improve-spacing.png",
+      "console_errors": [],
+      "performance_impact": {"render_time": 45}
+    }
+  ],
+  
+  "recommended_actions": [
+    {
+      "action": "implement_css_changes",
+      "css_to_apply": ".container { gap: 2rem; }",
+      "target_files": ["components/Dashboard.css"]
+    }
+  ]
+}
+```
+
+### **Key Analysis Points for CSS Iteration**
+
+1. **Hot Reload Effectiveness**: Check `hot_reload_used` and `time_saved_seconds`
+2. **Visual Quality**: Review screenshots for each iteration
+3. **Performance Impact**: Monitor `render_time` and console errors  
+4. **Session Health**: Evaluate `session_persistent` and `iteration_count`
+5. **Implementation Readiness**: Use `recommended_actions` for next steps
+
+### **Traditional Test Results**
+CLI tests generate `{test_name}_test_results.json` with:
+
+- **browser_events**: UI interactions and console errors
+- **server_logs**: Backend activity during the test
+- **organized_timeline**: Chronological correlation of all events
+- **artifacts**: Screenshots and network data
+
+## The Request → Test → Analyze → Adjust → Repeat Pattern
+
+### **🔥 HOT RELOAD CSS ITERATION PATTERN (PRIMARY)**
+
+#### 1. REQUEST Phase
+User mentions CSS, styling, layout, or visual improvements.
+
+#### 2. TEST Phase (Persistent Session)
+```python
+results = await flow.css_iteration_persistent(
+    base_actions=[{"navigate": "/component"}],
+    css_changes=[
+        {"name": "fix-spacing", "css": ".container { gap: 2rem; }"},
+        {"name": "improve-typography", "css": "h1 { font-size: 2.5rem; }"}
+    ],
+    session_options={"hot_reload": True, "keep_session_alive": True}
+)
+```
+
+#### 3. ANALYZE Phase
+Examine persistent session results:
+- Check `hot_reload_used` for speed optimization
+- Review screenshots for visual improvements  
+- Monitor `console_errors` for CSS issues
+- Evaluate `iteration_speed_metrics` for efficiency
+
+#### 4. ADJUST Phase
+Apply recommended CSS to actual files:
+```python
+css_to_apply = results["recommended_actions"][0]["css_to_apply"]
+target_files = results["recommended_actions"][0]["target_files"]
+# Apply to actual CSS files
+```
+
+#### 5. REPEAT Phase (Session Continuation)
+Continue with same session for additional refinements:
+```python
+results2 = await flow.css_iteration_persistent(
+    base_actions=[],  # No reload needed!
+    css_changes=[{"name": "polish", "css": "..."}],
+    session_options={"session_id": "same_session", "reuse_session": True}
+)
+```
+
+### **Traditional Test Pattern (For Non-CSS Work)**
+
+#### 1. REQUEST → 2. TEST → 3. ANALYZE → 4. ADJUST → 5. REPEAT
+```bash
+cursorflow test --base-url http://localhost:3000 --actions 'JSON_ACTIONS'
+# Examine results, make changes, re-test
+```
+
+## Common CLI Options
+
+| Option | Purpose | Example |
+|--------|---------|---------|
+| `--actions` | Test actions (JSON) | `--actions '[{"navigate": "/"}]'` |
+| `--base-url` | Target URL | `--base-url http://localhost:3000` |
+| `--verbose` | Detailed output | `--verbose` |
+| `--logs` | Log source | `--logs local` |
+
+## Error Handling
+
+When tests fail:
+1. Check the JSON results for error details
+2. Look at browser console errors
+3. Examine server log entries
+4. Review screenshots for visual clues
+5. Identify the correlation between browser and server events
+
+## CSS and Layout Testing
+
+### **🔥 Hot Reload CSS Testing (RECOMMENDED)**
+```python
+# Ultra-fast CSS iteration with persistent sessions
+css_changes = [
+    {"name": "spacing-fix", "css": ".dashboard { gap: 2rem; padding: 1.5rem; }"},
+    {"name": "responsive-grid", "css": ".grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }"}
+]
+
+results = await flow.css_iteration_persistent(
+    base_actions=[{"navigate": "/dashboard"}, {"screenshot": "baseline"}],
+    css_changes=css_changes,
+    session_options={"hot_reload": True, "keep_session_alive": True}
+)
+
+# Get instant visual feedback with preserved application state
+best_iteration = results["summary"]["recommended_iteration"]
+print(f"Best CSS approach: {best_iteration}")
+```
+
+### **Traditional CLI Testing (Legacy)**
+```bash
+# Before changes
+cursorflow test --base-url http://localhost:3000 --actions '[{"navigate": "/dashboard"}, {"screenshot": "before"}]'
+
+# After changes  
+cursorflow test --base-url http://localhost:3000 --actions '[{"navigate": "/dashboard"}, {"screenshot": "after"}]'
+```
+
+## Authentication & Session Management
+
+### **Critical: Most Real Apps Need Auth**
+
+Testing sophisticated applications requires authentication to access:
+- User dashboards and protected pages
+- Admin panels and settings
+- Role-based features
+- Shopping carts and user data
+- Personalized content
+
+### **Three Authentication Methods**
+
+#### **Method 1: Form Authentication (Automatic)**
+
+Configure in `.cursorflow/config.json`:
+```json
+{
+  "base_url": "http://localhost:3000",
+  "auth": {
+    "method": "form",
+    "username": "test@example.com",
+    "password": "testpass",
+    "username_selector": "#email",
+    "password_selector": "#password",
+    "submit_selector": "#login-button",
+    "success_indicators": ["dashboard", "profile"],
+    "auth_check_selectors": [".user-menu"]
+  }
+}
+```
+
+Then use session management:
+```bash
+# Login once, save session
+cursorflow test --base-url http://localhost:3000 \
+  --path /login \
+  --save-session "user"
+
+# Reuse session (no re-login!)
+cursorflow test --use-session "user" \
+  --path /dashboard \
+  --screenshot "dashboard"
+```
+
+#### **Method 2: Cookie Authentication**
+
+For JWT tokens, session cookies, or cookies from DevTools:
+```json
+{
+  "auth": {
+    "method": "cookies",
+    "cookies": [
+      {
+        "name": "session_token",
+        "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        "domain": "example.com",
+        "path": "/",
+        "httpOnly": true,
+        "secure": true
+      }
+    ]
+  }
+}
+```
+
+#### **Method 3: Header Authentication**
+
+For API tokens and Bearer authentication:
+```json
+{
+  "auth": {
+    "method": "headers",
+    "headers": {
+      "Authorization": "Bearer your-api-token",
+      "X-API-Key": "your-api-key"
+    }
+  }
+}
+```
+
+### **Session Management Benefits**
+
+**Without sessions**: Re-login on every test (slow, server load)
+**With sessions**: Login once, reuse state (fast, efficient)
+
+```bash
+# Save sessions for different roles
+cursorflow test --path /login --save-session "admin"
+cursorflow test --path /login --save-session "user"
+
+# Reuse as needed
+cursorflow test --use-session "admin" --path /admin/settings
+cursorflow test --use-session "user" --path /dashboard
+```
+
+### **Manual Authentication (Complex Flows)**
+
+For 2FA, OAuth, or complex flows, use explicit actions:
+```bash
+cursorflow test --actions '[
+  {"navigate": "/login"},
+  {"fill": {"selector": "#email", "value": "test@example.com"}},
+  {"fill": {"selector": "#password", "value": "testpass"}},
+  {"click": "#login-button"},
+  {"wait_for": "#otp-input"},
+  {"fill": {"selector": "#otp-input", "value": "123456"}},
+  {"click": "#verify-button"},
+  {"wait_for": ".dashboard"},
+  {"screenshot": "authenticated"}
+]' --save-session "2fa-user"
+```
+
+### **SSO Authentication (Google, Microsoft, Okta)**
+
+**SSO requires manual capture** because of external identity providers:
+
+```bash
+# 1. Capture SSO auth (opens browser, you login manually)
+cursorflow capture-auth --base-url http://localhost:3000 \
+  --path /dashboard \
+  --browser chrome \
+  --output google-sso.json
+
+# Browser opens (use --browser chrome for better visibility on macOS)
+# You complete SSO login, CursorFlow captures cookies
+
+# 2. Copy cookies from google-sso.json to .cursorflow/config.json:
+{
+  "auth": {
+    "method": "cookies",
+    "cookies": [/* paste from google-sso.json */]
+  }
+}
+
+# 3. Use captured auth
+cursorflow test --use-session "sso-user" --path /dashboard
+```
+
+**SSO providers supported:**
+- Google OAuth
+- Microsoft Azure AD
+- Okta
+- Auth0
+- Any OAuth/SAML provider
+
+**When SSO tokens expire:**
+```bash
+# Re-capture auth (SSO tokens typically expire in 1-24 hours)
+cursorflow capture-auth --base-url http://localhost:3000 \
+  --path /dashboard \
+  --output sso-refreshed.json
+```
+
+### **Troubleshooting Auth**
+
+**Auth failing?**
+```bash
+# Inspect login form to get correct selectors
+cursorflow inspect --base-url http://localhost:3000 \
+  --path /login \
+  --selector "input[type='email']"
+
+# Test with verbose logging
+cursorflow test --path /login \
+  --save-session "test" \
+  --verbose
+```
+
+**Session not working?**
+```bash
+# Check saved session
+cat .cursorflow/sessions/user_session.json
+
+# Force fresh login
+cursorflow test --use-session "user" --fresh-session
+```
+
+**SSO not working?**
+```bash
+# Re-capture auth state
+cursorflow capture-auth --base-url http://localhost:3000 --path /dashboard
+
+# Check if localStorage has tokens (some SSO stores tokens there)
+cat auth-capture.json | grep localStorage
+
+# Test immediately after capture
+cursorflow test --use-session "sso-user" --path /dashboard
+```
+
+## Best Practices
+
+### **🔥 Hot Reload CSS Iteration Best Practices**
+1. **Always use `css_iteration_persistent()` for CSS work** - 3-5x faster than CLI
+2. **Keep sessions alive** - Set `keep_session_alive: True` for continued iteration
+3. **Use descriptive CSS change names** - "spacing-fix", "responsive-layout", "color-theme"
+4. **Test multiple approaches** - Include 2-3 CSS variations per iteration
+5. **Continue sessions** - Reuse session_id for related styling work
+6. **Monitor hot reload effectiveness** - Check `hot_reload_used` in results
+
+### **Traditional CLI Best Practices**
+1. **Use descriptive test names**: `login-flow`, `checkout-process`, `form-validation`
+2. **Take screenshots at key moments**: Before and after important actions
+3. **Wait for elements**: Use `wait_for` instead of arbitrary `wait` times
+4. **Test error scenarios**: Include invalid inputs to test error handling
+5. **Keep actions focused**: Test one specific flow per command
+6. **Use action files for complex tests**: Easier to maintain and reuse
+
+### **⚡ Performance Tips**
+- **Hot reload detected**: Expect 3-5x faster iterations
+- **Session continuation**: No page reloads = preserved application state
+- **File monitoring**: CursorFlow syncs with your file changes automatically
+- **Smart cleanup**: Sessions auto-optimize and clean up when needed
+
+## Installation Commands
+
+```bash
+# Initial setup
+pip install cursorflow
+cursorflow init .
+
+# Install Cursor rules  
+cursorflow install-rules
+
+# Update when needed
+cursorflow update
+```
+
+## 🎯 **CRITICAL REMINDERS FOR CURSOR AI (v2.0.0)**
+
+### **🔥 PRIMARY WORKFLOW: Comprehensive Data Collection**
+- **ALWAYS use CursorFlow for UI testing and debugging** 
+- **Every screenshot captures complete page intelligence**
+- **Automatic framework detection and HMR integration**
+- **Smart error context collection with deduplication**
+
+### **Decision Framework:**
+- **User mentions UI/CSS/layout** → Use CursorFlow CLI or Python API
+- **User wants to test component** → Use comprehensive data capture
+- **User reports errors/bugs** → Leverage enhanced error context
+- **User needs element analysis** → Utilize 7 selector strategies
+- **User works with dev server** → Benefit from HMR intelligence
+
+### **Key Success Patterns:**
+1. **Run CursorFlow test** → Analyze comprehensive data → Make informed decisions
+2. **Monitor HMR status** → Leverage framework-specific optimizations
+3. **Use element intelligence** → Select optimal interaction strategies
+4. **Review error context** → Understand root causes with rich diagnostics
+5. **Apply trace analysis** → Debug complex interaction flows
+
+### **v2.0.0 Data Available in Every Test:**
+- 🔥 **Hot Reload Intelligence**: Framework detection and HMR event monitoring
+- 🧠 **Advanced Element Intelligence**: 7 selector types + accessibility analysis
+- 📊 **Comprehensive Page Analysis**: Fonts, animations, resources, storage
+- 🎯 **Enhanced Error Context**: Smart screenshot deduplication + diagnostics
+- ⚡ **Enhanced Browser Data**: Playwright traces + network intelligence
+
+Remember: **CursorFlow 2.0.0 provides complete page intelligence for AI-driven development.** Every test captures comprehensive data to enable informed decision-making and rapid iteration.
