@@ -1,0 +1,28 @@
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
+
+from app.components.filter.domain.filter import FieldFilter
+
+class FiltersValueObject(BaseModel):
+    global_: Optional[FieldFilter] = None  # usamos global_ por ser palabra reservada
+    other_filters: Dict[str, FieldFilter] = {}
+
+    @classmethod
+    def from_raw(cls, raw: Optional[Dict[str, Any]]) -> "FiltersValueObject":
+        if not raw:
+            return cls()
+
+        global_filter = raw.get("global")
+        others = {k: v for k, v in raw.items() if k != "global"}
+
+        return cls(
+            global_=FieldFilter(**global_filter) if global_filter else None,
+            other_filters={k: FieldFilter(**v) for k, v in others.items()}
+        )
+
+    def as_dict(self) -> Dict[str, Any]:
+        result = {}
+        if self.global_:
+            result["global"] = self.global_.dict()
+        result.update({k: v.dict() for k, v in self.other_filters.items()})
+        return result
