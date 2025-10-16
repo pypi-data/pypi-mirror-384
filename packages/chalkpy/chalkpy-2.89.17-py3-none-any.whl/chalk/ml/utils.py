@@ -1,0 +1,295 @@
+import os
+from dataclasses import dataclass
+from enum import Enum
+from functools import cache
+from typing import Mapping, Tuple
+
+import chalk._gen.chalk.models.v1.model_artifact_pb2 as pb
+import chalk._gen.chalk.models.v1.model_version_pb2 as mv_pb
+
+REGISTRY_METADATA_FILE = os.getenv("CHALK_MODEL_REGISTRY_METADATA_FILENAME", None)
+CHALK_MODEL_REGISTRY_ROOT = os.getenv("CHALK_MODEL_REGISTRY_ROOT", "/models")
+
+
+class ModelType(str, Enum):
+    PYTORCH = "MODEL_TYPE_PYTORCH"
+    SKLEARN = "MODEL_TYPE_SKLEARN"
+    TENSORFLOW = "MODEL_TYPE_TENSORFLOW"
+    XGBOOST = "MODEL_TYPE_XGBOOST"
+    LIGHTGBM = "MODEL_TYPE_LIGHTGBM"
+    CATBOOST = "MODEL_TYPE_CATBOOST"
+    ONNX = "MODEL_TYPE_ONNX"
+
+
+class ModelEncoding(str, Enum):
+    PICKLE = "MODEL_ENCODING_PICKLE"
+    JOBLIB = "MODEL_ENCODING_JOBLIB"
+    JSON = "MODEL_ENCODING_JSON"
+    TEXT = "MODEL_ENCODING_TEXT"
+    HDF5 = "MODEL_ENCODING_HDF5"
+    PROTOBUF = "MODEL_ENCODING_PROTOBUF"
+    CBM = "MODEL_ENCODING_CBM"
+    SAFETENSOR = "MODEL_ENCODING_SAFETENSORS"
+
+
+@dataclass
+class LoadedModel:
+    spec: pb.ModelArtifactSpec
+    model_path: str
+
+
+def get_model_path(spec: mv_pb.MountedVersionSpecs) -> str:
+    if len(spec.spec.model_files) == 0:
+        raise ValueError(f"Invalid model spec for {spec.model_name}: has no model files.")
+    return os.path.join(CHALK_MODEL_REGISTRY_ROOT, spec.model_artifact_filename, spec.spec.model_files[0].name)
+
+
+@cache
+def load_model_map() -> Mapping[Tuple[str, str], LoadedModel]:
+    mms = mv_pb.MountedModelsSpecs()
+    model_map: dict[Tuple[str, str], LoadedModel] = {}
+
+    try:
+        if REGISTRY_METADATA_FILE is not None:
+            with open(REGISTRY_METADATA_FILE, "rb") as f:
+                mms.ParseFromString(f.read())
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Model registry metadata file not found: {REGISTRY_METADATA_FILE}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load model map: {e}")
+
+    for spec in mms.specs:
+        for identifier in spec.identifiers:
+            model_map[(spec.model_name, f"version_{identifier.version}")] = LoadedModel(
+                spec=spec.spec, model_path=get_model_path(spec)
+            )
+
+            if identifier.alias != "":
+                model_map[(spec.model_name, f"alias_{identifier.alias}")] = LoadedModel(
+                    spec=spec.spec, model_path=get_model_path(spec)
+                )
+
+            if identifier.as_of.seconds != 0:
+                model_map[(spec.model_name, f"asof_{identifier.as_of.seconds}")] = LoadedModel(
+                    spec=spec.spec, model_path=get_model_path(spec)
+                )
+    return model_map
+
+
+def get_model_spec(model_name: str, identifier: str) -> LoadedModel:
+    mms = load_model_map()
+    if (spec := mms.get((model_name, identifier), None)) is None:
+        raise ValueError(f"Model '{model_name}, {identifier}' not found in mounted models.")
+    return spec
+
+
+def model_type_from_proto(mt: pb.ModelType) -> ModelType:
+    mapping = {
+        pb.ModelType.MODEL_TYPE_PYTORCH: ModelType.PYTORCH,
+        pb.ModelType.MODEL_TYPE_SKLEARN: ModelType.SKLEARN,
+        pb.ModelType.MODEL_TYPE_TENSORFLOW: ModelType.TENSORFLOW,
+        pb.ModelType.MODEL_TYPE_XGBOOST: ModelType.XGBOOST,
+        pb.ModelType.MODEL_TYPE_LIGHTGBM: ModelType.LIGHTGBM,
+        pb.ModelType.MODEL_TYPE_CATBOOST: ModelType.CATBOOST,
+        pb.ModelType.MODEL_TYPE_ONNX: ModelType.ONNX,
+    }
+    _mt = mapping.get(mt, None)
+    if _mt is None:
+        raise ValueError(f"Unsupported model type: {mt}")
+    return _mt
+
+
+def model_encoding_from_proto(me: pb.ModelEncoding) -> ModelEncoding:
+    mapping = {
+        pb.ModelEncoding.MODEL_ENCODING_PICKLE: ModelEncoding.PICKLE,
+        pb.ModelEncoding.MODEL_ENCODING_JOBLIB: ModelEncoding.JOBLIB,
+        pb.ModelEncoding.MODEL_ENCODING_JSON: ModelEncoding.JSON,
+        pb.ModelEncoding.MODEL_ENCODING_TEXT: ModelEncoding.TEXT,
+        pb.ModelEncoding.MODEL_ENCODING_HDF5: ModelEncoding.HDF5,
+        pb.ModelEncoding.MODEL_ENCODING_PROTOBUF: ModelEncoding.PROTOBUF,
+        pb.ModelEncoding.MODEL_ENCODING_CBM: ModelEncoding.CBM,
+        pb.ModelEncoding.MODEL_ENCODING_SAFETENSORS: ModelEncoding.SAFETENSOR,
+    }
+    _me = mapping.get(me, None)
+    if _me is None:
+        raise ValueError(f"Unsupported model encoding: {me}")
+    return _me
+
+
+from typing import Any, List, Optional, Tuple
+
+import pyarrow as pa
+
+
+class ModelAttributeExtractor:
+    @staticmethod
+    def infer_pytorch_schemas(
+        model: Any,
+    ) -> Tuple[Optional[List[Tuple[List[int], Any]]], Optional[List[Tuple[List[int], Any]]]]:
+        input_schema: Optional[List[Tuple[List[int], Any]]] = None
+        output_schema: Optional[List[Tuple[List[int], Any]]] = None
+
+        if hasattr(model, "modules"):
+            try:
+                first_layer = None
+                last_layer = None
+
+                for module in model.modules():
+                    if hasattr(module, "in_features") or hasattr(module, "in_channels"):
+                        if first_layer is None:
+                            first_layer = module
+                        last_layer = module
+
+                if first_layer is not None:
+                    input_shape: List[int] = []
+                    if hasattr(first_layer, "in_features"):
+                        input_shape = [first_layer.in_features]
+                    elif hasattr(first_layer, "in_channels"):
+                        input_shape = [first_layer.in_channels, 224, 224]
+
+                    input_schema = [(input_shape, pa.float64())]
+
+                if last_layer is not None:
+                    output_shape: List[int] = []
+                    if hasattr(last_layer, "out_features"):
+                        output_shape = [last_layer.out_features]
+                    elif hasattr(last_layer, "out_channels"):
+                        output_shape = [last_layer.out_channels, 1, 1]
+
+                    output_schema = [(output_shape, pa.float64())]
+            except Exception:
+                pass
+
+        return input_schema, output_schema
+
+    @staticmethod
+    def infer_xgboost_schemas(
+        model: Any,
+    ) -> Tuple[Optional[List[Tuple[List[int], Any]]], Optional[List[Tuple[List[int], Any]]]]:
+        input_schema: Optional[List[Tuple[List[int], Any]]] = None
+        output_schema: Optional[List[Tuple[List[int], Any]]] = None
+
+        try:
+            n_features = None
+
+            if hasattr(model, "n_features_in_"):
+                n_features = model.n_features_in_
+            elif hasattr(model, "feature_names_in_") and model.feature_names_in_ is not None:
+                n_features = len(model.feature_names_in_)
+            elif hasattr(model, "get_booster"):
+                booster = model.get_booster()
+                if hasattr(booster, "num_features"):
+                    n_features = booster.num_features()
+                elif hasattr(booster, "feature_names") and booster.feature_names:
+                    n_features = len(booster.feature_names)
+
+            if n_features is not None:
+                input_schema = [([n_features], pa.float64())]
+
+            if hasattr(model, "_estimator_type"):
+                if model._estimator_type == "classifier":
+                    n_classes = None
+                    if hasattr(model, "n_classes_"):
+                        n_classes = model.n_classes_
+                    elif hasattr(model, "classes_") and model.classes_ is not None:
+                        n_classes = len(model.classes_)
+
+                    if n_classes is not None:
+                        if n_classes == 2:
+                            output_schema = [([1], pa.float64())]
+                        else:
+                            output_schema = [([n_classes], pa.float64())]
+                    else:
+                        output_schema = [([1], pa.float64())]
+
+                elif model._estimator_type == "regressor":
+                    n_outputs = 1
+                    if hasattr(model, "n_outputs_"):
+                        n_outputs = model.n_outputs_
+                    output_schema = [([n_outputs], pa.float64())]
+
+            else:
+                output_schema = [([1], pa.float64())]
+
+        except Exception:
+            pass
+
+        return input_schema, output_schema
+
+    @staticmethod
+    def infer_sklearn_schemas(
+        model: Any,
+    ) -> Tuple[Optional[List[Tuple[List[int], Any]]], Optional[List[Tuple[List[int], Any]]]]:
+        input_schema: Optional[List[Tuple[List[int], Any]]] = None
+        output_schema: Optional[List[Tuple[List[int], Any]]] = None
+
+        try:
+            n_features = None
+
+            if hasattr(model, "n_features_in_"):
+                n_features = model.n_features_in_
+            elif hasattr(model, "feature_names_in_") and model.feature_names_in_ is not None:
+                n_features = len(model.feature_names_in_)
+            elif hasattr(model, "coef_") and model.coef_ is not None:
+                if model.coef_.ndim == 1:
+                    n_features = len(model.coef_)
+                elif model.coef_.ndim == 2:
+                    n_features = model.coef_.shape[1]
+            elif hasattr(model, "support_vectors_") and model.support_vectors_ is not None:
+                n_features = model.support_vectors_.shape[1]
+            elif hasattr(model, "tree_") and hasattr(model.tree_, "n_features"):
+                n_features = model.tree_.n_features
+            elif hasattr(model, "estimators_") and model.estimators_ is not None and len(model.estimators_) > 0:
+                first_estimator = model.estimators_[0]
+                if hasattr(first_estimator, "n_features_in_"):
+                    n_features = first_estimator.n_features_in_
+                elif hasattr(first_estimator, "tree_") and hasattr(first_estimator.tree_, "n_features"):
+                    n_features = first_estimator.tree_.n_features
+
+            if n_features is not None:
+                input_schema = [([n_features], pa.float64())]
+
+            if hasattr(model, "_estimator_type"):
+                if model._estimator_type == "classifier":
+                    n_classes = None
+                    if hasattr(model, "classes_") and model.classes_ is not None:
+                        n_classes = len(model.classes_)
+                    elif hasattr(model, "n_classes_"):
+                        n_classes = model.n_classes_
+
+                    if n_classes is not None:
+                        if n_classes == 2:
+                            output_schema = [([1], pa.float64())]
+                        else:
+                            output_schema = [([n_classes], pa.float64())]
+                    else:
+                        output_schema = [([1], pa.float64())]
+
+                elif model._estimator_type == "regressor":
+                    n_outputs = 1
+                    if hasattr(model, "n_outputs_"):
+                        n_outputs = model.n_outputs_
+                    elif hasattr(model, "coef_") and model.coef_ is not None:
+                        if model.coef_.ndim == 2:
+                            n_outputs = model.coef_.shape[0]
+
+                    output_schema = [([n_outputs], pa.float64())]
+
+                elif model._estimator_type == "clusterer":
+                    output_schema = [([1], pa.int64())]
+
+                elif model._estimator_type == "transformer":
+                    pass
+
+            else:
+                if hasattr(model, "predict_proba"):
+                    output_schema = [([1], pa.float64())]
+                elif hasattr(model, "predict"):
+                    output_schema = [([1], pa.float64())]
+                elif hasattr(model, "transform"):
+                    pass
+
+        except Exception:
+            pass
+
+        return input_schema, output_schema
