@@ -1,0 +1,3 @@
+"""
+Konigle CLI module.
+"""
