@@ -1,0 +1,347 @@
+{% extends 'dcim/device.html' %}
+{% load toolkit_extras %}
+{% load helpers %}
+{% load static %}
+
+{% block style %}
+<link href="{% static 'netbox_toolkit_plugin/css/toolkit.css' %}" rel="stylesheet">
+<style>
+    /* HTMX loading indicators */
+    .htmx-indicator {
+        display: none;
+    }
+    .htmx-request .htmx-indicator {
+        display: inline-block;
+    }
+    .htmx-request.htmx-indicator {
+        display: inline-block;
+    }
+    /* Variable fields container styling */
+    .variable-fields-container .variable-field {
+        background-color: var(--tblr-bg-surface-secondary);
+        border: 1px solid var(--tblr-border-color);
+        border-radius: 0.375rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .variable-fields-container .variable-field:last-child {
+        margin-bottom: 0;
+    }
+
+    /* Responsive button layout using Tabler utilities */
+    @media (max-width: 991.98px) {
+        .d-flex.gap-2 {
+            flex-direction: column !important;
+        }
+
+        .d-flex.gap-2 .btn {
+            border-radius: 0.375rem !important;
+            margin-bottom: 0.25rem;
+        }
+
+        .d-flex.gap-2 .btn:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    /* Additional responsive handling for very narrow screens */
+    @media (max-width: 1199.98px) and (min-width: 992px) {
+        /* Ensure buttons don't overflow on medium-large screens */
+        .d-flex.gap-2 .btn {
+            min-width: 0;
+            flex: 1 1 0;
+        }
+
+        .d-flex.gap-2 .btn span {
+            word-break: break-word;
+            white-space: normal;
+        }
+    }
+
+    /* Using pure Tabler modal classes - no custom modal styling needed */
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+    <div class="row">
+        <!-- Left Column with Commands -->
+        <div class="col-lg-3 col-md-4">
+        <!-- Device Connection Info -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h3 class="card-title">Connection Info</h3>
+                <div class="card-actions">
+                    <button class="btn btn-icon" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#connectionInfoCollapse" aria-expanded="true"
+                            aria-controls="connectionInfoCollapse">
+                        <i class="mdi mdi-chevron-up collapse-icon"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="collapse show" id="connectionInfoCollapse">
+                <div class="card-body p-2">
+                    <div class="list-group list-group-flush">
+                        <div class="list-group-item px-0 py-1 border-0">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="fw-semibold text-muted" style="flex-shrink: 0; max-width: 60%;">Hostname / IP</span>
+                                <div class="font-monospace text-xs text-end" style="flex-shrink: 1; margin-left: 8px; max-width: 40%; overflow: hidden; white-space: nowrap;">
+                                    {% if connection_info.hostname %}
+                                        {{ connection_info.hostname }}
+                                    {% else %}
+                                        <span class="text-danger fst-italic">Missing</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="list-group-item px-0 py-1 border-0">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="fw-semibold text-muted" style="flex-shrink: 0; max-width: 60%;">Platform</span>
+                                <div class="font-monospace text-xs text-end" style="flex-shrink: 1; margin-left: 8px; max-width: 40%; overflow: hidden; white-space: nowrap;">
+                                    {% if connection_info.platform %}
+                                        {{ connection_info.platform }}
+                                    {% else %}
+                                        <span class="text-danger fst-italic">Missing</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="list-group-item px-0 py-1 border-0">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span class="fw-semibold text-muted" style="flex-shrink: 0; max-width: 60%;">Connection</span>
+                                <div class="font-monospace text-xs text-end" style="flex-shrink: 1; margin-left: 8px; max-width: 40%; overflow: hidden; white-space: nowrap;">
+                                    {% if device_valid %}
+                                        <span class="text-success">Ready</span>
+                                    {% else %}
+                                        <span class="text-danger">Not Ready</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-top mt-2">
+                        <small class="text-muted">
+                            <i class="mdi mdi-information-outline me-1"></i>
+                            {% if device_valid %}
+                                Device is ready for command execution.
+                            {% else %}
+                                {{ validation_message }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rate Limiting Status -->
+        {% if rate_limit_status.enabled %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h3 class="card-title">Rate Limiting</h3>
+                <div class="card-actions">
+                    <button class="btn btn-icon" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#rateLimitCollapse" aria-expanded="true"
+                            aria-controls="rateLimitCollapse">
+                        <i class="mdi mdi-chevron-up collapse-icon"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="collapse show" id="rateLimitCollapse">
+                <div class="card-body" id="rate-limit-card-content">
+                    {% include "netbox_toolkit_plugin/htmx/rate_limit_card.html" %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Commands List -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Available Commands</h3>
+            </div>
+            {% if commands %}
+            <div class="card-header border-top-0 pt-0">
+                <div class="input-icon">
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           placeholder="Search commands..."
+                           id="command-search">
+                    <span class="input-icon-addon">
+                        <i class="mdi mdi-magnify"></i>
+                    </span>
+                </div>
+            </div>
+            {% endif %}
+            <div class="card-body card-commands p-1">
+                {% if commands %}
+                    <div class="list-group list-group-flush">
+                        {% for command in commands %}
+                        <div class="list-group-item list-group-item-action command-item"
+                             data-command-id="{{ command.id }}" data-command-name="{{ command.name }}"
+                             title="{{ command.description }}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-center">
+                                    {% if command.command_type == 'config' %}
+                                        <i class="mdi mdi-alert-outline text-danger me-2 opacity-75"
+                                           style="font-size: 1.25rem;"
+                                           title="Configuration command - use with caution"></i>
+                                    {% endif %}
+                                    <a href="{% url 'plugins:netbox_toolkit_plugin:command_detail' pk=command.pk %}"
+                                       class="text-decoration-none text-body">
+                                        {{ command.name }}
+                                    </a>
+                                    {% if command.variables.exists %}
+                                        <i class="mdi mdi-code-braces text-info ms-2"
+                                           style="font-size: 1rem;"
+                                           title="This command has variables that can be customized"
+                                           data-bs-toggle="tooltip"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <!-- Run button (hidden by default, shown on hover) -->
+                                    <button type="button"
+                                            class="btn btn-sm {% if command.command_type == 'config' %}btn-warning{% else %}btn-success{% endif %} command-run-btn"
+                                            title="Execute command"
+                                            data-command-id="{{ command.id }}"
+                                            data-command-name="{{ command.name }}"
+                                            hx-get="{% url 'plugins:netbox_toolkit_plugin:device_execution_modal' pk=object.pk %}?command_id={{ command.id }}"
+                                            hx-target="#htmx-modal-container"
+                                            hx-swap="innerHTML">
+                                        <i class="mdi mdi-play me-1"></i>Run
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                <div class="alert alert-info">
+                    {% if object.platform %}
+                        {% if not user.is_authenticated %}
+                            You must be logged in to see commands.
+                        {% else %}
+                            No commands available for platform "{{ object.platform }}" with your current permissions.
+                        {% endif %}
+                    {% else %}
+                        No platform assigned to this device.
+                    {% endif %}
+                    {% if perms.netbox_toolkit_plugin.add_command %}
+                        <a href="{% url 'plugins:netbox_toolkit_plugin:command_add' %}" class="alert-link">
+                            Add a command
+                        </a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Command History -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h3 class="card-title">Recent History</h3>
+                <div class="card-actions">
+                    <small class="text-muted">Last 3</small>
+                </div>
+            </div>
+            <div class="card-body p-2" id="recentHistoryContainer">
+                {% include "netbox_toolkit_plugin/htmx/recent_history.html" with recent_history=object.command_logs.all|dictsortreversed:"execution_time"|slice:":3" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column with Output -->
+    <div class="col-lg-9 col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Command Output</h3>
+                {% if executed_command %}
+                <div class="card-actions">
+                    <a href="{% url 'plugins:netbox_toolkit_plugin:command_detail' pk=executed_command.pk %}"
+                       class="text-decoration-none text-muted"
+                       title="View command details">
+                        {{ executed_command.name }}
+                        <i class="mdi mdi-open-in-new ms-1" style="font-size: 0.8rem;"></i>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div id="commandOutputContainer">
+                    {% include "netbox_toolkit_plugin/htmx/command_output.html" %}
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+<!-- HTMX Modal Container -->
+<div id="htmx-modal-container">
+    <!-- HTMX-loaded modals will appear here -->
+</div>
+
+{% endblock %}
+
+{% block javascript %}
+<!-- Load HTMX for dynamic content loading -->
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<!-- Load NetBox Toolkit consolidated JavaScript -->
+<script src="{% static 'netbox_toolkit_plugin/js/toolkit.js' %}"></script>
+
+<!-- Command Search Functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('command-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase().trim();
+            const commandItems = document.querySelectorAll('.command-item');
+
+            commandItems.forEach(function(item) {
+                const commandName = item.dataset.commandName.toLowerCase();
+                const commandTitle = item.getAttribute('title') ? item.getAttribute('title').toLowerCase() : '';
+
+                const matches = commandName.includes(searchTerm) || commandTitle.includes(searchTerm);
+
+                if (matches || searchTerm === '') {
+                    item.style.display = '';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+
+            // Show/hide "no results" message
+            const visibleItems = document.querySelectorAll('.command-item:not([style*="display: none"])');
+            let noResultsMsg = document.getElementById('no-search-results');
+
+            if (visibleItems.length === 0 && searchTerm !== '') {
+                if (!noResultsMsg) {
+                    noResultsMsg = document.createElement('div');
+                    noResultsMsg.id = 'no-search-results';
+                    noResultsMsg.className = 'alert alert-info mt-3';
+                    noResultsMsg.innerHTML = '<i class="mdi mdi-magnify"></i> No commands match your search.';
+                    document.querySelector('.card-commands .list-group').appendChild(noResultsMsg);
+                }
+                noResultsMsg.style.display = 'block';
+            } else {
+                if (noResultsMsg) {
+                    noResultsMsg.style.display = 'none';
+                }
+            }
+        });
+
+        // Clear search functionality (optional enhancement)
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                e.target.value = '';
+                e.target.dispatchEvent(new Event('input'));
+                e.target.blur();
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
