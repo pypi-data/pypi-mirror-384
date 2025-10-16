@@ -1,0 +1,74 @@
+---
+name: CI
+
+"on":
+  pull_request:
+    branches: ['main']
+  workflow_dispatch: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "0.9.2"
+
+    - name: Install requirements
+      run: uv sync --locked --all-extras
+
+    - name: Run ruff check
+      run: uv run ruff check --show-fixes
+
+    - name: Run ruff format
+      run: uv run ruff format --diff
+
+  build-docker:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        platforms: linux/amd64,linux/arm64
+        tags: ${{ secrets.DOCKER_USERNAME }}/reminder-aggregator:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  build-package:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "0.9.2"
+        python-version: ${{ matrix.python-version }}
+
+    - name: Build package
+      run: uv build --no-sources --no-progress
