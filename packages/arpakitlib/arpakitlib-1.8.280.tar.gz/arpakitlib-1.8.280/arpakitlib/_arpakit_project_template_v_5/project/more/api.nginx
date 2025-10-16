@@ -1,0 +1,43 @@
+# main
+server {
+    listen 80;
+    listen [::]:80;
+    server_name api.site.com www.site.com;
+
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+
+        # базовые прокси-заголовки
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # буферизация запроса на стороне nginx (полезно для больших аплоадов)
+        proxy_request_buffering off;
+
+        # таймауты по вкусу (чтобы не висеть вечно)
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+
+        # (необязательно) меньше магии с Location/Redirect от апстрима
+        proxy_redirect off;
+        # proxy_redirect http://127.0.0.1:8080/ /;
+        # proxy_redirect http://backend.local/ https://site.com/;
+
+    }
+}
+
+
+# redirect
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.site.arpakit.com;
+    return 301 http://site.com$request_uri;
+}
