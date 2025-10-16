@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+
+{% extends "layout.html.jinja" %}
+
+{% block content %}
+
+<div class="container-fluid">
+    <div class="row">
+{% for device_type in interface.device_types %}
+    {% set device = interface.get_device(device_type) %}
+
+        <div class="col-lg-6 p-1">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{device.name}}
+    {% if device.is_connected%}
+                        <span class="badge rounded-pill text-bg-success">{{_('Connected')}}</span>
+    {% else%}
+                        <span class="badge rounded-pill text-bg-info">{{_('Disconnected')}}</span>
+    {% endif%}
+
+    {% if device.queue_size%}
+                        <span class="badge rounded-pill text-bg-warning">
+                        {{_('Pending Tasks')}}
+                            <span class="badge badge-light">
+                                {{device.queue_size}} / {{device.max_queue_size}}
+                            </span>
+                        </span>
+    {% endif%}
+
+    {% if device.errored_tasks_qty%}
+                        <a href="{{url_for('errored_tasks', device_type=device_type)}}"
+                            class="badge rounded-pill text-bg-danger">{{_('Errors')}}
+                            <span class="badge badge-light">{{device.errored_tasks_qty}}</span>
+                        </a>
+    {% endif%}
+
+    {% if device.disconnections_qty%}
+                        <a href="{{url_for('disconnections', device_type=device_type)}}"
+                            class="badge rounded-pill text-bg-danger">{{_('Disconnections')}}
+                            <span class="badge badge-light">{{device.disconnections_qty}}</span>
+                        </a>
+    {% endif%}
+                    </h5>
+
+                    <div class="card-text">
+                        <div class="row">
+                            <div class="col-6">
+                                <img class="container-fluid" src="{{ url_for('static', filename='devices/' + device.usb_image_name) }}"
+                                style="max-height: 150px;max-width: 150px;" />
+                            </div>
+                            <div class="col-6">
+    {% if device.is_connected%}
+                                <ul>
+                                    <li>{{device.usb_device_name}}</li>
+                                    <li>{{device.usb_vendor_product_code}}</li>
+        {% if device.terminal_file%}
+                                    <li>{{device.terminal_file}}</li>
+        {% endif%}
+                                </ul>
+    {% endif%}
+                                <button type="button" class="container-fluid btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal_{{device_type}}">
+                                  {{_('Test')}}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+{% endfor%}
+
+        <div class="col-lg-6 p-1">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{_('Odoo')}}</h5>
+
+                    <div class="card-text">
+                        <div class="row">
+                            <div class="col-6">
+                                <img class="container-fluid" src="{{ url_for('static', filename='img/odoo.png') }}"
+                                style="max-height: 150px;max-width: 150px;" />
+                            </div>
+                            <div class="col-6">
+                                <button type="button" class="container-fluid btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal_odoo">
+                                  {{_('Test')}}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<div class="modal fade" id="modal_display" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">{{_('Test communication with display')}}</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{_('Close')}}"></button>
+            </div>
+            <div class="modal-body">
+                <h2>{{_('Configure')}}</h2>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Set Mode')}}</span>
+                    <input type="text" class="form-control" value="ESC/POS" readonly/>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Set Character')}}</span>
+                    <input type="text" class="form-control" value="France" readonly/>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Set Encoding')}}</span>
+                    <input type="text" class="form-control" value="CP858" readonly/>
+                </div>
+                <div class="input-group">
+                    <button type="button" class="btn btn-primary" onclick="test_display_configure(); return false;">{{_('Configure Display')}}</button>
+                </div>
+                <h2>{{_('Send Text')}}</h2>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Line 1')}}</span>
+                    <input type="text" class="form-control" id="display_line_1">
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Line 2')}}</span>
+                    <input type="text" class="form-control" id="display_line_2">
+                </div>
+                <div class="input-group">
+                    <button type="button" class="btn btn-primary" onclick="test_display_text(); return false;">{{_('Send text to display')}}</button>
+                </div>
+                <h2>{{_('Send Product Information')}}</h2>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Product Name')}}</span>
+                    <input type="text" class="form-control" id="display_product_name" />
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Quantity')}}</span>
+                    <input type="text" class="form-control" id="display_quantity" />
+                    <span class="input-group-text">{{_('Unit Price')}}</span>
+                    <input type="text" class="form-control" id="display_unit_price" />
+                    <span class="input-group-text">€</span>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Discount')}}</span>
+                    <input type="text" class="form-control" id="display_discount" />
+                    <span class="input-group-text">%</span>
+                    <span class="input-group-text">{{_('Total')}}</span>
+                    <input type="text" class="form-control" id="display_total" />
+                    <span class="input-group-text">€</span>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">{{_('Action')}}</span>
+                    <select type="select" class="form-control" id="display_action">
+                        <option value="add_line" selected>Add Line</option>
+                        <option value="remove_line">Remove Line</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <button type="button" class="btn btn-primary" onclick="test_display_product(); return false;">{{_('Send product information to display')}}</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modal_printer" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">{{_('Test communication with printer')}}</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{_('Close')}}"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h2>{{_('Print an image')}}</h2>
+                    <div class="input-group">
+                        <input type="file" class="form-control" id="print_file"/>
+                        <span class="input-group-text">{{_('png, jpg, etc.')}}</span>
+                    </div>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-primary" onclick="test_print(); return false;">{{_('Print')}}</button>
+                    </div>
+                    <h2>{{_('Open cashbox')}}</h2>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-primary" onclick="test_open_cashbox(); return false;">{{_('Open')}}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modal_payment" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">{{_('Test communication with payment terminal')}}</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{_('Close')}}"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h2>{{_('Send Amount')}}</h2>
+                    <div class="input-group">
+                        <span class="input-group-text">{{_('Amount')}}</span>
+                        <input type="text" class="form-control" id="payment_amount">
+                        <span class="input-group-text">€</span>
+                    </div>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-primary" onclick="test_payment(); return false;">{{_('Send Amount')}}</button>
+                    </div>
+                    <h2>{{_('Technical Result')}}</h2>
+                    <textarea type="text" class="form-control" id="payment_result" readonly></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modal_scale" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">{{_('Test communication with scale')}}</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{_('Close')}}"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h2>{{_('Send sale information')}}</h2>
+                    <div class="input-group">
+                        <span class="input-group-text">Unit Price</span>
+                        <input type="text" class="form-control" id="scale_unit_price">
+                        <span class="input-group-text">€</span>
+                    </div>
+                    <div class="input-group">
+                        <span class="input-group-text">Optional Tare</span>
+                        <input type="text" class="form-control" id="scale_tare">
+                        <span class="input-group-text">kg</span>
+                    </div>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-primary" onclick="test_scale(); return false;">{{_('Get Weight')}}</button>
+                    </div>
+                    <h2>{{_('Result')}}</h2>
+                    <div class="input-group">
+                        <span class="input-group-text">Net Weight</span>
+                        <input type="text" class="form-control" id="scale_weight" disabled/>
+                        <span class="input-group-text">kg</span>
+                    </div>
+                    <div class="input-group">
+                        <span class="input-group-text">Error Number</span>
+                        <input type="text" class="form-control" id="scale_error_number" disabled/>
+                    </div>
+                    <div class="input-group">
+                        <span class="input-group-text">Error Description</span>
+                        <textarea type="text" class="form-control" id="scale_error_description" disabled></textarea>
+                    </div>
+                    <h2>{{_('Technical Result')}}</h2>
+                    <textarea type="text" class="form-control" id="scale_result"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modal_odoo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">{{_('Emulate Odoo')}}</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{_('Close')}}"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h2>{{_('Odoo Messages')}}</h2>
+                    <div class="input-group">
+                        <button type="button" class="btn btn-primary" onclick="test_status_json(); return false;">status_json</button>
+                    </div>
+                    <h2>{{_('Technical Result')}}</h2>
+                    <textarea type="text" class="form-control" id="odoo_result" rows="10"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* ***************************
+    Generic functions
+    ******************************/
+
+    function _call_ajax(url, device_type, data, extra_callback) {
+        const callback = function(response) {
+            $("#" + device_type + "_result").val(JSON.stringify(response.result, null, "\t"));
+            if (extra_callback) {
+                extra_callback(result);
+            }
+        }
+
+        args = {
+            url: url,
+            contentType: "application/json; charset=utf-8",
+            type: "POST",
+            timeout: 1000,
+            success: callback,
+            data: JSON.stringify(data),
+            error: function (request, status, error) {
+                alert("Error. Code: " + request.status + ". Description: " + request.statusText);
+            },
+        }
+        $.ajax(args);
+    }
+
+    /* ***************************
+    Device Display
+    ******************************/
+
+    $("#modal_display").bind('shown.bs.modal', function() {
+      $("#display_line_1").focus();
+    });
+
+    function test_display_configure() {
+        _call_ajax("/hw_proxy/display_configure")
+    }
+
+    function test_display_text() {
+        const data = {
+            params: {
+                data: {
+                    text_lines:
+                        [
+                            $("#display_line_1").val(),
+                            $("#display_line_2").val(),
+                        ],
+                    action: "display_lines",
+                }
+            }
+        }
+        _call_ajax("/hw_proxy/display_show", "display", data)
+    }
+
+    function test_display_product() {
+        const data = {
+            params: {
+                data: {
+                    product_name: $("#display_product_name").val(),
+                    quantity: $("#display_quantity").val(),
+                    discount: $("#display_discount").val(),
+                    unit_price: $("#display_unit_price").val(),
+                    total: $("#display_total").val(),
+                    action: $("#display_action").val(),
+                }
+            }
+        }
+        _call_ajax("/hw_proxy/display_show", "display", data)
+    }
+
+    /* ***************************
+    Device Printer
+    ******************************/
+
+    $("#modal_printer").bind('shown.bs.modal', function() {
+      $("#print_file").focus();
+    });
+
+    function test_print() {
+        const myFile = $('#print_file').prop('files')[0];
+        const reader = new FileReader();
+        if (myFile) {
+            reader.readAsDataURL(myFile);
+            reader.onload = (event) => {
+                const data = {
+                    params: {
+                        data: {
+                            action: "print_receipt",
+                            receipt: reader.result.split(",")[1],
+                        },
+                    }
+                }
+                _call_ajax("/hw_proxy/default_printer_action", "printer", data);
+            };
+        }
+    }
+
+    function test_open_cashbox() {
+        const data = {
+            params: {
+                data: {action: "cashbox"},
+            }
+        }
+        _call_ajax("/hw_proxy/default_printer_action", "printer", data)
+    }
+
+    /* ***************************
+    Device Payment
+    ******************************/
+
+    $("#modal_payment").bind('shown.bs.modal', function() {
+      $("#payment_amount").focus();
+    });
+
+    function test_payment() {
+        const data = {
+            params: {
+                payment_info: {
+                    amount: $("#payment_amount").val(),
+                    currency_iso: "EUR",
+                },
+            }
+        }
+        _call_ajax("/hw_proxy/payment_terminal_transaction_start", "payment", data);
+    }
+
+    /* ***************************
+    Device Scale
+    ******************************/
+
+    $("#modal_scale").bind('shown.bs.modal', function() {
+      $("#scale_unit_price").focus();
+    });
+
+    function test_scale() {
+        const data = {
+            params: {
+                data: {
+                    unit_price: $("#scale_unit_price").val(),
+                    tare: $("#scale_tare").val(),
+                },
+            }
+        }
+        const extra_callback = function(response) {
+            $("#scale_weight").val(response.result.weight);
+            $("#scale_error_number").val(response.result.error_number);
+            $("#scale_error_description").val(response.result.error_description);
+        }
+        _call_ajax("/hw_proxy/scale_read", "scale", data, extra_callback);
+    }
+
+    /* ***************************
+    Odoo Emulation
+    ******************************/
+
+    function test_status_json() {
+        _call_ajax("/hw_proxy/status_json", "odoo", {})
+    }
+</script>
+
+{% endblock %}

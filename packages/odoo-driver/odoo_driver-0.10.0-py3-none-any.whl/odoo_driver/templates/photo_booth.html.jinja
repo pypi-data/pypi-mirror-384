@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+
+{% extends "layout.html.jinja" %}
+
+{% block content %}
+
+<div class="container-fluid">
+    <div class="row">
+        <button type="button" class="btn btn-primary" onclick="web_cam_snap(); return false;">{{_('Take a photo')}}</button>
+        <div class="col-lg-6">
+            <video id="webcam" autoplay playsinline width="640" height="480"></video>
+        </div>
+        <div class="col-lg-6">
+            <canvas id="canvas"></canvas>
+            <audio id="snapSound" src="{{ url_for('static', filename='audio/photo-taken.wav') }}" preload = "auto"></audio>
+        </div>
+    </div>
+</div>
+<script>
+    const webcamElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('canvas');
+    const snapSoundElement = document.getElementById('snapSound');
+    const webcam = new Webcam(webcamElement, 'user', canvasElement, snapSoundElement);
+
+    webcam.start()
+        .then(result =>{
+            console.log("webcam started");
+        })
+        .catch(err => {
+            console.log(err);
+        });
+
+    function _call_ajax(url, data, callback) {
+        args = {
+            url: url,
+            contentType: "application/json; charset=utf-8",
+            type: "POST",
+            timeout: 1000,
+            error: function (request, status, error) {
+                alert("Error. Code: " + request.status + ". Description: " + request.statusText);
+            },
+        }
+        if (data) {
+            args["data"] = JSON.stringify(data)
+        }
+        if (callback) {
+            args["success"] = callback
+        }
+        $.ajax(args);
+    }
+
+    function web_cam_snap() {
+        let picture = webcam.snap();
+        $('#download-photo').href = picture;
+        var data = {
+            params: {
+                data: {
+                    action: "print_receipt",
+                    receipt: picture.split(",")[1],
+                },
+            }
+        }
+        _call_ajax("/hw_proxy/default_printer_action", data);
+    }
+</script>
+
+{% endblock %}
