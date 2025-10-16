@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunk_textea_funix=self.webpackChunk_textea_funix||[]).push([[728],{36728:(e,t,c)=>{c.d(t,{createArchitectureServices:()=>u.S});var u=c(85263);c(86554)}}]);
