@@ -1,0 +1,202 @@
+!pip install pyspark
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("MySparkApp").enableHiveSupport().getOrCreate()
+from pyspark.sql import functions as F
+data = [
+    ("Prabu", "Mumbai", 85),
+    ("karan", "Delhi", 92),
+    ("karthi", "Pune", 78),
+    ("banu", "Bangalore", 88)
+]
+columns = ["name", "city", "score"]
+df = spark.createDataFrame(data, columns)
+df.show()
+print(type(df))
+df.createOrReplaceTempView("people")
+result = spark.sql("SELECT * FROM people")
+result.show()
+result = spark.sql("SELECT * FROM people WHERE score > 85")
+result.show()
+df.write.saveAsTable("new_table")
+df.printSchema()
+spark.sql("DESCRIBE new_table").show()
+spark.sql("SHOW COLUMNS FROM new_table").show()
+spark.sql("ALTER TABLE new_table ADD COLUMN new_column STRING")
+spark.sql("DESCRIBE new_table").show()
+spark.sql("""
+INSERT INTO TABLE new_table (name, city, score)
+VALUES
+('karan', 'Chennai', 81),
+('prabu', 'Hyderabad', 95),
+('karthi', 'Kolkata', 76),
+('muruga', 'Jaipur', 89)
+""")
+spark.sql("SELECT * FROM new_table").show()
+df = spark.read.table("new_table")
+df.show()
+from pyspark.sql.functions import expr
+updated_df = df.withColumn("score_plus_5", expr("score + 5"))
+updated_df.show()
+updated_df = df.withColumn("score", expr("score + 1"))
+updated_df.show()
+from pyspark.sql.functions import when
+updated_df = df.withColumn("Good _Score", when(expr("score >= 80"), "Yes").otherwise("No"))
+updated_df.show()
+from pyspark.sql.functions import col
+update_condition = (col("name") == "karthi")
+updated_df = df.withColumn("score", when(update_condition, 98).otherwise(col("score")))
+updated_df.show()
+update_condition = (col("name") == "karthi")
+updated_df = df.withColumn("new_column", when(update_condition, "Bangalore").otherwise(col("new_column")))
+updated_df.show()
+from pyspark.sql.functions import lit
+job_location="Bangalore"
+df_with_job = df.withColumn("job", lit(job_location))
+df_with_job.show()
+from pyspark.sql.functions import col, when, lit
+update_condition = col("name").isin(["Karthi", "karan"])
+city_update_expr = when(update_condition, col("city") + lit(" (Updated)")).otherwise(col("city"))
+score_update_expr = when(update_condition, col("score") + 10).otherwise(col("score"))
+updated_df = df.withColumn("city", city_update_expr).withColumn("score", score_update_expr)
+print("Updated DataFrame:")
+updated_df.show()
+from pyspark.sql.functions import col, when
+from pyspark.sql.types import StringType
+update_condition = col("name").isin(["karthi", "karan"])
+city_update_expr = when(update_condition, "Updated City").otherwise(col("city")).cast(StringType())
+score_update_expr = when(update_condition, col("score") + 5).otherwise(col("score"))
+updated_df = df.withColumn("city", city_update_expr).withColumn("score", score_update_expr)
+print("Updated DataFrame:")
+updated_df.show()
+updated_df.write.saveAsTable("new_table_name", format="parquet", mode="overwrite")
+updated_df = updated_df.filter(df['name'] != 'karan')
+updated_df.show()
+delete_condition = ((updated_df['name'] == 'karan') | ((updated_df['score'] >= 80) | (updated_df['city'] == 'Bangalore')))
+filtered_df = updated_df.filter(~delete_condition)
+filtered_df.show()
+from pyspark.sql.functions import col, when
+update_condition = col("name").isin(["karan", "karthi"])
+updated_df = df.withColumn(
+    "score",
+    when(update_condition, col("score") + 5).otherwise(col("score"))
+)
+print("Updated DataFrame:")
+updated_df.show()
+print("Students with score > 85:")
+updated_df.filter(col("score") > 85).show()
+print("Sorted by score (descending):")
+updated_df.orderBy(col("score").desc()).show()
+from pyspark.sql.functions import col, when, avg, countDistinct, lit
+print("Average score:")
+updated_df.select(avg(col("score")).alias("average_score")).show()
+print("Pass/Fail status:")
+pass_fail_df = updated_df.withColumn(
+    "status",
+    when(col("score") >= 85, lit("Pass")).otherwise(lit("Fail"))
+)
+pass_fail_df.show()
+from pyspark.sql import SparkSession
+from os.path import abspath
+spark_1 = SparkSession.builder.master("local[1]").appName("SparkByExamples.com").getOrCreate()
+data = [
+    ("karan", 83),
+    ("prabu", 91),
+    ("karthi", 77),
+    ("banu", 86)
+]
+columns = ["name", "score"]
+df_1 = spark_1.createDataFrame(data, columns)
+df_1.show()
+df_1.createOrReplaceTempView("people_1")
+df_1.write.saveAsTable("new_table_1", format="parquet", mode="overwrite")
+spark_1.sql("DESCRIBE new_table_1").show()
+spark_1.sql("SHOW COLUMNS FROM new_table_1").show()
+from pyspark.sql import functions as F
+spark.sql("DROP TABLE IF EXISTS people_new_column_1")
+df_1.withColumn("new_column", F.lit("some_value")).write.saveAsTable("people_new_column_1")
+spark_1.sql("DESCRIBE people_new_column_1").show()
+spark_1.catalog.dropTempView("new_table_1")
+spark_1.sql("DROP TABLE IF EXISTS new_table_1")
+df_1.write.saveAsTable("student_marks", format="parquet", mode="overwrite")
+spark_1.sql("SHOW TABLES").show()
+spark_1.sql("DESCRIBE student_marks").show()
+spark_1.sql("ALTER TABLE student_marks ADD COLUMNS (grade STRING)")
+spark_1.sql("DESCRIBE student_marks").show()
+spark_1.sql("""
+ALTER TABLE student_marks
+SET TBLPROPERTIES ('creator'='kaviya', 'created_date'='2025-08-14')
+""")
+spark_1.sql("SHOW TBLPROPERTIES student_marks").show()
+spark_1.sql("CREATE TABLE IF NOT EXISTS student_marks_copy AS SELECT * FROM student_marks")
+spark_1.sql("SHOW TABLES").show()
+spark_1.sql("TRUNCATE TABLE student_marks_copy")
+spark_1.sql("SELECT * FROM student_marks_copy").show()
+new_data = [
+    ("Priya", 27, "Chennai"),
+    ("Arun", 34, "Madurai")
+]
+columns = ["name", "age", "new_column"]
+new_df = spark_1.createDataFrame(new_data, columns)
+new_df.write.insertInto("people_new_column_1")
+new_df.show()
+person_name = "Priya"
+new_age = 28
+updated_df = new_df.withColumn("age", F.when(F.col("name") == person_name, new_age).otherwise(F.col("age")))
+updated_df.show()
+new_df.show()
+updated_df = updated_df.filter(F.col("name") != "karan")
+updated_df.show()
+from pyspark.sql import functions as F
+new_df.show(5)
+new_df.count()
+new_df.select("new_column").distinct().show()
+new_df.groupBy("new_column").count().show()
+new_df.agg(F.max("age").alias("max_age")).show()
+df_with_double_age = new_df.withColumn("double_age", F.col("age") * 2)
+df_with_double_age.show()
+from pyspark.sql import functions as F
+df_with_status = updated_df.withColumn("status", F.lit("Active"))
+df_with_status.show()
+df_age_plus5 = df_with_status.withColumn("age", F.col("age") + 5)
+df_age_plus5.show()
+df_age_gt50 = df_age_plus5.filter(F.col("age") > 50)
+df_age_gt50.show()
+df_conditional = df_age_plus5.withColumn(
+    "category",
+    F.when(F.col("age") > 50, "Senior").otherwise("Adult")
+)
+df_conditional.show()
+data = [
+    ("karan", "Mumbai", 85),
+    ("prabu", "Delhi", 92),
+    ("karthi", "Pune", 78),
+    ("banu", "Bangalore", 88)
+]
+columns = ["name", "city", "score"]
+df = spark.createDataFrame(data, columns)
+df.show()
+print(type(df))
+from pyspark.sql.window import Window
+from pyspark.sql.functions import rank
+windowSpec = Window.orderBy(F.desc("score"))
+ranked_df = df.withColumn("rank", rank().over(windowSpec))
+ranked_df.show()
+city_stats = df.groupBy("city").agg(
+    F.avg("score").alias("avg_score"),
+    F.max("score").alias("max_score"),
+    F.min("score").alias("min_score")
+)
+city_stats.show()
+graded_df = df.withColumn(
+    "grade",
+    F.when(df.score >= 90, "A")
+     .when(df.score >= 80, "B")
+     .when(df.score >= 70, "C")
+     .otherwise("D")
+)
+graded_df.show()
+
+
+
+
+

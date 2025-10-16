@@ -1,0 +1,56 @@
+!wget https://archive.ics.uci.edu/ml/machine-learning-databases/00267/data_banknote_authentication.txt
+
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.classification import RandomForestClassifier, DecisionTreeClassifier, LogisticRegression, LinearSVC, GBTClassifier
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.ml import Pipeline
+from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
+spark = SparkSession.builder.appName("BinaryClassification_Pipeline").getOrCreate()
+url = "/content/data_banknote_authentication.txt"
+data = spark.read.csv(url, sep=",", header=False, inferSchema=True)
+data = data.withColumnRenamed("_c0","variance") \
+           .withColumnRenamed("_c1","skewness") \
+           .withColumnRenamed("_c2","curtosis") \
+           .withColumnRenamed("_c3","entropy") \
+           .withColumnRenamed("_c4","label")
+train_data, test_data = data.randomSplit([0.8,0.2], seed=42)
+assembler = VectorAssembler(inputCols=["variance","skewness","curtosis","entropy"], outputCol="features")
+models = {
+    "Random Forest": RandomForestClassifier(featuresCol="features", labelCol="label", seed=42),
+    "Decision Tree": DecisionTreeClassifier(featuresCol="features", labelCol="label", seed=42),
+    "Logistic Regression": LogisticRegression(featuresCol="features", labelCol="label", maxIter=100),
+    "Linear SVC": LinearSVC(featuresCol="features", labelCol="label", maxIter=100),
+    "GBTClassifier": GBTClassifier(featuresCol="features", labelCol="label",maxIter=100)
+}
+evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
+param_grids = {
+    "Random Forest": ParamGridBuilder() \
+        .addGrid(models["Random Forest"].numTrees, [10, 50]) \
+        .addGrid(models["Random Forest"].maxDepth, [5, 10]) \
+        .build(),
+    "Decision Tree": ParamGridBuilder() \
+        .addGrid(models["Decision Tree"].maxDepth, [5, 10]) \
+        .build(),
+    "Logistic Regression": ParamGridBuilder() \
+        .addGrid(models["Logistic Regression"].regParam, [0.01, 0.1]) \
+        .build(),
+    "Linear SVC": ParamGridBuilder() \
+        .addGrid(models["Linear SVC"].regParam, [0.01, 0.1]) \
+        .build(),
+    "GBTClassifier": ParamGridBuilder() \
+        .addGrid(models["GBTClassifier"].maxIter, [20, 50]) \
+        .build()
+}
+for name, classifier in models.items():
+    print(f"\nTraining model: {name}")
+    pipeline = Pipeline(stages=[assembler, classifier])
+    cv = CrossValidator(estimator=pipeline,
+                        estimatorParamMaps=param_grids[name],
+                        evaluator=evaluator,
+                        numFolds=3)
+    cv_model = cv.fit(train_data)
+    predictions = cv_model.transform(test_data)
+    predictions.select("features", "label", "prediction").show(5)
+    accuracy = evaluator.evaluate(predictions)
+    print(f"{name} Accuracy after hyperparameter tuning: {accuracy}")

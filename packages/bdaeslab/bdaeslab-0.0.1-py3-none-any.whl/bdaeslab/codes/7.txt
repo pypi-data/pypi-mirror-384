@@ -1,0 +1,57 @@
+!pip install pyspark
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("PySpark_WindowFunction_Example").getOrCreate()
+simpleData = (("Alice", "Math", 85),
+    ("Bob", "Math", 90),
+    ("Charlie", "Math", 85),
+    ("David", "Physics", 75),
+    ("Eva", "Physics", 95),
+    ("Frank", "Physics", 85),
+    ("Grace", "Chemistry", 70),
+    ("Helen", "Chemistry", 80),
+    ("Ian", "Chemistry", 90),
+    ("Jack", "Math", 95)
+  )
+columns= ["student_name", "subject", "marks"]
+df = spark.createDataFrame(data = simpleData, schema = columns)
+df.printSchema()
+df.show(truncate=False)
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number, rank, dense_rank, percent_rank, ntile, cume_dist, lag, lead, col, avg, sum, min, max
+windowSpec  = Window.partitionBy("subject").orderBy("marks")
+df.withColumn("row_number",row_number().over(windowSpec)).show(truncate=False)
+df.withColumn("rank",rank().over(windowSpec)).show()
+df.withColumn("dense_rank",dense_rank().over(windowSpec)).show()
+df.withColumn("percent_rank",percent_rank().over(windowSpec)).show(truncate=10)
+df.withColumn("ntile",ntile(2).over(windowSpec)).show()
+df.withColumn("cume_dist",cume_dist().over(windowSpec)).show()
+df.withColumn("lag",lag("marks",2).over(windowSpec)).show()
+windowSpecAgg  = Window.partitionBy("subject")
+df.withColumn("row",row_number().over(windowSpec)) \
+  .withColumn("avg", avg(col("marks")).over(windowSpecAgg)) \
+  .withColumn("sum", sum(col("marks")).over(windowSpecAgg)) \
+  .withColumn("min", min(col("marks")).over(windowSpecAgg)) \
+  .withColumn("max", max(col("marks")).over(windowSpecAgg)) \
+  .where(col("row")==1).select("subject","row","avg","sum","min","max") \
+  .show()
+df.withColumn("row",row_number().over(windowSpec)) \
+  .withColumn("avg", avg(col("marks")).over(windowSpecAgg)) \
+  .withColumn("sum", sum(col("marks")).over(windowSpecAgg)) \
+  .withColumn("min", min(col("marks")).over(windowSpecAgg)) \
+  .withColumn("max", max(col("marks")).over(windowSpecAgg)) \
+  .show()
+df.withColumn("row",row_number().over(windowSpec)) \
+ .withColumn("avg", avg(col("marks")).over(windowSpecAgg)) \
+ .show()
+from pyspark.sql.functions import first, last, collect_list, collect_set, row_number
+from pyspark.sql.window import Window
+windowSpec  = Window.partitionBy("subject").orderBy("marks")
+windowSpecAgg = Window.partitionBy("subject")
+# 1. first() → first marks in each subject
+df.withColumn("first_mark", first("marks").over(windowSpecAgg)).show()
+# 2. last() → last marks in each subject
+df.withColumn("last_mark", last("marks").over(windowSpecAgg)).show()
+# 3. collect_list() → collect all marks in a list for each subject
+df.withColumn("marks_list", collect_list("marks").over(windowSpecAgg)).show(truncate=False)
+# 4. collect_set() → collect unique marks in a set for each subject
+df.withColumn("marks_set", collect_set("marks").over(windowSpecAgg)).show(truncate=False)
