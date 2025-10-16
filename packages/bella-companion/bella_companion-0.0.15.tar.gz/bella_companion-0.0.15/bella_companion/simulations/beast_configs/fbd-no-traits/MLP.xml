@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<beast
+    namespace="
+        :beast.base.inference.parameter
+        :beast.base.inference.operator.kernel
+        :beast.base.inference
+        :beast.base.inference.distribution
+        :bdmmprime.distribution
+        :bdmmprime.parameterization
+        :feast.fileio
+        :feast.function
+        :feast.expressions"
+    version="2.5"
+>
+    <map name="Normal">beast.base.inference.distribution.Normal</map>
+
+    <map name="TreeFromNewickFile">feast.fileio.TreeFromNewickFile</map>
+
+    <TreeFromNewickFile id="tree" fileName="$(treeFile)" IsLabelledNewick="true" adjustTipHeights='false'/>
+
+    <Normal id="weightsPrior" mean="0" sigma="1"/>
+
+    <run spec="MCMC" chainLength="10000000">
+        <state id="state">
+            <plate var="n" range="$(layersRange)">
+                <stateNode spec="RealParameter" name="stateNode" id="birthRateW$(n)" value="0"/>
+                <stateNode spec="RealParameter" name="stateNode" id="deathRateW$(n)" value="0"/>
+            </plate>
+        </state>
+
+        <distribution id="posterior" spec="CompoundDistribution">
+            <distribution id="likelihood" spec="CompoundDistribution">
+                <distribution spec="BirthDeathMigrationDistribution" tree="@tree">
+                    <parameterization spec="CanonicalParameterization" processLength="$(processLength)">
+                        <birthRate id="birthRateSP" spec="SkylineVectorParameter" changeTimes="$(changeTimes)">
+                            <skylineValues id="birthRate" spec="bella.BayesMLP" nodes="$(nodes)">
+                                <predictor spec="RealParameter" value="$(timePredictor)"/>
+                                <predictor spec="RealParameter" value="$(randomPredictor)"/>
+                                <plate var="n" range="$(layersRange)">
+                                    <weights idref="birthRateW$(n)"/>
+                                </plate>
+                                <activationFunctionsOutput spec="bella.Sigmoid" upper="$(birthRateUpper)"/>
+                            </skylineValues>
+                        </birthRate>
+                        <deathRate id="deathRateSP" spec="SkylineVectorParameter" changeTimes="$(changeTimes)">
+                            <skylineValues id="deathRate" spec="bella.BayesMLP" nodes="$(nodes)">
+                                <predictor spec="RealParameter" value="$(timePredictor)"/>
+                                <predictor spec="RealParameter" value="$(randomPredictor)"/>
+                                <plate var="n" range="$(layersRange)">
+                                    <weights idref="deathRateW$(n)"/>
+                                </plate>
+                                <activationFunctionsOutput spec="bella.Sigmoid" upper="$(deathRateUpper)"/>
+                            </skylineValues>
+                        </deathRate>
+                        <samplingRate spec="SkylineVectorParameter" skylineValues="$(samplingRate)"/>
+                        <removalProb spec="SkylineVectorParameter" skylineValues="0.0"/>
+                        <rhoSampling spec="TimedParameter" values="1" times="$(processLength)"/>
+                    </parameterization>
+                </distribution>
+            </distribution>
+
+            <distribution id="prior" spec="CompoundDistribution">
+                <plate var="n" range="$(layersRange)">
+                    <distribution spec="Prior" x="@birthRateW$(n)" distr="@weightsPrior"/>
+                    <distribution spec="Prior" x="@deathRateW$(n)" distr="@weightsPrior"/>
+                </plate>
+            </distribution>
+        </distribution>
+
+        <plate var="n" range="$(layersRange)">
+            <operator spec="BactrianRandomWalkOperator" parameter="@birthRateW$(n)" weight="30.0"/>
+            <operator spec="BactrianRandomWalkOperator" parameter="@deathRateW$(n)" weight="30.0"/>
+        </plate>
+
+        <logger spec="Logger" fileName="$(treeID).log" logEvery="1000" model="@posterior">
+            <log idref="posterior"/>
+            <log idref="prior"/>
+            <log idref="likelihood"/>
+            <log idref="birthRateSP"/>
+            <log idref="deathRateSP"/>
+            <log idref="birthRate"/>
+            <log idref="deathRate"/>
+        </logger>
+    </run>
+
+</beast>
