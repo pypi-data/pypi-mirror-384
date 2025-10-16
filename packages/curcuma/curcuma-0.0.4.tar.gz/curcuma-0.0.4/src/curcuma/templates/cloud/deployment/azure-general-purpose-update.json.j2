@@ -1,0 +1,189 @@
+{
+  {% if cluster_name is defined %}
+  "name": "{{ cluster_name }}",
+  {% endif %}
+  {% if alias is defined or cluster_name is defined %}
+  "alias": "{{ alias | default(cluster_name) }}",
+  {% endif %}
+  {% if region is defined %}
+  "region": "{{ region }}",
+  {% endif %}
+  {% if version is defined %}
+  "version": "{{ version }}",
+  {% endif %}
+  {% if update is defined %}
+  "prune_orphans": false,
+  {% endif %}
+  "resources": {
+    "elasticsearch": [
+      {
+        "ref_id": "es-ref-id",
+        "plan": {
+          "cluster_topology": [
+            {
+              "id": "hot_content",
+              "zone_count": {{ hot_zone_count | default(2) }},
+              "size": {
+                "value": {{ hot_memory | default(8192) }},
+                "resource": "memory"
+              }
+            },
+            {
+              "id": "warm",
+              "zone_count": {{ warm_zone_count | default(2) }},
+              "size": {
+                "value": {{ warm_memory | default(0) }},
+                "resource": "memory"
+              }
+            },
+            {
+              "id": "cold",
+              "zone_count": {{ cold_zone_count | default(1) }},
+              "size": {
+                "value": {{ cold_memory | default(0) }},
+                "resource": "memory"
+              }
+            },
+            {
+              "id": "frozen",
+              "zone_count": {{ frozen_zone_count | default(1) }},
+              "size": {
+                "value": {{ frozen_memory | default(0) }},
+                "resource": "memory"
+              }
+            },
+            {
+              "id": "ml",
+              "zone_count": 1,
+              "size": {
+                "value": 0,
+                "resource": "memory"
+              }
+            }
+          ],
+          "autoscaling_enabled": {{ autoscaling_enabled | default(false) | lower }}
+        }
+      }
+    ],
+    "kibana": [
+      {
+        "ref_id": "kibana-ref-id",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.kibana.fsv2",
+              "size": {
+                "value": 1024,
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ]
+        }
+      }
+    ]
+    {% if apm_memory is defined %}
+    ,
+    "apm": [
+      {
+        "ref_id": "apm-ref-id",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.apm.fsv2",
+              "size": {
+                "value": {{ apm_memory }},
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ]
+        }
+      }
+    ]
+    {% endif %}
+    {% if enterprise_search_memory is defined %}
+    ,
+    "enterprise_search": [
+      {
+        "ref_id": "enterprise_search-ref-id",
+        "elasticsearch_cluster_ref_id": "es-ref-id",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.enterprisesearch.fsv2",
+              "size": {
+                "value": {{ enterprise_search_memory }},
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ]
+        }
+      }
+    ]
+    {% endif %}
+    {% if integrations_server_memory is defined %}
+    ,
+    "integrations_server": [
+      {
+        "ref_id": "integrations_server-ref-id",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.integrationsserver.fsv2",
+              "size": {
+                "value": {{ integrations_server_memory }},
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ]
+        }
+      }
+    ]
+    {% endif %}
+  },
+  "settings": {
+    {% if traffic_filter_rulesets is defined %}
+    "traffic_filter_settings": {
+      "rulesets": [
+      {% for ruleset in traffic_filter_rulesets %}
+        "{{ ruleset }}"{% if not loop.last %},{% endif %}
+      {% endfor %}
+      ]
+    }
+    {% endif %}
+    {% if observability_deployment_id is defined %}
+    ,
+    "observability": {
+      "logging": {
+        "destination": {
+          "deployment_id": "{{ observability_deployment_id }}"
+        }
+      },
+      "metrics": {
+        "destination": {
+          "deployment_id": "{{ observability_deployment_id }}"
+        }
+      }
+    }
+    {% endif %}
+    {% if autoscaling_enabled is defined %}
+    ,
+    "autoscaling_enabled": {{ autoscaling_enabled | lower }}
+    {% endif %}
+  },
+  "metadata": {
+  {% if tags is defined %}
+    "tags": [
+    {% for key, value in tags.itmes() %}
+      {
+        "key": "{{ key }}",
+        "value": "{{ value }}"
+      }{% if not loop.last %},{% endif %}
+    {% endfor %}
+    ]
+  {% endif %}
+  }
+}

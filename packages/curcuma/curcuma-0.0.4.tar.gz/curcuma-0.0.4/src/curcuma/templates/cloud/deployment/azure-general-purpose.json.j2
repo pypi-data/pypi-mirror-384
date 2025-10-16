@@ -1,0 +1,345 @@
+{
+  {% if cluster_name is defined %}
+  "name": "{{ cluster_name }}",
+  {% endif %}
+  {% if alias is defined or cluster_name is defined %}
+  "alias": "{{ alias | default(cluster_name) }}",
+  {% endif %}
+  {% if region is defined %}
+  "region": "{{ region }}",
+  {% endif %}
+  {% if version is defined %}
+  "version": "{{ version }}",
+  {% endif %}
+  "resources": {
+    "elasticsearch": [
+      {
+        "ref_id": "es-ref-id",
+        "region": "{{ region | default('azure-westeurope') }}",
+        "plan": {
+          "cluster_topology": [
+            {
+              "id": "hot_content",
+              "node_roles": [
+                "master",
+                "ingest",
+                "transform",
+                "data_hot",
+                "remote_cluster_client",
+                "data_content"
+              ],
+              "zone_count": {{ hot_zone_count | default(2) }},
+              "elasticsearch": {
+                "node_attributes": {
+                  "data": "hot"
+                }
+              },
+              "instance_configuration_id": "azure.es.datahot.ddv4",
+              "size": {
+                "value": {{ hot_memory | default(8192) }},
+                "resource": "memory"
+              },
+              "autoscaling_max": {
+                "value": 122880,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 1024,
+                  "resource": "memory"
+                }
+              }
+            },
+            {
+              "id": "warm",
+              "node_roles": [
+                "data_warm",
+                "remote_cluster_client"
+              ],
+              "zone_count": {{ warm_zone_count | default(2) }},
+              "elasticsearch": {
+                "node_attributes": {
+                  "data": "warm"
+                }
+              },
+              "instance_configuration_id": "azure.es.datawarm.edsv4",
+              "size": {
+                "value": {{ warm_memory | default(0) }},
+                "resource": "memory"
+              },
+              "autoscaling_max": {
+                "value": 122880,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 0,
+                  "resource": "memory"
+                }
+              }
+            },
+            {
+              "id": "cold",
+              "node_roles": [
+                "data_cold",
+                "remote_cluster_client"
+              ],
+              "zone_count": {{ cold_zone_count | default(1) }},
+              "elasticsearch": {
+                "node_attributes": {
+                  "data": "cold"
+                }
+              },
+              "instance_configuration_id": "azure.es.datacold.edsv4",
+              "size": {
+                "value": {{ cold_memory | default(0) }},
+                "resource": "memory"
+              },
+              "autoscaling_max": {
+                "value": 61440,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 0,
+                  "resource": "memory"
+                }
+              }
+            },
+            {
+              "id": "frozen",
+              "node_roles": [
+                "data_frozen"
+              ],
+              "zone_count": {{ frozen_zone_count | default(1) }},
+              "elasticsearch": {
+                "node_attributes": {
+                  "data": "frozen"
+                }
+              },
+              "instance_configuration_id": "azure.es.datafrozen.edsv4",
+              "size": {
+                "value": {{ frozen_memory | default(0) }},
+                "resource": "memory"
+              },
+              "autoscaling_max": {
+                "value": 122880,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 0,
+                  "resource": "memory"
+                }
+              }
+            },
+            {
+              "id": "master",
+              "node_roles": [
+                "master",
+                "remote_cluster_client"
+              ],
+              "zone_count": 3,
+              "instance_configuration_id": "azure.es.master.fsv2",
+              "size": {
+                "value": 0,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 0,
+                  "resource": "memory"
+                }
+              }
+            },
+            {
+              "id": "coordinating",
+              "node_roles": [
+                "ingest",
+                "remote_cluster_client"
+              ],
+              "zone_count": 2,
+              "instance_configuration_id": "azure.es.coordinating.fsv2",
+              "size": {
+                "value": 0,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 0,
+                  "resource": "memory"
+                }
+              }
+            },
+            {
+              "id": "ml",
+              "node_roles": [
+                "ml",
+                "remote_cluster_client"
+              ],
+              "zone_count": 1,
+              "instance_configuration_id": "azure.es.ml.fsv2",
+              "size": {
+                "value": 0,
+                "resource": "memory"
+              },
+              "autoscaling_min": {
+                "value": 0,
+                "resource": "memory"
+              },
+              "autoscaling_max": {
+                "value": 61440,
+                "resource": "memory"
+              },
+              "topology_element_control": {
+                "min": {
+                  "value": 0,
+                  "resource": "memory"
+                }
+              }
+            }
+          ],
+          "elasticsearch": {
+          },
+          "deployment_template": {
+            "id": "aws-general-purpose"
+          },
+          "autoscaling_enabled": {{ autoscaling_enabled | default(false) | lower }}
+        },
+        "settings": {
+          "dedicated_masters_threshold": 6
+        }
+      }
+    ],
+    "kibana": [
+      {
+        "ref_id": "kibana-ref-id",
+        "elasticsearch_cluster_ref_id": "es-ref-id",
+        "region": "{{ region | default('azure-westeurope') }}",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.kibana.fsv2",
+              "size": {
+                "value": 1024,
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ],
+          "kibana": {}
+        }
+      }
+    ]
+    {% if apm_memory is defined and apm_memory > 0 %}
+    ,
+    "apm": [
+      {
+        "ref_id": "apm-ref-id",
+        "elasticsearch_cluster_ref_id": "es-ref-id",
+        "region": "{{ region | default('azure-westeurope') }}",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.apm.fsv2",
+              "size": {
+                "value": {{ apm_memory | default(1024) }},
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ],
+          "apm": {}
+        }
+      }
+    ]
+    {% endif %}
+    {% if enterprise_search_memory is defined and enterprise_search_memory > 0 %}
+    ,
+    "enterprise_search": [
+      {
+        "ref_id": "enterprise_search-ref-id",
+        "elasticsearch_cluster_ref_id": "es-ref-id",
+        "region": "{{ region | default('azure-westeurope') }}",
+        "plan": {
+          "cluster_topology": [
+            {
+              "node_type": {
+                "appserver": true,
+                "worker": true,
+                "connector": true
+              },
+              "instance_configuration_id": "azure.enterprisesearch.fsv2",
+              "size": {
+                "value": {{ enterprise_search_memory | default(1024) }},
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ],
+          "enterprise_search": {}
+        }
+      }
+    ]
+    {% endif %}
+    {% if integrations_server_memory is defined and integrations_server_memory > 0 %}
+    ,
+    "integrations_server": [
+      {
+        "ref_id": "integrations_server-ref-id",
+        "elasticsearch_cluster_ref_id": "es-ref-id",
+        "region": "{{ region | default('azure-westeurope') }}",
+        "plan": {
+          "cluster_topology": [
+            {
+              "instance_configuration_id": "azure.integrationsserver.fsv2",
+              "size": {
+                "value": {{ integrations_server_memory | default(1024) }},
+                "resource": "memory"
+              },
+              "zone_count": 1
+            }
+          ],
+          "integrations_server": {}
+        }
+      }
+    ]
+    {% endif %}
+  },
+  "settings": {
+    {% if traffic_filter_rulesets is defined %}
+    "traffic_filter_settings": {
+      "rulesets": [
+      {% for ruleset in traffic_filter_rulesets %}
+        "{{ ruleset }}"{% if not loop.last %},{% endif %}
+      {% endfor %}
+      ]
+    },
+    {% endif %}
+    "observability": {
+      "logging": {
+        "destination": {
+          "deployment_id": "{{ observability_deployment_id | default('self') }}"
+        }
+      },
+      "metrics": {
+        "destination": {
+          "deployment_id": "{{ observability_deployment_id | default('self') }}"
+        }
+      }
+    },
+    "autoscaling_enabled": {{ autoscaling_enabled | default(false) | lower }}
+  },
+  "metadata": {
+  {% if tags is defined %}
+    "tags": [
+    {% for key, value in tags.itmes() %}
+      {
+        "key": "{{ key }}",
+        "value": "{{ value }}"
+      }{% if not loop.last %},{% endif %}
+    {% endfor %}
+    ]
+  {% endif %}
+  }
+}
