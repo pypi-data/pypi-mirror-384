@@ -1,0 +1,71 @@
+"""Public package surface exposing greeting, list utilities, and metadata hooks."""
+
+from __future__ import annotations
+
+from . import lib_list as lib_list
+from .behaviors import (
+    CANONICAL_GREETING,
+    emit_greeting,
+    noop_main,
+    raise_intentional_failure,
+)
+from .__init__conf__ import print_info
+from .lib_list import (
+    deduplicate,
+    del_elements_containing,
+    filter_contains,
+    filter_fnmatch,
+    is_element_containing,
+    is_fnmatching,
+    is_fnmatching_one_pattern,
+    ls_del_empty_elements,
+    ls_double_quote_if_contains_blank,
+    ls_elements_replace_strings,
+    ls_lstrip_list,
+    ls_rstrip_elements,
+    ls_rstrip_list,
+    ls_strip_afz,
+    ls_strip_elements,
+    ls_strip_list,
+    ls_substract,
+    split_list_into_junks,
+    str_in_list_lower_and_de_double,
+    str_in_list_non_case_sensitive,
+    str_in_list_to_lower,
+    strip_and_add_non_empty_args_to_list,
+    substract_all_keep_sorting,
+    substract_all_unsorted_fast,
+)
+
+__all__ = [
+    "CANONICAL_GREETING",
+    "emit_greeting",
+    "noop_main",
+    "print_info",
+    "raise_intentional_failure",
+    "lib_list",
+    "deduplicate",
+    "del_elements_containing",
+    "filter_contains",
+    "filter_fnmatch",
+    "is_element_containing",
+    "is_fnmatching",
+    "is_fnmatching_one_pattern",
+    "ls_del_empty_elements",
+    "ls_double_quote_if_contains_blank",
+    "ls_elements_replace_strings",
+    "ls_lstrip_list",
+    "ls_rstrip_elements",
+    "ls_rstrip_list",
+    "ls_strip_afz",
+    "ls_strip_elements",
+    "ls_strip_list",
+    "ls_substract",
+    "split_list_into_junks",
+    "str_in_list_lower_and_de_double",
+    "str_in_list_non_case_sensitive",
+    "str_in_list_to_lower",
+    "strip_and_add_non_empty_args_to_list",
+    "substract_all_keep_sorting",
+    "substract_all_unsorted_fast",
+]
