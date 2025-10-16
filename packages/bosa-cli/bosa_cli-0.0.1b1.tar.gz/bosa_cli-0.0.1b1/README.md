@@ -1,0 +1,173 @@
+# BOSA CLI
+
+A command-line interface for managing BOSA integrations and authentication.
+
+## Prerequisites
+
+<details>
+<summary>Prerequisites details</summary>
+
+1. **Python v3.11 or above** (to run `python`)
+
+   - Using Conda (recommended):
+     You can use [Miniconda](https://docs.anaconda.com/miniconda/install) to install and manage Python versions.
+
+2. **BOSA API access** (contact your administrator for credentials)
+</details>
+
+## Installation
+
+Install the CLI using:
+
+```bash
+pip install bosa-cli
+```
+
+## Quick Start
+
+Get up and create your first integration using BOSA CLI:
+
+1. **Login**:
+
+   ```bash
+   bosa auth login
+   # Make sure you have access to bosa playground environment.
+   # You will be prompted to enter:
+
+   # Client API Key: sk-client-...
+   # Username (User Identifier): your user identifier
+   # User Secret: sk-user-...
+   ```
+
+2. **View Available Integrations**:
+
+   ```bash
+   bosa integrations
+   ```
+
+   You should have 0 integration(s) count for each connector listed.
+
+3. **Add Your First Integration**:
+
+   ```bash
+   bosa integrations add github
+   ```
+
+   You should see the following message:
+
+   ```
+   ✓ OAuth flow initiated for github!
+   Please visit the following URL to complete the integration:
+   https://github.com/login/oauth/authorize?client_id=...
+   ```
+
+   Open the URL in your browser and follow the OAuth flow.
+
+4. **Check your GitHub accounts**:
+
+   After you have completed the OAuth flow, you can check your GitHub accounts.
+
+   ```bash
+   bosa integrations show github
+   ```
+
+   Voila! You should see your GitHub accounts listed, as shown below:
+
+   ```
+   Integrations for github
+   =======================
+   ℹ Found 1 integration(s)
+
+   User Identifier | Status
+   ------------------------------------
+   | your-github-username | ✓ Selected
+   ```
+
+That's it! You're now ready to manage your BOSA integrations.
+
+## Command Reference
+
+### Authentication Commands
+
+| Command            | Description                          | Options           |
+| ------------------ | ------------------------------------ | ----------------- |
+| `bosa auth login`  | Authenticate with client credentials | `--api-url <url>` |
+| `bosa auth status` | Check current authentication status  | -                 |
+| `bosa auth logout` | Clear stored credentials             | -                 |
+
+**Login prompts**:
+
+- **Client API Key**: Your client API key (input hidden)
+- **Username**: Your user identifier
+- **User Secret**: Your user secret (input hidden)
+
+**Configuration Options**:
+
+- `--api-url`: Custom BOSA API URL (for development purposes)
+
+### Integration Commands
+
+| Command                                             | Description                                | Parameter(s)                                                       |
+| --------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------ |
+| `bosa integrations`                                 | List all connectors and integration counts | -                                                                  |
+| `bosa integrations list`                            | Same as above (explicit)                   | -                                                                  |
+| `bosa integrations add <connector>`                 | Add new integration via OAuth flow         | `<connector>`: github, google, etc.                                |
+| `bosa integrations show <connector>`                | Show all accounts for a connector          | `<connector>`: github, google, etc.                                |
+| `bosa integrations show <connector> <identifier>`   | Show specific integration details          | `<connector>`: github, google, etc. `<identifier>`: email/username |
+| `bosa integrations remove <connector> <identifier>` | Remove specific integration                | `<connector>`: github, google, etc. `<identifier>`: email/username |
+| `bosa integrations select <connector> <identifier>` | Set integration as primary                 | `<connector>`: github, google, etc. `<identifier>`: email/username |
+
+**Examples**:
+
+```bash
+bosa integrations                           # List all connectors
+bosa integrations add github                # Add GitHub integration
+bosa integrations show google               # Show all Google accounts
+bosa integrations show google user@gmail.com  # Show specific account details
+bosa integrations remove github username    # Remove GitHub integration
+bosa integrations select google user@gmail.com # Set as primary Google account
+```
+
+### User Commands
+
+| Command                          | Description               | Parameter(s)                   |
+| -------------------------------- | ------------------------- | ------------------------------ |
+| `bosa users create <identifier>` | Create a new user account | `<identifier>`: email/username |
+
+**Example**:
+
+```bash
+bosa users create john.doe@example.com
+```
+
+**Important**: Save the user secret securely! It's only shown once.
+
+## Configuration
+
+The CLI stores configuration in `~/.bosa/config.json`. This file contains:
+
+- Authentication session (client key, user token, API URL)
+- Session expiration information
+
+The API URL is only configurable during authentication using the `--api-url` flag.
+
+## Getting Help
+
+Get help for any command:
+
+```bash
+bosa --help                    # Main help
+bosa auth --help              # Authentication commands help
+bosa integrations --help      # Integration commands help
+bosa users --help             # User management commands help
+```
+
+## Available Connectors
+
+The available connectors depend on your BOSA API configuration. Common connectors include:
+
+- **github**: GitHub API integration
+- **google**: Google services integration
+- **google_drive**: Google Drive integration
+- **google_docs**: Google Docs integration
+- **google_mail**: Google Mail integration
