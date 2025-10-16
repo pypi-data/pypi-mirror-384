@@ -1,0 +1,166 @@
+{% extends "podcast_analyzer/app_base.html" %}
+{% load i18n %}
+{% block extratitle %}{{ podcast.title }} - {% endblock %}
+
+{% block breadcrumbs %}
+
+  <li><a href="{% url 'podcast_analyzer:podcast-list' %}">{% translate "Podcasts" %}</a></li>
+  <li class='is-active'><a href="#" aria-current="page">{{ podcast.title }}</a> </li>
+
+{% endblock breadcrumbs %}
+
+{% block extra_controls %}
+  <div><a href="{% url 'podcast_analyzer:episode-list' podcast_id=podcast.id %}">{% translate "See episodes" %}</a></div>
+  <div><a href="{% url 'podcast_analyzer:podcast-edit' id=podcast.id %}">{% translate "Edit" %}</a></div>
+{% endblock extra_controls %}
+
+{% block content %}
+  <h1>{{ podcast.title }}</h1>
+  <div>
+    <article>
+      <figure>
+        <p>
+          {% if podcast.podcast_cached_cover_art %}
+            <img src="{{ podcast.podcast_cached_cover_art.url }}" alt="Podcast logo art" height=200 width=200 />
+          {% endif %}
+        </p>
+      </figure>
+      <div>
+        <div>
+          <p>{{ podcast.description|striptags|urlize }}</p>
+        </div>
+      </div>
+    </article>
+  </div>
+  <div>
+
+
+    <h2>{% translate "Metadata" %}</h2>
+    <dl>
+      <dt>{% translate "Author" %}</dt>
+      <dd>{{ podcast.author }}</dd>
+      <dt>{% translate "Type" %}</dt>
+      <dd>{{ podcast.itunes_feed_type }}</dd>
+      <dt>{% translate "Explicit" %}</dt>
+      <dd><span class="is-sr-only">{{ podcast.itunes_explicit|yesno:"Yes,No" }} </span>{{ podcast.itunes_explicit|yesno:"✅,🚫" }}</dd>
+      <dt>{% translate "Language" %}</dt>
+      <dd>{{ podcast.language }}</dd>
+      <dt>{% translate "Actively releasing?" %}</dt>
+      <dd><span class="is-sr-only">{{ podcast.dormant|yesno:"No,Yes" }} </span>{{ podcast.dormant|yesno:"🚫,✅" }}</dd>
+      <dt>{% translate "Site URL" %}</dt>
+      <dd>{{ podcast.site_url|urlize }}</dd>
+      <dt>{% translate "Funding URL" %}</dt>
+      <dd>{{ podcast.funding_url|urlize|default_if_none:"-" }}</dd>
+
+
+      <dt>{% translate "iTunes Categories" %}</dt>
+      <dd>
+        <ul>
+          {% for category in podcast.itunes_categories.all %}
+            <li>{% if category.parent_category %}{{ category.parent_category.name }} - {% endif %}{{ category.name }}</li>
+          {% empty %}
+            <li>{% translate "No categories detected yet." %}</li>
+          {% endfor %}
+        </ul>
+      </dd>
+      <dt>{% translate "Tags" %}</dt>
+      <dd>{% for tag in podcast.tags.all %}<a href="{{ tag.get_absolute_url }}">{{ tag.name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}{% translate "No tags found." %}{% endfor %}</dd>
+      <dt>{% translate "Generator" %}</dt>
+      <dd>{{ podcast.generator|urlize|default_if_none:"Unknown" }}</dd>
+      <dt>{% translate "Probable Feed Host" %}</dt>
+      <dd>{{ podcast.probable_feed_host }}</dd>
+      <dt>{% translate "Uses 3rd party download tracking?" %}</dt>
+      <dd><span class="is-sr-only">{{ podcast.feed_contains_tracking_data|yesno:"Yes,No" }} </span>{{ podcast.feed_contains_tracking_data|yesno:"✅,🚫" }}</dd>
+      <dt>{% translate "Last release date" %}</dt>
+      <dd>{{ podcast.last_release_date|date:"r" }}</dd>
+
+
+    </dl>
+
+  </div>
+  <div>
+    <div>
+      <h2>{% translate "Statistics" %}</h2>
+
+      <div>
+        <div>
+          <p><strong>{% translate "Release Frequency" %}</strong></p>
+          <p>{{ podcast.get_release_frequency_display }}</p>
+        </div>
+      </div>
+      <div>
+        <div>
+          <p><strong>{% translate "Seasons" %}</strong></p>
+          <p>{{ podcast.seasons.count|default_if_none:"N/A" }}</p>
+        </div>
+      </div>
+      <div>
+        <div>
+          <p><strong>{% translate "Episodes" %}</strong></p>
+          <p>{{ podcast.total_episodes }}</p>
+        </div>
+      </div>
+      <div>
+        <div>
+          <p><strong>{% translate "Median episode length" %}</strong></p>
+          <p>{{ podcast.median_episode_duration_timedelta }}</p>
+        </div>
+      </div>
+      <div>
+        <div>
+          <p><strong>{% translate "Total duration" %}</strong></p>
+          <p>{{ podcast.total_duration_timedelta }}</p>
+        </div>
+      </div>
+
+
+      {% if podcast.seasons.exists %}
+        <table>
+          <thead>
+            <tr>
+              <th>{% translate "Seasons" %}</th>
+              <th>{% translate "Episodes" %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for season in podcast.seasons.all %}
+              <tr>
+                <td>{% translate "Season" %} {{ season.season_number }}</td>
+                <td>{{ season.episodes.count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>{% translate "Total" %}</th>
+              <td><strong>{{ podcast.episodes.count }}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      {% endif %}
+    </div>
+  </div>
+  <div>
+    <h2>{% translate "Analysis Groups" %}</h2>
+    <p>{% translate "Belongs to the following analysis groups:" %}</p>
+    <ul>
+      {% for agroup in podcast.analysis_group.all %}
+        <li><a href="{{ agroup.get_absolute_url }}">{{ agroup.name }}</a></li>
+      {% empty %}
+        <li>{% translate "None" %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div>
+    <div>
+
+      <a href="{% url 'podcast_analyzer:podcast-edit' id=podcast.id %}">{% translate "Edit" %}</a>
+    </div>
+    <div>
+
+      <a href="{% url 'podcast_analyzer:podcast-delete' id=podcast.id %}">{% translate "Delete podcast" %}</a>
+    </div>
+
+  </div>
+
+{% endblock content %}
