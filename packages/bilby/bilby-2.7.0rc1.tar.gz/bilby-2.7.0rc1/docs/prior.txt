@@ -1,0 +1,170 @@
+======
+Priors
+======
+
+---------------
+Defining priors
+---------------
+
+Priors refer to the prior probability distributions for each model parameter.
+Typically, these are passed into :ref:`run_sampler <run_sampler>` as a regular
+`python dictionary
+<https://docs.python.org/2/tutorial/datastructures.html#dictionaries>`_.
+
+The keys of the priors objects should reference the model parameters, in
+particular, the :code:`parameters` attribute of the :ref:`likelihood`. Each key
+can be either
+
+- fixed number, in which case the value is held fixed at this value. In effect,
+  this is a Delta-function prior,
+- or a :code:`bilby.prior.Prior` instance.
+
+If the latter, it will be sampled during the parameter estimation. Here is a
+simple example that sets a uniform prior for :code:`a`, and a fixed value for
+:code:`b`::
+
+   priors = {}
+   priors['a'] = bilby.prior.Uniform(minimum=0, maximum=10, name='a', latex_label='a')
+   priors['b'] = 5
+
+Notice, that the :code:`latex_label` is optional, but if given will be used
+when generating plots. Latex label strings containing escape characters like :code:`\t`
+should either be preceded by :code:`r'` or include an extra backslash. As an example,
+either :code:`r'$\theta$'` or :code:`'$\\theta$'` is permissible. For a list of
+recognized escape sequences, see the `python docs <https://docs.python.org/2.0/ref/strings.html>`_.
+
+
+
+--------------------------
+The bilby prior dictionary
+--------------------------
+
+The :code:`priors` passed into :code:`run_sampler` can just be a regular python
+dictionary. However, we also provide a class :code:`bilby.core.prior.PriorDict`
+which provides extra functionality. For example, to sample from the prior:
+
+.. code:: python
+
+   >>> priors = bilby.core.prior.PriorDict()
+   >>> priors['a'] = bilby.prior.Uniform(minimum=0, maximum=10, name='a')
+   >>> priors['b'] = bilby.prior.Uniform(minimum=0, maximum=10, name='b')
+   >>> priors.sample()
+   {'a': 0.1234, 'b': 4.5232}
+
+-----------------------
+Available prior classes
+-----------------------
+
+We have provided a number of standard priors.
+An exhaustive list can be found in the API section.
+
+---------------------------
+Multivariate Gaussian prior
+---------------------------
+
+We provide a prior class for correlated parameters in the form of a
+`multivariate Gaussian distribution <https://en.wikipedia.org/wiki/Multivariate_normal_distribution>`_.
+To set the prior you first must define the distribution using the
+:class:`bilby.core.prior.MultivariateGaussianDist` class. This requires the names of the
+correlated variables, their means, and either the covariance matrix or the correlation
+matrix and standard deviations, e.g.:
+
+.. code:: python
+
+   >>> names = ['a', 'b']  # set the parameter names
+   >>> mu = [0., 5.]  # the means of the parameters
+   >>> cov = [[2., 0.7], [0.7, 3.]]  # the covariance matrix
+   >>> mvg = bilby.core.prior.MultivariateGaussianDist(names, mus=mu, covs=cov)
+
+It is also possible to define a mixture model of multiple multivariate Gaussian modes of
+different weights if required, e.g.:
+
+.. code:: python
+
+   >>> names = ['a', 'b']  # set the parameter names
+   >>> mu = [[0., 5.], [2., 7.]]  # the means of the parameters
+   >>> cov = [[[2., 0.7], [0.7, 3.]], [[1., -0.9], [-0.9, 5.]]]  # the covariance matrix
+   >>> weights = [0.3, 0.7]  # weights of each mode
+   >>> mvg = bilby.core.prior.MultivariateGaussianDist(names, mus=mu, covs=cov, nmodes=2, weights=weights)
+
+The distribution can also have hard bounds on each parameter by supplying them.
+
+The :class:`bilby.core.prior.MultivariateGaussianDist` class can then be passed to
+a :class:`bilby.core.prior.MultivariateGaussian` prior for each parameter, e.g.:
+
+.. code:: python
+
+   >>> priors = dict()
+   >>> priors['a'] = bilby.core.prior.MultivariateGaussian(mvg, 'a')
+   >>> priors['b'] = bilby.core.prior.MultivariateGaussian(mvg, 'b')
+
+The detailed API information for the distribution and prior classes can be found in the API section.
+
+-----------------------
+Defining your own prior
+-----------------------
+
+You can define your own by subclassing the :code:`bilby.prior.Prior` class.
+
+-----------------
+Prior Constraints
+-----------------
+
+This allows cuts to be specified in the prior space.
+
+You can provide the `PriorDict` a `conversion_function` and a set of `Constraint` priors to remove parts of the prior space.
+
+When using constraints, the normalization constant is estimated to ensure the priors are still correctly normalized.
+
+
+Simple example
+==============
+
+Sample from uniform distributions in two parameters x and y with the condition x >= y.
+
+First thing: define a function which generates z=x-y from x and y.
+
+.. code:: python
+
+    def convert_x_y_to_z(parameters):
+        """
+        Function to convert between sampled parameters and constraint parameter.
+
+        Parameters
+        ----------
+        parameters: dict
+            Dictionary containing sampled parameter values, 'x', 'y'.
+
+        Returns
+        -------
+        dict: Dictionary with constraint parameter 'z' added.
+        """
+        converted_parameters = parameters.copy()
+        converted_parameters['z'] = parameters['x'] - parameters['y']
+        return converted_parameters
+
+Create our prior:
+
+.. code:: python
+
+    from bilby.core.prior import PriorDict, Uniform, Constraint
+
+    priors = PriorDict(conversion_function=convert_x_y_to_z)
+    priors['x'] = Uniform(minimum=0, maximum=10)
+    priors['y'] = Uniform(minimum=0, maximum=10)
+    priors['z'] = Constraint(minimum=0, maximum=10)
+
+Sample from this distribution and plot the samples.
+
+.. code:: python
+
+    import matplotlib.pyplot as plt
+
+    samples = priors.sample(1000000)
+    plt.hist2d(samples['x'], samples['y'], bins=100, cmap='Blues')
+    plt.xlabel('$x$')
+    plt.ylabel('$y$')
+    plt.tight_layout()
+    plt.show()
+    plt.close()
+
