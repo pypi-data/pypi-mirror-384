@@ -1,0 +1,56 @@
+name: Publish Docker images
+
+on:
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        default: latest
+        description: The tag of the image to build and push
+        required: true
+
+jobs:
+  create-image:
+    name: Create Docker image
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+    strategy:
+      matrix:
+        image-name:
+          - latex
+          - latex-small
+    steps:
+      - uses: actions/checkout@v5
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # https://github.com/docker/login-action/releases/tag/v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # https://github.com/docker/metadata-action/releases/tag/v5.8.0
+        with:
+          images: ghcr.io/compwa/polarimetry-${{ matrix.image-name }}
+      - name: Build and push Docker images
+        id: push
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # https://github.com/docker/build-push-action/releases/tag/v6.18.0
+        with:
+          context: .
+          file: .github/Dockerfile.${{ matrix.image-name }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+      - name: Build Inventory Image
+        run: |
+          docker build -f .github/Dockerfile.${{ matrix.image-name }} . --tag ghcr.io/compwa/polarimetry-${{ matrix.image-name }}:${{ github.event.inputs.image-tag }}
+          docker push ghcr.io/compwa/polarimetry-${{ matrix.image-name }}:${{ github.event.inputs.image-tag }}
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ghcr.io/compwa/polarimetry-${{ matrix.image-name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

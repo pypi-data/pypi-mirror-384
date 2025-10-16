@@ -1,0 +1,246 @@
+env:
+  FORCE_COLOR: "1"
+  JAX_COMPILATION_CACHE_DIR: /tmp/jax_cache
+  UV_PYTHON_PREFERENCE: only-managed
+
+on:
+  workflow_call:
+    inputs:
+      specific-pip-packages:
+        required: false
+        type: string
+    secrets:
+      token:
+        description: >-
+          Personal Access Token for GitHub. This needs to be set as a secret by
+          the host repository in order to rerun checks after pushing to a PR.
+          The default GITHUB_TOKEN does not suffice for that, see here:
+          https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows
+
+          This page tells more about creating a PAT:
+          https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+        required: true
+
+jobs:
+  fast-html:
+    if: inputs.specific-pip-packages == ''
+    name: Build HTML (fast)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          cache: true
+      - uses: astral-sh/setup-uv@v6
+      - name: Build documentation without running notebooks
+        run: pixi run doc
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          include-hidden-files: true
+          name: docs-fast-html
+          path: docs/_build/html
+
+  fast-pdf:
+    if: inputs.specific-pip-packages == ''
+    name: Build PDF (fast)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          cache: true
+      - uses: astral-sh/setup-uv@v6
+      - name: Install LaTeX dependencies
+        run: |-
+          sudo apt-get update -y
+          sudo apt-get install -y inkscape latexmk make texlive-fonts-extra texlive-xetex xindy
+      - run: pixi run pdf
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          include-hidden-files: true
+          name: docs-fast-pdf
+          path: docs/_build/latex
+
+  linkcheck:
+    if: inputs.specific-pip-packages == ''
+    name: Check external links
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          cache: true
+      - uses: astral-sh/setup-uv@v6
+      - name: Check external links with Sphinx linkcheck
+        run: pixi run linkcheck
+
+  jupyter:
+    name: Run Jupyter notebooks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          cache: true
+      - run: |
+          sudo apt-get update -y
+          sudo apt-get install -y cm-super dvipng inkscape latexmk texlive-fonts-extra texlive-latex-extra texlive-xetex xindy
+      - name: Fetch JAX cache
+        uses: actions/cache@v4
+        with:
+          key: jax-${{hashFiles('uv.lock')}}-${{hashFiles('src/**/*.py')}}-${{hashFiles('docs/**/*.ipynb')}}
+          restore-keys: |
+            jax-${{hashFiles('uv.lock')}}-${{hashFiles('src/**/*.py')}}
+            jax-${{hashFiles('uv.lock')}}
+            jax
+          path: ${{ env.JAX_COMPILATION_CACHE_DIR }}
+      - uses: ComPWA/actions/cache-sympy@v3
+      - name: Fetch Jupyter cache
+        uses: actions/cache@v4
+        with:
+          key: jupyter-cache-${{hashFiles('uv.lock', 'data/*.json', 'data/*.yaml', 'src/**/*.py')}}-${{hashFiles('docs/**/*.ipynb')}}
+          restore-keys: jupyter-cache-${{hashFiles('uv.lock', 'data/*.json', 'data/*.yaml', 'src/**/*.py')}}
+          path: docs/_build/.jupyter_cache
+      - name: Fetch output files
+        uses: actions/cache@v4
+        with:
+          key: output-files-${{hashFiles('uv.lock', 'data/*.json', 'data/*.yaml', 'src/**/*.py')}}-${{hashFiles('docs/**/*.ipynb')}}
+          restore-keys: output-files-${{hashFiles('uv.lock', 'data/*.json', 'data/*.yaml', 'src/**/*.py')}}
+          path: |
+            ./docs/_images
+            ./docs/_static/export
+            ./docs/_static/images
+            ./docs/appendix/export
+            ./docs/appendix/exported_intensity_model.py
+      - name: Build PDF with notebook execution
+        run: pixi run pdfnb
+      - uses: actions/cache/save@v4
+        if: failure()
+        with:
+          key: jupyter-cache-${{hashFiles('uv.lock', 'data/*.json', 'data/*.yaml', 'src/**/*.py')}}-${{hashFiles('docs/**/*.ipynb')}}
+          path: docs/_build/.jupyter_cache
+      - uses: actions/cache/save@v4
+        if: failure()
+        with:
+          key: output-files-${{hashFiles('uv.lock', 'data/*.json', 'data/*.yaml', 'src/**/*.py')}}-${{hashFiles('docs/**/*.ipynb')}}
+          path: |
+            ./docs/_images
+            ./docs/_static/export
+            ./docs/_static/images
+            ./docs/appendix/export
+            ./docs/appendix/exported_intensity_model.py
+      - uses: actions/upload-artifact@v4
+        with:
+          include-hidden-files: true
+          name: docs
+          path: docs
+
+  pluto:
+    name: Run Pluto notebooks
+    env:
+      JULIA_CI: "true"
+      JULIA_COLOR: "yes"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          cache: true
+      - name: Fetch Julia cache
+        uses: actions/cache@v4
+        with:
+          key: julia-${{hashFiles('julia/Manifest.toml')}}-${{hashFiles('**/*.jl')}}
+          restore-keys: |
+            julia-${{hashFiles('julia/Manifest.toml')}}
+            julia
+          path: |
+            ./julia-*/
+            ~/.julia/
+      - run: pixi run pluto-server
+      - uses: actions/upload-artifact@v4
+        with:
+          include-hidden-files: true
+          name: docs-julia
+          path: docs/julia
+
+  combine-builds:
+    name: Combine into website
+    runs-on: ubuntu-24.04
+    needs:
+      - jupyter
+      - pluto
+    steps:
+      - uses: actions/checkout@v5
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          cache: true
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/download-artifact@v5
+        with:
+          name: docs
+          path: docs
+      - uses: actions/download-artifact@v5
+        with:
+          name: docs-julia
+          path: docs/julia
+      - name: Combine executed notebooks PDF
+        run: pixi run docnb
+      - run: tar cf artifact.tar -C docs/_build/html .
+      - uses: actions/upload-artifact@v4 # https://github.com/actions/upload-pages-artifact/issues/129
+        with:
+          name: github-pages
+          path: artifact.tar
+
+  pr-preview:
+    name: Push PR preview
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      - combine-builds
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: github-pages
+      - name: Extract artifact
+        run: |
+          tar xf artifact.tar
+          rm artifact.tar
+      - name: Configure Git credentials
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Initialize repository and commit results
+        run: |
+          git init
+          git checkout --orphan gh-pages
+          git add -A
+          git commit -m "Push preview for https://github.com/ComPWA/polarimetry/pull/${{ github.event.number }}"
+      - name: Push results to GitHub Pages
+        run: |
+          git remote add origin https://x-access-token:${{ secrets.token }}@github.com/ComPWA/polarimetry-pr-preview
+          git push origin gh-pages --force
+      - name: Show notice with link to PR preview
+        run: echo "Documentation preview available on [compwa.github.io/polarimetry-pr-preview](https://compwa.github.io/polarimetry-pr-preview)" >> $GITHUB_STEP_SUMMARY
+
+  gh-pages:
+    name: Upload to GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs:
+      - combine-builds
+      - linkcheck
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-24.04
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
