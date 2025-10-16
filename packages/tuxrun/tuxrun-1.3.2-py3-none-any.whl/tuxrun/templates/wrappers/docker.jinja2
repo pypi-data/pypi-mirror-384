@@ -1,0 +1,75 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2021-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+import os
+import sys
+from pathlib import Path
+
+VOLUME = "{{ volume }}".rstrip("/")
+NETWORK = "{{ network }}"
+dispatcher_download_dir = "{{ dispatcher_download_dir }}".rstrip("/")
+
+
+def main():
+    assert Path(sys.argv[0]).name == "docker"
+
+{% if runtime == "docker" %}
+    args = ["docker"]
+    runtime = "/usr/bin/docker"
+{% elif runtime == "podman" %}
+    args = ["podman", "--remote", "--url", "unix://run/podman/podman.sock"]
+    runtime = "/usr/bin/podman"
+{% endif %}
+
+    if not Path(runtime).exists():
+        sys.stderr.write(f"Missing runtime '{runtime}'\n")
+        return 1
+    if sys.argv[1] == "run":
+        args.append("run")
+
+{% if runtime == "podman" %}
+        # docker-test-shell adds its own network argument so we will skip that usecase
+        if not any("--network=" in argv for argv in sys.argv):
+            args.append("--network")
+            args.append(NETWORK)
+{% endif %}
+
+        args.append("--log-driver=none")
+        skip = False
+        for index in range(2, len(sys.argv)):
+            if skip:
+                skip = False
+                continue
+            if sys.argv[index] in ["-v", "--volume"] and sys.argv[index + 1].startswith(
+                f"{dispatcher_download_dir}/"
+            ):
+                skip = True
+                path = sys.argv[index + 1].replace(
+                    f"{dispatcher_download_dir}/", VOLUME + "/"
+                )
+                args.extend(["--volume", path])
+            elif sys.argv[index].startswith(
+                f"--mount=type=bind,source={dispatcher_download_dir}"
+            ):
+                args.append(
+                    sys.argv[index].replace(
+                        f"--mount=type=bind,source={dispatcher_download_dir}",
+                        f"--mount=type=bind,source={VOLUME}",
+                    )
+                )
+            else:
+                args.append(sys.argv[index])
+    else:
+        args.extend(sys.argv[1:])
+    print(f"SRC: '{' '.join(sys.argv)}'")
+    print(f"DST: '{runtime} {' '.join(args[1:])}'")
+    os.execv(runtime, args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
