@@ -1,0 +1,2 @@
+class StructuredOutputParsingError(Exception):
+    pass
