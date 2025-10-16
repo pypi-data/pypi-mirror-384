@@ -1,0 +1,87 @@
+import datetime
+
+from remoulade.common import chunk
+
+from ...helpers.redis_client import redis_client
+from ..backend import State, StateBackend
+
+
+class RedisBackend(StateBackend):
+    """A state backend for Redis_.
+    Parameters:
+      namespace(str): A string with which to prefix result keys.
+      encoder(Encoder): The encoder to use when storing and retrieving
+        result data.  Defaults to :class:`.JSONEncoder`.
+      client(Redis): An optional client.  If this is passed,
+        then all other parameters are ignored.
+      url(str): An optional connection URL.  If both a URL and
+        connection parameters are provided, the URL is used.
+      **parameters(dict): Connection parameters are passed directly
+        to :class:`redis.Redis`.
+    .. _redis: https://redis.io
+    """
+
+    def __init__(
+        self, *, namespace="remoulade-state", encoder=None, client=None, url=None, socket_timeout=5.0, **parameters
+    ):
+        super().__init__(namespace=namespace, encoder=encoder)
+        self.client = client or redis_client(url=url, socket_timeout=socket_timeout, **parameters)
+
+    def get_state(self, message_id):
+        key = self._build_message_key(message_id)
+        data = self.client.hgetall(key)
+        if not data:
+            return None
+        return self._parse_state(data)
+
+    def set_state(self, state, ttl=3600):
+        message_key = self._build_message_key(state.message_id)
+        with self.client.pipeline() as pipe:
+            encoded_state = self._encode_dict(state.as_dict())
+            pipe.hset(message_key, mapping=encoded_state)
+            pipe.expire(message_key, ttl)
+            pipe.execute()
+
+    def get_states(
+        self,
+        *,
+        size: int | None = None,
+        offset: int = 0,
+        selected_actors: list[str] | None = None,
+        selected_statuses: list[str] | None = None,
+        selected_message_ids: list[str] | None = None,
+        selected_composition_ids: list[str] | None = None,
+        start_datetime: datetime.datetime | None = None,
+        end_datetime: datetime.datetime | None = None,
+        sort_column: str | None = None,
+        sort_direction: str | None = None,
+    ):
+        states: list[State] = []
+        for keys in chunk(self.client.scan_iter(match=f"{StateBackend.namespace}*", count=size), size):
+            with self.client.pipeline() as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                data = pipe.execute()
+                states.extend(self._parse_state(state_dict) for state_dict in data if state_dict)
+
+        if size is None:
+            return states[offset:]
+
+        return states[offset : size + offset]
+
+    def get_states_count(
+        self,
+        *,
+        selected_actors: list[str] | None = None,
+        selected_statuses: list[str] | None = None,
+        selected_messages_ids: list[str] | None = None,
+        selected_composition_ids: list[str] | None = None,
+        start_datetime: datetime.datetime | None = None,
+        end_datetime: datetime.datetime | None = None,
+        **kwargs,
+    ) -> int:
+        return len(list(self.client.scan_iter(match=f"{StateBackend.namespace}*")))
+
+    def _parse_state(self, data):
+        decoded_state = self._decode_dict(data)
+        return State.from_dict(decoded_state)
