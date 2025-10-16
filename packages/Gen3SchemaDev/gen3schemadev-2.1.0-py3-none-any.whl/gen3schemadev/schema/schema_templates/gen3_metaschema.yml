@@ -1,0 +1,259 @@
+# Original Metaschema pulled from: https://github.com/NCI-GDC/gdcdictionary/blob/9be3f2e467891c5e4b9c6f6d0125dc4a2a721a79/src/gdcdictionary/schemas/metaschema.yaml
+$schema: "http://json-schema.org/draft-04/schema#"
+
+id: "gen3_metaschema"
+title: "Gen3 JSON schema extension"
+
+allOf:
+  - $ref: "http://json-schema.org/draft-04/schema#"
+
+required:
+  - id #unique identifier for node
+  - title #name of the node
+  - type #type of node/ should be object by default
+  - category #potentially used in submission system, if not may not be needed
+  - program
+  - project
+  - description #description of node
+  - submittable #boolean, can data be submitted to this node
+  - validators #specify to the validator additional functions to run on the values
+  - systemProperties #non-user facing properties required by backend
+  - uniqueKeys #for validator to check uniqueness
+  - links #to specify to the validator what properties are links and their targets
+  - required #list of required properties
+  - properties #properties of the node
+
+
+# Properties:
+properties:
+
+  id:
+    type: string
+    description: "Unique identifier for the node."
+
+  title:
+    type: string
+    description: "Name of the node."
+
+  type:
+    type: string
+    description: "Type of node, should be 'object' by default."
+    default: object
+  
+  namespace:
+    type: 
+      - string
+      - 'null'
+    description: "Namespace of the node."
+
+  category:
+    description: "Generalized role that the node has in the commons data model. *_file nodes are reserved for those nodes that have corresponding files in object store."
+    type: string
+    enum:
+      - administrative
+      - analysis
+      - biospecimen
+      - clinical
+      - data_file
+      - metadata_file
+      - notation
+      - index_file
+      - clinical_assessment
+      - medical_history
+      - data_observations
+      - experimental_methods
+      - subject_characteristics
+      - imaging
+      - study_administration
+      - satellite
+      - radar
+      - stream_gauge
+      - weather_station
+
+  program:
+    type: string
+    description: "Denotes the programs within the commons for which this schema may be used."
+    default: '*'
+
+  project:
+    type: string
+    description: "Denotes the projects within the commons for which this schema may be used."
+    default: '*'
+
+  description:
+    type: string
+    description: "Description of the node."
+    default: ''
+    
+  submittable:
+    description: "True/False keyword used to indicate whether this node should be allowed to be user-submitted through normal submission processes."
+    type: boolean
+    default: true
+
+  validators:
+    description: "Feature under development to allow cross validation among properties. Not intended to be used in its current form."
+    type:
+      - array
+      - "null"
+    items:
+      $ref: "#/definitions/validator_def"
+    default: null
+
+  systemProperties:
+    description: "Properties that will be automatically filled by the system unless otherwise defined by the user."
+    type: array
+    items:
+      type: string
+    default:
+      - id
+      - project_id
+      - state
+      - created_datetime
+      - updated_datetime
+
+  uniqueKeys:
+    description: "Properties or list of properties that can be used to identify this node, and only this node, within the commons."
+    type: array
+    items:
+      type: array
+      items:
+        type: string
+    default:
+      - [id]
+      - [project_id, submitter_id]
+  
+  required:
+    description: "List of required properties for the node."
+    type: array
+    items:
+      type: string
+    default:
+      - submitter_id
+      - type
+
+  links:
+    title: "Define a link to other nodes"
+    description: "Array used to connect two nodes within the commons."
+    type: array
+    items:
+      oneOf:
+        - $ref: "#/definitions/link"
+        - $ref: "#/definitions/link_subgroup"
+
+  properties:
+    type: object
+    description: "Properties of the node."
+    additionalProperties:
+      oneOf:
+        - $ref: "#/definitions/propertyDef"
+        - type: string
+          pattern: "^_definitions\\.yaml#/.+"
+  
+  additionalProperties:
+    type: boolean
+    description: "Allow additional properties to be added to the node."
+    default: false
+
+
+# Definitions:
+definitions:
+
+  field:
+    type: string
+    pattern: "^[_a-zA-Z0-9]*$" #only letters, numbers, and underscores
+
+  link:
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - backref
+      - label
+      - target_type
+      - multiplicity
+      - required
+
+    properties:
+      name:
+        $ref: "#/definitions/field"
+      target_type:
+        $ref: "#/definitions/field"
+      backref:
+        $ref: "#/definitions/field"
+      label:
+        anyOf:
+          - $ref: "#/definitions/field"
+          - type: 'null'
+      multiplicity:
+        type: string
+        enum:
+          - one_to_one
+          - one_to_many
+          - many_to_one
+          - many_to_many
+      required:
+        type: boolean
+
+  link_subgroup:
+    type: object
+    additionalProperties: false
+    required:
+      - exclusive
+      - required
+      - subgroup
+    properties:
+      exclusive:
+        type: boolean
+      required:
+        type: boolean
+      subgroup:
+        type: array
+        items:
+          $ref: "#/definitions/link"
+
+  validator_def:
+    title: "Define a validator to be used on a property"
+    type: object
+    additionalProperties: false
+    required:
+      - property #the property to be applied to
+      - function #the function name, predefined somewhere, to use
+    properties:
+      property:
+        type: string
+      function:
+        type: string
+      link_to_type:
+        type: string
+      multiplicity:
+        type: string
+        enum:
+          - one_to_one
+          - one_to_many
+          - many_to_one
+          - many_to_many
+
+  propertyDef:
+    type: object
+    properties:
+      description:
+        type: string
+      enum:
+        type: array
+        items:
+          type: string
+      type:
+        oneOf:
+          - type: string
+            enum:
+              - string
+              - number
+              - integer
+              - boolean
+              - array
+              - object
+          - type: array
+            items:
+              type: string
+      # Add more allowed fields as needed
+    additionalProperties: true  # Allow other fields (like format, minimum, etc.)
