@@ -1,0 +1,427 @@
+---
+title: Write a package
+---
+
+import { Code, FileTree } from '@astrojs/starlight/components';
+
+This tutorial walks you through building a package for an SSL blacklist.
+Packages bundle pipelines, operators, contexts, and examples. You can [install
+packages](/guides/basic-usage/install-a-package) from the [Tenzir
+Library](https://app.tenzir.com/library) or deploy them as code.
+
+## Map the use case
+
+We'll pick an example from the SecOps space: detect malicious certificates
+listed on the [SSLBL blocklist](https://sslbl.abuse.ch/).
+
+This involves three primary actions:
+
+1. Build a lookup table of SHA-1 hashes that mirror SSLBL data.
+2. Extract SHA1 hashes of certificates in OCSF Network Activity events and
+   compare them against the lookup table.
+3. Tag matching events with the OCSF OSINT profile, so that downstream tools can
+   escalate the match into an alert or detection finding.
+
+We'll begin with the managing the lookup table. But first we need to get the
+package scaffolding in place.
+
+## Create the package scaffold
+
+Create a directory named `sslbl` and add the standard package layout:
+
+<FileTree>
+
+- sslbl/
+  - examples/ Runnable snippets for users
+  - operators/ Reusable building blocks for pipelines
+  - pipelines/ Deployable pipelines
+  - tests/ Integration tests
+  - package.yaml Manifest: metadata, contexts, and inputs
+
+</FileTree>
+
+## Add the package manifest
+
+The [`package.yaml`](/packages/sslbl/package.yaml) is the **package manifest**.
+I contains descriptive metadata, but also the definitions of contexts and
+inputs, as we shall see below.
+
+### Add descriptive metadata
+
+```yaml title="sslbl/package.yaml"
+name: SSLBL
+author: Tenzir
+author_icon: https://github.com/tenzir.png
+package_icon: |
+  https://raw.githubusercontent.com/tenzir/library/main/sslbl/package.svg
+description: |
+  The [SSLBL](https://sslbl.abuse.ch/) package provides a lookup table with
+  SHA1 hashes of blacklisted certificates for TLS monitoring use cases.
+```
+
+### Define the lookup table context
+
+Next, add a lookup table context to the manifest. The node creates the context
+when you install the package.
+
+```yaml title="sslbl/package.yaml"
+contexts:
+  sslbl:
+    type: lookup-table
+    description: |
+      A table keyed by SHA1 hashes of SSL certificates on the SSL blocklist.
+```
+
+## Add user-defined operators
+
+Packages give you the ability to implement **user-defined operators** that live
+right next to Tenzir's [built-in operators](/reference/operators). These custom
+operators are an essential capability to scale your data processing, as you can
+break down complex operations into smaller, testable building blocks.
+
+### Create the user-defined operators
+
+First, we create an operator that fetches the latest SSL blocklist from the
+[SSLBL](https://sslbl.abuse.ch/) website. The operator in
+(/packages/sslbl/operators/fetch.tql) looks as follows:
+
+import fetchTQL from '/public/packages/sslbl/operators/fetch.tql?raw';
+
+<Code code={fetchTQL} lang="tql" title="operators/fetch.tql" />
+
+The relative path in the packagage defines the operator name. After installing
+the package, you can call this operator via `sslbl::fetch`. It will produce
+events of this shape:
+
+```tql
+{
+  timestamp: 2014-05-04T08:09:56Z,
+  SHA1: "b08a4939fb88f375a2757eaddc47b1fb8b554439",
+  reason: "Shylock C&C",
+}
+```
+
+Let's create another operator to map this data to [OSINT
+objects](https://schema.ocsf.io/1.6.0/objects/osint)—the standardized
+representation of an indicators of compromise (IOCs) in OCSF.
+
+import toOsintTql from '/public/packages/sslbl/operators/ocsf/to_osint.tql?raw';
+
+<Code code={toOsintTql} lang="tql" title="operators/ocsf/to_osint.tql" />
+
+This pipeline translates the original feed into this shape:
+
+```tql
+{
+  confidence: "High",
+  confidence_id: 3,
+  created_time: 2014-05-04T08:09:56Z,
+  malware: [
+    {
+      classification_ids: [
+        3,
+      ],
+      classifications: [
+        "Bot",
+      ],
+      name: "Shylock",
+    },
+  ],
+  value: "b08a4939fb88f375a2757eaddc47b1fb8b554439",
+  type: "Hash",
+  type_id: 4,
+}
+```
+
+:::note[OCSF Verbosity]
+You may notice that this shape is a lot more verbose than the original event.
+Don't worry, it is absolutely normal when upgrading your raw data to a
+semantically richer representation like OCSF. You can always trim the feed down
+again later, either automatically with our
+[`ocsf::trim`](/reference/operators/ocsf/trim) operator or manually by
+[`drop`](/reference/operators/drop)ping fields. But while the data
+is in motion, the additional semantics unlock generic analytics when the context
+of the original source is long gone.
+:::
+
+We're not done yet. Let's create one final operator that wraps a single fetch
+into an OCSF event that describes a single collection of IoCs: the [OSINT
+Inventory Info](https://schema.ocsf.io/1.6.0/classes/osint_inventory_info)
+event.
+
+import toOsintInventoryInfoTql from '/public/packages/sslbl/operators/ocsf/to_osint_inventory_info.tql?raw';
+
+<Code code={toOsintInventoryInfoTql} lang="tql" title="operators/ocsf/to_osint_inventory_info.tql" />
+
+We can now call all three operators in one shot to construct an OCSF event:
+
+```tql
+sslbl::fetch
+sslbl::ocsf::to_osint
+sslbl::ocsf::to_osint_inventory_info
+```
+
+Now that we have building blocks, let's combine them into something meaningful.
+
+:::tip[OCSF Mapping Tutorial]
+Mapping data to OCSF can feel like a daunting task. Check out our [dedicated
+tutorial OCSF mapping](/tutorials/map-data-to-ocsf) where we cover OCSF at great
+length.
+:::
+
+## Add deployable pipelines
+
+With our user-defined operators, we get building blocks, but not yet entire
+pipelines.
+
+We now create a pipeline that downloads SSLBL data and updates the context
+periodically so that we always have the latest version of the SSLBL data for
+enrichment.
+
+The `sslbl::fetch` operator just downloads the blacklist entries once. But the
+remote data source changes periodically, and we want to always work with the
+latest version. So we turn the one-shot download into a continuous data feed
+using the [`every`](/reference/operators/every) operator:
+
+```tql title="sslbl/pipelines/publish-as-ocsf.tql"
+every 1h {
+  sslbl::fetch
+}
+sslbl::ocsf::to_osint
+sslbl::ocsf::to_osint_inventory_info
+publish "ocsf"
+```
+
+This is a closed pipeline, meaning, it has an input operator
+([`every`](/reference/operators/every)) and an output operator
+([`publish`](/reference/operators/publish)). The pipeline produces a new OCSF
+Inventory Info event every hour and publishes it to the `ocsf` topic so that
+other pipelines in the same node can consume it. This is a best-practice design
+pattern to expose data that you may reuse multiple times.
+
+But instead of publishing the data as OCSF events and subscribing to it
+afterwards, we can directly update the lookup table from the plain OSINT
+objects:
+
+```tql title="sslbl/pipelines/update-lookup-table.tql"
+every 1h {
+  sslbl::fetch
+}
+sslbl::ocsf::to_osint
+context::update "sslbl", key=value
+```
+
+Thanks to our user-defined operators, implementing these two different pipelines
+doesn't take much effort.
+
+## Add examples
+
+To illustrate how others can use the package, we encourage package authors to
+add a few TQL snippets to the `examples` directory in the package.
+
+### Example 1: One-shot lookup table update
+
+Here's a snippet that perform a single fetch followed by an update of the lookup
+table:
+
+import oneShotUpdateTql from '/public/packages/sslbl/examples/one-shot-update.tql?raw';
+
+<Code code={oneShotUpdateTql} lang="tql" title="examples/one-shot-update.tql" />
+
+### Example 2: Enrich with the context
+
+What do we do with feed of SHA1 hashes that correspond to bad certificates? One
+natural use case is to look at TLS traffic and compare these values with the
+SHA1 hashes in the feed.
+
+Here's a pipeline for this:
+
+import enrichNetworkActivityTql from '/public/packages/sslbl/examples/enrich-network-activity.tql?raw';
+
+<Code code={enrichNetworkActivityTql} lang="tql" title="examples/enrich-network-activity.tql" />
+
+This pipelines hones in on OCSF Network Activity events (`category_uid == 4`)
+that come with a SHA1 TLS certificate fingerprint (`algorithm_id == 2`). If we
+have a matche, we add the `osint` profile to the event and publish it to
+separate topic `ocsf-osint` for further processing.
+
+### Example 3: Show a summary of the dataset
+
+import topMalwareTQL from '/public/packages/sslbl/examples/top-malware.tql?raw';
+
+<Code code={topMalwareTQL} lang="tql" title="examples/top-malware.tql" />
+
+## Make your package configurable
+
+To make a package more reusable, **inputs** offer a simple templating mechanism
+to replace variables with user-provided values.
+
+For example, to replace the hard-coded 1-hour refresh cadence with an input,
+replace the value with `{{ inputs.refresh_interval }}` in the above pipeline:
+
+```tql title="sslbl/pipelines/update-as-ocsf.tql"
+every {{ inputs.refresh_interval }} {
+  sslbl::fetch
+}
+sslbl::ocsf::to_osint
+context::update "sslbl", key=value
+```
+
+Then add the input to your `package.yaml`:
+
+```yaml title="sslbl/package.yaml"
+inputs:
+  refresh_interval:
+    name: Time between context updates
+    description: |
+      How often the pipeline refreshes the SSLBL lookup table.
+    default: 1h
+```
+
+Users can accept the default or override the value [during
+installation](/guides/basic-usage/install-a-package), e.g., when using
+[`package::add`](/reference/operators/package/add):
+
+```tql
+package::add "/path/to/sslbl", inputs={refresh_interval: 24h}
+```
+
+## Test your package
+
+Testing ensures that you always have a working package during development. The
+earlier you start, the better!
+
+### Add tests for your operators
+
+Since our package ships with user-defined operators, we highly recommend to
+write tests for them, for the following reasons:
+
+1. You help users gain confidence in the functionality.
+2. You provide illustrative input-output pairs.
+3. You evolve faster with less regressions.
+
+Yes, writing tests is often boring and cumbersome. But it doesn't have to be
+that way! With our purpose-built [test framework](/reference/test-framework) for
+the Tenzir ecosystem, it is actually fun. 🕺
+
+Let's bootstrap the `tests` directory:
+
+```sh
+mkdir tests
+mkdir tests/inputs # files we reference from tests
+```
+
+We'll put a trimmed version of https://sslbl.abuse.ch/blacklist/sslblacklist.csv
+into `tests/inputs/`:
+
+import sslblacklistCsv from '/public/packages/sslbl/tests/inputs/sslblacklist.csv?raw';
+
+<Code code={sslblacklistCsv} lang="csv" title="tests/inputs/sslblacklist.csv" />
+
+Let's test the operator that maps our input to OCSF OSINT objects:
+
+import testOcsfToOsintTql from '/public/packages/sslbl/tests/ocsf/to_osint.tql?raw';
+
+<Code code={testOcsfToOsintTql} lang="tql" title="tests/ocsf/to_osint.tql" />
+
+We first watch the terminal output it in passthrough mode:
+
+```sh
+uvx tenzir-test --passthrough
+```
+
+import testOcsfToOsintTxt from '/public/packages/sslbl/tests/ocsf/to_osint.txt?raw';
+
+<Code code={testOcsfToOsintTxt} lang="tql" title="tests/ocsf/to_osint.txt" />
+
+As expected, a valid OCSF OSINT object. Let's make confirm this as our new
+baseline:
+
+```sh
+uvx tenzir-test --update
+```
+
+This created a [`to_osint.txt`](/packages/sslbl/tests/ocsf/to_osint.txt) file
+next to the [`to_osint.tql`](/packages/sslbl/tests/ocsf/to_osint.tql) file.
+Future runs will use this baseline for comparisons.
+
+Continue to test the remaining operators, or add additional tests for some
+examples.
+
+### Test contexts and node interaction
+
+Our package defines a context that lives in a node. Writing tests with nodes is
+a bit more involved than writing tests for stateless operators that we can
+simply run through the `tenzir` binary.
+
+To test node interactions, we need to use the **suite** concept from the test
+framework, which spins up a single fixture and then executes a series of tests
+sequentially against that fixture. With that capability, we can finally test the
+multi-stage process of updating the context, inspecting it, and using it for an
+enrichment.
+
+Defining a suite doesn't take much, just add a `test.yaml` file to a
+sub-directory that represents the suite of tests. We'll do this:
+
+<FileTree>
+
+- sslbl/tests/context/
+  - 01-context-list.tql
+  - 02-context-update.tql
+  - 03-context-inspect.tql
+  - test.yaml
+
+</FileTree>
+
+Here's the test suite definition:
+
+import testYaml from '/public/packages/sslbl/tests/context/test.yaml?raw';
+
+<Code code={testYaml} lang="yaml" title="tests/context/test.yaml" />
+
+Let's take a look at our tests:
+
+import contextList from '/public/packages/sslbl/tests/context/01-context-list.tql?raw';
+
+<Code code={contextList} lang="tql" title="tests/context/01-context-list.tql" />
+
+Then load our input into the node's lookup table:
+
+import contextUpdate from '/public/packages/sslbl/tests/context/02-context-update.tql?raw';
+
+<Code code={contextUpdate} lang="tql" title="tests/context/02-context-update.tql" />
+
+Finally ensure that the lookup table has the expected values:
+
+import contextInspect from '/public/packages/sslbl/tests/context/03-context-inspect.tql?raw';
+
+<Code code={contextInspect} lang="tql" title="tests/context/03-context-inspect.tql" />
+
+:::note[Automatic package installation]
+When the test harness invokes the `tenzir`
+(as runner) and `tenzir-node` binary (as fixture), it passes the
+`--package-dirs` option in both cases. This ensures that user-defined operators
+are available for testing with the runner and contexts in the fixture. When
+writing tests, you can simply assume that the package is installed at the node.
+:::
+
+## Share and contribute
+
+Phew, you made it! You now have a reusable package. 🎉
+
+Now that you have a package, what's next?
+
+1. Join our [Discord server](/discord) and showcase the package in the
+   `show-and-tell` channel to gather feedback.
+2. If you deem it useful for everyone, open a pull request in our [Community
+   Library on GitHub](https://github.com/tenzir/library). Packages from this
+   library appear automatically in the [Tenzir
+   Library](https://app.tenzir.com/library).
+3. Spread the word on social media and tag us so we can amplify it.
+
+:::tip[AI-based package creation]
+It's quite a bit of work to manually create a package. In the age of AI and
+modern agentic tooling, you have powertools available to fully automate this
+task. Stay tuned for updates on our [MCP Server](/reference/mcp-server), as we
+have plans to make package creation a 100% hands-off-keyboard activity.
+:::
