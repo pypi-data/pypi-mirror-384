@@ -1,0 +1,95 @@
+# OxidizedVision 🚀
+
+**Compile once, run anywhere — from GPU servers to the browser.**
+
+OxidizedVision is a production-grade, Rust-native inference toolkit for PyTorch models. It provides a complete pipeline to convert, optimize, validate, and serve machine learning models with the speed and safety of Rust.
+
+[![Build Status](https://img.shields.io/github/actions/workflow/status/OnePunchMonk/Oxidized-Vision/ci.yml?branch=main)](https://github.com/OnePunchMonk/Oxidized-Vision/actions)
+[![PyPI Version](https://img.shields.io/pypi/v/oxidizedvision.svg)](https://pypi.org/project/oxidizedvision/)
+[![Crates.io](https://img.shields.io/crates/v/oxidizedvision_run.svg)](https://crates.io/crates/oxidizedvision_run)
+[![codecov](https://codecov.io/gh/OnePunchMonk/Oxidized-Vision/branch/main/graph/badge.svg)](https://codecov.io/gh/OnePunchMonk/Oxidized-Vision)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/OnePunchMonk/Oxidized-Vision/blob/main/LICENSE)
+
+## ✨ Key Features
+
+- **🐍 Python CLI:** A user-friendly command-line interface to manage the entire workflow.
+- **🦀 Rust Runtimes:** High-performance, safe, and concurrent model execution in Rust.
+- **✅ Multi-Backend Support:**
+  - **TorchScript:** JIT-compiled PyTorch models.
+  - **ONNX:** Interoperable format with `tract` (Rust) and `onnxruntime`.
+  - **WASM:** Run models directly in the browser.
+- **📊 Benchmarking:** Measure and compare latency, throughput, and memory usage across backends.
+- **🔎 Validation:** Ensure numerical consistency between PyTorch, TorchScript, and ONNX outputs with detailed tolerance reports.
+- **⚙️ Optimization:** (Coming soon) Quantization and graph simplification passes.
+- **📦 Packaging:** Automatically package models into self-contained Rust crates.
+- **☁️ Serving:** Built-in `async` server for deploying models as a web service.
+
+## 🚀 Quickstart
+
+1. **Installation:**
+   ```bash
+   pip install oxidizedvision
+   ```
+
+2. **Create a Configuration (`config.yml`):**
+   ```yaml
+   model_name: "my_unet"
+   source_path: "path/to/your/model.py"
+   class_name: "UNet"
+   output_dir: "models"
+   input_shape: [1, 3, 256, 256]
+   opset_version: 11
+   ```
+
+3. **Convert Your Model:**
+   ```bash
+   oxidizedvision convert --config-path config.yml
+   ```
+   This generates `models/my_unet.pt` (TorchScript) and `models/my_unet.onnx`.
+
+4. **Validate Numerical Consistency:**
+   ```bash
+   oxidizedvision validate --config-path config.yml
+   ```
+   This compares the outputs of the generated models to ensure they are numerically close.
+
+5. **Benchmark Performance:**
+   ```bash
+   oxidizedvision benchmark --model-path models/my_unet.pt --runners torchscript,tract
+   ```
+   This provides a detailed report on latency, throughput, and memory usage.
+
+##  CLI Commands
+
+The `oxidizedvision` CLI provides a suite of commands to streamline your MLOps workflow.
+
+| Command     | Description                                                               |
+|-------------|---------------------------------------------------------------------------|
+| `convert`   | Converts a PyTorch model to TorchScript and ONNX formats.                 |
+| `validate`  | Compares the outputs of different model formats for numerical consistency. |
+| `benchmark` | Runs performance benchmarks (latency, throughput, memory) on all backends. |
+| `package`   | Packages an ONNX model into a deployable Rust crate.                      |
+| `optimize`  | (WIP) Applies graph optimizations and quantization.                       |
+| `serve`     | (WIP) Serves the model via a high-performance Rust web server.            |
+
+For detailed options, run `oxidizedvision --help`.
+
+## Architecture Overview
+
+OxidizedVision consists of two main components:
+
+1.  **Python Client (`oxidizedvision`):** A CLI for orchestrating the conversion, validation, and benchmarking pipeline. It uses `typer` for the CLI, `PyTorch` for model conversion, and `rich` for beautiful terminal output.
+2.  **Rust Runtime (`rust_runtime`):** A set of Rust crates that provide high-performance inference runtimes. It uses a trait-based plugin system, allowing you to swap backends easily.
+    -   `runner_tch`: Uses the official LibTorch bindings.
+    -   `runner_tract`: Uses the `tract` engine for ONNX models.
+    -   `runner_tensorrt`: (Experimental) For NVIDIA GPUs.
+
+This dual-language architecture gives you the flexibility of Python for model development and the raw performance of Rust for deployment.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see `CONTRIBUTING.md` for guidelines on how to get started.
+
+## 📜 License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
