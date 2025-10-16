@@ -1,0 +1,77 @@
+# LSP installer
+
+Utility script for installing various LSPs, because software packaging standards still fucking suck.
+
+**Warning:** this is an experimental script that has not been extensively tested. Use with caution. It was hacked together in a single evening/night, and likely has multiple, large problems.
+
+<!-- If this list ever gets Sufficiently Big:tm:, replace with "has support for over X servers, including:" and only some notable examples. -->
+Currently has support for 5 servers:
+
+* tsserver
+* pyright
+* kotlin-lsp
+* luals
+* clangd
+
+## Requirements
+
+* Python 3.10+
+* Linux or Windows (though Windows support is limited)
+    * macOS is intentionally not supported
+
+Additionally, the following tools are used, but are optional unless you install packages that depend on it:
+
+* `npm`
+
+## Installing
+
+### From pypi
+https://pypi.org/project/lspinstaller/
+```
+pip3 install lspinstaller
+```
+
+### From source
+IOU 1x instruction set
+
+## General usage
+
+* `lspinstaller list` to see what exists
+* `lspinstaller update` to update LSPs you have installed
+* `lspinstaller install <lsp>` to install new LSPs
+
+All of these accept `--help`. Additional information is available through `lspinstaller --help`.
+
+## FAQ
+
+### What LSP servers are supported, and how do I install them?
+
+See `lspinstaller list`, or `lspinstaller/data/sources.py` if you would like to check before installing.
+
+To install a server, run `lspinstaller install server-name`, where `server-name` corresponds to one of the servers from the list. The `install` command can take any number of LSPs at once, so if you want to install several, you can append them to the command.
+
+### How are the servers installed?
+
+Depending on availability:
+
+1. Binary install
+2. Npm install (requires `npm` in PATH)
+
+System package managers are not supported; if you can install via a system package manager, do that instead. This script exists for operating systems where there are no package manager, the package manager doesn't include a given LSP, or the OS is debian-based (or follows a debian-like idiology) where the LSPs that are available are heavily out of date. 
+
+
+### Where are the servers installed, and how do I use them?
+
+They're installed to `~/.local/share/lsp/`. This applies to both Windows and Linux.
+
+Eventually, there will likely be a `~/.local/share/lsp/bin` directory that contains all the non-npm LSPs, but  this currently does not work for whatever fucking reason. With clangd, this manifests as `limits.h` missing. This was observed when the _exact same binary_ breaks when referencing a symlink location, and breaking when referencing the real location. It's unclear why this is the case, and if it can be fixed.
+
+In the meanwhile, you need to explicitly specify the full path, and keep track of it yourself. For example:
+
+* Clangd is installed to `~/.local/share/lsp/clangd/bin/clangd`
+* kotlin-lsp is installed to `~/.local/share/lsp/kotlin-lsp/bin/kotlin-lsp.sh`
+
+The name used for the `install` command matches the subfolder name in `~/.local/share/lsp/`.
+
+It is still a manual process though, so it's strongly recommended that you automate it once so you don't have to touch it again. The locations are guaranteed to never change incompatibly.
+
