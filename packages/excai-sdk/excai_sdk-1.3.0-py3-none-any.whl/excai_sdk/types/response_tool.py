@@ -1,0 +1,344 @@
+# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+from typing import Dict, List, Union, Optional
+from typing_extensions import Literal, Annotated, TypeAlias
+
+from .._utils import PropertyInfo
+from .._models import BaseModel
+from .compound_filter import CompoundFilter
+from .comparison_filter import ComparisonFilter
+from .realtime.mcp_tool import McpTool
+from .image_input_fidelity import ImageInputFidelity
+
+__all__ = [
+    "ResponseTool",
+    "Function",
+    "FileSearch",
+    "FileSearchFilters",
+    "FileSearchRankingOptions",
+    "ComputerUsePreview",
+    "WebSearchTool",
+    "WebSearchToolFilters",
+    "WebSearchToolUserLocation",
+    "CodeInterpreter",
+    "CodeInterpreterContainer",
+    "CodeInterpreterContainerCodeInterpreterToolAuto",
+    "ImageGeneration",
+    "ImageGenerationInputImageMask",
+    "LocalShell",
+    "Custom",
+    "CustomFormat",
+    "CustomFormatText",
+    "CustomFormatGrammar",
+    "WebSearchPreviewTool",
+    "WebSearchPreviewToolUserLocation",
+]
+
+
+class Function(BaseModel):
+    name: str
+    """The name of the function to call."""
+
+    parameters: Optional[Dict[str, object]] = None
+    """A JSON schema object describing the parameters of the function."""
+
+    strict: Optional[bool] = None
+    """Whether to enforce strict parameter validation. Default `true`."""
+
+    type: Literal["function"]
+    """The type of the function tool. Always `function`."""
+
+    description: Optional[str] = None
+    """A description of the function.
+
+    Used by the model to determine whether or not to call the function.
+    """
+
+
+FileSearchFilters: TypeAlias = Union[ComparisonFilter, CompoundFilter, None]
+
+
+class FileSearchRankingOptions(BaseModel):
+    ranker: Optional[Literal["auto", "default-2024-11-15"]] = None
+    """The ranker to use for the file search."""
+
+    score_threshold: Optional[float] = None
+    """The score threshold for the file search, a number between 0 and 1.
+
+    Numbers closer to 1 will attempt to return only the most relevant results, but
+    may return fewer results.
+    """
+
+
+class FileSearch(BaseModel):
+    type: Literal["file_search"]
+    """The type of the file search tool. Always `file_search`."""
+
+    vector_store_ids: List[str]
+    """The IDs of the vector stores to search."""
+
+    filters: Optional[FileSearchFilters] = None
+    """A filter to apply."""
+
+    max_num_results: Optional[int] = None
+    """The maximum number of results to return.
+
+    This number should be between 1 and 50 inclusive.
+    """
+
+    ranking_options: Optional[FileSearchRankingOptions] = None
+    """Ranking options for search."""
+
+
+class ComputerUsePreview(BaseModel):
+    display_height: int
+    """The height of the computer display."""
+
+    display_width: int
+    """The width of the computer display."""
+
+    environment: Literal["windows", "mac", "linux", "ubuntu", "browser"]
+    """The type of computer environment to control."""
+
+    type: Literal["computer_use_preview"]
+    """The type of the computer use tool. Always `computer_use_preview`."""
+
+
+class WebSearchToolFilters(BaseModel):
+    allowed_domains: Optional[List[str]] = None
+    """Allowed domains for the search.
+
+    If not provided, all domains are allowed. Subdomains of the provided domains are
+    allowed as well.
+
+    Example: `["pubmed.ncbi.nlm.nih.gov"]`
+    """
+
+
+class WebSearchToolUserLocation(BaseModel):
+    city: Optional[str] = None
+    """Free text input for the city of the user, e.g. `San Francisco`."""
+
+    country: Optional[str] = None
+    """
+    The two-letter [ISO country code](https://en.wikipedia.org/wiki/ISO_3166-1) of
+    the user, e.g. `US`.
+    """
+
+    region: Optional[str] = None
+    """Free text input for the region of the user, e.g. `California`."""
+
+    timezone: Optional[str] = None
+    """
+    The [IANA timezone](https://timeapi.io/documentation/iana-timezones) of the
+    user, e.g. `America/Los_Angeles`.
+    """
+
+    type: Optional[Literal["approximate"]] = None
+    """The type of location approximation. Always `approximate`."""
+
+
+class WebSearchTool(BaseModel):
+    type: Literal["web_search", "web_search_2025_08_26"]
+    """The type of the web search tool.
+
+    One of `web_search` or `web_search_2025_08_26`.
+    """
+
+    filters: Optional[WebSearchToolFilters] = None
+    """Filters for the search."""
+
+    search_context_size: Optional[Literal["low", "medium", "high"]] = None
+    """High level guidance for the amount of context window space to use for the
+    search.
+
+    One of `low`, `medium`, or `high`. `medium` is the default.
+    """
+
+    user_location: Optional[WebSearchToolUserLocation] = None
+    """The approximate location of the user."""
+
+
+class CodeInterpreterContainerCodeInterpreterToolAuto(BaseModel):
+    type: Literal["auto"]
+    """Always `auto`."""
+
+    file_ids: Optional[List[str]] = None
+    """An optional list of uploaded files to make available to your code."""
+
+
+CodeInterpreterContainer: TypeAlias = Union[str, CodeInterpreterContainerCodeInterpreterToolAuto]
+
+
+class CodeInterpreter(BaseModel):
+    container: CodeInterpreterContainer
+    """The code interpreter container.
+
+    Can be a container ID or an object that specifies uploaded file IDs to make
+    available to your code.
+    """
+
+    type: Literal["code_interpreter"]
+    """The type of the code interpreter tool. Always `code_interpreter`."""
+
+
+class ImageGenerationInputImageMask(BaseModel):
+    file_id: Optional[str] = None
+    """File ID for the mask image."""
+
+    image_url: Optional[str] = None
+    """Base64-encoded mask image."""
+
+
+class ImageGeneration(BaseModel):
+    type: Literal["image_generation"]
+    """The type of the image generation tool. Always `image_generation`."""
+
+    background: Optional[Literal["transparent", "opaque", "auto"]] = None
+    """Background type for the generated image.
+
+    One of `transparent`, `opaque`, or `auto`. Default: `auto`.
+    """
+
+    input_fidelity: Optional[ImageInputFidelity] = None
+    """
+    Control how much effort the model will exert to match the style and features,
+    especially facial features, of input images. This parameter is only supported
+    for `gpt-image-1`. Unsupported for `gpt-image-1-mini`. Supports `high` and
+    `low`. Defaults to `low`.
+    """
+
+    input_image_mask: Optional[ImageGenerationInputImageMask] = None
+    """Optional mask for inpainting.
+
+    Contains `image_url` (string, optional) and `file_id` (string, optional).
+    """
+
+    model: Optional[Literal["gpt-image-1", "gpt-image-1-mini"]] = None
+    """The image generation model to use. Default: `gpt-image-1`."""
+
+    moderation: Optional[Literal["auto", "low"]] = None
+    """Moderation level for the generated image. Default: `auto`."""
+
+    output_compression: Optional[int] = None
+    """Compression level for the output image. Default: 100."""
+
+    output_format: Optional[Literal["png", "webp", "jpeg"]] = None
+    """The output format of the generated image.
+
+    One of `png`, `webp`, or `jpeg`. Default: `png`.
+    """
+
+    partial_images: Optional[int] = None
+    """
+    Number of partial images to generate in streaming mode, from 0 (default value)
+    to 3.
+    """
+
+    quality: Optional[Literal["low", "medium", "high", "auto"]] = None
+    """The quality of the generated image.
+
+    One of `low`, `medium`, `high`, or `auto`. Default: `auto`.
+    """
+
+    size: Optional[Literal["1024x1024", "1024x1536", "1536x1024", "auto"]] = None
+    """The size of the generated image.
+
+    One of `1024x1024`, `1024x1536`, `1536x1024`, or `auto`. Default: `auto`.
+    """
+
+
+class LocalShell(BaseModel):
+    type: Literal["local_shell"]
+    """The type of the local shell tool. Always `local_shell`."""
+
+
+class CustomFormatText(BaseModel):
+    type: Literal["text"]
+    """Unconstrained text format. Always `text`."""
+
+
+class CustomFormatGrammar(BaseModel):
+    definition: str
+    """The grammar definition."""
+
+    syntax: Literal["lark", "regex"]
+    """The syntax of the grammar definition. One of `lark` or `regex`."""
+
+    type: Literal["grammar"]
+    """Grammar format. Always `grammar`."""
+
+
+CustomFormat: TypeAlias = Annotated[Union[CustomFormatText, CustomFormatGrammar], PropertyInfo(discriminator="type")]
+
+
+class Custom(BaseModel):
+    name: str
+    """The name of the custom tool, used to identify it in tool calls."""
+
+    type: Literal["custom"]
+    """The type of the custom tool. Always `custom`."""
+
+    description: Optional[str] = None
+    """Optional description of the custom tool, used to provide more context."""
+
+    format: Optional[CustomFormat] = None
+    """The input format for the custom tool. Default is unconstrained text."""
+
+
+class WebSearchPreviewToolUserLocation(BaseModel):
+    type: Literal["approximate"]
+    """The type of location approximation. Always `approximate`."""
+
+    city: Optional[str] = None
+    """Free text input for the city of the user, e.g. `San Francisco`."""
+
+    country: Optional[str] = None
+    """
+    The two-letter [ISO country code](https://en.wikipedia.org/wiki/ISO_3166-1) of
+    the user, e.g. `US`.
+    """
+
+    region: Optional[str] = None
+    """Free text input for the region of the user, e.g. `California`."""
+
+    timezone: Optional[str] = None
+    """
+    The [IANA timezone](https://timeapi.io/documentation/iana-timezones) of the
+    user, e.g. `America/Los_Angeles`.
+    """
+
+
+class WebSearchPreviewTool(BaseModel):
+    type: Literal["web_search_preview", "web_search_preview_2025_03_11"]
+    """The type of the web search tool.
+
+    One of `web_search_preview` or `web_search_preview_2025_03_11`.
+    """
+
+    search_context_size: Optional[Literal["low", "medium", "high"]] = None
+    """High level guidance for the amount of context window space to use for the
+    search.
+
+    One of `low`, `medium`, or `high`. `medium` is the default.
+    """
+
+    user_location: Optional[WebSearchPreviewToolUserLocation] = None
+    """The user's location."""
+
+
+ResponseTool: TypeAlias = Annotated[
+    Union[
+        Function,
+        FileSearch,
+        ComputerUsePreview,
+        WebSearchTool,
+        McpTool,
+        CodeInterpreter,
+        ImageGeneration,
+        LocalShell,
+        Custom,
+        WebSearchPreviewTool,
+    ],
+    PropertyInfo(discriminator="type"),
+]
