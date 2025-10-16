@@ -1,0 +1,317 @@
+# LAMAReg: Label Augmented Modality Agnostic Registration
+
+<div align="left">
+
+[![Version](https://img.shields.io/github/v/tag/MICA-MNI/LAMAReg)](https://github.com/MICA-MNI/LAMAReg)
+[![PyPI version](https://img.shields.io/pypi/v/LAMAReg.svg)](https://pypi.org/project/LAMAReg/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/LAMAReg.svg)](https://pypi.org/project/LAMAReg/)
+[![GitHub issues](https://img.shields.io/github/issues/MICA-MNI/LAMAReg?color=brightgreen)](https://github.com/MICA-MNI/LAMAReg/issues)
+[![GitHub stars](https://img.shields.io/github/stars/MICA-MNI/LAMAReg.svg?style=flat&label=%E2%AD%90%EF%B8%8F%20stars&color=brightgreen)](https://github.com/MICA-MNI/LAMAReg/stargazers)
+
+</div>
+
+We introduced a novel approach for more accurate registration between modalities. This python based workflow combines deep learning-based segmentation and numerical solutions (ANTs) to generate precise warpfields, even for modalities with low signal-to-noise ratio, signal dropout and strong geometric distortions, such as diffusion MRI and fMRI acquisitions. 
+
+![lamar_workflow](https://raw.githubusercontent.com/MICA-MNI/LAMAReg/main/docs/workflow.png)
+
+## Overview
+
+LAMAReg provides contrast-agnostic registration between different MRI modalities by using SynthSeg's brain parcellation to enable robust alignment between images with different contrasts (e.g., T1w to T2w, FLAIR to T1w, DWI to T1w).
+
+This Python-based workflow combines deep learning-based segmentation (SynthSeg) and numerical optimization (ANTs) to generate precise warpfields, even for modalities with low signal-to-noise ratio, signal dropout, and strong geometric distortions, such as diffusion MRI and fMRI acquisitions.
+
+!lamar_workflow
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+
+## Workflows
+
+LAMAReg offers three main workflows and direct access to individual tools:
+
+### 1. Full Registration Pipeline
+
+Parcellate both input images, register them, and apply the transformation:
+
+```bash
+lamareg register [options]
+```
+
+### 2. Generate Warpfield Only
+
+Create warpfields without applying them to the input image:
+
+```bash
+lamareg generate-warpfield [options]
+```
+
+### 3. Apply Existing Warpfield
+
+Apply previously created warpfields to an input image:
+
+```bash
+lamareg apply-warpfield [options]
+```
+
+### 4. Direct Tool Access
+
+Run individual components directly:
+
+```bash
+lamareg synthseg [options]      # Run SynthSeg brain parcellation
+lamareg coregister [options]    # Run ANTs coregistration
+lamareg apply-warp [options]    # Apply transformations
+lamareg dice-compare [options]  # Calculate Dice similarity coefficient
+```
+
+## Command-Line Arguments
+
+### Full Registration
+
+#### Required Arguments:
+- `--moving PATH` : Input image to be registered
+- `--fixed PATH` : Reference image (target space)
+- `--output PATH` : Output registered image
+- `--moving-parc PATH` : Path for moving image parcellation
+- `--fixed-parc PATH` : Path for fixed image parcellation
+- `--registered-parc PATH` : Path for registered parcellation
+- `--affine PATH` : Path for affine transformation
+- `--warpfield PATH` : Path for warp field
+
+#### Optional Arguments:
+- `--registration-method STR` : Registration method (default: SyNRA)
+- `--synthseg-threads N` : SynthSeg threads (default: 1)
+- `--ants-threads N` : ANTs threads (default: 1)
+- `--qc-csv PATH` : Path for QC Dice score CSV file
+- `--inverse-warpfield PATH` : Path for inverse warp field
+- `--skip-fixed-parc` : Skip fixed image parcellation if it already exists
+- `--skip-moving-parc` : Skip moving image parcellation if it already exists
+- `--skip-qc` : Skip quality control metrics calculation
+- `--disable-robust` : Disable two-stage robust registration
+- `--secondary-warpfield PATH` : Disables warpfield composition for forward warps, specifies path to save the secondary warpfield
+- `--inverse-secondary-warpfield PATH` : Disables warpfield composition for forward warps, specifies path to save the secondary inverse warpfield
+
+### ANTs Registration Parameters
+
+When using `coregister` directly, additional ANTs parameters are available:
+
+- `--verbose` : Enable verbose output
+- `--grad-step FLOAT` : Gradient step size (default: 0.2)
+- `--flow-sigma FLOAT` : Smoothing for update field (default: 3)
+- `--total-sigma FLOAT` : Smoothing for total field (default: 0)
+- `--aff-metric STR` : Metric for affine stage (default: "mattes")
+- `--aff-sampling INT` : Sampling parameter for affine metric (default: 32)
+- `--syn-metric STR` : Metric for SyN stage (default: "mattes")
+- `--syn-sampling INT` : Sampling parameter for SyN metric (default: 32)
+- `--reg-iterations STR` : SyN iterations, comma-separated (e.g., "40,20,0")
+- `--aff-iterations STR` : Affine iterations, comma-separated (e.g., "2100,1200,1200,10")
+- `--aff-shrink-factors STR` : Affine shrink factors, comma-separated (e.g., "6,4,2,1")
+- `--aff-smoothing-sigmas STR` : Affine smoothing sigmas, comma-separated (e.g., "3,2,1,0")
+- `--random-seed INT` : Random seed for reproducibility
+- `--initial-affine-file PATH` : Path to initial affine transform to use
+- `--initial-warp-file PATH` : Path to initial warp field to use
+- `--interpolator STR` : Interpolation method (default: "genericLabel")
+
+### Generate Warpfield
+
+Same arguments as full registration, but without `--output`
+
+### Apply Warpfield
+
+#### Required Arguments:
+- `--moving PATH` : Input image to transform
+- `--fixed PATH` : Reference space image
+- `--output PATH` : Output registered image
+
+
+
+#### Optional Arguments:
+- `--ants-threads N` : ANTs threads (default: 1)
+- `--affine PATH` : Path to affine transformation
+- `--warpfield PATH` : Path to warp field
+- `--secondary-warpfield PATH` : Path to secondary warp field
+
+### SynthSeg
+
+#### Required Arguments:
+- `--i PATH` : Input image
+- `--o PATH` : Output segmentation
+
+#### Optional Arguments:
+- `--parc` : Output parcellation
+- `--cpu` : Use CPU
+- `--threads N` : Number of threads
+
+### Dice Compare
+
+#### Required Arguments:
+- `--ref PATH` : Path to reference parcellation image
+- `--reg PATH` : Path to registered parcellation image
+- `--out PATH` : Output CSV file path
+
+
+## Transform Order and Composition
+
+### Robust Mode (Two-Stage Registration)
+
+When using robust mode (default), LAMAReg performs a two-stage registration:
+
+1. **Primary Registration**: Parcellation-based registration (contrast-agnostic, coarse alignment)
+   - Produces: `primary_warp.nii.gz` + `affine.mat`
+
+2. **Secondary Registration**: Direct image registration using Stage 1 as initialization (fine-tuning)
+   - Produces: `secondary_warp.nii.gz` (refinement)
+
+3. **Automatic Composition**: Both warpfields are automatically composed into a single transform when `--secondary-warpfield` is not specified
+   - Total transform = `primary_warp` ∘ `secondary_warp`
+
+#### Important Note:
+Warpfield composition results in some small losses in precision due to an extra interpolation step, specify a secondary warpfield path if you need highly accurate warpfields. This will **NOT** impact the quality of the registered image provided by LAMAReg, but will result in minor degradations in quality when re-using the warpfields.
+
+## Argument Parsing Logic
+
+LAMAReg uses a subcommand-based CLI structure using the Python `argparse` library. Here's how it works:
+
+1. **Main Parser**: Defines the global command structure with subparsers for each workflow.
+2. **Subparsers**: Each workflow (`register`, `generate-warpfield`, etc.) has its own subparser with specific arguments.
+3. **Command Routing**: The `main()` function routes commands to the appropriate functions in the lamar module.
+4. **Default Help**: If no command is provided, the comprehensive help message is shown.
+5. **Unknown Arguments**: For commands like `synthseg`, additional arguments are parsed from `unknown_args` to handle SynthSeg-specific options.
+6. **Direct Tool Access**: Commands like `coregister` and `apply-warp` forward arguments to their respective modules.
+
+All output files require explicit paths to ensure deterministic behavior and prevent accidental file overwrites.
+
+## Example Usage
+
+### Register DWI to T1w using example data:
+```bash
+lamareg register --moving example_data/sub-HC001_ses-02_space-dwi_desc-b0.nii.gz --fixed example_data/sub-HC001_ses-01_T1w.nii.gz \ 
+  --output output/sub-001_dwi_in_T1w.nii.gz --moving-parc output/sub-001_dwi_parc.nii.gz \
+  --fixed-parc output/sub-001_T1w_parc.nii.gz --registered-parc output/sub-001_dwi_reg_parc.nii.gz \
+  --affine output/dwi_to_T1w_affine.mat --warpfield output/dwi_to_T1w_warp.nii.gz \
+  --inverse-warpfield output/T1w_to_dwi_warp.nii.gz --synthseg-threads 4 --ants-threads 8
+```
+
+### Register without robust two-stage approach:
+```bash
+lamareg register --moving subject_flair.nii.gz --fixed subject_t1w.nii.gz \
+  --output registered_flair.nii.gz --moving-parc flair_parcellation.nii.gz \
+  --fixed-parc t1w_parcellation.nii.gz --affine flair_to_t1w_affine.mat \
+  --warpfield flair_to_t1w_warp.nii.gz --disable-robust
+```
+
+### Generate parcellations separately:
+```bash
+lamareg synthseg --i subject_t1w.nii.gz --o t1w_parcellation.nii.gz --parc
+lamareg synthseg --i subject_flair.nii.gz --o flair_parcellation.nii.gz --parc
+```
+
+### Register using existing parcellations:
+```bash
+lamareg register --moving subject_flair.nii.gz --fixed subject_t1w.nii.gz \
+  --output registered_flair.nii.gz --moving-parc flair_parcellation.nii.gz \
+  --fixed-parc t1w_parcellation.nii.gz --skip-fixed-parc --skip-moving-parc \
+  --registered-parc registered_parcellation.nii.gz --affine flair_to_t1w_affine.mat \
+  --warpfield flair_to_t1w_warp.nii.gz --inverse-warpfield t1w_to_flair_warp.nii.gz
+```
+
+### Apply existing warpfield:
+```bash
+lamareg apply-warpfield --moving subject_flair.nii.gz --fixed subject_t1w.nii.gz \
+  --output registered_flair.nii.gz --warpfield flair_to_t1w_warp.nii.gz \
+  --affine flair_to_t1w_affine.mat
+```
+
+### Evaluate registration quality:
+```bash
+lamareg dice-compare --ref reference_parcellation.nii.gz \
+  --reg registered_parcellation.nii.gz --out dice_scores.csv
+```
+
+## Working with Existing Parcellations
+
+LAMAReg is designed to work with both new and existing parcellations:
+
+1. **Generate New Parcellations**: If you provide paths to non-existing parcellation files, LAMAReg will generate them using SynthSeg.
+
+2. **Use Existing Parcellations**: If the parcellation files already exist, LAMAReg will use them directly without regenerating them.
+
+This flexibility allows you to:
+- Process data end-to-end in a single command
+- Pre-compute parcellations for reuse across multiple registrations
+- Mix existing and new parcellations in your workflow
+
+## Technical Implementation
+
+LAMAReg's registration approach consists of three main steps:
+
+1. **Brain Parcellation**: SynthSeg generates contrast-agnostic parcellations of both the moving and fixed images.
+2. **Registration**: ANTs registers the parcellations using the SyNRA method (rigid + affine + SyN).
+3. **Transformation Application**: The resulting transformation is applied to the original moving image.
+
+This approach enables accurate registration between images with different contrast properties where direct intensity-based registration might fail.
+
+### Robust Registration Mode
+
+When not using the `--disable-robust` flag, LAMAReg performs a two-stage registration process:
+
+1. **First Stage**: Register parcellations (contrast-agnostic approach)
+2. **Second Stage**: Fine-tune with a second direct nonlinear registration using the first result as initialization
+
+This two-stage approach can improve registration accuracy for cases where initial alignment is difficult, such as images with large geometric distortions or very different contrast mechanisms. The only reason to disable this is if you wanted to run your own second stage, or to speed up the runtime.
+
+## Directory Structure
+
+```
+LAMAReg/
+├── setup.py
+├── requirements.txt
+├── README.md
+├── lamareg/
+│   ├── __init__.py
+│   ├── cli.py
+│   ├── scripts/
+│   │   ├── lamar.py
+│   │   ├── apply_warp.py
+│   │   ├── coregister.py
+│   │   ├── synthseg.py
+│   │   └── dice_compare.py
+│   ├── SynthSeg/
+│   │   └── ... (SynthSeg code files)
+│   └── ext/
+│       ├── lab2im/
+│       └── neuron/
+```
+
+## Notes
+
+- LAMAReg works with any MRI modality combination
+- If parcellation files already exist, they will be used directly
+- All output files need explicit paths to ensure deterministic behavior
+- The transforms can be reused with the apply-warpfield command
+- Use dice-compare to evaluate registration quality
+- The robust mode performs a two-stage registration for improved accuracy:
+  1. Register parcellations (contrast-agnostic)
+  2. Fine-tune with a second direct registration using the first result as initialization
+- For reproducible results, you can set a random seed when using the coregister command directly
+
+## References
+
+1. Billot, Benjamin, et al. "Robust machine learning segmentation for large-scale analysis of heterogeneous clinical brain MRI datasets." Proceedings of the National Academy of Sciences 120.9 (2023): e2216399120.
+2. Avants, Brian B., Nick Tustison, and Gang Song. "Advanced normalization tools (ANTS)." Insight j 2.365 (2009): 1-35.
+
+## License
+
+This project is licensed under the CC-BY-NC License.
+
+## Contributors
+
+- Ian Goodall-Halliwell
+- Paul Bautin
+- Nya Yazdi
+- Kevin Du
+- Raul R. Cruces
