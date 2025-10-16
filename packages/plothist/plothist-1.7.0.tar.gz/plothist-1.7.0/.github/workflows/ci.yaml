@@ -1,0 +1,45 @@
+# This workflow will install Python dependencies, run tests with a variety of Python versions
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.6.8"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: |
+          uv sync --group dev --group test
+
+      - name: Run pre-commit
+        run: |
+          uv run pre-commit run --all-files
+
+      - name: Test with pytest
+        run: |
+          uv run python -m pytest -r sa --mpl --mpl-results-path=pytest_results -n auto
+
+      - name: Upload pytest test results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pytest_results-${{ matrix.python-version }}
+          retention-days: 3
+          path: pytest_results
