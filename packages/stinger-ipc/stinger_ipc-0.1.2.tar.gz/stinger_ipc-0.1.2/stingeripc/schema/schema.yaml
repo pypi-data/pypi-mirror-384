@@ -1,0 +1,216 @@
+$id: "https://stingeripc.peargrove.com/stingeripc.schema.yaml"
+$schema: "http://json-schema.org/draft-07/schema#"
+description: |
+  This schema is used to validate StingerIPC stinger files.
+type: object
+
+properties:
+
+  stingeripc:
+    type: object
+    properties:
+      version:
+        type: string
+        const: "0.0.7"
+    required:
+      - version
+
+  interface:
+    type: object
+    parameters:
+      name:
+        type: string
+        pattern: "[a-zA-Z0-9_]+"
+        maxLength: 32
+        description: "A short token that will be used to create class names, folder names, filenames, etc."
+      title:
+        type: string
+        maxLength: 64
+        description: "A few words that are the title for the API.  Used at the top of documentation, etc.  The interface name is used if not provided."
+      summary:
+        type: string
+        description: "A one sentence description of the service."
+        maxLength: 128
+      version:
+        type: string
+        maxLength: 32
+      documentation:
+        $ref: "#/$defs/documentation"
+    required:
+      - name
+      - version
+
+  enums:
+    type: object
+    additionalProperties:
+      type: object
+      properties:
+        values:
+          type: array
+          uniqueItems: true
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+            required:
+              - name
+        documentation:
+          $ref: "#/$defs/documentation"
+        required:
+          - values
+
+  structures:
+    type: object
+    additionalProperties:
+      type: object
+      properties:
+        members:
+          $ref: "#/$defs/payload"
+        documentation:
+          $ref: "#/$defs/documentation"
+      required:
+        - members
+
+  signals:
+    type: object
+    additionalProperties:
+      $ref: "#/$defs/signal"
+
+  properties:
+    type: object
+    additionalProperties:
+      $ref: "#/$defs/property"
+
+  methods:
+    type: object
+    additionalProperties:
+      $ref: "#/$defs/method"
+
+required:
+  - stingeripc
+  - interface
+
+$defs:
+
+  documentation:
+    type: string
+
+  payload:
+    type: array
+    uniqueItems: true
+    items:
+      $ref: "#/$defs/arg"
+
+  genericArg:
+    type: object
+    required:
+      - "type"
+      - "name"
+    properties:
+      name:
+        type: string
+      optional:
+        type: boolean
+        default: false
+      description:
+        type: string
+      schema:
+        type: object
+        description: A JSON schema which further constrains the value.
+
+  primitiveArg:
+    properties:
+      type:
+        type: string
+        enum:
+          - float
+          - string
+          - integer
+          - boolean
+          - datetime
+          - duration
+          - binary
+
+  enumArg:
+    properties:
+      type:
+        type: string
+        const: "enum"
+      enumName:
+        type: string
+    required:
+      - enumName
+
+  structArg:
+    properties:
+      type:
+        type: string
+        const: "struct"
+      structName:
+        type: string
+    required:
+      - structName
+
+  listArg:
+    properties:
+      type:
+        type: string
+        const: "list"
+      itemType:
+        oneOf:
+          - $ref: "#/$defs/primitiveArg"
+          - $ref: "#/$defs/enumArg"
+          - $ref: "#/$defs/structArg"
+    required:
+      - itemType
+
+  arg:
+    oneOf:
+      - allOf:
+        - $ref: "#/$defs/genericArg"
+        - $ref: "#/$defs/primitiveArg"
+      - allOf:
+        - $ref: "#/$defs/genericArg"
+        - $ref: "#/$defs/enumArg"
+      - allOf:
+        - $ref: "#/$defs/genericArg"
+        - $ref: "#/$defs/structArg"
+      - allOf:
+        - $ref: "#/$defs/genericArg"
+        - $ref: "#/$defs/listArg"
+
+  signal:
+    type: object
+    properties:
+      documentation:
+        $ref: "#/$defs/documentation"
+      payload:
+        $ref: "#/$defs/payload"
+
+  property:
+    type: object
+    properties:
+      documentation:
+        $ref: "#/$defs/documentation"
+      values:
+        $ref: "#/$defs/payload"
+      readOnly:
+        type: boolean
+        default: false
+    required:
+      - values
+
+  method:
+    type: object
+    properties:
+      documentation:
+        $ref: "#/$defs/documentation"
+      arguments:
+        $ref: "#/$defs/payload"
+      returnValues:
+        $ref: "#/$defs/payload"
+    required:
+      - arguments
