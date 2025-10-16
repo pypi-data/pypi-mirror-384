@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches:
+    - main
+    - develop
+    - experimental
+    tags:
+    - "*"
+  pull_request:
+    branches:
+    - main
+    - develop
+    - experimental
+  pull_request_target:
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash -l {0}
+
+jobs:
+  # Run CI including downstream packages on self-hosted runners
+  downstream-ci:
+    name: downstream-ci
+    if: ${{ !github.event.pull_request.head.repo.fork && github.event.action != 'labeled' || github.event.label.name == 'approved-for-ci' }}
+    uses: ecmwf/downstream-ci/.github/workflows/downstream-ci.yml@main
+    with:
+      earthkit-plots: ecmwf/earthkit-plots@${{ github.event.pull_request.head.sha || github.sha }}
+      codecov_upload: true
+      python_qa: false
+    secrets: inherit
+
+  # Build downstream packages on HPC
+  downstream-ci-hpc:
+    name: downstream-ci-hpc
+    if: ${{ !github.event.pull_request.head.repo.fork && github.event.action != 'labeled' || github.event.label.name == 'approved-for-ci' }}
+    uses: ecmwf/downstream-ci/.github/workflows/downstream-ci-hpc.yml@main
+    with:
+      earthkit-plots: ecmwf/earthkit-plots@${{ github.event.pull_request.head.sha || github.sha }}
+    secrets: inherit
