@@ -1,0 +1,512 @@
+# Licensed under the MIT License
+# https://github.com/craigahobbs/ollama-chat/blob/main/LICENSE
+
+
+group
+
+
+# The user-model conversation info
+struct ConversationInfo
+
+    # The conversation identifier
+    string id
+
+    # The model ID
+    string model
+
+    # The conversation title
+    string title
+
+
+# The user-model conversation info with generating status
+struct ConversationInfoEx (ConversationInfo)
+
+    # If True, the latest exchange is actively generating
+    bool generating
+
+
+# A user-model conversation
+struct Conversation (ConversationInfo)
+
+    # The conversation's exchanges
+    ConversationExchange[] exchanges
+
+
+# A user-model conversation with generating status
+struct ConversationEx (Conversation)
+
+    # If True, the latest exchange is actively generating
+    bool generating
+
+
+# A conversation user-model exchange
+struct ConversationExchange
+
+    # The user prompt
+    string user
+
+    # The model response
+    string model
+
+    # The model's thinking
+    optional string thinking
+
+
+# An conversation template info struct
+struct ConversationTemplateInfo
+
+    # The template identifier
+    string id
+
+    # The template title
+    string title
+
+
+# An conversation template
+struct ConversationTemplate (ConversationTemplateInfo)
+
+    # The template command name
+    optional string name
+
+    # The template user prompts
+    string[] prompts
+
+    # The template variables (e.g. "{{var}}")
+    optional ConversationTemplateVariable[len > 0] variables
+
+
+# An conversation template variable
+struct ConversationTemplateVariable
+
+    # The variable name (e.g. "CityState")
+    string name
+
+    # The variable's label (e.g. "The City and State (e.g. Seattle, WA)")
+    string label
+
+
+# Model information
+struct ModelInfo
+
+    # The model ID
+    string id
+
+    # The model name
+    string name
+
+    # The parameter count
+    int parameters
+
+    # The size, in bytes
+    int size
+
+    # The last modified date
+    datetime modified
+
+
+# Model download information
+struct ModelDownloadInfo
+
+    # The model ID
+    string id
+
+    # The download status
+    string status
+
+    # The number of bytes downloaded so far
+    int completed
+
+    # The size, in bytes. This member is not present while the download is starting.
+    optional int size
+
+
+group "Ollama Chat JSON"
+
+
+# The Ollama Chat config file format
+struct OllamaChatConfig
+
+    # The current model ID
+    optional string model
+
+    # The saved conversations
+    Conversation[] conversations
+
+    # The conversation templates
+    optional ConversationTemplate[] templates
+
+    # If true, don't save the config file
+    optional bool noSave
+
+
+group "Ollama Chat Models JSON"
+
+
+# The Ollama Chat downloadable models file format
+typedef OllamaChatModel[len > 0] OllamaChatModels
+
+
+group
+
+
+# An downloadable model
+struct OllamaChatModel
+
+    # The model name
+    string name
+
+    # The model's description
+    string description
+
+    # The model's last modified date
+    date modified
+
+    # The model's download count
+    int downloads
+
+    # The model variants
+    OllamaChatModelVariant[len > 0] variants
+
+
+# An downloadable model variant
+struct OllamaChatModelVariant
+
+    # The variant's ID
+    string id
+
+    # The variant's tag
+    string size
+
+    # The variant's parameter count
+    int parameters
+
+
+group "Ollama Chat API"
+
+
+# Get information for the index page
+action getConversations
+    urls
+        GET
+
+    output
+        # The current model ID
+        optional string model
+
+        # The conversations
+        ConversationInfoEx[] conversations
+
+        # The conversation templates
+        ConversationTemplateInfo[] templates
+
+
+# Set the current model ID
+action setModel
+    urls
+        POST
+
+    input
+        # The model ID
+        string model
+
+
+# Move a conversation
+action moveConversation
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+        # Move down? If not, the move is up.
+        bool down
+
+    errors
+        UnknownConversationID
+
+
+# Move a template
+action moveTemplate
+    urls
+        POST
+
+    input
+        # The template identifier
+        string id
+
+        # Move down? If not, the move is up.
+        bool down
+
+    errors
+        UnknownTemplateID
+
+
+# Create a conversation template
+action createTemplate
+    urls
+        POST
+
+    input
+        # The template title
+        string title
+
+        # The template command name
+        optional string name
+
+        # The template variables (e.g. "{{var}}")
+        optional ConversationTemplateVariable[len > 0] variables
+
+        # The template user prompts
+        string[] prompts
+
+    output
+        # The new template identifier
+        string id
+
+
+# Delete a template
+action deleteTemplate
+    urls
+        POST
+
+    input
+        # The template identifier
+        string id
+
+    errors
+        UnknownTemplateID
+
+
+# Get a conversation template
+action getTemplate
+    urls
+        GET
+
+    query
+        # The template identifier
+        string id
+
+    output (ConversationTemplate)
+
+    errors
+        UnknownTemplateID
+
+
+# Update a template
+action updateTemplate
+    urls
+        POST
+
+    input (ConversationTemplate)
+
+    errors
+        UnknownTemplateID
+
+
+# Start a conversation
+action startConversation
+    urls
+        POST
+
+    input
+        # The model ID
+        optional string model
+
+        # The user prompt
+        string user
+
+    output
+        # The new conversation identifier
+        string id
+
+    errors
+        NoModel
+
+
+# Start a conversation
+action startTemplate
+    urls
+        POST
+
+    input
+        # The model ID
+        optional string model
+
+        # The template identifier or name
+        string id
+
+        # The template variable values
+        optional string{} variables
+
+    output
+        # The new conversation identifier
+        string id
+
+    errors
+        MissingVariable
+        NoModel
+        UnknownTemplateID
+        UnknownVariable
+
+
+# Stop a generating conversation
+action stopConversation
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+    errors
+        UnknownConversationID
+
+
+# Get a conversation
+action getConversation
+    urls
+        GET
+
+    query
+        # The conversation identifier
+        string id
+
+    output
+        # The conversation
+        ConversationEx conversation
+
+    errors
+        UnknownConversationID
+
+
+# Reply to a conversation
+action replyConversation
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+        # The user reply prompt
+        string user
+
+    errors
+        ConversationBusy
+        UnknownConversationID
+
+
+# Set a conversation's title
+action setConversationTitle
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+        # The title
+        string title
+
+    errors
+        ConversationBusy
+        UnknownConversationID
+
+
+# Delete a conversation
+action deleteConversation
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+    errors
+        ConversationBusy
+        UnknownConversationID
+
+
+# Delete the most recent exchange of a conversation
+action deleteConversationExchange
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+    errors
+        ConversationBusy
+        UnknownConversationID
+
+
+# Regnerate the model's response of the most recent exchange of a conversation
+action regenerateConversationExchange
+    urls
+        POST
+
+    input
+        # The conversation identifier
+        string id
+
+    errors
+        ConversationBusy
+        UnknownConversationID
+
+
+# Get the available models
+action getModels
+    urls
+        GET
+
+    output
+        # The current model ID
+        optional string model
+
+        # The available models
+        ModelInfo[] models
+
+        # The available models
+        ModelDownloadInfo[] downloading
+
+
+# Get the system info
+action getSystemInfo
+    urls
+        GET
+
+    output
+        # The total system memory
+        int memory
+
+
+# Download a model
+action downloadModel
+    urls
+        POST
+
+    input
+        # The model ID
+        string model
+
+
+# Stop a model download
+action stopModelDownload
+    urls
+        POST
+
+    input
+        # The model ID
+        string model
+
+
+# Delete a downloaded model
+action deleteModel
+    urls
+        POST
+
+    input
+        # The model ID
+        string model
