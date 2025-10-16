@@ -1,0 +1,117 @@
+name: Test & Release
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: uv sync --locked --extra test --extra visualization
+
+      - name: Run tests
+        id: tests
+        run: uv run pytest -vvv
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+
+      - name: Check format with ruff
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --diff"
+          version: "0.3.4"
+
+  commit-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Lint commit messages
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          failOnWarnings: 'false'
+          commitDepth: 1
+
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    concurrency: push
+    needs: [test, lint, commit-lint]
+    if: github.repository == 'xability/py-maidr'
+    environment:
+      name: pypi
+      url: https://pypi.org/project/maidr/
+    permissions:
+      # https://docs.github.com/en/rest/overview/permissions-required-for-github-apps?apiVersion=2022-11-28#metadata
+      id-token: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the project
+        run: uv sync --locked --all-extras --dev
+
+      - name: Python Semantic Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v9.21.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          changelog: true
+          commit: true
+          push: true
+
+      - name: Build and publish package distributions to PyPI
+        id: pypi-publish
+        # NOTE: DO NOT wrap the conditional in ${{ }} as it will always evaluate to true.
+        # See https://github.com/actions/runner/issues/1173
+        if: steps.release.outputs.released == 'true'
+        run: |
+          # Use a clean environment for building
+          uv build --no-cache
+          uv publish
