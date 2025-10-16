@@ -1,0 +1,42 @@
+# patentfield-client
+
+Unofficial Python Client for Patentfield API.
+
+## Usage
+
+```bash
+pip install patentfield-client
+touch .env
+# edit .env
+# PATENTFIELD_API_KEY=<your_api_key>
+```
+
+
+```python
+from dotenv import load_dotenv
+
+from patentfield_client import PatentfieldClient
+
+load_dotenv()
+
+
+def main():
+    import json
+    with PatentfieldClient() as client:
+        # 1) Fulltext search (return score and app_id)
+        res = client.search_fulltext("ソーラーパネル", columns=["_score", "app_id"], limit=2)
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+        # 2) Get document (return app_doc_id / title / grant_or_app_claims)
+        doc = client.get_document("JP20160057449", columns=["app_doc_id", "title", "grant_or_app_claims"])
+        print(json.dumps(doc, ensure_ascii=False, indent=2))
+
+        # 3) Get drawings URLs
+        drawings = client.get_drawings("JP20160057449")
+        print(drawings)
+
+
+if __name__ == "__main__":
+    main()
+
+```
