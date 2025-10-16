@@ -1,0 +1,2800 @@
+schema {
+  mutation: RootMutationType
+  query: RootQueryType
+}
+
+type RootQueryType {
+  "A user's profile"
+  userProfile: UserProfile
+
+  "Account limits for a single account - values are returned as integer numbers"
+  accountLimitsNumber: AccountLimitResultNumber
+
+  "History of account limits changes by the user."
+  accountLimitsHistoryNumber: [AccountLimitHistoryResultNumber]
+
+  "Account Information"
+  account: Account
+
+  "List of all deposits and withdrawals for account"
+  myDepositAndWithdrawalHistory(pagination: Pagination): [TransactionHistory]
+
+  "List of all casino transactions for account"
+  myCasinoHistory(pagination: Pagination): [TransactionHistory]
+
+  "List of all casino wagers grouped by casino_session_id for an account"
+  casinoSessionStatsHistory(pagination: Pagination): CasinoSessionStatsHistory
+
+  "List of all loyalty related transactions for the account"
+  loyaltyHistory(pagination: Pagination): [TransactionHistory]
+
+  "Returns Payment provider's settings"
+  paymentSettings: PaymentProviders
+
+  "List of all orders for a user, all criteria is combined in an AND."
+  myOrderHistory(
+    "The ids of the orders to return"
+    orderIds: [rID]
+
+    "The client order ids of the orders to return."
+    clientOrderIds: [String]
+
+    "The id of the market to restrict the orders returned to."
+    marketIds: [rID]
+
+    "Order status filter"
+    status: OrderStatus
+
+    "The pagination to use for the results."
+    pagination: Pagination
+
+    "The sorting to use for the results."
+    sortBy: OrdersSortBy
+  ): OrdersWithCount
+
+  "List of the user's trades"
+  myTradesHistory(
+    "How to sort the results of the query."
+    sortBy: TradesSortBy
+
+    "A filter for market ids to include."
+    filter: MarketIdsFilter
+
+    "A filter for trades."
+    settlementType: TradeSettlementType
+
+    "Date Range filter to find settled trades."
+    settledOn: DateRangeFilter
+
+    "The pagination to use for the results."
+    pagination: Pagination
+  ): TradesWithCount
+
+  "List of trades associated with provided order id"
+  myTradesForOrder(
+    "The id of the order to find the trades for."
+    orderId: rID!
+  ): [Trade]
+
+  "Opening and closing Trades for given settlement_id"
+  tradesForSettlement(
+    "The id of the settlement to find the trades for."
+    settlementId: rID!
+  ): SettlementTrades
+
+  "List of all settlement for a given market"
+  marketSettlements(
+    "The market id to restrict the settlements to."
+    marketId: rID!
+
+    "The pagination to use for the results."
+    pagination: Pagination
+  ): [TransactionHistory]
+
+  "List of all account market stats for a given account"
+  accountMarketStats(
+    "The pagination to use for the results."
+    pagination: Pagination
+
+    "Optional filter for returned Account Market Stats."
+    filter: StatsFilter
+  ): [AccountMarketStat]
+
+  "History of all settlements"
+  mySettlementsHistory(
+    "The pagination to use for the results."
+    pagination: Pagination
+
+    "Optional filter for returned settlements."
+    filter: SettlementsFilter
+  ): NetSettlementHistory
+
+  "User's app usage information"
+  appUsage: UsageResult
+
+  "Fetch a list of known devices that cave been confirmed for the user's account."
+  deviceList: [KnownDevice]
+
+  "Returns a list of the markets and filtered details"
+  marketInfos(
+    "Optional list of IDs of the marketInfos to return"
+    input: MarketInfosInput
+  ): [MarketInfo]
+
+  "Returns a list of the markets and filtered details with the count of entries"
+  marketInfosWithCount(
+    "Optional list of IDs of the marketInfos to return"
+    input: MarketInfosInput
+  ): MarketInfosWithCount
+
+  "Returns a JSON string representation of the marketFilters (Name, [Children])."
+  marketFilterTree: MarketFilterTree
+
+  "Returns the Geo fencing license"
+  geoFencingLicense: LicenseResponse
+
+  appSettings: [AppSettings]
+
+  "Returns a list of the casino games and filtered details"
+  casinoGames(
+    "Optional list of IDs of the casino games to return"
+    input: CasinoGamesInput
+  ): [CasinoGame]
+
+  "Returns the latest TermsAndConditions version details"
+  termsAndConditions: TermsAndConditionsResult
+}
+
+type RootMutationType {
+  "Allows a user to update their profile with new information."
+  updateUserProfile(
+    "The data to update in the user profile."
+    input: UserProfileInput!
+  ): UpdateUserProfileResult
+
+  "Allows a user to update phone and address in their profile using JSON input."
+  updateProfile(
+    "The data to update in the user profile."
+    input: UserProfileInputV2!
+  ): UpdateUserProfileResult
+
+  "save or update the user settings"
+  updateAppSettings(settings: SettingsInput!): UpdateAppSettingsResult
+
+  "New user registration based on JSON document"
+  register(input: UserRegistrationInputV2!): RegisterUserResult
+
+  "Update's the device token for a user's device"
+  updateDeviceToken(
+    "The device for which the token is being updated"
+    deviceId: String!
+
+    "The device_token received from APNS for sending push notifications"
+    deviceToken: String!
+
+    "The device_type of the user's device - i.e. iPhone, iPad etc"
+    deviceType: String
+  ): DeviceTokenResult
+
+  "Cancels an order."
+  cancelOrder(
+    "The id of the order that the user wishes to cancel."
+    orderId: rID!
+
+    geoLocation: GeoLocationCode
+
+    deviceInfo: DeviceInfo
+  ): CancelOrderResult
+
+  "Batch cancel of orders."
+  cancelOrders(
+    "The list of the ids of the orders that the user wishes to cancel."
+    orderIds: [rID]
+
+    geoLocation: GeoLocationCode
+
+    deviceInfo: DeviceInfo
+  ): [BatchCancelOrdersResult]
+
+  "Cancel of all open orders of an account."
+  cancelAllOrders(geoLocation: GeoLocationCode, deviceInfo: DeviceInfo): [BatchCancelOrdersResult]
+
+  "Creates a new order."
+  confirmOrder(
+    "The data structure holding the details for the order to be placed."
+    userOrder: UserOrder!
+
+    geoLocation: GeoLocationCode
+
+    deviceInfo: DeviceInfo
+  ): OrderResult
+
+  "Creates a set of new orders."
+  confirmOrders(
+    "The data structure holding the details for the orders to be placed."
+    userOrders: [UserOrder!]!
+
+    geoLocation: GeoLocationCode
+
+    deviceInfo: DeviceInfo
+  ): OrderResults
+
+  """
+  # Place Limit Order with Odds and Amount
+
+  This mutation creates a limit order with specified odds and amount.
+  The odds are converted into a price, and the order quantity is calculated by dividing the specified amount by the calculated price.
+
+  ## Calculation Formulas
+
+  ### For `buy` orders:
+  - `Decimal` odds: `round(max_price_in_cents / odds)`
+  - `American` positive odds: `round(max_price_in_cents / (odds + 100) * 100)`
+  - `American` negative odds: `round((max_price_in_cents / 100) * odds / (odds - 100) * 100)`
+
+  ### For `sell` orders:
+  The price is calculated as `max_price_in_cents - price_for_a_buy_order`.
+
+  ## Parameters
+  - `odds`: The odds value, such as `1.7` or `+120` or `-200`.
+  - `max_price_in_cents`: The closing market price in case of a win result.
+
+  ## Rounding
+  Rounding is performed using the `half_up` algorithm. If the price is rounded to 0 or `max_price_in_cents`, the request is rejected.
+
+  ## Note
+  The calculated quantity may be fractional and below 1.
+  """
+  placeOddsOrder(oddsOrder: OddsOrder!, geoLocation: GeoLocationCode, deviceInfo: DeviceInfo): OrderResult
+
+  """
+  # Place Market Order with Amount
+
+  This mutation creates a market order with specified amount. The quantity of the order is set to null,
+  which makes the order to be matched up until the given amount is filled.
+
+  In case the account has less available balance than the specified amount, the market order is
+  filled up to the available balance.
+  """
+  placeRiskOrder(riskOrder: RiskOrder!, geoLocation: GeoLocationCode, deviceInfo: DeviceInfo): OrderResult
+
+  "Logout of the platform on a specific device, invalidating all tokens."
+  logout(
+    "The information on the device to log out."
+    deviceInfo: DeviceInfo
+  ): LogoutResult
+
+  """
+  Login to the platform using the credentials. Please note that if the user has 2FA enabled
+  the actual login will occur when the 2FA code is confirmed in another call to the API.
+  """
+  login(
+    "The credentials to use to log into the system."
+    credentials: LoginCredentials!
+  ): LoginResult
+
+  "User submitting the 2FA code in order to login."
+  confirm2Fa(
+    "The 2FA code that was sent to the user by email."
+    code: String!
+
+    "The id of the session to confirm 2FA for."
+    sessionId: String!
+
+    "The timestamp of the confirmation."
+    timestamp: Int @deprecated(reason: "Ignored by the backend")
+
+    "The email of the user that the confirmation is being made for."
+    email: EmailAddress!
+  ): LoginResult
+
+  "Enable 2FA on the currently logged in user's account."
+  enable2Fa(
+    "User's password to enable 2FA"
+    password: String
+  ): TwoFactorAuthResult
+
+  """
+  Disable 2FA on the currently logged in user's account. This mutation will do nothing if
+  the user does not have 2FA already enabled.
+  """
+  disable2Fa(
+    "User's password to disable 2FA"
+    password: String
+  ): TwoFactorAuthResult
+
+  """
+  Request a new 2FA code providing the reason - i.e. updating user profile for example.
+
+  The reasons are enums defined above.
+  """
+  send2Fa: TwoFactorAuthResult
+
+  "Request that another 2FA code be sent when apparently the user didnt get the code."
+  resend2Fa(
+    "The session id to resend the code for."
+    sessionId: String!
+
+    "The user id to resend the code for. The system will find the email for the user."
+    email: EmailAddress!
+  ): TwoFactorAuthResult
+
+  """
+  Enables tracking of all devices which have been verified with a 2FA code. This mutation
+  will do nothing if the user does not have 2FA enabled.
+  """
+  enableDeviceTracking: TwoFactorAuthResult
+
+  """
+  Disabled tracking of all devices which have been verified with a 2FA code. This mutation
+  will do nothing if the user does not have 2FA enabled or device tracking is not already
+  enabled.
+  """
+  disableDeviceTracking: TwoFactorAuthResult
+
+  "Register that the user accepts the terms and conditions."
+  tncAccepted(input: TncAcceptanceInput!): String
+
+  "Create a new authorization token from the user's refresh token."
+  newToken(refreshToken: String!): LoginResult
+
+  "Invoked to initiate the forgotten password flow."
+  forgotPassword(email: EmailAddress!): ForgotPasswordResult
+
+  """
+  Change the current user's password to the password provided. Note that the means for making
+  sure a user typed the password properly are out of the scope of this method and left up
+  to the user interface calling this function.
+  """
+  changePassword(
+    "The old password of the user."
+    oldPassword: String!
+
+    "The new password to use for the user's account."
+    newPassword: String!
+  ): LoginResult
+
+  "Confirm the 2FA code for the password change."
+  confirmChangePassword2Fa(
+    "The 2fa code to confirm the changing of the old password to new password."
+    code: String!
+  ): LoginResult
+
+  "Request that another 2FA code for password reset when the user didn't receive or use the previous 2fa code."
+  resendChangePassword2Fa: TwoFactorAuthResult
+
+  "Verify a user's email on registration or after change."
+  verifyEmail(
+    "The code that was mailed to the user to accomplish the verification."
+    code: String!
+  ): VerificationResult
+
+  "Completes the forgotten password flow."
+  confirmPasswordReset(
+    "The parameters for resetting the password."
+    passwordResetParams: PasswordResetParams!
+  ): PasswordResetResult
+
+  "Updates user's payment settings."
+  updatePaysafeSettings(
+    "VIP Preferred registration id"
+    vipRegistrationId: String!
+  ): Boolean
+
+  "Called to deposit money in a user's account via paysafe."
+  paysafeDeposit(
+    "The amount to deposit which must match the amount from the token."
+    amount: PosInt!
+
+    "The optional handle obtained from Paysafe for the deposit. If not provided it will be generated by the server"
+    handle: String
+
+    "The optional id of the handle obtained from paysafe for the deposit."
+    handleId: String
+
+    "The method of deposit such as credit card."
+    method: PaysafeDepositApi @deprecated(reason: "Use `api`")
+
+    "The Paysafe API to use when making the deposit."
+    api: PaysafeDepositApi
+
+    "Paysafe's payment type. In example: interac, vip-preferred"
+    type: PaysafeDepositType!
+
+    "An optional description to add to the deposit."
+    description: String
+
+    "Interac e-transfer method - send_money or request_money"
+    interacMethod: InteracMethodType
+  ): PaysafeTransactionResult
+
+  "Called to withdraw funds from the platform, currently only ACH paysafe supported."
+  paysafeWithdrawal(
+    "The amount to withdraw from the user's account."
+    amount: PosInt!
+
+    "The handle obtained from Paysafe for the withdrawal. Can be null, in this case the withdrawal will wait for approval."
+    handle: String
+
+    "The id of the handle obtained from paysafe for the withdrawal."
+    handleId: String
+
+    "The Payment method, currently `card` or `paymenthub` is supported."
+    method: PaysafeWithdrawalApi!
+
+    "Paysafe's payment type."
+    type: PaysafeWithdrawalType!
+
+    "Optional description of the payment."
+    description: String
+  ): PaysafeTransactionResult
+
+  "(DEPRECATED) - USE set_limit_number instead."
+  selfExclude(
+    "User's password to self-exclude the account"
+    password: String
+  ): SelfStatusChangeResult
+
+  """
+  Close a user's account. This requires that the user has no positions in any market, and
+  has withdrawn all funds. Closed accounts cannot be reversed.
+  """
+  closeAccount(
+    "User's password to close the account"
+    password: String
+  ): SelfStatusChangeResult
+
+  """
+  Sets the user's account limits. The account limits are constrained by the admin limits
+  on the user's account.
+  """
+  setLimitNumber(
+    "The key of the limit that the user wishes to change."
+    key: LimitKeys!
+
+    "The new value for the limit."
+    value: NonNegInt
+
+    "Optional password to set cool-off period and self-exclusion"
+    password: String
+  ): AccountLimitResultNumber
+
+  """
+  Records app usage for users that have app usage limits enabled. If app usage limits are
+  not set then this mutation will not do anything.
+  """
+  setAppUsage(
+    "The ID of the device that the user was using."
+    deviceId: String!
+
+    "When the user started using the app."
+    startTime: NonNegInt!
+
+    "The time that the user stopped using the app."
+    stopTime: NonNegInt!
+  ): UsageResult
+
+  "Verifies if the user's password is correct"
+  verifyPassword(
+    "The password to verify"
+    password: String!
+  ): PasswordVerificationResult
+
+  """
+  Removes a device from the list of known devices if 2FA device tracking is enabled on the
+  user's account. If 2FA is not enabled or device tracking is not enabled, this mutation
+  will do nothing.
+  """
+  deleteDevice(
+    "The ID of the device to remove. This will be the deviceId originally passed in 2FA."
+    id: String!
+  ): DeleteDeviceResult
+
+  "Creates a new casino game session."
+  casinoGameSession(
+    "The data to create a new casino game session."
+    casinoGameSession: CasinoGameSession!
+  ): CasinoGameSessionResult
+}
+
+"Possible aggregator names that can be used in casino wagers."
+enum Aggregators {
+  "LNW Aggregator"
+  LNW
+
+  "ODDSWORKS Aggregator"
+  ODDSWORKS
+
+  "GMAG Aggregator"
+  GMAG
+}
+
+input CasinoGameSession {
+  "Internal Casino Game UUID"
+  casinoGameId: rID!
+
+  "The device on which the game is played"
+  device: String!
+
+  "Geo location package"
+  geoLocation: GeoLocationCode
+}
+
+type CasinoGameSessionResult {
+  "The ID of the game session."
+  id: rID!
+
+  "The ID of the game."
+  gameId: String!
+
+  "The model of the game."
+  gameModel: String
+
+  "The type of the game."
+  gameType: String!
+
+  "The aggregator of the game."
+  aggregatorName: Aggregators!
+
+  "The operator's ID."
+  operatorId: String
+
+  "The account ID."
+  accountId: rID!
+
+  "The provider of the game."
+  gameProvider: String!
+
+  "The device on which the game is played."
+  device: String!
+
+  "Internal Casino Game UUID"
+  casinoGameId: rID!
+
+  "The date_time for the next geolocation check."
+  nextGeolocationAt: String
+}
+
+"The Casino Game Category which a game belongs to."
+type CasinoGameCategory {
+  "Internal Casino Game Category UUID"
+  id: rID!
+
+  "The name of the Casino Game Category"
+  name: String!
+
+  "The display sequence of the Casino Game Category"
+  categorySequence: Int!
+
+  "The SVG image file."
+  imageFilename: String
+}
+
+"The information that describes a single casino game"
+type CasinoGame {
+  "The unique identifier for the casino game"
+  id: rID
+
+  "Alias to the unique identifier for the casino game"
+  stxGameId: rID
+
+  "The name of the aggregator"
+  operator: Aggregators
+
+  "The currency used in the game"
+  currency: String
+
+  "The group identifier"
+  groupId: String
+
+  "The game identifier"
+  gameId: String
+
+  "The product associated with the game"
+  product: String
+
+  "The model of the game"
+  model: String
+
+  "(DEPRECATED) The type of the game. This is now replaced by categories."
+  type: String @deprecated(reason: "Use categories instead.")
+
+  "The list of categories this game belongs to"
+  categories: [CasinoGameCategory]!
+
+  "Indicates if the game is enabled"
+  enabled: Boolean
+
+  "The jurisdiction of the game"
+  jurisdiction: String
+
+  "The language of the game"
+  lang: String
+
+  "The mode of the game"
+  mode: String
+
+  "(DEPRECATED) The identifier of the game provider"
+  gameProviderId: String @deprecated(reason: "Data not available.")
+
+  "The name of the game provider"
+  provider: String
+
+  "Casino Game Name"
+  name: String
+
+  "The lobbyUrl for each game"
+  lobbyUrl: String
+
+  """
+  The base URL for launching the casino game, frontend will need to append the
+  appropriate query parameters for the full launch URL.
+  """
+  launchBaseUrl: String
+
+  "Image file with extension"
+  imageFilename: String
+
+  "The display sequence of the Casino Game"
+  gameSequence: Int!
+}
+
+"Query parameters for the `casino games` query"
+input CasinoGamesInput {
+  "include enabled or disabled games"
+  onlyEnabled: Boolean
+}
+
+"Details of a single casino session's statistics"
+type CasinoSessionStats {
+  "Unique identifier for the casino session"
+  casinoSessionId: rID!
+
+  "unix micro timestamp when the casino session started (no timezone info)"
+  startedAt: Int
+
+  "Total amount wagered during this session"
+  wagered: Int
+
+  "Net won amount for the session (negative indicates a loss)"
+  wonAmount: Int
+
+  "Payout amount which the casino operator sends"
+  payoutAmount: Int
+
+  "Name of the game played in this session"
+  gameName: String
+}
+
+"Aggregated stats and session history for a casino account"
+type CasinoSessionStatsHistory {
+  "id for the account"
+  accountId: rID!
+
+  "Total amount wagered across all sessions in the result set"
+  totalWagered: Int
+
+  "Total amount paid out across all sessions"
+  totalPayout: Int
+
+  "Net profit or loss for the casino (Wagered - Payout)"
+  casinoNetPnl: Int
+
+  "List of individual casino session stats for the account"
+  sessions: [CasinoSessionStats!]
+}
+
+input UserRegistrationInputV2 {
+  data: String!
+}
+
+"Credentials used to login to the system."
+input LoginCredentials {
+  "The email of the user."
+  email: EmailAddress!
+
+  "The password for the given email username."
+  password: String!
+
+  "The information about the device that the user is logging in on."
+  deviceInfo: DeviceInfo
+}
+
+"Contains information on a device registered in the system."
+input DeviceInfo {
+  "The unique id of the device from the device itself."
+  deviceId: String
+}
+
+"""
+Parameters passed to the mutation to reset the user's password when they have forgotten
+their password. This can only be called after the forgotPassword mutation and waiting
+for the code to arrive in an email.
+"""
+input PasswordResetParams {
+  "The code that was sent to the user via email to reset the password."
+  code: String!
+
+  "The new password to use."
+  newPassword: String!
+}
+
+"""
+Data passed to indicate the user's legally binding acceptance of the terms and conditions
+of the platform.
+"""
+input TncAcceptanceInput {
+  "Email of the user to accept the TnC for and must match the login for the session."
+  email: EmailAddress @deprecated(reason: "The user from the auth token will be used and this email will be ignored by the backend.")
+
+  "The version of the TNC being accepted."
+  version: String!
+
+  "The unique id of the device sending the request."
+  deviceId: String!
+
+  "Must be true to accept the privacy policy."
+  acceptPrivacy: Boolean!
+
+  "Must be true to accept the terms and conditions."
+  acceptTerms: Boolean!
+
+  "Must be true to accept the house rules."
+  acceptHouseRules: Boolean
+}
+
+"The result of latest terms_and_conditions that is in effect."
+type TermsAndConditionsResult {
+  "The version of the TnC."
+  version: String
+
+  "The effective end date of the latest TnC - this will be null."
+  effectiveEndDate: Int
+
+  "The effective start date of the latest TnC."
+  effectiveStartDate: Int
+
+  "The uuid of the house_rules associated with the latest TnC."
+  houseRules: String
+
+  "The uuid of the privacy_policy associated with the latest TnC."
+  privacyPolicy: String
+
+  "The uuid of the terms_and_conditions associated with the latest TnC."
+  termsAndConditions: String
+}
+
+"""
+The result of a successful login or confirmation of a 2FA attempt. This object will contain
+the information needed by the user when attempting to use authenticated endpoints. The
+token returned needs to be put in an "Authorization" header with "Bearer {{TOKEN}}" as the
+value where "{{TOKEN}}" should be replaced with the token returned by this API. This
+object also contains the refresh token that is needed to refresh the token when it expires
+without going through the login procedure.
+"""
+type LoginResult {
+  "The UUID of the user from the database."
+  userId: rID
+
+  "The integer status of the request."
+  status: Int
+
+  "The token to use for requests that requre authentication."
+  token: String
+
+  "The token used to refresh the token used for authenticated requests."
+  refreshToken: String
+
+  "The string version of the user status."
+  userStatus: String
+
+  "The unique user ID associated with the user with the external user service."
+  userUid: String
+
+  "The current profile for the user."
+  userProfile: UserProfile
+
+  "The ISO-8601 timestamp when the user last logged in."
+  lastLoginAt: String
+
+  "The ISO-8601 timestamp when the user last logged in for the current session."
+  currentLoginAt: String
+
+  "The IP address used by the currently logged in user."
+  deviceId: String
+
+  ipAddress: String
+
+  "The number of limits on the account."
+  limitsNumber: AccountLimitResultNumber
+
+  "Whether or not the client should prompt the user to supply a 2FA code."
+  promptTwoFactorAuth: Boolean
+
+  "The id of the user's current session."
+  sessionId: String
+
+  "Whether or not the client should prompt the user for TNC acceptance."
+  promptTncAcceptance: Boolean
+
+  "Which component of the TnC changed - terms, privacy_policy, house_rules etc"
+  tncChanged: TncChanges
+
+  "Id of the user's TNC acceptance record."
+  tncId: String
+
+  "Whitelisted IP addresses for this user."
+  whitelistIpAddresses: String
+
+  "The devices and device_tokens of this user."
+  deviceTokens: [DeviceTokens]
+
+  "Is multiple logins enabled for this user"
+  allowMultipleLogins: Boolean
+
+  "The app_settings of this user."
+  appSettings: [AppSettings]
+
+  "The referral_code of this user."
+  referralCode: String
+}
+
+"The result of enabling or disabling two factor authentication."
+type TwoFactorAuthResult {
+  "The status of the request."
+  status: String
+
+  "The sessionId in which the 2fa code is stored."
+  sessionId: String
+}
+
+"The result of verifying a user's email."
+type VerificationResult {
+  "Whether or not the email was verified."
+  verified: Boolean
+
+  "Any message returned to the user such as an error message if not validated."
+  message: String
+}
+
+"The result of asking for a password to be reset."
+type PasswordResetResult {
+  "Whether or not the reset was successful."
+  reset: Boolean
+
+  "Any message that was returned in the attempt for a reset."
+  message: String
+}
+
+"The result of logging out of the platform."
+type LogoutResult {
+  "The integer status of the request."
+  status: Int
+
+  "Message to display post-logout, if any."
+  message: String
+
+  "The id of the device that was logged out."
+  deviceId: String
+
+  "Th address of the user when the user logged out."
+  ipAddress: String
+}
+
+"The result of trying to register a user in the system."
+type RegisterUserResult {
+  "The status of the registration."
+  status: Int
+
+  "Any message returned as a result of the registration attempt."
+  message: String
+
+  "DEPRECATED - The account id of the newly registered user."
+  accountId: rID
+
+  "The email verification code - this will be returned only on load test environment"
+  verificationCode: String
+}
+
+"The result of calling the forgot_password mutation."
+type ForgotPasswordResult {
+  "The title to display in a modal dialog as a result of the call."
+  header: String
+
+  "The message to display in a modal dialog as a result of the call."
+  message: String
+
+  "The email address that the reset code was sent to."
+  email: EmailAddress
+}
+
+"The result of a user changing their self exclusion status."
+type SelfStatusChangeResult {
+  "The message to display to the user."
+  message: String
+
+  "The status of the request."
+  status: Int
+}
+
+"An enumeration of the available keys on a limit to change. Refer to AccountLimits type."
+enum LimitKeys {
+  DAILY_DEPOSIT
+  WEEKLY_DEPOSIT
+  MONTHLY_DEPOSIT
+  LIFETIME_DEPOSIT
+  ORDER_LIABILITY
+  MAX_ORDER_LIABILITY_PER_ORDER
+  HOURS_PER_DAY
+  COOL_OFF_PERIOD
+  LOSS_LIMIT24_HOURS
+  LOSS_LIMIT_WEEKLY
+  LOSS_LIMIT_MONTHLY
+  SELF_EXCLUDED
+}
+
+"""
+Limits imposed on the account by the user. There is an analogous admin limits object
+that sets the limits imposed by the system. The user can only adjust these limits up
+to the values allowed by the admin limits.
+"""
+type AccountLimitsNumber {
+  "Account id that the AccountLimits apply to."
+  accountId: rID
+
+  "The total amount that may be deposited daily."
+  dailyDeposit: Int
+
+  "The total amount that may be deposited weekly."
+  weeklyDeposit: Int
+
+  "The total amount that may be deposited per month."
+  monthlyDeposit: Int
+
+  "The total amount that may be deposited for the life of the account.."
+  lifetimeDeposit: Int
+
+  "The maximum liability that may be incurred by all outstanding orders."
+  orderLiability: Int
+
+  "The maximum liability that may be incurred by any one order."
+  maxOrderLiabilityPerOrder: Int
+
+  "The loss limit value for the last 24 hours."
+  lossLimit24Hours: Int
+
+  "The loss limit value for the last week."
+  lossLimitWeekly: Int
+
+  "The loss limit value for the last month."
+  lossLimitMonthly: Int
+
+  """
+  If a user has an hours per day limit set, this sets how long that user must wait after
+  the limit has been exceeded. Note that this is required by gaming regulations but does
+  not need to be used by customers.
+  """
+  coolOffPeriod: Int
+
+  "An optional limit of the number of hours per day that a user can use the app."
+  hoursPerDay: Int
+
+  """
+  Self-exclusion limit - the player can choose this limit to be 6 months, 1 year or 5 years. They will not be
+  able to login during this self-exclusion period.
+  """
+  selfExcluded: Int
+}
+
+"""
+Limits on the account imposed by the system. The user's account limits can never be adjusted
+to exceed these limits.
+"""
+type AdminLimitsNumber {
+  "The total amount that may be deposited daily."
+  dailyDeposit: Int
+
+  "The total amount that may be deposited daily."
+  weeklyDeposit: Int
+
+  "The total amount that may be deposited per month."
+  monthlyDeposit: Int
+
+  "The total amount that may be deposited for the life of the account.."
+  lifetimeDeposit: Int
+
+  "The maximum liability that may be incurred by all outstanding orders."
+  orderLiability: Int
+
+  "The maximum liability that may be incurred by any one order."
+  maxOrderLiabilityPerOrder: Int
+
+  "The loss limit value for the last 24 hours."
+  lossLimit24Hours: Int
+
+  "The loss limit value for the last week."
+  lossLimitWeekly: Int
+
+  "The loss limit value for the last month."
+  lossLimitMonthly: Int
+
+  """
+  If a user has an hours per day limit set, this sets how long that user must wait after
+  the limit has been exceeded. Note that this is required by gaming regulations but does
+  not need to be used by customers.
+  """
+  coolOffPeriod: Int
+
+  "An optional limit of the number of hours per day that a user can use the app."
+  hoursPerDay: Int
+
+  """
+  Self-exclusion limit - the player can choose this limit to be 6 months, 1 year or 5 years. They will not be
+  able to login during this self-exclusion period.
+  """
+  selfExcluded: Int
+}
+
+"Result of asking for account limits containing both account and admin limits."
+type AccountLimitResultNumber {
+  "The account limits which can be edited but cannot exceed admin limits."
+  accountLimits: AccountLimitsNumber
+
+  "The admin limits which are imposed by the system"
+  adminLimits: AdminLimitsNumber
+}
+
+"An entry in a list of historical limits on an account."
+type AccountLimitHistoryResultNumber {
+  "The date that the limit was in effect."
+  date: String
+
+  "The type of limit that was in effect."
+  description: String
+
+  "The numerical limit."
+  limit: Int
+}
+
+"The result of a client reporting app usage when the user has time limit feature on."
+type UsageResult {
+  "Maximum usage possible in seconds."
+  maxSecondsPerDay: Int
+
+  "Number of seconds already used."
+  secondsUsed: Int
+}
+
+"Input to the mutation to change a user's profile."
+input UserProfileInput {
+  "The phone number for the user."
+  phoneNumber: String!
+
+  "The country_code of the phone number for the user."
+  countryCode: String
+
+  "The country code of the business phone number for the user."
+  businessCountryCode: String
+
+  "The business phone number for the user."
+  businessPhone: String
+
+  "The first line of the user's legal address."
+  address1: String!
+
+  "The second line of the user's legal address."
+  address2: String
+
+  "The city of the user's legal address."
+  city: String!
+
+  "The state of the user's legal address."
+  state: String!
+
+  "The zip code of the user's legal address."
+  zipCode: String!
+
+  "The middle name of the user."
+  middleName: String
+
+  "The preferred name of the user."
+  preferredName: String
+
+  "The country of the address."
+  country: String
+
+  "The country of citizenship of the user."
+  citizenshipCountry: String
+
+  "The employer of the user."
+  employerName: String
+
+  "The address of the employer of the user."
+  employerAddress: String
+
+  "The job title of the user."
+  jobTitle: String
+
+  "The industry in which the user works"
+  industry: String
+
+  "Opt-in for marketing emails, text messages"
+  optInMarketing: Boolean
+}
+
+input UserProfileInputV2 {
+  "The data for user profile update."
+  data: String!
+}
+
+"The result of the mutation to update the user's address."
+type UpdateUserProfileResult {
+  "A list of string errors."
+  errors: [String]
+
+  "The status of the request with the server."
+  status: Int!
+
+  "The user profile of the user as a result of the change."
+  userProfile: UserProfile!
+}
+
+input SettingsInput {
+  deviceId: String
+  mode: String
+  oddsDisplay: String
+  enableFaceId: Boolean
+  wageringQtyIncrement: String
+  closeYourAccount: Boolean
+  enable2Fa: Boolean
+  deviceType: String
+  showTutorialAgain: Boolean
+}
+
+"The result of the mutation to update the user's address."
+type UpdateAppSettingsResult {
+  "A list of string errors."
+  errors: [String]
+
+  "The status of the request with the server."
+  status: Int!
+}
+
+"Defines a device that has been registered and confirmed with 2FA."
+type KnownDevice {
+  "The unique id for the device."
+  id: String!
+
+  "The ID of the device provided by the device itself."
+  deviceId: String!
+
+  "The IP address of the user when the device was registered."
+  ipAddress: String!
+
+  "The date-time that the device was registered."
+  insertedAt: String!
+}
+
+"The result of a user requesting that one or more devices be deleted."
+type DeleteDeviceResult {
+  "The status of the request indicating if it was successful."
+  status: String!
+}
+
+"The profile of a user including any limits."
+type UserProfile {
+  "The UUID of the user profile."
+  id: rID!
+
+  "The DOB of the user."
+  dateOfBirth: String
+
+  "The first name of the user."
+  firstName: String!
+
+  "The last name of the user."
+  lastName: String!
+
+  "The middle name of the user."
+  middleName: String
+
+  "The preferred name of the user."
+  preferredName: String
+
+  "The user name of the user."
+  username: String!
+
+  "The phone number of the user."
+  phoneNumber: String
+
+  "The country code of the phone number of the user."
+  countryCode: String
+
+  "The business country_code for the business phone number of the user."
+  businessCountryCode: String
+
+  "The business phone number of the user."
+  businessPhone: String
+
+  "The address1 part of the address of the user."
+  address1: String
+
+  "The address2 part of the address of the user."
+  address2: String
+
+  "The city of the user."
+  city: String
+
+  "The state of the user."
+  state: String
+
+  "The zip code of the user."
+  zipCode: String
+
+  "The country of the address."
+  country: String
+
+  "The country of the address."
+  citizenshipCountry: String
+
+  "The SSN of the user."
+  ssn: String
+
+  "The UUID of the account associated with this user."
+  accountId: rID
+
+  "The employer of the user."
+  employerName: String
+
+  "The address of the employer of the user."
+  employerAddress: String
+
+  "The job title of the user."
+  jobTitle: String
+
+  "The industry in which the user works"
+  industry: String
+
+  "Whether the 2FA is enabled for this user."
+  twoFactorAuth: Boolean
+
+  "Whether the 2FA is enabled per device for this user."
+  twoFactorAuthPerDevice: Boolean
+
+  "Opt-in for marketing emails, text messages"
+  optInMarketing: Boolean
+
+  "Whitelisted IP addresses for this user."
+  whitelistIpAddresses: String
+}
+
+type PasswordVerificationResult {
+  "Given password is valid or not"
+  valid: Boolean
+}
+
+type TncChanges {
+  terms: Boolean
+  privacyPolicy: Boolean
+  houseRules: Boolean
+}
+
+"The result of updating the device token for a player"
+type DeviceTokenResult {
+  "The message to display to the user."
+  message: String
+
+  "The status of the request."
+  status: Int
+}
+
+"The device associated with a player."
+type DeviceTokens {
+  deviceId: String
+  deviceToken: String
+  deviceType: String
+  effectiveStartDate: String
+}
+
+type AppSettings {
+  deviceId: String
+  settings: Settings
+}
+
+type Settings {
+  deviceId: String
+  mode: String
+  oddsDisplay: String
+  enableFaceId: Boolean
+  wageringQtyIncrement: String
+  closeYourAccount: Boolean
+  enable2Fa: Boolean
+  deviceType: String
+  showTutorialAgain: Boolean
+}
+
+"Defines possible values that can be used for sort order."
+enum SortOrder {
+  "Sort the values in ascending order."
+  ASC
+
+  "Sort the values in descending order."
+  DESC
+}
+
+"Data structure for pagination."
+input Pagination {
+  "The page of result where each page has `limit` values.  Integer >= 0"
+  page: NonNegInt!
+
+  "The limit of values per page.  Integer value greater than 0."
+  limit: PosInt!
+}
+
+"Which type of date range filter to apply"
+enum DateRangeType {
+  ROLLING_WINDOW
+}
+
+"Which increment to apply to the rolling window value"
+enum RollingWindowIncrement {
+  SECONDS
+  MINUTES
+  HOURS
+  DAYS
+  MONTHS
+}
+
+"A rolling window date range filter.  A rolling window from now into the past.  For instance the last 24 hours"
+input RollingWindow {
+  increment: RollingWindowIncrement!
+  value: PosInt!
+}
+
+"Specifies a date range to constrain the result set to.  At least one must be provided"
+input DateRangeFilter {
+  type: DateRangeType!
+  rollingWindow: RollingWindow
+}
+
+"""
+A single transaction encapsulating money moving from or to the wallet of the user.
+Transactions are written when a settlement occurs, a fee is charged, a deposit is
+made or a withdraw is made. It's important to know that all apparent changes to the wallet,
+such as placing an order, merely reserve liability for the wallet rather than actually
+move money in the system.
+"""
+type TransactionHistory {
+  "A unique ID for the transaction."
+  id: rID
+
+  "The account id that is associated with the transaction."
+  accountId: rID
+
+  "The date and time that the transaction was recorded."
+  insertedAt: Int
+
+  "The type of the transaction."
+  type: String
+
+  "The amount of a transaction which may be negative."
+  amount: Int
+
+  "The amount of loyalty points in the transaction which might be negative."
+  points: Float
+
+  """
+  The optional market id associated with the transaction. This field will only be set
+  for transactions that are relative to a market.
+  """
+  marketId: rID
+
+  """
+  A optional payment method. This field will only be set for transaction that are relative to
+  payments.
+  """
+  method: String
+
+  "A optional field to differentiate the deposit methods like SendMoney or RequestMoney"
+  subMethod: String
+
+  "An optional payment description"
+  reason: String
+
+  "The related casino wager id if the transaction is of type 'casino'"
+  casinoWagerId: rID
+}
+
+"""
+Defines Trade type which encapsulates the user's side of a trade between two accounts on
+the system. Trades can be executed with actions of buy or sell relative to the user. The
+trade will be settled by one ore more other trades either when the position is closed or
+when it expires. Before the trade is completely settled the type tracks how many contracts
+and premium remain unsettled.
+"""
+type Trade {
+  "The unique id of the trade."
+  id: rID!
+
+  "The ISO-8601 Date time the trade was created."
+  time: String
+
+  "The microseconds timestamp the trade was created."
+  insertedAt: Int
+
+  "The action of the trade relative to the user."
+  action: String
+
+  "The price that the trade was executed at."
+  price: Price
+
+  "The number of contracts that were traded."
+  filled: Quantity
+
+  "The premium paid on the trade by the user."
+  premium: Price
+
+  "The gross PNL as a result of the trade."
+  grossPnl: Price
+
+  "The number of unsettled contracts in the trade."
+  remaining: Quantity
+
+  "Premium as yet unsettled."
+  remainingPremium: Int
+
+  "DEPRECATED Max possible free on trade"
+  maxPotentialFee: Int
+
+  "The market that the trade is associated with."
+  marketId: rID
+
+  "The ID of the order that caused the trade."
+  orderId: rID
+
+  "The number of contracts closed on this trade."
+  closedContracts: Quantity
+
+  "The fee the user paid when closing the trade."
+  closedFee: Int
+
+  "The profit or loss the user made by closing the trade."
+  closedPnl: Int
+
+  "The amount of contracts (in position) that the trade is closing."
+  closing: Quantity
+
+  "Number of contracts settled when market expired."
+  expiredContracts: Quantity
+
+  "The fee paid by the user when the market expired."
+  expiredFee: Int
+
+  "The profit or loss the user make on the trade when the market expired."
+  expiredPnl: Int
+
+  "The amount of premium received for the original trade."
+  originalPremium: Int
+
+  "The original risk introduced for the original trade excluding `closed`."
+  originalRisk: NonNegInt
+
+  "The original to win introduced for the original trade excluding `closed`."
+  originalToWin: NonNegInt
+
+  "The total number of loyalty points awarded as a result of making the trade."
+  points: Quantity
+
+  "The amount of premium per contract."
+  pcPremium: Int
+
+  "The amount of risk per contract."
+  pcRisk: NonNegInt
+
+  "The amount to win per contract."
+  pcToWin: NonNegInt
+
+  "The potential fee from unsettled contracts."
+  remainingPotentialFee: NonNegInt
+
+  "The total current risk for the trade."
+  remainingRisk: Int
+
+  "The remaining amount that the trade can win."
+  remainingToWin: Int
+
+  "The timestamp when this trade's status was set to `settled`"
+  settledAt: String
+
+  "The number of settlements where this `AccountTrade` is an opening trade."
+  settlementsCount: NonNegInt
+
+  "The sum of all the fees paid for settlements linked with the trade."
+  totalFee: NonNegInt
+
+  "The player's device associated with this trade"
+  deviceId: String
+
+  "The IP address associated with this trade"
+  ipAddress: String
+
+  "The clientOrderId sent by the player in the confirmOrder."
+  clientOrderId: String
+
+  "Whether the associated order was the `provider` or the `taker` of the liquidity."
+  liquidityAction: String
+}
+
+"Result type that returns a list of trades along with the count in the list."
+type TradesWithCount {
+  "The total count of trades in the list."
+  totalCount: Int!
+
+  "The list of the trades."
+  trades: [Trade]!
+}
+
+"Trade's sorting attribute"
+input TradesSortBy {
+  "The name of the attribute to sort on, default is `time`."
+  name: TradesSortByField
+
+  "The direction to sort, either `asc` or `desc`"
+  direction: SortOrder
+}
+
+"Possible trades sorting attributes"
+enum TradesSortByField {
+  "The filled quantity of contracts in the trade."
+  FILLED
+
+  "The time that the order was placed."
+  TIME
+}
+
+"Filter for sending market ids in a query for trade history."
+input MarketIdsFilter {
+  "A list of market ids to return trades for."
+  marketIds: [rID]
+}
+
+"Opening and closing trade for settlement."
+type SettlementTrades {
+  "The opening trade for the settlement."
+  openingTrade: Trade
+
+  "The closing trade for the settlement. May be empty for expired settlements."
+  closingTrade: Trade
+}
+
+"An enumeration of possible settlement types in the system."
+enum TradeSettlementType {
+  "The trades that were settled (remaining = 0)."
+  SETTLED
+
+  "The trades that were not settled yet (remaining > 0)."
+  UNSETTLED
+}
+
+"An Email address"
+scalar EmailAddress
+
+"Geo Location code"
+scalar GeoLocationCode
+
+"""
+The RoundedDecimal will always be returned as an integer to the user no mater what the
+decimal value is being sent from the server or the client.
+"""
+scalar RoundedDecimal
+
+"""
+The `rID` scalar type represents a BetStack unique identifier, often used to
+re-fetch an object or as key for a cache. The xID type appears in a JSON
+response as a String; however, it is not intended to be human-readable.
+When expected as an input type, any UUID formatted string will be accepted as an rID.
+"""
+scalar rID
+
+"""
+Defines a quantity type that can be a simple integer if the quantity is whole or a float if it
+includes fractions. Fractional quantities are serialized to float and parsed from strings or float.
+
+If the number of decimal digits exceeds 9 after parsing, the value is rounded to maintain
+precision with 9 decimal digits. It is advisable to use the quantity returned by the server
+rather than relying solely on the originally passed value.
+"""
+scalar Quantity
+
+"""
+The `PosInt` scalar type represents non-fractional signed whole numeric values greater
+than or equal to 1
+PosInt can represent values between `1` and `2^53 - 1` since it is
+represented in JSON as double-precision floating point numbers specified
+by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).
+"""
+scalar PosInt
+
+"""
+The `NonNegInt` scalar type represents non-fractional whole numeric values greater
+than or equal to 0
+NonNegInt can represent values between `0` and `2^53 - 1` since it is
+represented in JSON as double-precision floating point numbers specified
+by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).
+"""
+scalar NonNegInt
+
+"Filters used in returning settlements."
+input SettlementsFilter {
+  "A list of market ids to return settlements for."
+  marketIds: [rID!]
+
+  "Restrict settlements to given type(s)"
+  settlementType: [SettlementType!]
+
+  settledOn: DateRangeFilter
+}
+
+"Encapsulates an account's history of settlements."
+type NetSettlementHistory {
+  "The total count of settlements returned."
+  totalCount: Int
+
+  "The settlement objects."
+  settlements: [Settlement]
+}
+
+"An enumeration of possible settlement types in the system."
+enum SettlementType {
+  "The long position contracts were closed when it was long through a sell order."
+  CLOSED_LONG
+
+  "The short position contracts were closed when it was long through a buy order."
+  CLOSED_SHORT
+
+  "The contracts expired when the position was long."
+  EXPIRED_LONG
+
+  "The contracts expired when the position was short."
+  EXPIRED_SHORT
+}
+
+"An enumeration of the possible fee schedules."
+enum FeeSchedules {
+  "Loyalty based fee. The fee will depend on the user's loyalty tier."
+  LOYALTY_TIER
+
+  "Fixed percentage fee regardless of loyalty or other factors"
+  FIXED_PERCENT
+
+  "Revenue share, the fees will be decided on a negotiated rate and interval."
+  REVENUE_SHARE
+}
+
+"An enumeration of the possible loylaty tiers."
+enum LoyaltyTier {
+  ROOKIE
+  VETERAN
+  ALL_STAR
+  MVP
+  HALL_OF_FAME
+}
+
+"The settlement object which defines the result of a trade closure or exipration."
+type Account {
+  "The available balance for the account."
+  availableBalance: Int!
+
+  "The total liability incurred for buy orders."
+  buyOrderLiability: Int!
+
+  "The total liability incurred for sell orders."
+  sellOrderLiability: Int!
+
+  "The total liability incurred as a result of current positions."
+  positionPremiumLiability: Int!
+
+  "The total deposits that a user has made."
+  totalDeposits: Int!
+
+  "The total withdrawals that a user has made."
+  totalWithdrawals: Int!
+
+  "The total amount of PNL from all settlements"
+  totalSettlementPnl: Int!
+
+  "The total amount of fees the user has paid."
+  totalFees: Int!
+
+  "The total amount of cash adjusted by the platform administrators."
+  totalAdjustments: Int!
+
+  "The total amount of cash frozen for pending withdrawals."
+  escrow: Int!
+
+  "The balance of the user's account"
+  accountBalance: Int!
+
+  "The total amount of points that the user has earned."
+  points: RoundedDecimal!
+
+  "The loyalty tier that a user qualifies for."
+  loyaltyTier: LoyaltyTier!
+
+  "The percentage for fees that the account uses if the fee schedule is 'fixed_percent'"
+  baseFeePercent: Quantity
+
+  "The type of fee schedule that a user is on such"
+  feeSchedule: FeeSchedules!
+}
+
+"The settlement object which defines the result of a trade closure or exipration."
+type Settlement {
+  "The unique id for the settlement."
+  id: rID!
+
+  "The type of settlement."
+  type: SettlementType!
+
+  "The UNIX microseconds timestamp of when the settement was created."
+  insertedAt: Int!
+
+  "The ISO-8601 date time of when the settement was created."
+  insertedAtIso: String!
+
+  "The price of the contracts when the position was opened."
+  openingPrice: Price!
+
+  "The price of the contracts when the position was closed."
+  closingPrice: Price!
+
+  "The profit or loss associated with the position."
+  grossPnl: Price!
+
+  "The net profit or loss minus fees."
+  realizedPnl: Price!
+
+  "The number of contracts that were settled."
+  quantity: Quantity!
+
+  "The fee charged for the settlement."
+  fee: Price!
+
+  "The amount of premium that was settled by the trade."
+  settledPremium: Price!
+
+  "The amount of risk that was settled by the trade."
+  settledRisk: Price!
+
+  "The id of the market that the settlement is associated with."
+  marketId: rID!
+
+  "The id of the account that the settlement is associated with."
+  accountId: rID!
+
+  "The id of the trade that opened this settlement."
+  openingTradeId: rID!
+
+  "The id of the trade that closed this settlement, if any."
+  closingTradeId: rID
+
+  "(DEPRECATED) The ISO-8601 date time of when the settlement was created."
+  time: String! @deprecated(reason: "renamed to inserted_at_iso")
+
+  "(DEPRECATED) The profit or loss associated with the position."
+  profitAndLoss: Price! @deprecated(reason: "Use gross_pnl instead.")
+
+  "(DEPRECATED) The net profit or loss minus fees."
+  profitMinusFee: Price! @deprecated(reason: "Use realized_pnl instead.")
+}
+
+"""
+A summary of the statistics of a user's history in a particular market. Whenever a user
+makes a trade, places and order or has a settlement this data is updated. All data in
+this object are related to that single user and single market.
+"""
+type AccountMarketStat {
+  "The unique ID for this record."
+  id: rID
+
+  "The ID of the market that this record is associated with."
+  marketId: rID
+
+  "The ID of the account associated with this record."
+  accountId: rID
+
+  "The start time of the event."
+  eventStartTime: Int
+
+  "The title of the event associated with this record."
+  title: String
+
+  "The status of the event associated with this record."
+  status: String
+
+  "The UNIX milliseconds timestamp when the record was created."
+  insertedAt: Int
+
+  "The UNIX milliseconds timestamp when the record was last updated."
+  updatedAt: Int
+
+  "The total fees that have been collected on the settlements."
+  totalFees: Int
+
+  "The number of contracts that have been settled."
+  contractsSettled: Quantity
+
+  "The total Profit or Loss on all settlements."
+  totalSettlementPnl: Int
+
+  "The total amount of risk on unsettled contracts."
+  maxRisk: Int
+
+  "The maximum potential profit, including all actual profit."
+  maxPotentialProfit: Int
+
+  "The maximum potential fees including all actual fees paid."
+  maxPotentialFee: Int
+
+  "The amount of potential fee that is related to unsettled contracts."
+  openPotentialFee: Int
+
+  "The amount of risk associated with outstanding contracts."
+  openRisk: Int
+
+  "The potential profit from the outstanding contracts."
+  openPotentialProfit: Int
+
+  "The average premium of all open contracts."
+  averageOpenPremium: Float
+
+  "The numerical position of the account in the market."
+  position: Quantity
+
+  "The amount of the `position` that is not reserved for pending orders."
+  availablePosition: Quantity
+
+  "The number of open orders the account has on the market."
+  openOrderCount: Int
+
+  "The number of open trades the account has on the market."
+  openTradeCount: Int
+
+  "The order liability on this position from all orders."
+  orderLiability: Int
+
+  "The order liability on this position from buy orders."
+  buyOrderLiability: Int
+
+  "The order liability on this position from sell orders."
+  sellOrderLiability: Int
+
+  "The liability of the position that affects available balance."
+  positionPremiumLiability: Int
+
+  "The liability affecting avail. balance from open orders and position."
+  totalLiability: Int
+
+  "Total premium on the user's current position in the market."
+  openPremium: Int
+
+  "The net proffit or loss after subtracting `fees`."
+  totalNetPnl: Int
+
+  "The profit or loss the account has made in `closed` settlements."
+  closedGrossPnl: Int
+
+  "The net proffit or loss after subtracting `closed_fees`."
+  closedNetPnl: Int
+
+  "The total value of fees from closed settlements."
+  closedFees: Int
+
+  "The profit or loss the account has made in `expired` settlements."
+  expiredGrossPnl: Int
+
+  "The net proffit or loss after subtracting `exipred_fees`."
+  expiredNetPnl: Int
+
+  "The total value of fees from expired settlements."
+  expiredFees: Int
+
+  "The total number of trades the account has made on the market."
+  tradeCount: Int
+
+  "The total number of buy trades the account has made on the market."
+  buyTradeCount: Int
+
+  "The total number of sell trades the account has made on the market."
+  sellTradeCount: Int
+
+  "The total number of all contracts (AccountTrade.filled). Only opening trade contracts are counted. Doesn't include contracts closing other trades."
+  contractsTraded: Quantity
+
+  "The total number of buy contracts the account has traded. Only opening trade's contracts are included."
+  buyContractsTraded: Quantity
+
+  "The total number of sell contracts the account has traded in the market. Only opening trade's contracts are included."
+  sellContractsTraded: Quantity
+
+  "The total number of buy contracts settled in the position."
+  buyContractsSettled: Quantity
+
+  "The total number of sell contracts settled in the position."
+  sellContractsSettled: Quantity
+
+  "The total number of all contracts that were closed."
+  contractsClosed: Quantity
+
+  "The total number of buy contracts that were closed."
+  buyContractsClosed: Quantity
+
+  "The total number of buy contracts that were closed."
+  sellContractsClosed: Quantity
+
+  "The total number of all contracts that were expired."
+  contractsExpired: Quantity
+
+  "The total number of buy contracts that were expired."
+  buyContractsExpired: Quantity
+
+  "The total number of sell contracts that were expired."
+  sellContractsExpired: Quantity
+
+  "Total premium from expired contracts."
+  expiredPremium: Int
+
+  "Total premium from expired buy trade contracts."
+  expiredBuyPremium: Int
+
+  "Total premium from expired sell trade contracts."
+  expiredSellPremium: Int
+
+  "Total premium from closed contracts."
+  closedPremium: Int
+
+  "Total premium from closed buy trade contracts."
+  closedBuyPremium: Int
+
+  "Total premium from closed sell trade contracts."
+  closedSellPremium: Int
+
+  "Count of all settlements from all trades."
+  settlements: Int
+
+  "Count of all settlements from buy trades."
+  buySettlements: Int
+
+  "Count of all settlements from sell trades."
+  sellSettlements: Int
+
+  "Count of all orders."
+  orders: Int
+
+  "Count of all buy orders."
+  buyOrders: Int
+
+  "Count of all sell orders."
+  sellOrders: Int
+
+  "Sum of all not matched contracts in all orders. Order.quanity - Order.filled"
+  contractsInOrders: Quantity
+
+  "Sum of all not matched contracts in buy orders."
+  contractsInBuyOrders: Quantity
+
+  "Sum of all not matched contracts in sell orders."
+  contractsInSellOrders: Quantity
+
+  "Sum of all not matched contracts in all cancelled orders."
+  cancelledContracts: Quantity
+
+  "Sum of all not matched contracts in buy cancelled orders."
+  cancelledBuyContracts: Quantity
+
+  "Sum of all not matched contracts in sell cancelled orders."
+  cancelledSellContracts: Quantity
+
+  "Number of orders that were cancelled."
+  cancelledOrders: Int
+
+  "Number of buy orders that were cancelled."
+  cancelledBuyOrders: Int
+
+  "Number of sell orders that were cancelled."
+  cancelledSellOrders: Int
+
+  "Number of orders that were rejected."
+  rejectedOrders: Int
+
+  "Number of buy orders that were rejected."
+  rejectedBuyOrders: Int
+
+  "Number of sell orders that were rejected."
+  rejectedSellOrders: Int
+
+  "The original risk incurred by all trades."
+  originalRisk: Int
+
+  "The original risk incurred by buy trades."
+  buyOriginalRisk: Int
+
+  "The original risk incurred by sell trades."
+  sellOriginalRisk: Int
+
+  "DateTime at which the expired settlements were recorded which will be `nil` if the market has not resulted or voided yet."
+  settledAt: Int
+
+  "DateTime at which the record is marked as archived. It will be `nil` until the market is archived."
+  archivedAt: Int
+}
+
+"stats filter accepts list of market_ids and exclude_zero_settlements flag to filter stats result."
+input StatsFilter {
+  "A list of market ids to return stats for."
+  marketIds: [rID]
+
+  """
+  A flag to determine if stats with 0 settlements should be allowed.
+      if flag is true stats with 0 settlements is not allowed in response.
+      if flag is false stats with 0 settlements is allowed in response.
+  """
+  excludeZeroSettlements: Boolean
+}
+
+"A structure that gives the user information on what payment providers BetStack supports."
+type PaymentProviders {
+  "Public information on the Paysafe payment provider."
+  paysafe: PaysafeData
+}
+
+"""
+Contains public information used to initiate payments with BetStack using paysafe. None
+of the keys in this data are private.
+"""
+type PaysafeData {
+  "The merchant username to be used when making payments to BetStack from paysafe."
+  publicKeyUsername: String!
+
+  "The merchant password to be used when making payments to BetStack from paysafe."
+  publicKeyPassword: String!
+
+  "BetStack merchant account that is needed for card transactions."
+  cardAccount: String!
+
+  "User's VIP Preferred registration id."
+  vipRegistrationId: String
+}
+
+"A return result for the result of a payment transaction."
+type PaysafeTransactionResult {
+  "The id of the payment record, if created."
+  paymentId: ID
+
+  "The status of the transaction."
+  status: String
+
+  "The available balance after the transaction."
+  availableBalance: Int
+
+  "The amount of the transaction."
+  amount: Int
+
+  "The message to use for the transaction."
+  message: String
+
+  "Paysafe error code in case of failure. `null` if transaction failed before talking to provider."
+  errorCode: Int
+
+  "Action required by the user to finalize the payment. Can be REDIRECT or NONE"
+  action: PaysafeAction
+
+  "In case of REDIRECT action, the link to redirect the user to."
+  link: String
+
+  "For Interac SendMoney e-Transfer, the payment reference should be displayed to the user."
+  paymentReference: String
+
+  "For Interac SendMoney e-Transfer, this email should be displayed to the user."
+  sendMoneyToEmail: String
+
+  "For Interac SendMoney e-Transfer, display this name to the user."
+  sendMoneyToName: String
+}
+
+"Defines possible payment actions required by the user to finalize the payment."
+enum PaysafeAction {
+  "No action required, the payment will be processed without user's action"
+  NONE
+
+  "The user needs to be redirect to a web page to finish the payment."
+  REDIRECT
+}
+
+"Defines possible Paysafe's API to use for deposits."
+enum PaysafeDepositApi {
+  "'paymenthub' API"
+  PAYMENTHUB
+
+  "API used by iOS SDK for card payments"
+  CARD
+}
+
+"Defines possible Paysafe's API to use for withdrawals."
+enum PaysafeWithdrawalApi {
+  "'paymenthub' API"
+  PAYMENTHUB
+}
+
+"Defines possible Paysafe's deposit types"
+enum PaysafeDepositType {
+  "Credit card"
+  CARD
+
+  "'paymenthub' API"
+  INTERAC
+
+  "API used by iOS SDK for card payments"
+  VIPPREFERRED
+}
+
+"Defines possible Paysafe's withdrawal types"
+enum PaysafeWithdrawalType {
+  "'paymenthub' API"
+  INTERAC
+
+  "API used by iOS SDK for card payments"
+  VIPPREFERRED
+}
+
+enum InteracMethodType {
+  "Interac e-transfer request money"
+  REQUEST_MONEY
+
+  "Interac e-transfer send money"
+  SEND_MONEY
+}
+
+"Defines a scalar price."
+scalar Price
+
+"Encapsulates information needed to place an order on a market."
+input UserOrder {
+  "The ID of the market to place the order on."
+  marketId: rID!
+
+  "The type of order to place."
+  orderType: OrderType!
+
+  "The action of the order."
+  action: OrderAction!
+
+  "The limit price for an order, which will be ignored for order_type `market`."
+  price: Price
+
+  "The quantity of the order in number of contracts."
+  quantity: Quantity!
+
+  "The optional order_id sent by the client's for their reference."
+  clientOrderId: String
+
+  "The optional flag to cancel orders on disconnection."
+  cancelOnDisconnect: Boolean
+}
+
+"Encapsulates information needed to place an odds order on a market."
+input OddsOrder {
+  "The ID of the market to place the order on."
+  marketId: rID!
+
+  "The action of the order."
+  action: OrderAction!
+
+  "The amount the order will cost."
+  amount: Price!
+
+  "The type of odds used to place the order."
+  oddsType: OddsType!
+
+  "The odds value for the order."
+  oddsValue: String!
+
+  "The optional order_id sent by the client's for their reference."
+  clientOrderId: String
+
+  "The optional flag to cancel orders on disconnection."
+  cancelOnDisconnect: Boolean
+}
+
+"Encapsulates information needed to place an risk order on a market."
+input RiskOrder {
+  "The ID of the market to place the order on."
+  marketId: rID!
+
+  "The action of the order."
+  action: OrderAction!
+
+  "The amount the order will cost."
+  amount: Price!
+
+  "The optional order_id sent by the client's for their reference."
+  clientOrderId: String
+
+  "The optional flag to cancel orders on disconnection."
+  cancelOnDisconnect: Boolean
+}
+
+"Possible actions that can be used in orders."
+enum OrderAction {
+  "An order to buy contracts."
+  BUY
+
+  "An order to sell contracts."
+  SELL
+}
+
+enum OrderStatus {
+  "Order status is created."
+  CREATED
+
+  "Order status is requested."
+  REQUESTED
+
+  "Order status is accepted."
+  ACCEPTED
+
+  "Order status is open (active)."
+  OPEN
+
+  "Order status is filled."
+  FILLED
+
+  "Order status is cancelled."
+  CANCELLED
+
+  "Order status is rejected."
+  REJECTED
+
+  "Order status is partially_cancelled."
+  PARTIALLY_CANCELLED
+
+  "Order status is delayed."
+  DELAYED
+}
+
+"Possible types of odds."
+enum OddsType {
+  "American odds. Ex: +150, -200"
+  AMERICAN
+
+  "Decimal odds. Ex: 1.5, 2.9"
+  DECIMAL
+}
+
+"Possible actions that can be used in orders."
+enum OrderType {
+  """
+  A market order which doesnt constrain the price. Market orders buy or sell shares at the
+  best possible price until they are filled or no more quantity is available. If a market
+  order cannot be completely filled the unfilled quantity is cancelled.
+  """
+  MARKET
+
+  """
+  A limit order which defines a floor (for sell) or ceiling (for buy) price. The system
+  will try to buy or sell shares at the best price possible until it hits the floor or
+  ceiling limit price. Remaining unfilled amounts stay in the order book and could be
+  filled at any time later by arriving orders.
+  """
+  LIMIT
+}
+
+"The result of a user attempting to place an order."
+type OrderResult {
+  "The order that was placed if the request was successful."
+  order: Order
+
+  "The date_time for the next geolocation check."
+  nextGeolocationAt: String
+
+  "The list of errors that occurred, if any."
+  errors: [String]
+}
+
+type OrderResults {
+  "The date_time for the next geolocation check."
+  nextGeolocationAt: String
+
+  "Result for each placed order, in order."
+  results: [OrderResult!]!
+}
+
+"The result of requesting to cancel a single order."
+type CancelOrderResult {
+  "The status of the order that was requested to be cancelled."
+  status: String
+
+  "The date_time for the next geolocation check."
+  nextGeolocationAt: String
+}
+
+"The result of requesting to cancel a batch of orders. One of these is listed per order."
+type BatchCancelOrdersResult {
+  "The order id that was requested to be cancelled.."
+  orderId: rID
+
+  "The status of the order id after the attempted cancellation."
+  status: String
+
+  "The date_time for the next geolocation check."
+  nextGeolocationAt: String
+}
+
+"An order in the system."
+type Order {
+  "The unique ID of the order."
+  id: rID
+
+  "The unique ID provided from the FIX client if this is a FIX order."
+  clientOrderId: String
+
+  "The action of the order which should be `buy` or `sell`."
+  action: String
+
+  "The price that was requested with the order, if the order was a limit order."
+  price: Price
+
+  "The quantity of the order."
+  quantity: Quantity
+
+  "The amount of contracts on the order that have been filled."
+  filled: Quantity
+
+  "The status of the order."
+  status: String
+
+  "The ISO-8601 timestamp of the time the order was placed."
+  time: String
+
+  "The UNIX microseconds timestamp of the time the order was placed."
+  insertedAt: Int
+
+  "The id of the market that the order was placed on."
+  marketId: rID
+
+  "The percentage of the contracts on the order that have been filled."
+  filledPercentage: Int
+
+  "The average price of the filled contracts on the order."
+  avgPrice: Price
+
+  "The total value of the order, the total premium of all trades."
+  totalValue: Int
+
+  "The type of order which can be either `limit` or `market`."
+  orderType: String
+
+  "The IP address from which this order was placed."
+  ipAddress: String
+
+  "The device from which this order was placed."
+  deviceId: String
+
+  "The odds type used when placing the order."
+  oddsType: OddsType
+
+  "The odds value used when placing the order."
+  oddsValue: String
+
+  "The amount used when placing the order by giving amount instead of quantity."
+  amount: Int
+
+  "The order's amount that has been filled."
+  filledAmount: Int
+
+  "A UNIX microseconds timestamp indicating the extended deadline for the delayed order."
+  delayedUntil: Int
+}
+
+"A return result from mutations that return order lists."
+type OrdersWithCount {
+  "The total count of orders in the list."
+  totalCount: Int
+
+  "The list or orders returned."
+  orders: [Order]
+}
+
+"A sort order that can be passed to a query requesting a list of orders."
+input OrdersSortBy {
+  "The name of the field to sort by."
+  name: OrdersSortByField
+
+  "The direction, `asc` or `desc` for the sort."
+  direction: SortOrder
+}
+
+"Possible fields that a list of orders can be sorted by."
+enum OrdersSortByField {
+  "The quantity of the order."
+  QUANTITY
+
+  "The time that the order was placed."
+  TIME
+}
+
+"The information that describes a single participant."
+type Participant {
+  "The abbreviation of the participant."
+  abbreviation: String
+
+  "The name of the participant."
+  name: String
+
+  "The role of the participant in the event, e.g: 'home' or 'away'."
+  role: String
+}
+
+"List of markets and the count of markets in the list."
+type MarketInfosWithCount {
+  count: Int
+  marketInfos: [MarketInfo]
+}
+
+"The information that describes a single market."
+type MarketInfo {
+  "Is the market archived or not."
+  archived: Boolean
+
+  "The available bids on the market."
+  bids(
+    "An optional integer, greater than zero, to limit the number of results."
+    limit: PosInt
+
+    "An optional sort.  By default bids are sorted highest to lowest"
+    sort: SortOrder
+  ): [BidOrOffer]
+
+  "The UTC time when the market was resulted or voided."
+  settledAt: String
+
+  "The description of the market."
+  description: String
+
+  "The string that can be used for the detailed brief on the market's event."
+  detailedEventBrief: String
+
+  "The string that can be used for the brief on the market's event."
+  eventBrief: String
+
+  "The id of the event that the market is attached to."
+  eventId: rID
+
+  "The UTC start date and time of the event."
+  eventStart: String
+
+  "The status of the event that the market is attached to."
+  eventStatus: String
+
+  "The type of event associated with the market."
+  eventType: String
+
+  "The list of filters in which the market appears."
+  filters: [MarketFilter]
+
+  "The category in which the market appears: `Upcoming`, `Live` or `nil`."
+  homeCategory: String
+
+  "The time that the last probability update was received by the server."
+  lastProbabilityAt: PosInt
+
+  "Is the probability manual or from odds provider."
+  manualProbability: Boolean
+
+  "The price of the last executed trade."
+  lastTradedPrice: Int
+
+  "The unique id of the market"
+  marketId: rID
+
+  "The max price for orders and settlements in this market."
+  maxPrice: Int
+
+  "The cost of each loyalty point for amount risked by the user."
+  pointsCost: Int
+
+  "The order delay (in seconds) when the event is in progress."
+  inPlayDelaySec: Int
+
+  "The available offers on the market."
+  offers(
+    "An optional integer, greater than zero, to limit the number of results."
+    limit: PosInt
+
+    "An optional sort.  By default offers are sorted highest to lowest"
+    sort: SortOrder
+  ): [BidOrOffer]
+
+  "A JSON array describing the rules how the order's price should increment\/decrement on the UI."
+  orderPriceRules: [PriceRules]
+
+  "The text to use in describing the position."
+  position: String
+
+  "The text to use in describing the sport, e.g. Basketball."
+  sport: String
+
+  "The text to use in describing the competition, e.g. NBA."
+  competition: String
+
+  "The map of participants in the market."
+  participants: [Participant]
+
+  "The keywords that are set for the market."
+  keywords: [String]
+
+  "What is the probability for the market"
+  probability: Float
+
+  "The market price that the market is trading at."
+  price: Float
+
+  "The change in price over the last 24 hours."
+  priceChange24h: Int
+
+  "The question that the market is asking."
+  question: String
+
+  "A list of the last 15 recent trades on the market."
+  recentTrades: [RecentTrade]
+
+  "The result of the market."
+  result: String
+
+  "The status of the market."
+  status: String
+
+  "Trading flag - if the market is open for trading or not"
+  trading: Boolean
+
+  "A unique symbol for this market."
+  symbol: String
+
+  "The human readable short title for the market."
+  shortTitle: String
+
+  "The human readable group title for the market."
+  groupTitle: String
+
+  "The human readable title for the market."
+  title: String
+
+  "The ISO8601 formatted string of when the market info was created.  See `timestampInt`."
+  timestamp: String
+
+  "The UNIX microseconds timestamp of when this market info was created."
+  timestampInt: Int
+
+  "The list of filters to use for organizing trades, settlements and related items."
+  tradingFilters: [MarketFilter]
+
+  "The specifier for the rules to properly determine the market."
+  specifier: String
+
+  "DEPRECATED The specifier for the rules to properly determine the market."
+  rulesSpecifier: String
+
+  "The rules for this market."
+  rules: String
+
+  "Trade volume this market has had in the last 24 hours"
+  volume24h: Int
+}
+
+"A filter that can be passed to market info queries."
+type MarketFilter {
+  "The category of market to include or null if not filtered."
+  category: String
+
+  "The subcategory of market to include or null if not filtered."
+  subcategory: String
+
+  "The section of market to include or null if not filtered."
+  section: String
+
+  "The grouping of the market within its section. This may be `nil` or and empty string."
+  grouping: String
+
+  "Whether this filter has been set manually or automatically."
+  manual: Boolean
+}
+
+"A rule that instructs the UI on the best way to increment and decrement the price."
+type PriceRules {
+  "The smallest price for the rule."
+  from: Int
+
+  "The greatest price for the rule."
+  to: Int
+
+  "The amount ot increment when the user presses an increment button."
+  inc: Int
+}
+
+"A data structure that defines an anonymized recent trade."
+type RecentTrade {
+  "The price of the trade."
+  price: Int
+
+  "The number of contracts the trade executed for."
+  quantity: Quantity
+
+  "Whether the `buyer` or the `seller` took the liquidity."
+  liquidityTaker: String
+
+  "The ISO8601 formatted string of when the market info was created same as the `timestampInt`."
+  timestamp: String
+
+  "The UNIX microseconds timestamp of when this market info was created."
+  timestampInt: Int
+}
+
+"A data structure that describes the bid or offer for the market."
+type BidOrOffer {
+  "The price of the bid or offer."
+  price: Int
+
+  "The quantity of contracts of the bid or offer."
+  quantity: Quantity
+}
+
+"Filter options for limiting market_infos."
+enum MarketFilterEnum {
+  """
+  Return active markets (default).
+
+  A market is 'active' if it's 'pre_open', 'open', 'suspended' or
+  ('close' or 'cancelled' but not yet archived)
+  """
+  ACTIVE
+
+  """
+  Return markets whose homeCategory is "Live" or "Upcoming"
+  If there are any 'Live' markets (regardless of the number), no 'upcoming' are returned.
+  "Upcoming" markets are only those that have status "open"
+  If there are neither "Live" nor "Upcoming" markets, an empty list will be returned.
+
+  Limited to a maximum of 10 records.  The 'limit' parameter can further constrain the results.
+  """
+  LIVE_AND_UPCOMING
+}
+
+"Different types of filters."
+enum MarketFilterGroupEnum {
+  "A market's trade filters"
+  TRADE
+
+  "A market's organizational filters"
+  BASIC
+}
+
+enum StatusEnum {
+  "Market status of open"
+  OPEN
+
+  "Market status of pre-open"
+  PRE_OPEN
+
+  "Market status of cancelled"
+  CANCELLED
+
+  "Market status of closed"
+  CLOSED
+
+  "Market status of resulted"
+  RESULTED
+
+  "Market status of voided"
+  VOIDED
+}
+
+enum TradingEnum {
+  "Market open for trading"
+  TRUE
+
+  "Market closed for trading"
+  FALSE
+}
+
+"Parameters for selecting markets based on filter tree"
+input MarketFilterType {
+  "Which type of filter to query on"
+  group: MarketFilterGroupEnum!
+
+  "A path (list of node names) to a leaf in the market filter tree to set of markets"
+  path: [String!]!
+}
+
+"Query parameters for the `marketInfos` query"
+input MarketInfosInput {
+  "A list of market ids to return settlements for. If specified, 'limit' is ignored."
+  marketIds: [rID!]
+
+  "The type of filter that should be applied"
+  filterBy: MarketFilterEnum
+
+  "The specification of markets to fetch by filter name"
+  marketFilter: MarketFilterType
+
+  "The keyword regular expression to match."
+  keywordRegex: String
+
+  "Number of records to constrain the return.  'nil' and '0' will not limit results"
+  limit: NonNegInt
+
+  "Sport or competition to filter the markets by - i.e (Soccer, Cricket)."
+  sports: [String!]
+
+  "Competition to filter the markets by - i.e (NBA, UEFA)."
+  competitions: [String!]
+
+  "Status of the market - (open, pre_open)."
+  status: StatusEnum
+
+  "Trading filter - true means it's open for trading, false means can't trade yet."
+  trading: TradingEnum
+}
+
+"Information about the Market Filter Tree"
+type MarketFilterTree {
+  """
+  Filter tree as JSON
+
+  "name" is the filter value at this level (presently category, sub-category, and section)
+  "children" is a sorted array of the filters below the level
+
+  {
+    "children": [
+    {
+      "name": "MLB",
+      "children": [
+        {
+          "name": "Games",
+          "children": [
+            {
+              "name": "Today",
+              "children": []
+            },
+            {
+              "name": "Upcoming",
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "AL Divisions",
+          "children": [
+            {
+              "name": "Central",
+              "children": []
+            },
+            {
+              "name": "East",
+              "children": []
+            },
+            {
+              "name": "West",
+              "children": []
+            }
+          ]
+        },
+      ...
+    }
+  """
+  filtersAsJson: String
+}
+
+type LicenseResponse {
+  license: String
+  expiresAt: String
+}
