@@ -1,0 +1,400 @@
+# ShopCloud Proxy Client
+
+[![PyPI version](https://badge.fury.io/py/shopcloud-proxy-client.svg)](https://badge.fury.io/py/shopcloud-proxy-client)
+[![Python Support](https://img.shields.io/pypi/pyversions/shopcloud-proxy-client.svg)](https://pypi.org/project/shopcloud-proxy-client/)
+[![Tests](https://github.com/Talk-Point/shopcloud-proxy-api/actions/workflows/test-client.yml/badge.svg)](https://github.com/Talk-Point/shopcloud-proxy-api/actions/workflows/test-client.yml)
+
+Ein einfacher Python-Client für die ShopCloud Proxy API. Funktioniert als Drop-in-Replacement für `requests` - ohne komplexe Änderungen an Ihrem bestehenden Code!
+
+## Features
+
+- ✨ **Einfach zu verwenden**: Minimale Änderungen an bestehendem Code nötig
+- 🔄 **Kompatibel mit requests**: Gleiche API wie `requests.Session`
+- 🔐 **Automatische Authentifizierung**: Token-Verwaltung erfolgt automatisch
+- 🔁 **Automatisches Retry**: Bei transienten Fehlern (502, 503, 504) wird automatisch wiederholt
+- ⚡ **Proaktiver Token-Refresh**: Token wird erneuert bevor er abläuft
+- 🎯 **Bessere Error Messages**: Spezifische Exceptions für verschiedene Fehlertypen
+- 🚀 **Keine komplexen Änderungen**: Einfach Session erstellen und loslegen
+
+## Installation
+
+```bash
+# Aus lokalem Verzeichnis installieren
+cd client
+pip install -e .
+
+# Oder mit pip (wenn auf PyPI veröffentlicht)
+pip install shopcloud-proxy-client
+```
+
+## Schnellstart
+
+### Variante 1: ProxySession (empfohlen)
+
+```python
+from shopcloud_proxy_client import ProxySession
+
+# Session erstellen (automatisches Login)
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+# Einfach verwenden wie requests!
+response = session.get("https://api.github.com/users/octocat")
+print(response.json())
+print(f"Status: {response.status_code}")
+
+# POST mit JSON
+response = session.post(
+    "https://httpbin.org/post",
+    json={"name": "Test", "value": 123}
+)
+print(response.json())
+
+# Mit Custom Headers
+response = session.get(
+    "https://api.example.com/data",
+    headers={"X-API-Key": "secret123"}
+)
+```
+
+### Variante 2: Globale Konfiguration
+
+```python
+import shopcloud_proxy_client as proxy
+
+# Einmalig konfigurieren
+proxy.configure(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+# Dann einfach verwenden
+response = proxy.get("https://api.github.com/users/octocat")
+print(response.json())
+
+response = proxy.post("https://httpbin.org/post", json={"key": "value"})
+```
+
+### Variante 3: Context Manager
+
+```python
+from shopcloud_proxy_client import ProxySession
+
+with ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+) as session:
+    response = session.get("https://api.github.com/zen")
+    print(response.text)
+# Session wird automatisch geschlossen
+```
+
+## Bestehenden Code migrieren
+
+### Vorher (mit requests):
+
+```python
+import requests
+
+response = requests.get("https://api.github.com/users/octocat")
+print(response.json())
+
+response = requests.post(
+    "https://api.example.com/data",
+    json={"name": "test"},
+    headers={"X-API-Key": "secret"}
+)
+```
+
+### Nachher (mit Proxy):
+
+```python
+from shopcloud_proxy_client import ProxySession
+
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+# Rest des Codes bleibt GLEICH!
+response = session.get("https://api.github.com/users/octocat")
+print(response.json())
+
+response = session.post(
+    "https://api.example.com/data",
+    json={"name": "test"},
+    headers={"X-API-Key": "secret"}
+)
+```
+
+## API-Dokumentation
+
+### ProxySession
+
+```python
+ProxySession(
+    proxy_url: str,                        # URL der Proxy API
+    username: str,                         # Ihr Username
+    password: str,                         # Ihr Passwort
+    auto_login: bool = True,               # Automatisch beim Start einloggen
+    default_timeout: int = 30,             # Standard-Timeout in Sekunden
+    default_headers: Dict[str, str] = None,# Standard-Headers für alle Requests
+    max_retries: int = 3,                  # Anzahl der Wiederholungen bei Fehlern
+    retry_delay: float = 1.0               # Verzögerung zwischen Retries in Sekunden
+)
+```
+
+**Methoden:**
+- `get(url, **kwargs)` - GET Request
+- `post(url, **kwargs)` - POST Request
+- `put(url, **kwargs)` - PUT Request
+- `patch(url, **kwargs)` - PATCH Request
+- `delete(url, **kwargs)` - DELETE Request
+- `options(url, **kwargs)` - OPTIONS Request
+- `head(url, **kwargs)` - HEAD Request
+
+**Unterstützte kwargs:**
+- `headers`: Dict mit Custom Headers
+- `json`: JSON Body (wird automatisch serialisiert)
+- `data`: Raw Body Data
+- `timeout`: Timeout in Sekunden (überschreibt Standard)
+
+### ProxyResponse
+
+Das Response-Objekt ist kompatibel mit `requests.Response`:
+
+```python
+response = session.get("https://api.example.com")
+
+# Attribute
+response.status_code  # HTTP Status Code (int)
+response.headers      # Response Headers (dict)
+response.ok           # True wenn 200-299 (bool)
+response.url          # Original URL (str)
+response.text         # Body als String (str)
+response.content      # Body als Bytes (bytes)
+
+# Methoden
+response.json()              # Parse JSON
+response.raise_for_status()  # Raise Exception bei Fehler
+```
+
+## Erweiterte Beispiele
+
+### Mit Error Handling
+
+```python
+from shopcloud_proxy_client import ProxySession
+import requests
+
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+try:
+    response = session.get("https://api.example.dev/data")
+    response.raise_for_status()  # Raise bei 4xx/5xx
+    data = response.json()
+    print(f"Success: {data}")
+except requests.HTTPError as e:
+    print(f"HTTP Error: {e}")
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+### Mehrere Requests mit einer Session
+
+```python
+from shopcloud_proxy_client import ProxySession
+
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+# Token wird automatisch wiederverwendet
+users = ["octocat", "torvalds", "gvanrossum"]
+for user in users:
+    response = session.get(f"https://api.github.com/users/{user}")
+    data = response.json()
+    print(f"{user}: {data.get('name')}")
+```
+
+### Custom Timeout
+
+```python
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort",
+    default_timeout=60  # 60 Sekunden Standard
+)
+
+# Oder per Request
+response = session.get("https://slow-api.example.com", timeout=120)
+```
+
+### Default Headers
+
+```python
+# Session mit Standard-Headers erstellen
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort",
+    default_headers={
+        "User-Agent": "MyApp/1.0",
+        "Accept": "application/json",
+        "X-Client-ID": "my-client"
+    }
+)
+
+# Diese Headers werden automatisch bei jedem Request mitgesendet
+response = session.get("https://api.example.com/data")
+
+# Request-spezifische Headers überschreiben Default-Headers
+response = session.get(
+    "https://api.example.com/data",
+    headers={
+        "User-Agent": "SpecialAgent/2.0",  # Überschreibt Default
+        "X-Request-ID": "123"               # Zusätzlicher Header
+    }
+)
+# Resultierende Headers: User-Agent=SpecialAgent/2.0, Accept=application/json,
+#                        X-Client-ID=my-client, X-Request-ID=123
+```
+
+### Automatisches Retry & Error Handling
+
+```python
+from shopcloud_proxy_client import (
+    ProxySession,
+    ProxyRateLimitError,
+    ProxyTimeoutError,
+    ProxyAuthenticationError
+)
+
+# Session mit Custom Retry-Einstellungen
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort",
+    max_retries=5,        # 5 Versuche statt 3
+    retry_delay=0.5       # 0.5 Sekunden zwischen Versuchen
+)
+
+# Automatisches Retry bei 502, 503, 504 Fehlern
+# Mit exponentiellem Backoff: 0.5s, 1.0s, 1.5s, 2.0s, 2.5s
+try:
+    response = session.get("https://unreliable-api.example.com")
+except ProxyRateLimitError:
+    print("Rate Limit erreicht")
+except ProxyTimeoutError:
+    print("Request hat zu lange gedauert")
+except ProxyAuthenticationError:
+    print("Authentifizierung fehlgeschlagen")
+```
+
+### Proaktiver Token-Refresh
+
+```python
+# Token wird automatisch 30 Sekunden vor Ablauf erneuert
+# Keine manuellen Eingriffe nötig!
+
+session = ProxySession(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+# Token-Ablauf wird aus JWT extrahiert und überwacht
+# Bei jedem Request wird geprüft, ob Token bald abläuft
+# Falls ja: automatischer Refresh VOR dem Request
+for i in range(1000):
+    response = session.get("https://api.example.com/data")
+    # Token wird automatisch erneuert wenn nötig
+```
+
+## Unterschiede zu requests
+
+Der Client ist weitgehend kompatibel mit `requests`, aber es gibt einige Einschränkungen:
+
+**Unterstützt:**
+- ✅ HTTP Methoden (GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD)
+- ✅ Custom Headers
+- ✅ JSON und String Bodies
+- ✅ Timeout
+- ✅ Response Parsing (json(), text, content)
+- ✅ Error Handling (raise_for_status)
+
+**Nicht unterstützt:**
+- ❌ Datei-Uploads (files parameter)
+- ❌ Streaming Responses
+- ❌ Session Cookies
+- ❌ SSL Verification Parameter
+- ❌ Proxies Parameter (wird ja schon geproxyt!)
+
+## Entwicklung
+
+### Tests ausführen
+
+```bash
+cd client
+pip install -e ".[dev]"
+pytest tests/
+```
+
+### Code-Qualität prüfen
+
+```bash
+ruff check .
+```
+
+## Troubleshooting
+
+### "Proxy client not configured"
+
+Wenn Sie die globalen Funktionen (`proxy.get()`) verwenden, müssen Sie zuerst `configure()` aufrufen:
+
+```python
+import shopcloud_proxy_client as proxy
+
+proxy.configure(
+    proxy_url="https://test-proxy.example.dev",
+    username="ihr-username",
+    password="ihr-passwort"
+)
+
+response = proxy.get("https://api.example.com")
+```
+
+Oder verwenden Sie direkt `ProxySession`.
+
+### Token abgelaufen
+
+Der Client erneuert automatisch abgelaufene Tokens. Wenn Sie einen 401-Fehler sehen, überprüfen Sie Ihre Credentials.
+
+### Timeouts
+
+Standardmäßig ist der Timeout 30 Sekunden. Für langsame APIs erhöhen Sie ihn:
+
+```python
+response = session.get("https://slow-api.example.com", timeout=120)
+```
+
+## Lizenz
+
+MIT
+
+## Support
+
+Bei Fragen oder Problemen öffnen Sie bitte ein Issue auf GitHub.
