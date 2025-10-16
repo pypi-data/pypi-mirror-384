@@ -1,0 +1,65 @@
+fail_fast: false # do not stop after failure (can still interupt manually...)
+
+ci:
+    skip: [testing] # pre-commit.ci should ignore the testing hook
+
+repos:
+  # Add some general purpose useful hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # Make sure that contained YAML files are well-formed
+      - id: check-yaml
+      # Trim trailing whitespace of all sorts
+      - id: trailing-whitespace
+      # Simple parser validation of e.g. pyproject.toml
+      - id: check-toml
+      # Unify file endings
+      - id: end-of-file-fixer
+      # Normalize to LF line endings (Unix-style)
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      # Prevent committing private keys
+      - id: detect-private-key
+      # Ensure no merge conflict markers are committed
+      - id: check-merge-conflict
+      # Detect case conflicts in filenames, on macOS/Windows filenames are case-insensitive, but not on Linux
+      - id: check-case-conflict
+      # Check for python syntax errors
+      - id: check-ast
+
+  # formating / linting with ruff
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff
+        types_or: [python] # ignore jupyter for now [python, jupyter]
+        args: [--fix]
+      - id: ruff-format
+        types_or: [python] # ignore jupyter for now [python, jupyter]
+
+  # type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+
+  # pytest hook to run tests on commit
+  - repo: local
+    hooks:
+      - id: testing
+        name: Run pytest
+        entry: uvx hatch run hatch-test.py3.10-stable:pytest
+        language: system
+        types: [python]
+        pass_filenames: false # ignore file changes?
+        always_run: true
+
+      # Jupyter notebook execution hook
+      #- id: execute-notebooks
+      #  name: Execute Jupyter notebooks
+      #  entry: jupyter nbconvert --to notebook --execute --inplace
+      #  language: system
+      #  files: ^docs/notebooks/.*\.ipynb$
+      #  pass_filenames: true
+      #  require_serial: true
