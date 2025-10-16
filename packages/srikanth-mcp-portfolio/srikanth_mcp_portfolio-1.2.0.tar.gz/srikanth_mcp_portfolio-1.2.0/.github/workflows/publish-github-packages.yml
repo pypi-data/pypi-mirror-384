@@ -1,0 +1,284 @@
+name: Publish to All Registries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-npm-github-registry:
+    name: "📦 Publish NPM Package to GitHub Registry"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: "🔄 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "⚙️ Setup Node.js with GitHub Registry"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@srikanth-karthi'
+
+      - name: "📥 Install NPM Dependencies"
+        run: npm ci
+
+      - name: "🧪 Run Test Suite"
+        run: npm test
+
+      - name: "🔨 Build Package Assets"
+        run: npm run build --if-present
+
+      - name: "🚀 Publish to GitHub Packages"
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm-public-registry:
+    name: "📦 Publish NPM Package to Public Registry"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: "🔄 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "⚙️ Setup Node.js with Public Registry"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: "🔧 Configure Package for Public NPM"
+        run: |
+          sed 's/@srikanth-karthi\/srikanth-mcp-portfolio-server/srikanth-mcp-portfolio-server/g' package.json > package-public.json
+          node -e "
+            const pkg = require('./package-public.json');
+            delete pkg.publishConfig;
+            require('fs').writeFileSync('./package-public.json', JSON.stringify(pkg, null, 2));
+          "
+          mv package-public.json package.json
+
+      - name: "📥 Install NPM Dependencies"
+        run: npm ci
+
+      - name: "🧪 Run Test Suite"
+        run: npm test
+
+      - name: "🔨 Build Package Assets"
+        run: npm run build --if-present
+
+      - name: "🚀 Publish to Public NPM Registry"
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-python-pypi-registry:
+    name: "🐍 Publish Python Package to PyPI"
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: "🔄 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Setup Python Environment"
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: "📥 Install Python Build Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: "🔨 Build Python Distribution Package"
+        run: python -m build
+
+      - name: "🔍 Check if Version Already Exists on PyPI"
+        id: pypi_version_check
+        run: |
+          PACKAGE_NAME=$(python -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c.get('metadata', 'name', fallback='mcp-portfolio-server'))")
+          VERSION=$(python -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c.get('metadata', 'version', fallback='1.0.0'))")
+          if pip index versions "${PACKAGE_NAME}" 2>/dev/null | grep -q "${VERSION}"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Version ${VERSION} already exists on PyPI"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Version ${VERSION} does not exist on PyPI, proceeding with publish"
+          fi
+        continue-on-error: true
+
+      - name: "🚀 Publish to PyPI via Trusted Publishing"
+        if: steps.pypi_version_check.outputs.exists == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+
+      - name: "⚠️ Skip PyPI Publish - Version Already Exists"
+        if: steps.pypi_version_check.outputs.exists == 'true'
+        run: echo "Skipping PyPI publish as version already exists"
+
+  publish-docker-github-container-registry:
+    name: "🐳 Publish Docker Images to GitHub Container Registry"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: "🔄 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "🔧 Setup Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🔑 Login to GitHub Container Registry"
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "🏷️ Extract Version from Git Tag or Input"
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "🔨 Build & Push Node.js Docker Image"
+        id: node_image_push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: nodejs
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server:latest
+            ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server:${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: "🔐 Generate Build Provenance (Node.js)"
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server
+          subject-digest: ${{ steps.node_image_push.outputs.digest }}
+          push-to-registry: true
+
+      - name: "🔨 Build & Push Python Docker Image"
+        id: python_image_push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: python
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server:python-latest
+            ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server:python-${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: "🔐 Generate Build Provenance (Python)"
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server
+          subject-digest: ${{ steps.python_image_push.outputs.digest }}
+          push-to-registry: true
+
+      - name: "🔨 Build & Push Multi-Runtime Docker Image"
+        id: multi_image_push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: multi
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server:multi-latest
+            ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server:multi-${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: "🔐 Generate Build Provenance (Multi)"
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/mcp-portfolio-server
+          subject-digest: ${{ steps.multi_image_push.outputs.digest }}
+          push-to-registry: true
+
+  publish-docker-hub-registry:
+    name: "🐳 Publish Docker Images to Docker Hub"
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  
+      contents: read
+    steps:
+      - name: "🔄 Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "🔧 Setup Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🔑 Login to Docker Hub Registry"
+        uses: docker/login-action@v3
+        with:
+          username: srikanthkarthi
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: "🏷️ Extract Version from Git Tag or Input"
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "🔨 Build & Push Node.js Docker Image"
+        id: node_dockerhub_push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: nodejs
+          push: true
+          tags: |
+            srikanthkarthi/mcp-portfolio-server:latest
+            srikanthkarthi/mcp-portfolio-server:${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: "🔨 Build & Push Python Docker Image"
+        id: python_dockerhub_push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: python
+          push: true
+          tags: |
+            srikanthkarthi/mcp-portfolio-server:python-latest
+            srikanthkarthi/mcp-portfolio-server:python-${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: "🔨 Build & Push Multi-Runtime Docker Image"
+        id: multi_dockerhub_push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: multi
+          push: true
+          tags: |
+            srikanthkarthi/mcp-portfolio-server:multi-latest
+            srikanthkarthi/mcp-portfolio-server:multi-${{ steps.version.outputs.version }}
+          platforms: linux/amd64,linux/arm64
