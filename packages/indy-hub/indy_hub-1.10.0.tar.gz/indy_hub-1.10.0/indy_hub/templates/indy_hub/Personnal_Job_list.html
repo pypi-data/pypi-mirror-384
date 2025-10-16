@@ -1,0 +1,268 @@
+{% extends "allianceauth/base-bs5.html" %}
+{% load i18n %}
+{% load evelinks %}
+{% load static %}
+{% load dict_get %}
+
+{% block page_title %}{% trans "Industry Jobs" %}{% endblock page_title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'indy_hub/css/page_headers.css' %}">
+<link rel="stylesheet" href="{% static 'indy_hub/css/jobs.css' %}">
+{% endblock extra_css %}
+
+{% block content %}
+<div class="container-fluid my-4">
+    <div class="page-header mb-4">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div>
+                <h1 class="h2 mb-1">
+                    <i class="fas fa-industry me-2"></i>
+                    {% trans "Industry Jobs" %}
+                </h1>
+                <p class="description">{% trans "Track your industry jobs and progress in real time" %}</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'indy_hub:index' %}" class="btn btn-outline-light">
+                    <i class="fas fa-arrow-left me-1"></i>{% trans "Back to Dashboard" %}
+                </a>
+                <button type="button" class="btn btn-light text-primary" onclick="location.href='?refresh=1'">
+                    <i class="fas fa-sync-alt me-1"></i>{% trans "Refresh Data" %}
+                </button>
+            </div>
+        </div>
+        <i class="fas fa-cogs header-bg"></i>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="filter-section mb-4">
+        <form method="get">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3">
+                    <label class="form-label text-muted fw-bold">{% trans 'Search' %}</label>
+                    <input type="text" name="search" value="{{ current_filters.search }}" class="form-control"
+                        id="jobSearch" placeholder="{% trans 'Job, blueprint, character...' %}">
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label text-muted fw-bold">{% trans 'Status' %}</label>
+                    <select name="status" class="form-select" id="statusFilter">
+                        <option value="">{% trans 'All Status' %}</option>
+                        {% for s in statuses %}
+                        <option value="{{ s }}" {% if current_filters.status == s %}selected{% endif %}>{{ s|title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label text-muted fw-bold">{% trans 'Activity' %}</label>
+                    <select name="activity" class="form-select" id="activityFilter">
+                        <option value="">{% trans 'All Activities' %}</option>
+                        {% for aid,name in activities %}
+                        <option value="{{ aid }}" {% if current_filters.activity == aid %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-3">
+                    <label class="form-label text-muted fw-bold">{% trans 'Character' %}</label>
+                    <select name="character" class="form-select" id="characterFilter">
+                        <option value="">{% trans 'All Characters' %}</option>
+                        {% for cid in character_ids %}
+                        <option value="{{ cid }}" {% if current_filters.character|stringformat:'s' == cid|stringformat:'s' %}selected{% endif %}>
+                            {% with name=character_map|dict_get:cid %}{{ name|default_if_none:cid }}{% endwith %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-lg-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter me-1"></i>{% trans 'Apply Filters' %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Stats Summary -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="card-body text-center">
+                    <div class="h3 text-info mb-1">{{ statistics.total|default:0 }}</div>
+                    <small class="text-muted fw-bold">{% trans 'Total Jobs' %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="card-body text-center">
+                    <div class="h3 text-warning mb-1">{{ statistics.active|default:0 }}</div>
+                    <small class="text-muted fw-bold">{% trans 'Active Jobs' %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="card-body text-center">
+                    <div class="h3 text-success mb-1">{{ statistics.completed|default:0 }}</div>
+                    <small class="text-muted fw-bold">{% trans 'Completed' %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="card-body text-center">
+                    <div class="h3 text-secondary mb-1">{{ character_ids|length }}</div>
+                    <small class="text-muted fw-bold">{% trans 'Characters' %}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jobs grouped by activity -->
+    <div class="job-groups">
+        {% if job_groups %}
+        {% for group in job_groups %}
+        <section class="job-group-section mb-5">
+            <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-body-secondary text-primary"
+                        style="width:48px;height:48px;">
+                        <i class="{{ group.icon }}"></i>
+                    </span>
+                    <div>
+                        <h2 class="h4 mb-1">{{ group.title }}</h2>
+                        <p class="text-muted small mb-0">{{ group.subtitle }}</p>
+                    </div>
+                </div>
+                <span class="badge text-uppercase fw-semibold {{ group.badge_variant }} px-3 py-2">{{ group.chip }}</span>
+            </div>
+            <div class="row g-4">
+                {% for job in group.jobs %}
+                <div class="col-xl-4 col-lg-6">
+                    <div class="card h-100 shadow-sm border-0 job-card">
+                        <div class="card-body d-flex flex-column gap-3">
+                            <div class="d-flex justify-content-between gap-3">
+                                <div class="d-flex gap-3 align-items-center">
+                                    {% if job.icon_url %}
+                                    <img src="{{ job.icon_url }}" alt="{{ job.blueprint_type_name }}" class="rounded"
+                                        style="width:48px;height:48px;object-fit:cover;" loading="lazy"
+                                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    {% endif %}
+                                    <span class="fallback fs-3 text-secondary" style="display:none;"><i class="fas fa-industry"></i></span>
+                                    <div>
+                                        <h3 class="h6 mb-1 text-truncate">{{ job.blueprint_type_name|default:job.blueprint_type_id }}</h3>
+                                        <p class="text-muted small mb-0"><i class="fas fa-user me-1"></i>{{ job.display_character_name }}</p>
+                                    </div>
+                                </div>
+                                <span class="badge {{ group.badge_variant }} align-self-start px-3 py-2">{{ group.chip }}</span>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 small">
+                                <span class="badge bg-light text-dark border">{{ job.runs }} {% trans 'runs' %}</span>
+                                {% if job.successful_runs %}
+                                <span class="badge bg-light text-dark border">{{ job.successful_runs }} {% trans 'successful' %}</span>
+                                {% endif %}
+                                <span class="badge bg-light text-dark border">{{ job.status_label }}</span>
+                                {% if job.output_name %}
+                                <span class="badge bg-light text-dark border">{{ job.output_name }}</span>
+                                {% endif %}
+                            </div>
+                            {% with progress=job.progress_percent|default:0 %}
+                            {% with progress_numeric=progress|add:0 %}
+                            <div class="job-progress-panel" data-progress="{{ progress_numeric }}">
+                                <div class="progress gradient-progress {% if job.is_completed %}progress-state-complete{% elif progress_numeric >= 75 %}progress-state-late{% elif progress_numeric >= 40 %}progress-state-mid{% elif progress_numeric > 0 %}progress-state-early{% else %}progress-state-idle{% endif %}">
+                                    <div class="progress-bar {% if job.is_completed %}progress-bar-complete{% elif progress_numeric >= 75 %}progress-bar-late{% elif progress_numeric >= 40 %}progress-bar-mid{% elif progress_numeric > 0 %}progress-bar-early{% else %}progress-bar-idle{% endif %}{% if job.is_completed %} progress-bar-striped{% endif %}"
+                                        role="progressbar"
+                                        aria-valuenow="{{ progress_numeric }}" aria-valuemin="0"
+                                        aria-valuemax="100"
+                                        style="width: {{ progress_numeric }}%;">
+                                        <span class="visually-hidden">{{ progress|floatformat:0 }}%</span>
+                                    </div>
+                                    <span class="progress-label">{{ progress|floatformat:0 }}%</span>
+                                </div>
+                                <small class="text-muted d-block mt-1"><i class="fas fa-hourglass-half me-1"></i>{{ job.display_eta|default:'--:--:--' }}</small>
+                            </div>
+                            {% endwith %}
+                            {% endwith %}
+                            {% if job.research_details %}
+                            <div class="d-flex flex-column small bg-light rounded-3 px-3 py-2">
+                                <span class="text-muted text-uppercase fw-semibold mb-1">{% trans 'Research levels' %}</span>
+                                {% with details=job.research_details %}
+                                {% if details.base != None and details.target != None %}
+                                <span class="fw-semibold">{{ details.attribute }} {{ details.base }} → {{ details.target }} / {{ details.max }}</span>
+                                {% else %}
+                                <span class="text-muted">{% trans 'Research level data unavailable' %}</span>
+                                {% endif %}
+                                {% if details.increments %}
+                                <span class="text-muted">
+                                    {% blocktrans count run_count=details.increments %}
+                                    {{ run_count }} run scheduled
+                                    {% plural %}
+                                    {{ run_count }} runs scheduled
+                                    {% endblocktrans %}
+                                </span>
+                                {% endif %}
+                                {% endwith %}
+                            </div>
+                            {% endif %}
+                            {% if job.copy_details %}
+                            <div class="d-flex flex-column small bg-light rounded-3 px-3 py-2">
+                                <span class="text-muted text-uppercase fw-semibold mb-1">{% trans 'Copy output' %}</span>
+                                <span class="fw-semibold">
+                                    {% blocktrans with runs=job.copy_details.runs %}
+                                    {{ runs }} copies
+                                    {% endblocktrans %}
+                                </span>
+                                {% if job.copy_details.licensed_runs %}
+                                <span class="text-muted">
+                                    {% blocktrans with licensed=job.copy_details.licensed_runs %}
+                                    {{ licensed }} licensed runs
+                                    {% endblocktrans %}
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if group.key == 'invention' and job.probability_percent != None %}
+                            <div class="d-flex flex-column small bg-light rounded-3 px-3 py-2">
+                                <span class="text-muted text-uppercase fw-semibold mb-1">{% trans 'Success chance' %}</span>
+                                <span class="fw-semibold">{{ job.probability_percent }}%</span>
+                            </div>
+                            {% endif %}
+                            {% if group.key == 'reactions' %}
+                            <div class="d-flex flex-column small bg-light rounded-3 px-3 py-2">
+                                <span class="text-muted text-uppercase fw-semibold mb-1">{% trans 'Reaction facility' %}</span>
+                                <span class="fw-semibold">{{ job.location_name|default:job.station_id }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="card-footer bg-transparent border-0 d-flex justify-content-between small text-muted">
+                            <span><i class="fas fa-play-circle me-1"></i>{{ job.start_date|date:"Y-m-d H:i" }}</span>
+                            <span>
+                                {% if job.is_completed %}
+                                <i class="fas fa-flag-checkered me-1"></i>{{ job.end_date|date:"Y-m-d H:i" }}
+                                {% else %}
+                                <i class="fas fa-stopwatch me-1"></i>{{ job.end_date|date:"Y-m-d H:i" }}
+                                {% endif %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+        {% else %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-clipboard-list-check fa-2x text-muted mb-3"></i>
+                <h2 class="h5">{% trans 'No industry jobs found.' %}</h2>
+                <p class="text-muted small mb-0">{% trans 'Start a new job in-game and refresh to see it here.' %}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock content %}
+
+{% block extra_javascript %}
+<script src="{% static 'indy_hub/js/jobs.js' %}"></script>
+<script src="{% static 'indy_hub/js/personal_job_list.js' %}"></script>
+{% endblock extra_javascript %}
