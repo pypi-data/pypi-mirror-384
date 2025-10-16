@@ -1,0 +1,154 @@
+// -*- c++ -*-
+
+#define PYOPENCL_DEFINE_CDOUBLE
+// #pragma OPENCL_EXTENSION cl_amd_printf : enable
+// #pragma OPENCL_EXTENSION cl_intel_printf : enable
+
+#ifndef BITREV_PERM
+#define BITREV_PERM
+
+#if defined(V1)
+#define VSIZE 1
+#elif defined(V2)
+#define VSIZE 2
+#elif defined(V3)
+#define VSIZE 3
+#elif defined(V4)
+#define VSIZE 4
+#endif
+
+#ifdef USE_FLOAT16
+#ifdef cl_khr_fp16
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
+#define SUPPORT_FLOAT16
+#elif cl_amd_fp16
+#pragma OPENCL EXTENSION cl_amd_fp16 : enable
+#define SUPPORT_FLOAT16
+#endif
+#endif
+
+#ifdef USE_FLOAT32
+#define SUPPORT_FLOAT32
+#endif
+
+#ifdef USE_COMPLEX64
+#define SUPPORT_COMPLEX64
+#define SUPPORT_COMPLEX
+#endif
+
+#ifdef USE_FLOAT64
+#ifdef cl_khr_fp64
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#define SUPPORT_FLOAT64
+#elif cl_amd_fp64
+#pragma OPENCL EXTENSION cl_amd_fp64 : enable
+#define SUPPORT_FLOAT64
+#endif
+#endif
+
+#ifdef USE_COMPLEX128
+#define SUPPORT_COMPLEX128
+#define SUPPORT_COMPLEX
+#endif
+
+#ifdef SUPPORT_FLOAT16
+typedef half dtype;
+// See vload_halfn and vstore_loadn documentation.
+#if defined(V1)
+typedef half dtypex;
+#endif
+#if defined(V2)
+typedef half2 dtypex;
+#define loadx(a, b) vload2_half(a, b)
+#define storex(a, b, c) vstore2_half(a, b, c)
+#endif
+#if defined(V3)
+typedef half3 dtypex;
+#define loadx(a, b) vload3_half(a, b)
+#define storex(a, b, c) vstore3_half(a, b, c)
+#endif
+#if defined(V4)
+typedef half4 dtypex;
+#define loadx(a, b) vload4_half(a, b)
+#define storex(a, b, c) vstore4_half(a, b, c)
+#endif
+#endif
+
+#ifdef SUPPORT_FLOAT32
+typedef float dtype;
+#if defined(V1)
+typedef float dtypex;
+#endif
+#if defined(V2)
+typedef float2 dtypex;
+#define loadx(a, b) vload2(a, b)
+#define storex(a, b, c) vstore2(a, b, c)
+#endif
+#if defined(V3)
+typedef float3 dtypex;
+#define loadx(a, b) vload3(a, b)
+#define storex(a, b, c) vstore3(a, b, c)
+#endif
+#if defined(V4)
+typedef float4 dtypex;
+#define loadx(a, b) vload4(a, b)
+#define storex(a, b, c) vstore4(a, b, c)
+#endif
+#endif
+
+#ifdef SUPPORT_FLOAT64
+typedef double dtype;
+#if defined(V1)
+typedef double dtypex;
+#endif
+#if defined(V2)
+typedef double2 dtypex;
+#define loadx(a, b) vload2(a, b)
+#define storex(a, b, c) vstore2(a, b, c)
+#endif
+#if defined(V3)
+typedef double3 dtypex;
+#define loadx(a, b) vload3(a, b)
+#define storex(a, b, c) vstore3(a, b, c)
+#endif
+#if defined(V4)
+typedef double4 dtypex;
+#define loadx(a, b) vload4(a, b)
+#define storex(a, b, c) vstore4(a, b, c)
+#endif
+#endif
+
+#ifdef SUPPORT_COMPLEX64
+typedef float2 dtype;
+typedef float2 dtypex;
+#endif
+
+#ifdef SUPPORT_COMPLEX128
+typedef double2 dtype;
+typedef double2 dtypex;
+#endif
+
+
+__kernel void bitrev_perm(const __global int *indices, const __global dtype *input,
+			  __global dtype *output, int batch_size) {
+  int ty = get_group_id(1) * get_local_size(1) + get_local_id(1);
+  int tx = get_local_id(0);
+  int idx = indices[ty];
+  dtypex src;
+  for (int i = tx * (batch_size / get_local_size(0)); i < (tx + 1) * (batch_size / get_local_size(0)); i += VSIZE) {
+#if defined(SUPPORT_COMPLEX)
+    // No cfloatX_y and cdoubleX_t structs yet ?
+    for (int v = 0; v < VSIZE; v++)
+      output[ty * batch_size + i + v] = input[idx * batch_size + i + v];
+#else
+#if defined(V1)
+    output[ty * batch_size + i] = input[idx * batch_size + i];
+#else
+    src = loadx(0, &input[idx * batch_size + i]);
+    storex(src, 0, &output[ty * batch_size + i]);
+#endif
+#endif
+  }
+}
+
+#endif

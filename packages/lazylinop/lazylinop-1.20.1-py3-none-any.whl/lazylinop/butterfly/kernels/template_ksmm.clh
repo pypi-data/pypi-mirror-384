@@ -1,0 +1,367 @@
+// -*- c++ -*-
+
+#define PYOPENCL_DEFINE_CDOUBLE
+// #pragma OPENCL_EXTENSION cl_amd_printf : enable
+// #pragma OPENCL_EXTENSION cl_intel_printf : enable
+
+#ifndef KSMM
+#define KSMM
+
+#if defined(V1)
+#define VSIZE 1
+#elif defined(V2)
+#define VSIZE 2
+#elif defined(V3)
+#define VSIZE 3
+#elif defined(V4)
+#define VSIZE 4
+#endif
+
+#ifdef USE_FLOAT16
+#ifdef cl_khr_fp16
+#pragma OPENCL EXTENSION cl_khr_fp16: enable
+#define SUPPORT_FLOAT16
+#elif cl_amd_fp16
+#pragma OPENCL EXTENSION cl_amd_fp16: enable
+#define SUPPORT_FLOAT16
+#endif
+#endif
+
+#ifdef USE_FLOAT32
+#define SUPPORT_FLOAT32
+#endif
+
+#ifdef USE_COMPLEX64
+#define SUPPORT_COMPLEX64
+#define SUPPORT_COMPLEX
+#endif
+
+#ifdef USE_FLOAT64
+#ifdef cl_khr_fp64
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#define SUPPORT_FLOAT64
+#elif cl_amd_fp64
+#pragma OPENCL EXTENSION cl_amd_fp64 : enable
+#define SUPPORT_FLOAT64
+#endif
+#endif
+
+#ifdef USE_COMPLEX128
+#define SUPPORT_COMPLEX128
+#define SUPPORT_COMPLEX
+#endif
+
+#ifdef SUPPORT_FLOAT16
+// See vload_halfn and vstore_halfn documentation.
+typedef half real_t;
+#if defined(V1)
+typedef float realx_t;
+#endif
+#if defined(V2)
+typedef float2 realx_t;
+#define loadx(a, b) vload_half2(a, b)
+#define storex(a, b, c) vstore_half2(a, b, c)
+#endif
+#if defined(V3)
+typedef float3 realx_t;
+#define loadx(a, b) vload_half3(a, b)
+#define storex(a, b, c) vstore_half3(a, b, c)
+#endif
+#if defined(V4)
+typedef float4 realx_t;
+#define loadx(a, b) vload_half4(a, b)
+#define storex(a, b, c) vstore_half4(a, b, c)
+#endif
+#endif
+
+#ifdef SUPPORT_FLOAT32
+typedef float real_t;
+#if defined(V1)
+typedef float realx_t;
+#endif
+#if defined(V2)
+typedef float2 realx_t;
+#define loadx(a, b) vload2(a, b)
+#define storex(a, b, c) vstore2(a, b, c)
+#endif
+#if defined(V3)
+typedef float3 realx_t;
+#define loadx(a, b) vload3(a, b)
+#define storex(a, b, c) vstore3(a, b, c)
+#endif
+#if defined(V4)
+typedef float4 realx_t;
+#define loadx(a, b) vload4(a, b)
+#define storex(a, b, c) vstore4(a, b, c)
+#endif
+#endif
+
+#ifdef SUPPORT_FLOAT64
+typedef double real_t;
+#if defined(V1)
+typedef double realx_t;
+#endif
+#if defined(V2)
+typedef double2 realx_t;
+#define loadx(a, b) vload2(a, b)
+#define storex(a, b, c) vstore2(a, b, c)
+#endif
+#if defined(V3)
+typedef double3 realx_t;
+#define loadx(a, b) vload3(a, b)
+#define storex(a, b, c) vstore3(a, b, c)
+#endif
+#if defined(V4)
+typedef double4 realx_t;
+#define loadx(a, b) vload4(a, b)
+#define storex(a, b, c) vstore4(a, b, c)
+#endif
+#endif
+
+#ifdef SUPPORT_COMPLEX64
+typedef float2 real_t;
+typedef float2 realx_t;
+#endif
+
+#ifdef SUPPORT_COMPLEX128
+typedef double2 real_t;
+typedef double2 realx_t;
+#endif
+
+inline void kload(const __global real_t *gmem, __local real_t *smem,
+                  int row, int s, int col) {
+#pragma unroll
+  for (int v = 0; v < VSIZE; v++)
+    smem[(col * VSIZE + v) * xTILEYx + row + s] = gmem[v];
+}
+
+inline void iload(const __global real_t *gmem, __local real_t *smem,
+                  int batch_size, int row, int s, int col, realx_t src,
+                  int offset) {
+#if defined(SUPPORT_COMPLEX)
+#pragma unroll
+  for (int v = 0; v < VSIZE; v++)
+    smem[(row + s) * xTILEXx + col * VSIZE + v] = gmem[v];
+#else
+#if defined(V1)
+  smem[(row + s) * xTILEXx + col * VSIZE] = gmem[0];
+#else
+  offset += col * VSIZE;
+  if ((batch_size - offset) >= VSIZE) {
+    src = loadx(0, &gmem[0]);
+    storex(src, 0, &smem[(row + s) * xTILEXx + col * VSIZE]);
+  } else {
+    for (int v = 0; v < (batch_size - offset); v++)
+      smem[(row + s) * xTILEXx + col * VSIZE + v] = gmem[v];
+  }
+#endif
+#endif
+}
+
+inline void rload(__private real_t *reg, const __local real_t *smem,
+		  int offset, realx_t src) {
+#if defined(SUPPORT_COMPLEX)
+  // No cfloatX_y and cdoubleX_t structs yet ?
+#pragma unroll
+  for (int v = 0; v < VSIZE; v++)
+    reg[v] = smem[offset + v];
+#else
+#if defined(V1)
+  reg[0] = smem[offset];
+#else
+  src = loadx(0, &smem[offset]);
+  storex(src, 0, &reg[0]);
+#endif
+#endif
+}
+
+__kernel void ksmm(const __global real_t *values, const __global real_t *input,
+                   __global real_t *output, const uint a, const uint b,
+                   const uint c, const uint d, uint batch_size) {
+  int bx = get_group_id(0);
+  int by = get_group_id(1);
+  int t_id = get_local_id(0) * get_local_size(1) + get_local_id(1);
+  // Kronecker-sparse pattern (a, b, c, d)
+  // K = kron(Id_{a,a}, kron(1_{b,c}, Id_{d,d}))
+  // There is 'a' super-blocks of shape (b * d, c * d).
+  // Number of non-zero per super-block is
+  // b per column and c per row.
+  // We would like to compute K @ X.
+  // K (row-major format) shape is (a * b * d, a * c * d).
+  // X (row-major format) shape is (a * c * d, batch).
+  // TILEX / TX threads per column
+  // Get the current thread
+  int threadx = t_id % (xTILEXx / xTXx);
+  int thready = t_id / (xTILEXx / xTXx);
+  // To store input in shared memory
+  __local real_t shared_input[2][xTILEKx * xTILEXx];
+  // To store sparse matrix in shared memory
+  __local real_t shared_values[2][xTILEYx * xTILEKx];
+  // // To store output in shared memory
+  // __local real_t shared_output[xTILEYx * xTILEXx];
+#if defined(SUPPORT_FLOAT64) || defined(SUPPORT_COMPLEX128)
+  real_t tmp_acc[xTYx * xTXx] = {0.0};
+  real_t regY[xTYx] = {0.0};
+  real_t regX[xTXx] = {0.0};
+#else
+#if defined(SUPPORT_FLOAT32) || defined(SUPPORT_COMPLEX64)
+  real_t tmp_acc[xTYx * xTXx] = {0.0f};
+  real_t regY[xTYx] = {0.0f};
+  real_t regX[xTXx] = {0.0f};
+#else
+#if defined(SUPPORT_FLOAT16)
+  real_t tmp_acc[xTYx * xTXx] = {0.0h};
+  real_t regY[xTYx] = {0.0h};
+  real_t regX[xTXx] = {0.0h};
+#endif
+#endif
+#endif
+
+  realx_t src;
+
+  // Current super-block.
+  int sb_id = (by * xTILEYx) / (b * d);
+  // Group and id inside the super-block.
+  int grp_id = (by * xTILEYx - sb_id * b * d) / b;
+  int off = ((by * xTILEYx - sb_id * b * d) % b) / xTILEYx;
+  // Move to the current super-block, group and id.
+  values = &values[(sb_id * b * d + grp_id + off * d * xTILEYx) * c];
+  input = &input[(c * d * sb_id + grp_id % d) * batch_size];
+  output = &output[(sb_id * b * d + grp_id + off * d * xTILEYx) * batch_size];
+  // Move bx * TILEX columns.
+  input += bx * xTILEXx;
+  output += bx * xTILEXx;
+
+  // Indices to load (Kronecker-sparse factor) in smem.
+  int ValuesSubRow = t_id / (xTILEKx / VSIZE);
+  int ValuesSubCol = t_id % (xTILEKx / VSIZE);
+  // Indices to load (input matrix) in smem.
+  int InputSubRow = t_id / (xTILEXx / VSIZE);
+  int InputSubCol = t_id % (xTILEXx / VSIZE);
+
+  // Use stride to load from GMEM to SMEM
+  const int StrideValues = VSIZE * xNTHREADSx / xTILEKx;
+  const int StrideInput = VSIZE * xNTHREADSx / xTILEXx;
+
+  // Load (realx_t) the first batch of Kronecker-sparse factor from global to
+  // shared memory TILEY * TILEK.
+#pragma unroll
+  for (int s = 0; s < xTILEYx; s += StrideValues)
+    kload(&values[d * (ValuesSubRow + s) * c + (ValuesSubCol * VSIZE) % c],
+	  &shared_values[0][0], ValuesSubRow, s, ValuesSubCol);
+
+  // Load the first batch of input from global to shared memory TILEK * TILEX.
+#pragma unroll
+  for (int s = 0; s < xTILEKx; s += StrideInput)
+    iload(&input[d * (InputSubRow + s) * batch_size + InputSubCol * VSIZE],
+	  &shared_input[0][0], batch_size, InputSubRow, s,
+          InputSubCol, src, bx * xTILEXx);
+
+  int load = 0;
+  int write = 1;
+
+  // Loop over non-zero entries by TILEK
+  for (int k = 0; k < xTILEKx * (c / xTILEKx); k += xTILEKx) {
+    barrier(CLK_LOCAL_MEM_FENCE);
+    // Load smem to register and compute accumulation.
+#pragma unroll
+    for (int i = 0; i < xTILEKx; i++) {
+      // Kronecker-sparse factor.
+#pragma unroll
+      for (int y = 0; y < xTYx; y += VSIZE)
+	rload(&regY[y], &shared_values[load][0],
+	      i * xTILEYx + thready * xTYx + y, src);
+
+      // Input.
+#pragma unroll
+      for (int x = 0; x < xTXx; x += VSIZE)
+	rload(&regX[x], &shared_input[load][0],
+	      i * xTILEXx + threadx * xTXx + x, src);
+
+      // Compute accumulation.
+#pragma unroll
+      for (int y = 0; y < xTYx; y++) {
+#pragma unroll
+        for (int x = 0; x < xTXx; x++) {
+#if defined(SUPPORT_COMPLEX)
+          tmp_acc[y * xTXx + x].x += regY[y].x * regX[x].x - regY[y].y * regX[x].y;
+	  tmp_acc[y * xTXx + x].y += regY[y].x * regX[x].y + regY[y].y * regX[x].x;
+#else
+          tmp_acc[y * xTXx + x] += regY[y] * regX[x];
+#endif
+        }
+      }
+    }
+
+    load = load ^ 1;
+    // Move xTILEKx columns (values is in row-major).
+    values += xTILEKx;
+    // Move d * xTILEKx rows (input is in row-major).
+    input += d * xTILEKx * batch_size;
+
+    // Condition on columns of values.
+    if ((k + xTILEKx) < (xTILEKx * (c / xTILEKx))) {
+      // Load the Kronecker-sparse factor in shared memory TILEY x TILEK.
+#pragma unroll
+      for (int s = 0; s < xTILEYx; s += StrideValues)
+        kload(&values[d * (ValuesSubRow + s) * c + (ValuesSubCol * VSIZE) % c],
+	      &shared_values[write][0], ValuesSubRow, s, ValuesSubCol);
+        // Load next batch from global to shared memory TILEK x TILEX
+#pragma unroll
+      for (int s = 0; s < xTILEKx; s += StrideInput)
+        iload(&input[d * (InputSubRow + s) * batch_size + InputSubCol * VSIZE],
+	      &shared_input[write][0], batch_size, InputSubRow, s,
+              InputSubCol, src, bx * xTILEXx);
+      write = write ^ 1;
+    }
+  }
+
+//   // Store accumulation to shared memory
+// #pragma unroll
+//   for (int y = 0; y < xTYx; y++) {
+// #pragma unroll
+//     for (int x = 0; x < xTXx; x += VSIZE) {
+// #ifdef SUPPORT_COMPLEX
+// #pragma unroll
+//       for (int v = 0; v < VSIZE; v++)
+// 	shared_output[(thready * xTYx + y) * xTILEXx + threadx * xTXx + x + v] =
+// 	  tmp_acc[y * xTXx + x + v];
+// #else
+// #if defined(V1)
+//       shared_output[(thready * xTYx + y) * xTILEXx + threadx * xTXx + x] =
+// 	tmp_acc[y * xTXx + x];
+// #else
+//       src = loadx(0, &tmp_acc[y * xTXx + x]);
+//       storex(src, 0, &shared_output[(thready * xTYx + y) * xTILEXx + threadx * xTXx + x]);
+// #endif
+// #endif
+//     }
+//   }
+
+  // Write out the accumulation (from shared to global memory).
+#pragma unroll
+  for (int y = 0; y < xTYx; y++) {
+#pragma unroll
+    for (int x = 0; x < xTXx; x += VSIZE) {
+#ifdef SUPPORT_COMPLEX
+#pragma unroll
+      for (int v = 0; v < VSIZE; v++)
+	output[d * (thready * xTYx + y) * batch_size + threadx * xTXx + x + v] =
+	  tmp_acc[y * xTXx + x + v];
+	  // shared_output[(thready * xTYx + y) * xTILEXx + threadx * xTXx + x + v];
+#else
+#if defined(V1)
+      output[d * (thready * xTYx + y) * batch_size + threadx * xTXx + x] =
+	tmp_acc[y * xTXx + x];
+	// shared_output[(thready * xTYx + y) * xTILEXx + threadx * xTXx + x];
+#else
+      // src = loadx(0, &shared_output[(thready * xTYx + y) * xTILEXx + threadx * xTXx + x]);
+      src = loadx(0, &tmp_acc[y * xTXx + x]);
+      storex(src, 0, &output[d * (thready * xTYx + y) * batch_size + threadx * xTXx + x]);
+#endif
+#endif
+    }
+  }
+}
+
+#endif
