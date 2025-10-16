@@ -1,0 +1,590 @@
+<div align="center">
+
+# 🤖 Buddy AI
+
+### *Advanced AI Agent Framework for Enterprise Applications*
+
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub Release](https://img.shields.io/github/v/release/esasrir91/buddy-ai.svg)](https://github.com/esasrir91/buddy-ai/releases)
+[![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://github.com/esasrir91/buddy-ai/wiki)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/esasrir91/buddy-ai/actions)
+
+---
+
+**Buddy AI** is a production-ready Python framework for building, deploying, and scaling intelligent AI agents with enterprise-grade capabilities. Designed for developers who need sophisticated AI applications with multi-model support, advanced knowledge management, and seamless tool integration.
+
+[**🚀 Quick Start**](#-quick-start) • [**📖 Documentation**](https://github.com/esasrir91/buddy-ai/wiki) • [**💻 Examples**](https://github.com/esasrir91/buddy-ai/tree/main/examples) • [**🤝 Contributing**](#-contributing)
+
+</div>
+
+---
+
+## ✨ **Key Features**
+
+<table>
+<tr>
+<td width="50%">
+
+### 🧠 **Intelligent Agents**
+- **Multi-Model Support**: OpenAI, Anthropic, Google, Cohere, AWS Bedrock, Azure OpenAI, and 20+ providers
+- **Persistent Memory**: Long-term context preservation across sessions
+- **Advanced Reasoning**: Chain-of-thought and structured thinking capabilities
+- **Custom Instructions**: Tailored agent behavior and personality
+
+### 🛠️ **Extensible Toolkit**
+- **80+ Built-in Tools**: Calculator, file operations, web scraping, databases, APIs
+- **Custom Tool Creation**: Easy integration of proprietary systems and services
+- **Tool Chaining**: Complex workflows with multiple tool interactions
+- **Security Controls**: Sandboxed execution and permission management
+
+</td>
+<td width="50%">
+
+### 📚 **Knowledge Management**
+- **RAG (Retrieval-Augmented Generation)**: Multiple knowledge source integration
+- **Vector Databases**: Support for Pinecone, Weaviate, Chroma, and more
+- **Document Processing**: PDF, Word, Markdown, code files, and structured data
+- **SQL Knowledge Base**: Built-in SQLite storage with full-text search
+
+### 🏢 **Enterprise Ready**
+- **Team Collaboration**: Multi-agent systems with role-based workflows
+- **Deployment Options**: FastAPI, CLI, web interfaces, and chat integrations
+- **Monitoring & Analytics**: Comprehensive logging, metrics, and performance tracking
+- **Production Features**: Error handling, rate limiting, and scalability
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🚀 **Quick Start**
+
+### **Installation**
+
+```bash
+# Install core framework
+pip install buddy-ai
+
+# Install with all optional dependencies
+pip install buddy-ai[all]
+
+# Provider-specific installations
+pip install buddy-ai[openai,anthropic,google,aws]
+```
+
+### **Create Your First Agent**
+
+```python
+from buddy import Agent
+from buddy.models.openai import OpenAIChat
+from buddy.tools.calculator import CalculatorTools
+from buddy.tools.python import PythonTools
+
+# Create an intelligent agent
+agent = Agent(
+    name="DataAnalyst",
+    model=OpenAIChat(id="gpt-4"),
+    tools=[CalculatorTools(), PythonTools()],
+    instructions="You are a helpful data analyst who can perform calculations and write Python code.",
+    show_tool_calls=True
+)
+
+# Start conversation
+response = agent.run("Calculate the compound interest for $10,000 at 5% annually for 3 years")
+print(response.content)
+```
+
+### **Knowledge-Enhanced Agent**
+
+```python
+from buddy import Agent
+from buddy.models.openai import OpenAIChat
+from buddy.knowledge.document import DocumentKnowledgeBase
+from buddy.embedder.openai import OpenAIEmbedder
+
+# Setup knowledge base
+knowledge = DocumentKnowledgeBase(
+    path="./documents",
+    embedder=OpenAIEmbedder()
+)
+knowledge.load()
+
+# Create knowledge-enhanced agent
+agent = Agent(
+    name="ResearchAssistant",
+    model=OpenAIChat(id="gpt-4"),
+    knowledge=knowledge,
+    search_knowledge=True,
+    instructions="You are a research assistant with access to a comprehensive knowledge base."
+)
+
+response = agent.run("What are the latest developments in artificial intelligence?")
+```
+
+### **Multi-Agent Team**
+
+```python
+from buddy import Team, Agent
+from buddy.models.openai import OpenAIChat
+
+# Create specialized agents
+researcher = Agent(
+    name="Researcher",
+    role="Research and gather information",
+    model=OpenAIChat(id="gpt-4"),
+    tools=[WebsiteTools(), GoogleSearchTools()]
+)
+
+analyst = Agent(
+    name="Analyst", 
+    role="Analyze data and create insights",
+    model=OpenAIChat(id="gpt-4"),
+    tools=[PythonTools(), CalculatorTools()]
+)
+
+writer = Agent(
+    name="Writer",
+    role="Create well-structured reports",
+    model=OpenAIChat(id="gpt-4")
+)
+
+# Create team
+team = Team(
+    name="MarketResearchTeam",
+    agents=[researcher, analyst, writer],
+    workflow="researcher -> analyst -> writer"
+)
+
+# Execute team task
+result = team.run("Research the current state of the electric vehicle market and create a comprehensive report")
+```
+
+---
+
+## 🏗️ **Architecture Overview**
+
+<div align="center">
+
+```mermaid
+graph TB
+    A[User Input] --> B[Agent Router]
+    B --> C[Model Provider]
+    B --> D[Tool Executor]
+    B --> E[Knowledge Base]
+    B --> F[Memory Manager]
+    
+    C --> G[OpenAI/Anthropic/Google/etc.]
+    D --> H[Built-in Tools]
+    D --> I[Custom Tools]
+    E --> J[Vector Database]
+    E --> K[SQL Database]
+    F --> L[Conversation History]
+    F --> M[Long-term Memory]
+    
+    G --> N[Response Generator]
+    H --> N
+    I --> N
+    J --> N
+    K --> N
+    L --> N
+    M --> N
+    
+    N --> O[Structured Output]
+```
+
+</div>
+
+---
+
+## 🛠️ **Core Components**
+
+### **Agents**
+```python
+# Basic agent configuration
+agent = Agent(
+    name="CustomerSupport",
+    model=OpenAIChat(id="gpt-4"),
+    instructions="You are a helpful customer support agent...",
+    tools=[EmailTools(), DatabaseTools()],
+    memory=AgentMemory(),
+    temperature=0.1,
+    max_tokens=2000
+)
+```
+
+### **Models**
+```python
+# Multiple provider support
+from buddy.models import OpenAIChat, AnthropicChat, GoogleChat
+
+openai_model = OpenAIChat(id="gpt-4-turbo")
+anthropic_model = AnthropicChat(id="claude-3-opus")
+google_model = GoogleChat(id="gemini-pro")
+```
+
+### **Tools**
+```python
+# Extensive tool ecosystem
+from buddy.tools import (
+    CalculatorTools, PythonTools, FileTools, WebsiteTools,
+    DatabaseTools, EmailTools, CalendarTools, SlackTools
+)
+
+# Custom tool creation
+@tool
+def custom_api_call(endpoint: str, data: dict) -> str:
+    """Call internal API with custom logic"""
+    # Your implementation
+    return result
+```
+
+### **Knowledge Management**
+```python
+# Vector-based knowledge
+from buddy.knowledge import DocumentKnowledgeBase
+from buddy.vectordb import PineconeDb
+
+knowledge = DocumentKnowledgeBase(
+    path="./docs",
+    vector_db=PineconeDb(api_key="your-key"),
+    embedder=OpenAIEmbedder()
+)
+
+# SQL-based knowledge  
+from buddy.knowledge import SQLKnowledgeBase
+
+sql_knowledge = SQLKnowledgeBase(
+    path="./documents",
+    db_path="knowledge.db",
+    formats=[".py", ".md", ".json", ".txt"]
+)
+```
+
+---
+
+## 📊 **Advanced Features**
+
+### **Structured Outputs**
+```python
+from pydantic import BaseModel, Field
+from typing import List
+
+class AnalysisReport(BaseModel):
+    summary: str = Field(description="Executive summary")
+    key_findings: List[str] = Field(description="Key insights")
+    recommendations: List[str] = Field(description="Action items")
+    confidence_score: float = Field(description="Confidence level 0-1")
+
+agent = Agent(
+    name="BusinessAnalyst",
+    model=OpenAIChat(id="gpt-4"),
+    response_model=AnalysisReport,
+    structured_outputs=True
+)
+
+result = agent.run("Analyze our Q3 sales performance")
+print(f"Summary: {result.content.summary}")
+print(f"Confidence: {result.content.confidence_score}")
+```
+
+### **Memory Management**
+```python
+from buddy.memory import AgentMemory
+
+# Persistent memory across sessions
+memory = AgentMemory(
+    db_url="postgresql://user:pass@localhost/buddy",
+    create_user_memories=True,
+    create_session_summary=True
+)
+
+agent = Agent(
+    name="PersonalAssistant",
+    model=OpenAIChat(id="gpt-4"),
+    memory=memory,
+    user_id="user_123"
+)
+```
+
+### **Multi-Agent Workflows**
+```python
+from buddy import Team
+from buddy.workflow import Workflow
+
+# Define complex workflows
+workflow = Workflow([
+    {"agent": "researcher", "task": "gather_data"},
+    {"agent": "analyst", "task": "analyze_data", "depends_on": ["gather_data"]},
+    {"agent": "reviewer", "task": "review_analysis", "depends_on": ["analyze_data"]},
+    {"agent": "publisher", "task": "publish_report", "depends_on": ["review_analysis"]}
+])
+
+team = Team(agents=[researcher, analyst, reviewer, publisher])
+team.run_workflow(workflow, input_data="Market research for Q4 planning")
+```
+
+---
+
+## 🚀 **Deployment Options**
+
+### **FastAPI Web Service**
+```python
+from buddy.app.fastapi import create_buddy_app
+
+app = create_buddy_app(
+    agents=[customer_support_agent, sales_agent],
+    enable_playground=True,
+    enable_metrics=True
+)
+
+# Run with: uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+### **CLI Application**
+```python
+from buddy.cli import BuddyCLI
+
+cli = BuddyCLI(
+    agent=research_agent,
+    title="Research Assistant CLI",
+    description="AI-powered research tool"
+)
+
+cli.run()
+```
+
+### **Chat Platform Integration**
+```python
+# Slack integration
+from buddy.app.slack import SlackApp
+
+slack_app = SlackApp(
+    agent=support_agent,
+    bot_token="xoxb-your-token",
+    signing_secret="your-secret"
+)
+
+# Discord integration  
+from buddy.app.discord import DiscordBot
+
+discord_bot = DiscordBot(
+    agent=community_agent,
+    token="your-discord-token"
+)
+```
+
+---
+
+## 📈 **Performance & Monitoring**
+
+### **Built-in Analytics**
+```python
+from buddy.monitoring import MetricsCollector
+
+# Track agent performance
+metrics = MetricsCollector(
+    store="postgresql://localhost/metrics",
+    enable_tracing=True
+)
+
+agent = Agent(
+    name="ProductionAgent",
+    model=OpenAIChat(id="gpt-4"),
+    metrics=metrics
+)
+
+# View metrics
+print(metrics.get_agent_stats(agent_name="ProductionAgent"))
+```
+
+### **Custom Logging**
+```python
+import logging
+from buddy.utils.log import setup_buddy_logging
+
+# Configure detailed logging
+setup_buddy_logging(
+    level=logging.INFO,
+    format="detailed",
+    include_trace_id=True
+)
+```
+
+---
+
+## 🔧 **Configuration**
+
+### **Environment Variables**
+```bash
+# Model API Keys
+export OPENAI_API_KEY="your-openai-key"
+export ANTHROPIC_API_KEY="your-anthropic-key"
+export GOOGLE_API_KEY="your-google-key"
+
+# Database Configuration
+export BUDDY_DB_URL="postgresql://user:pass@localhost/buddy"
+
+# Monitoring
+export BUDDY_ENABLE_METRICS=true
+export BUDDY_LOG_LEVEL=INFO
+```
+
+### **Configuration File**
+```yaml
+# buddy_config.yaml
+models:
+  default: "openai-gpt-4"
+  fallback: "anthropic-claude-3"
+  
+database:
+  url: "postgresql://localhost/buddy"
+  pool_size: 10
+  
+monitoring:
+  enable_metrics: true
+  log_level: "INFO"
+  trace_requests: true
+
+security:
+  enable_tool_sandboxing: true
+  max_tool_execution_time: 30
+  allowed_domains: ["example.com", "api.company.com"]
+```
+
+---
+
+## 🔐 **Security & Best Practices**
+
+### **Tool Sandboxing**
+```python
+from buddy.security import ToolSandbox
+
+# Secure tool execution
+sandbox = ToolSandbox(
+    allowed_modules=["requests", "pandas"],
+    blocked_functions=["exec", "eval"],
+    max_execution_time=30,
+    memory_limit="100MB"
+)
+
+agent = Agent(
+    name="SecureAgent",
+    tools=[PythonTools(sandbox=sandbox)]
+)
+```
+
+### **Input Validation**
+```python
+from buddy.security import InputValidator
+
+validator = InputValidator(
+    max_length=1000,
+    blocked_patterns=["<script>", "javascript:"],
+    sanitize_html=True
+)
+
+agent = Agent(
+    name="PublicAgent",
+    input_validator=validator
+)
+```
+
+---
+
+## 📚 **Documentation & Resources**
+
+<div align="center">
+
+| Resource | Description | Link |
+|----------|-------------|------|
+| 📖 **Complete Documentation** | Comprehensive guides and API reference | [View Docs](https://github.com/esasrir91/buddy-ai/wiki) |
+| 🚀 **Quick Start Guide** | Get up and running in minutes | [Get Started](https://github.com/esasrir91/buddy-ai/blob/main/docs/quickstart.md) |
+| 💡 **Examples & Tutorials** | Real-world use cases and implementations | [View Examples](https://github.com/esasrir91/buddy-ai/tree/main/examples) |
+| 🔧 **API Reference** | Detailed API documentation | [API Docs](https://github.com/esasrir91/buddy-ai/blob/main/docs/api.md) |
+| ❓ **FAQ** | Common questions and solutions | [View FAQ](https://github.com/esasrir91/buddy-ai/blob/main/docs/faq.md) |
+| 🎥 **Video Tutorials** | Step-by-step video guides | [Watch Videos](https://github.com/esasrir91/buddy-ai/blob/main/docs/videos.md) |
+
+</div>
+
+---
+
+## 🤝 **Contributing**
+
+We welcome contributions from the community! Buddy AI is built by developers, for developers.
+
+### **Development Setup**
+
+```bash
+# Clone the repository
+git clone https://github.com/esasrir91/buddy-ai.git
+cd buddy-ai
+
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/
+
+# Run linting
+black . && isort . && flake8
+
+# Build documentation
+cd docs && make html
+```
+
+### **Contributing Guidelines**
+
+1. **🔍 Check existing issues** before creating new ones
+2. **🌿 Create feature branches** for your changes
+3. **✅ Add tests** for new functionality
+4. **📝 Update documentation** for API changes
+5. **🔄 Submit pull requests** with clear descriptions
+
+See our [Contributing Guide](https://github.com/esasrir91/buddy-ai/blob/main/CONTRIBUTING.md) for detailed information.
+
+---
+
+## 📄 **License**
+
+This project is licensed under the **MIT License** - see the [LICENSE](https://github.com/esasrir91/buddy-ai/blob/main/LICENSE) file for details.
+
+---
+
+## 👨‍💻 **Author & Maintainer**
+
+<div align="center">
+
+### **Sriram Sangeeth Mantha**
+
+[![Email](https://img.shields.io/badge/Email-sriram.sangeet%40gmail.com-blue.svg)](mailto:sriram.sangeet@gmail.com)
+[![GitHub](https://img.shields.io/badge/GitHub-esasrir91-black.svg)](https://github.com/esasrir91)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Sriram%20Sangeeth%20Mantha-0077B5.svg)](https://linkedin.com/in/sriram-mantha)
+
+</div>
+
+---
+
+## 🙏 **Support & Community**
+
+<div align="center">
+
+If you find Buddy AI helpful, please consider:
+
+[![Star on GitHub](https://img.shields.io/badge/⭐-Star%20on%20GitHub-yellow.svg)](https://github.com/esasrir91/buddy-ai)
+[![Follow on GitHub](https://img.shields.io/badge/👀-Follow%20on%20GitHub-blue.svg)](https://github.com/esasrir91)
+[![Report Issues](https://img.shields.io/badge/🐛-Report%20Issues-red.svg)](https://github.com/esasrir91/buddy-ai/issues)
+[![Join Discussions](https://img.shields.io/badge/💬-Join%20Discussions-green.svg)](https://github.com/esasrir91/buddy-ai/discussions)
+
+</div>
+
+---
+
+<div align="center">
+
+**Made with ❤️ by the Buddy AI Team**
+
+*Empowering developers to build the future of AI applications*
+
+</div>
