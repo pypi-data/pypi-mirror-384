@@ -1,0 +1,142 @@
+name: srsrpy release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'pyproject.toml'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      new_version: ${{ steps.version.outputs.new_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Hatch
+        uses: pypa/hatch@257e27e51a6a5616ed08a39a408a21c35c9931bc
+
+      - name: Check if release needed
+        id: check
+        run: |
+          # For manual release events, always release
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # For manual dispatch, always release
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # For push events, don't auto-release development versions
+          echo "Push event detected - not creating automatic releases for development versions"
+          echo "should_release=false" >> $GITHUB_OUTPUT
+
+      - name: Generate version
+        id: version
+        if: steps.check.outputs.should_release == 'true'
+        run: |
+          # For manual releases, extract version from release tag
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION=${VERSION#v}  # Remove 'v' prefix if present
+            echo "Release version: $VERSION"
+            echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # For other events, get version from hatch-vcs
+          VERSION=$(hatch version)
+          echo "Generated version: $VERSION"
+          echo "new_version=$VERSION" >> $GITHUB_OUTPUT
+
+  release-build:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Hatch
+        uses: pypa/hatch@257e27e51a6a5616ed08a39a408a21c35c9931bc
+
+      - name: Build with Hatch
+        run: hatch build
+
+      - name: Create Release (for auto-releases)
+        if: github.event_name != 'release'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ needs.check-changes.outputs.new_version }}
+          release_name: Release v${{ needs.check-changes.outputs.new_version }}
+          body: |
+            Automatic release v${{ needs.check-changes.outputs.new_version }}
+
+            Generated from commit ${{ github.sha }}
+          draft: false
+          prerelease: false
+
+      - name: upload dists
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    environment: release
+    needs:
+      - check-changes
+      - release-build
+    if: needs.check-changes.outputs.should_release == 'true'
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
