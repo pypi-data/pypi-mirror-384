@@ -1,0 +1,264 @@
+# image-slide
+
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A comprehensive Python image viewer for multidimensional numpy arrays with interactive controls for navigation, contrast adjustment, and complex data visualization.
+
+![image-slide Demo](https://via.placeholder.com/800x400?text=image-slide+Demo)
+
+## Features
+
+### Core Functionality
+- **Multi-dimensional array support**: View numpy arrays of arbitrary dimensions and shapes
+- **Image navigation**: Slider-based navigation through image stacks
+- **Complex array support**: Display magnitude, phase, real, or imaginary parts
+- **Interactive controls**: Contrast, brightness, and colormap adjustment
+- **Keyboard shortcuts**: Fast navigation with arrow keys
+- **Professional interface**: Compact layout with all controls accessible
+
+### Display Controls
+- **Contrast adjustment**: 0.1x to 3.0x multiplication
+- **Brightness adjustment**: -1.0 to +1.0 offset
+- **Colormap selection**: 11 built-in colormaps (gray, viridis, plasma, etc.)
+- **Auto-contrast**: Automatic contrast adjustment based on percentiles
+- **Reset function**: Restore all settings to defaults
+
+### Navigation
+- **Mouse**: Use the slider to navigate between images
+- **Keyboard shortcuts**:
+  - `←/→`: Previous/next image
+  - `Page Up/Down`: Jump by 10 images
+  - `Home/End`: Go to first/last image
+
+## Installation
+
+### From PyPI (when published)
+```bash
+pip install image-slide
+```
+
+### From Source
+```bash
+git clone https://github.com/GyroTools/image-slide.git
+cd image-slide
+pip install -e .
+```
+
+### Dependencies
+- Python 3.8+
+- numpy >= 1.19.0
+- matplotlib >= 3.3.0
+
+## Quick Start
+
+### Basic Usage
+
+```python
+import numpy as np
+from image_slide import ImageSlideViewer
+
+# Create or load your numpy array of arbitrary shape
+image_stack = np.random.random((10, 100, 100))
+
+# Create and run viewer
+viewer = ImageSlideViewer(image_stack, "My Images")
+viewer.run()
+```
+
+### Convenience Function
+
+```python
+from image_slide import image_slide
+
+# Even simpler - direct function call
+image_slide(image_stack, "My Images")
+```
+
+### Complex Arrays
+
+```python
+# Complex array example
+n_images, height, width = 5, 100, 100
+complex_stack = np.random.random((n_images, height, width)) + 1j * np.random.random((n_images, height, width))
+
+viewer = ImageSlideViewer(complex_stack, "Complex Data")
+viewer.run()
+```
+
+### Loading from Files
+
+```python
+# Load from numpy file
+data = np.load('your_data.npy')
+image_slide(data, "Loaded Data")
+
+# Load multiple images into stack
+import glob
+from PIL import Image
+
+files = glob.glob("*.png")
+images = [np.array(Image.open(f)) for f in files]
+image_stack = np.array(images)
+image_slide(image_stack, "Image Stack")
+```
+
+## Input Requirements
+
+### Array Shapes
+The viewer accepts numpy arrays of arbitrary dimensions and shapes:
+- **2D arrays**: `(height, width)` - single grayscale image
+- **3D arrays**: `(n_images, height, width)` - grayscale image stacks
+- **4D arrays**: `(n_images, height, width, channels)` - color image stacks (automatically converted to grayscale)
+- **Higher dimensions**: Arrays with more dimensions are supported, with navigation through the first dimension
+
+### Data Types
+- **Real arrays**: Any numeric numpy dtype (int, float, etc.)
+- **Complex arrays**: `complex64`, `complex128` with magnitude/phase/real/imaginary display options
+- **Normalized**: Data is automatically normalized for display
+
+## Advanced Usage
+
+### Complex Array Display Modes
+
+When working with complex arrays, you can choose what to display:
+
+1. **Magnitude**: `|z|` - Shows the amplitude
+2. **Phase**: `arg(z)` - Shows the phase angle  
+3. **Real**: `Re(z)` - Shows the real part
+4. **Imaginary**: `Im(z)` - Shows the imaginary part
+
+### Programmatic Control
+
+```python
+# Create viewer but don't show immediately
+viewer = ImageSlideViewer(image_stack, "My Images")
+
+# Set initial display parameters
+viewer.contrast = 1.5
+viewer.brightness = 0.2
+viewer.current_complex_display = "phase"  # for complex arrays
+
+# Update display and show
+viewer.update_display()
+viewer.run()
+```
+
+### Keyboard Shortcuts Reference
+
+| Key | Action |
+|-----|--------|
+| `←` | Previous image |
+| `→` | Next image |
+| `Page Up` | Jump back 10 images |
+| `Page Down` | Jump forward 10 images |
+| `Home` | Go to first image |
+| `End` | Go to last image |
+
+## Interface Components
+
+- **Top Controls**: Contrast, brightness, colormap, and action buttons arranged horizontally
+- **Image Display**: Central area with no borders, maximum space utilization
+- **Bottom Navigation**: Image slider and index display
+- **Status Bar**: Min/max values and data type information
+
+## Examples
+
+### Scientific Data Visualization
+
+```python
+import numpy as np
+from image_slide import image_slide
+
+# Simulate time series data
+t = np.linspace(0, 4*np.pi, 50)
+x, y = np.meshgrid(np.linspace(0, 2*np.pi, 100), np.linspace(0, 2*np.pi, 100))
+time_series = np.array([np.sin(x + t[i]) * np.cos(y + t[i]) for i in range(len(t))])
+
+image_slide(time_series, "Time Series Visualization")
+```
+
+### Medical Imaging
+
+```python
+# Simulate medical image stack (e.g., CT slices)
+slices = np.random.random((30, 256, 256))
+# Add some structure
+for i, slice_img in enumerate(slices):
+    slices[i] = gaussian_filter(slice_img, sigma=2)
+
+image_slide(slices, "Medical Image Stack")
+```
+
+### Fourier Transform Analysis
+
+```python
+# Create test pattern and its FFT
+pattern = np.sin(2*np.pi*x*3) * np.cos(2*np.pi*y*2)
+fft_data = np.fft.fftshift(np.fft.fft2(pattern))
+
+# Stack original and FFT for comparison
+combined = np.array([pattern, np.abs(fft_data), np.angle(fft_data)])
+image_slide(combined, "FFT Analysis")
+```
+
+## Command Line Usage
+
+The package is designed to be used as a Python library. Import and use the viewer in your Python scripts as shown in the examples above.
+
+## Development
+
+### Setting up Development Environment
+
+```bash
+git clone https://github.com/GyroTools/image-slide.git
+cd image-slide
+pip install -e ".[dev]"
+```
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Code Formatting
+
+```bash
+black image_slide/
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Changelog
+
+### Version 1.0.0
+- Initial release
+- Basic image navigation and display
+- Complex array support
+- Contrast and brightness controls
+- Multiple colormap options
+- Keyboard shortcuts
+- Professional compact interface
+
+## Acknowledgments
+
+- Built with [matplotlib](https://matplotlib.org/) for image display
+- Uses [tkinter](https://docs.python.org/3/library/tkinter.html) for GUI
+- Inspired by scientific image analysis workflows
+
+## Support
+
+- Create an [issue](https://github.com/GyroTools/image-slide/issues) for bug reports
+- Start a [discussion](https://github.com/GyroTools/image-slide/discussions) for questions
+- Check the [documentation](https://github.com/GyroTools/image-slide#readme) for usage examples
