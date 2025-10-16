@@ -1,0 +1,1 @@
+from .news_econometric_analysis import create_interactive_report
