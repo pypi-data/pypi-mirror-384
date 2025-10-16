@@ -1,0 +1,46 @@
+name: Publish to PyPI
+
+on:
+ release:
+   types: [created]
+   branches:
+     - main
+
+jobs:
+  build_and_upload_to_pypi:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+        id-token: write
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need this to get version number from last tag
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build sdist and wheel
+        run: >
+          export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) &&
+          pipx run build
+
+      - name: Check for packaging errors
+        run: pipx run twine check --strict dist/*
+
+      - name: Install produced wheel
+        run: pip install dist/*.whl
+
+      - name: Publish to PyPI using trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: false

@@ -1,0 +1,42 @@
+name: Unit Tests
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+      fail-fast: false
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        pip install .[dev]
+        pip list
+
+    - name: Start save-and-restore service
+      run: |
+        pushd container
+        ./start-save-and-restore.sh
+        popd
+
+        export EPICS_CA_AUTO_ADDR_LIST=NO
+        export EPICS_CA_ADDR_LIST=127.0.0.1
+        python ioc/sim_ioc.py --no-shell &
+
+    - name: Test with pytest
+      run: |
+        # pytest -k test_ip_kernel_func -vvv
+        coverage run -m pytest -vv
+        coverage report -m
