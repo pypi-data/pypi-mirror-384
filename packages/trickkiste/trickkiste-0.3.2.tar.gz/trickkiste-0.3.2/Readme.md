@@ -1,0 +1,137 @@
+# trickkiste
+
+`trickkiste` is a collection of convenience functionality I use quite often that
+are too small to give them their own project on the one side but prone to
+changes due to changes to the Python ecosystem to just copy&paste them and leave
+them as they are.
+
+So they are here now, enjoy.
+
+Beware: most of this is not part of any standard library for a reason. That
+reason might be there are better built in solutions which are harder (but more
+flexible) to use or I just didn't find them back then. In most cases you're
+advised to build them your own (to avoid dependencies and bugs).
+
+
+## Content
+
+Here is an overview of what's in here, see the docstings for a better
+description (some even have a doctest!):
+
+### misc
+
+* `throw(BaseException)`: functional `raise` for closed expressions
+* `md5from(Path)`: convenient wrapper returning an MD5 file checksum
+* `cwd(Path)`: path changing context manager
+* `process_output(cmd)`: short form for 'run a command and return it's output as one string'
+* `asyncify`: decorator turning a sync method or function into an async one
+* `async_chain`: like `chain` but async
+* `async_filter`: like `filter` but async
+
+* `date_str(timestamp, [datefmt])`: convenience wrapper for `strftime`
+* `def date_from(timestamp: float | str)`: : convenience wrapper for `strptime`
+* `dur_str(seconds, [fixed])`: short human readable representation of a duration
+* `age_str(now, age, [fixed])`: like `dur_str` but with an age context
+* `parse_age(string: str)`: inverse of `age_str`
+
+* `smart_split(string: str, delimiter: str = ",")`: like `split` but parenthesis aware!
+* `multi_replace(string: str, *substitutions: tuple[str, str])`: short form for chainging `replace`
+* `compact_dict(mapping, [maxlen], [delim])`: create a short one-string map
+* `def split_params(string: str)`:  inverse of `compact_dict`
+
+### logging
+
+* `apply_common_logging_cli_args(ArgumentParser)`: enrich a given parser to recognize default stuff like `--verbose`, etc.
+* `setup_logging`: sets up a `rich` enhanced logger with useful stuff like call stack and posix thread id
+* `logging` filters: internally used by `setup_logging` but can be re-used of course
+    - `markup_escape_filter`: escapes (accidental) markup elements in the message
+    - `thread_id_filter`: adds the (posix) thread id
+    - `callstack_filter`: adds a short call stack
+    - `logger_name_filter`: adds the logger name (`rich` edition)
+    - `logger_funcname_filter`: adds the function name (`rich` edition)
+    - `logger_levelname_filter`: adds the level name (`rich` edition)
+
+### Textual stuff / TuiBaseApp
+
+* `TuiBaseApp`: like `textual.App` but with convenience stuff mostly regarding logging
+* `RichLogHandler`: a logging handler for a `textual` widget
+* `LockingRichLog`: locks your log view scroll position until you scroll to the bottom
+* `HeatBar`: a colorful heat bar widget for things like CPU monitoring
+
+### std_suppress
+
+`std_suppress` (with it's own shell entry point `suppress`) can be prefixed
+to a command and acts like adding `>/dev/null 2>&1` but will print the output
+if the command needs 'longer than expected' something bad happens (i.e.
+nonzero exit).
+Use it in scripts where you don't need the output to spam your log but you still
+want to know if something unusual happend.
+
+
+## License
+
+See [License.md](License.md).
+
+
+## Contribution
+
+### Initialize
+
+```bash
+git clone https://github.com/frans-fuerst/trickkiste --recurse-submodules
+cd trickkiste
+uv run pre-commit install
+```
+
+### Manually run checks and fixes
+
+Depending on your workflow / IDE you _might_ want to stay in charge over what's
+being executed in order to check and fix code validity. For a number of
+scenarios there is a bunch of scripts located in the `dev` submodule which just
+wrap manual calls to what would be done by `pre-commit`. Some actually run
+`pre-commit` for consistency, some don't in order to stay flexible regarding
+command line arguments, e.g. for unit-testing using `pytest`.
+
+*run all checks which would be executed on commit, but on unstaged stuff, too*
+```bash
+dev/check-validity
+```
+
+*do this in a loop (convenience wrapper around `inotifywait`)*
+```bash
+dev/watchandcheck
+```
+
+*run all checks separately*
+
+```bash
+dev/check-python-doctests
+dev/check-python-formatting
+dev/check-python-linting
+dev/check-python-systemtests
+dev/check-python-typing
+dev/check-python-unittests
+dev/check-shellscripts
+dev/check-yaml-linting
+```
+
+*apply fixes for automatically fixable stuff*
+
+```bash
+dev/fix-python-formatting
+dev/fix-python-linting
+```
+
+### Version bump and publishing
+
+```bash
+uv version --bump <patch|minor|major>
+uv lock --upgrade
+uv build
+
+# do manual tests here
+
+git commit -m"Bump version [..]"
+git push
+uv publish --token <TOKEN>
+```
