@@ -1,0 +1,47 @@
+name: Publish to PyPI - Test Wheels
+
+on: [push, pull_request]
+
+jobs:
+  build_and_test_wheels:
+    runs-on: ubuntu-latest
+    environment: release
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need this to get version number from last tag
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build sdist and wheel
+        run: >
+          export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) &&
+          pipx run build
+
+      - name: Check for packaging errors
+        run: pipx run twine check --strict dist/*
+
+      - name: Install produced wheel
+        run: pip install dist/*.whl
+
+      - name: Test module is importable using the installed wheel - 1
+        run: python -c "import save_and_restore_api"
+
+      - name: Test module is importable using the installed wheel - 2
+        run: python -c "from save_and_restore_api import SaveRestoreAPI"
+
+      - name: Test module is importable using the installed wheel - 3
+        run: python -c "from save_and_restore_api.aio import SaveRestoreAPI"
+
+      - name: Test if save-and-restore tools can be started
+        run: save-and-restore -h
