@@ -1,0 +1,36 @@
+import pathlib
+import setuptools
+
+p = pathlib.Path("README.md")
+if p.exists():
+    long_description = p.read_text()
+
+setuptools.setup(
+    name='knot_exporter',
+    version='3.5.1',
+    description='Prometheus exporter for Knot DNS',
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    author='CZ.NIC, z.s.p.o.',
+    author_email='knot-dns@labs.nic.cz',
+    url='https://gitlab.nic.cz/knot/knot-dns/-/tree/master/python/knot_exporter',
+    license='GPL-2.0-or-later',
+    packages=['knot_exporter'],
+    classifiers=[ # See https://pypi.org/classifiers
+        'Development Status :: 5 - Production/Stable',
+        'Programming Language :: Python :: 3',
+        'Topic :: Internet :: Name Service (DNS)',
+        'Topic :: System :: Systems Administration',
+    ],
+    python_requires='>=3.5',
+    install_requires=[
+        'libknot<3.5.99',
+        'prometheus-client',
+        'psutil',
+    ],
+    entry_points={
+        'console_scripts': [
+            'knot-exporter = knot_exporter.knot_exporter:main',
+        ],
+    },
+)
