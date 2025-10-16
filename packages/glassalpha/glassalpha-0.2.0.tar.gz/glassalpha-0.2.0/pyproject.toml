@@ -1,0 +1,335 @@
+[project]
+name = "glassalpha"
+version = "0.2.0"
+description = "AI Compliance Toolkit - transparent, auditable, regulator-ready ML audits"
+authors = [{ name = "GlassAlpha Team" }]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Legal Industry",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Healthcare Industry",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    # Core framework - minimal dependencies for basic functionality
+    "typer>=0.9.0",          # CLI framework with command groups
+    "pydantic>=2.5.0",       # Config validation and schemas
+    "pyyaml>=6.0",           # YAML config parsing
+
+    # Scientific stack - minimal for basic model support
+    "numpy>=2.1",            # First version with Python 3.13 wheels
+    "pandas>=2.2.3",         # Python 3.13 support
+    "scipy>=1.15",           # First version with Python 3.13 wheels
+    "scikit-learn>=1.5",     # NumPy 2.x compatible, provides LogisticRegression for base install
+
+    # Visualization - required for audit report generation
+    "matplotlib>=3.9",       # Core plotting for audit visualizations
+    "pillow>=10.0",          # PNG optimization for report file size reduction
+
+    # Utilities
+    "platformdirs>=4.0.0",   # Cross-platform user data directories
+    "jinja2>=3.1,<4",        # HTML templating - required for all report generation
+]
+
+[project.optional-dependencies]
+# Tree model support (XGBoost + LightGBM)
+tree_models = [
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+]
+
+# SHAP explainers (TreeSHAP + KernelSHAP)
+shap = ["shap>=0.44"]
+
+# PDF export (Playwright primary, WeasyPrint fallback)
+pdf = [
+    "playwright>=1.40",  # Primary: Chromium-based PDF generation
+    "weasyprint>=60.0",  # Fallback: Air-gapped environments
+    "pillow>=10.0",      # Image optimization
+]
+
+# Development dependencies
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-asyncio>=0.21",
+    "pytest-timeout>=2.2",  # Prevent tests from hanging indefinitely
+    "hypothesis>=6.92",      # Property-based testing for calibration and fairness
+    "nbmake>=1.5",          # Notebook execution testing
+    "black>=23.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "yamllint>=1.35",       # YAML syntax validation for workflow files
+    "pre-commit>=3.5",
+    "build>=1.0",           # Required for wheel packaging tests
+    "types-PyYAML>=6.0.12", # Type stubs for YAML
+]
+
+# Everything - all optional features
+all = ["glassalpha[tree_models,shap,pdf]"]
+
+# Backward compatibility aliases (deprecated)
+xgboost = ["glassalpha[tree_models]"]
+lightgbm = ["glassalpha[tree_models]"]
+explain = ["glassalpha[tree_models,shap]"]
+pdf_all = ["glassalpha[pdf]"]
+docs = ["glassalpha[pdf]"]
+
+# Enterprise dependencies (not included in OSS)
+# These would be in glassalpha-enterprise package
+# enterprise = [...]
+
+[project.scripts]
+glassalpha = "glassalpha.cli:main"
+
+# Entry points removed - using explicit dispatch for AI maintainability
+
+[build-system]
+requires = ["setuptools>=70.0.0", "wheel>=0.43.0", "build>=1.2.1"]
+build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel]
+# Build wheels for Python 3.11, 3.12, and 3.13 on major platforms
+build = "cp311-* cp312-* cp313-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_*"  # Skip 32-bit and musl
+
+# Use constraints.txt for consistent builds
+before-build = "pip install -c constraints.txt --upgrade pip wheel"
+test-requires = "pytest pytest-cov"
+test-command = "pytest {project}/tests/test_core_foundation.py -v"
+
+# Platform-specific settings
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+before-all = "yum install -y cairo-devel pango-devel gdk-pixbuf2-devel || apt-get update && apt-get install -y libcairo2-dev libpango1.0-dev libgdk-pixbuf2.0-dev"
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["glassalpha*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+# Contract compliance: Include templates in wheel for importlib.resources loading
+"glassalpha.report.templates" = ["*.html", "*.css", "*.js", "*.txt"]
+# Include built-in configuration files for wheel-based testing
+"glassalpha.configs" = ["*.yaml"]
+
+[tool.ruff]
+line-length = 120  # Modern standard (vs outdated 100) - matches industry practice
+target-version = "py311"
+extend-include = ["*.pyi"]
+extend-exclude = ["glassalpha-enterprise/"]  # Enterprise code has separate config
+
+[tool.ruff.lint]
+# Curated rules that catch real bugs, security issues, and correctness problems
+# Not style preferences or debates
+select = [
+    "E",      # pycodestyle errors (real issues)
+    "F",      # pyflakes (undefined names, unused imports)
+    "B",      # flake8-bugbear (common bugs)
+    "S",      # flake8-bandit (security issues)
+    "I",      # isort (import ordering)
+    "UP",     # pyupgrade (modern Python syntax)
+    "PL",     # pylint (logic errors)
+    "RUF",    # Ruff-specific rules (usually good)
+]
+
+# Only ignore rules that are inappropriate for this codebase
+ignore = [
+    # Security exceptions for ML use cases
+    "S301",   # Pickle usage (required for sklearn models)
+    "S101",   # Assert usage (proper in tests)
+]
+
+# Per-file ignores for intentional design patterns
+[tool.ruff.lint.per-file-ignores]
+# Main __init__.py uses PEP 562 lazy loading (undefined names in __all__ are loaded dynamically)
+"src/glassalpha/__init__.py" = ["F822"]  # PEP 562: undefined names in __all__ for lazy loading
+
+# CLI files use intentional patterns for performance and circular import avoidance
+"src/**/cli/*.py" = [
+    "PLC0415",  # Late imports (performance optimization)
+    "E402",     # Module level import not at top (intentional for CLI structure)
+    "B904", "B008",  # Exception handling + function call patterns (intentional UX)
+    "PLR0913", "PLR0912", "PLR0915",  # Complex CLI functions are legitimate
+    "RUF001",   # Ambiguous Unicode characters (intentional UI symbols)
+    "PLR2004",  # Magic values (legitimate thresholds in CLI)
+    "E501",     # Line length (legitimate long error messages)
+    "F841",     # Unused variables (legitimate for debugging/logging)
+    "F821",     # Undefined names (legitimate forward references)
+    "S110",     # Try-except-pass (intentional fallback behavior)
+]
+
+# Scripts need late imports for conditional execution
+"scripts/*.py" = ["PLC0415", "E402"]
+
+# Test files need module-level imports for mocking dependencies
+"tests/*.py" = [
+    "E402", "F401", "F811",  # Allow late imports + unused/repeated imports (testing import behavior)
+    "S101",             # assert statements in tests
+    "PLR2004",          # Magic values in test assertions
+    "PT017",            # assert on exceptions in tests
+    "PLC0415",          # Late imports in tests (allows mocking)
+    "B007",             # Unused loop variables in tests
+    "F841",             # Unused variables in tests
+    "S110",             # Try-except-pass in tests
+    "RUF043",           # Regex patterns in tests (pytest.raises with match)
+    "PLR0124",          # Self-comparison in tests (intentional)
+    "S108",             # Temporary files in tests (intentional)
+    "S603",             # Subprocess calls in tests (intentional)
+    "F821",             # Undefined names in tests (intentional for mocking)
+    "PLR0913", "PLR0912", "PLR0915",  # Complex test functions (legitimate test logic)
+    "RUF001",           # Unicode characters in tests (legitimate test data)
+    "RUF005",           # List concatenation in tests (legitimate)
+    "RUF059",           # Unpacked variables in tests (legitimate for test setup)
+    "S112",             # Try-except-continue in tests (intentional)
+]
+
+# Notebooks are educational content with different patterns
+"*.ipynb" = [
+    "E402",     # Module level import not at top of cell
+    "F821",     # Undefined name (cell dependencies)
+    "E501",     # Line too long (educational content)
+    "PLR2004",  # Magic values in notebooks (legitimate thresholds)
+    "RUF005",   # List concatenation in notebooks (legitimate)
+    "RUF001",   # Unicode characters in notebooks (legitimate educational content)
+    "PLR0913", "PLR0912", "PLR0915",  # Complex notebook functions (legitimate educational logic)
+]
+
+# API files use trusted pickle for model loading (controlled environment)
+"src/glassalpha/api/audit.py" = [
+    "S301", "S110", "PLC0415",  # Trusted model files + intentional fallback patterns + conditional imports
+    "PLR2004", "PLR0913", "PLR0912", "PLR0915", "B904",  # Complex functions + exception patterns are legitimate
+]
+
+# Pipeline files use complex functions for audit orchestration
+"src/glassalpha/pipeline/*.py" = [
+    "PLR0913", "PLR0912", "PLR0915", "B904",  # Complex audit orchestration functions
+    "PLC0415", "S110", "PLR2004", "F841",  # Performance optimizations + fallback patterns + magic values + unused variables
+]
+
+# Core files use intentional patterns for performance and circular import avoidance
+"src/glassalpha/**/*.py" = [
+    "PLC0415",  # Late imports (performance optimization)
+    "PLR0912", "PLR0915", "PLR0913", "PLR2004",  # Complex functions + magic values are legitimate business logic
+    "S110", "B904", "F841",  # Try-except-pass + exception patterns + unused variables (intentional fallback behavior)
+    "E501",     # Line length (legitimate long debug messages)
+    "RUF005",   # Iterable unpacking (style preference)
+    "RUF043",   # Regex patterns (pytest.raises with match)
+    "S112",     # Try-except-continue (intentional in complex logic)
+    "B023",     # Function doesn't bind loop variable (intentional in some cases)
+    "PLR0911",  # Too many return statements (complex logic is OK)
+    "S311",     # Random generators (legitimate for testing, not crypto)
+    "S607", "S603",  # Git commands and subprocess calls (legitimate)
+    "RUF001", "RUF002", "RUF003",  # Unicode characters (legitimate in ML)
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_reexport = true
+namespace_packages = true
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = [
+    "shap.*",
+    "xgboost.*",
+    "lightgbm.*",
+    "weasyprint.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    # Parallel execution disabled due to pytest-xdist teardown hang
+    # Use: pytest -n auto to enable parallel if needed
+    # Coverage now handled by CI configuration to allow dual gates
+    # XGBoost tests use conditional import - will skip gracefully if unavailable
+    # COVERAGE STATUS: Gate 1 (critical modules ≥65%), Gate 2 (overall ≥70% trend monitoring)
+    # Current: Overall coverage at 69% - on track to meet targets
+    # Next targets: Critical modules → 85%, Overall → 75%, then 80%
+]
+markers = [
+    "requires_xgboost: tests that need XGBoost runtime (can be skipped on incompatible environments)",
+    "slow: tests that take longer than usual (e.g. full audits, can be skipped with -m 'not slow')",
+    "integration: integration tests for E2E workflows (may require external dependencies)",
+    "contract: core API contract tests (must pass before release)",
+    "determinism: reproducibility tests (must pass for byte-identical guarantees)",
+    "performance: performance benchmarks (track regressions)",
+]
+testpaths = ["tests"]
+
+# Warning filters: treat our warnings as errors, filter third-party noise
+filterwarnings = [
+    "error::UserWarning:glassalpha.*",
+    "ignore:X does not have valid feature names.*:UserWarning:sklearn.*",
+    "ignore:X has feature names.*:UserWarning:sklearn.*",
+    "ignore:.*l1_reg.*deprecated.*:DeprecationWarning:shap.explainers._kernel",
+    "ignore:Mean of empty slice.*:RuntimeWarning:numpy",
+    "ignore:invalid value encountered in scalar divide.*:RuntimeWarning:numpy",
+    "ignore:Precision is ill-defined.*:UserWarning",
+    "ignore:PyPDF2 is deprecated.*:DeprecationWarning",
+    "ignore:.*liblinear.*deprecated.*multiclass.*:FutureWarning:sklearn.*",
+]
+# pythonpath = ["src"]  # Removed: forces testing against installed package, not source tree
+
+[tool.coverage.run]
+branch = true
+source = ["src"]                 # measure source code
+relative_files = true
+parallel = false                 # disable shards to simplify coverage collection in CI
+
+[tool.coverage.paths]
+# Unify local src and site-packages under one logical path to fix "module-not-measured" warnings
+glassalpha = [
+  "src/glassalpha",
+  "*/site-packages/glassalpha"
+]
+source = ["src/glassalpha"]
+
+[tool.coverage.report]
+# Explicitly set fail_under to 0 to prevent pytest-cov from enforcing global threshold
+fail_under = 0
+# Temporary omissions to keep Gate 2 meaningful while we add tests
+omit = [
+  "*/site-packages/glassalpha/metrics/drift/detection.py",   # placeholder module for future
+  "*/site-packages/glassalpha/models/_io.py",                # unused serialization utilities
+  "*/site-packages/glassalpha/report/renderers/html.py"      # PDF path is used in CI
+]
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+extend-exclude = "glassalpha-enterprise/"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3

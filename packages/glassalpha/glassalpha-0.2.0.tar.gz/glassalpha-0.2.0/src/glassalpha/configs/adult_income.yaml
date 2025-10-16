@@ -1,0 +1,157 @@
+# ==============================================================================
+# Adult Income (Census) Dataset Audit Configuration
+# ==============================================================================
+#
+# Dataset: Adult Census Income
+# Source: UCI Machine Learning Repository
+# Size: 48,842 samples, 14 features
+# Task: Predict whether income exceeds $50K/year
+# Protected Attributes: Race, sex, age, native-country
+#
+# This is one of the most-studied fairness benchmarks in ML. The dataset contains
+# census data and is known to have biases related to gender and race.
+#
+# Download Instructions:
+# 1. Training data: https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data
+# 2. Test data: https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test
+# 3. Save as: ~/data/adult_income.csv
+#
+# Data Preparation:
+# - Add column headers (see feature_columns below)
+# - Combine train and test sets or use separately
+# - Handle missing values (marked as '?')
+#
+# Expected Findings:
+# - Gender bias: Males typically have higher predicted income
+# - Race disparities: White individuals often favored
+# - Age effects: Older workers have higher incomes
+#
+# Documentation: https://glassalpha.com/getting-started/data-sources/#adult-income-census
+# ==============================================================================
+
+audit_profile: tabular_compliance
+
+# Reproducibility settings
+# Master random seed for all randomness sources
+random_seed: 42
+
+# Enforce strict determinism controls (thread control, advanced seeding)
+strict: true
+
+# Control thread counts for deterministic parallel processing
+thread_control: true
+
+# Data configuration
+data:
+  dataset: adult_income # Use built-in Adult Income dataset
+  fetch: if_missing
+  offline: false
+  target_column: income_over_50k # Binary target column
+
+  # Protected attributes for fairness analysis (must exist in dataset)
+  protected_attributes:
+    - sex # Primary protected attribute
+    - race # Secondary protected attribute
+    - age_group # Can be used for age discrimination analysis
+    - native_country # National origin discrimination
+
+# Model configuration
+model:
+  type: xgboost # Recommended for this dataset
+  # Note: XGBoost requires: pip install 'glassalpha[explain]'
+  # Will use logistic_regression if XGBoost not available
+
+  params:
+    objective: binary:logistic
+    eval_metric: logloss
+    n_estimators: 150 # More trees for better accuracy
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+
+# Explainer configuration
+explainers:
+  strategy: first_compatible
+  priority:
+    - treeshap # Best for XGBoost
+    - permutation # Fallback if SHAP not installed
+
+  config:
+    treeshap:
+      max_samples: 1000 # Sample for speed
+      check_additivity: true
+
+    permutation:
+      n_repeats: 10
+      random_state: 42
+
+# Metrics configuration
+metrics:
+  performance:
+    metrics:
+      - accuracy
+      - precision
+      - recall
+      - f1
+      - auc_roc
+      - classification_report
+
+  fairness:
+    metrics:
+      - demographic_parity
+      - equal_opportunity
+      - equalized_odds
+      - predictive_parity
+
+    config:
+      # Standard thresholds for employment/income
+      demographic_parity:
+        threshold: 0.05 # 5% maximum difference
+      equal_opportunity:
+        threshold: 0.05
+      equalized_odds:
+        threshold: 0.05
+
+# Preprocessing configuration
+# Note: Preprocessing options are coming in a future release
+# GlassAlpha currently handles preprocessing automatically
+
+# Report configuration
+report:
+  template: standard_audit
+  output_format: html # Use HTML for fast generation (change to "pdf" for regulatory submission)
+  styling:
+    color_scheme: professional
+    compliance_statement: true
+
+  include_sections:
+    - executive_summary
+    - data_overview
+    - model_performance
+    - global_explanations
+    - fairness_analysis
+    - audit_manifest
+# Manifest configuration
+# Note: Manifest is automatically generated with each audit
+# Custom manifest options are coming in a future release
+# ==============================================================================
+# Usage:
+#   glassalpha audit --config adult_income.yaml --output adult_income_audit.pdf --strict
+#
+# Expected Results:
+# - Accuracy: ~85% (typical for this dataset)
+# - Gender bias: Likely detected (males favored)
+# - Race bias: Likely detected (disparities across races)
+#
+# Troubleshooting:
+# - If file not found: Update data.path to your actual file location
+# - If XGBoost missing: Will auto-fallback to LogisticRegression
+# - If SHAP missing: Will auto-fallback to Permutation importance
+#
+# Next Steps:
+# - Try different models (lightgbm, logistic_regression)
+# - Adjust fairness thresholds for your requirements
+# - Compare with other datasets: https://glassalpha.com/getting-started/data-sources/
+# ==============================================================================

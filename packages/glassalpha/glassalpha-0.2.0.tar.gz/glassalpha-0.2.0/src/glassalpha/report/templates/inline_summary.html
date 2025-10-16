@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      .glassalpha-inline {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        font-size: 13px;
+        max-width: 900px;
+        margin: 12px 0;
+        line-height: 1.5;
+      }
+
+      /* Status bar */
+      .glassalpha-inline .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+        padding: 10px 12px;
+        background: #f6f8fa;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+
+      .glassalpha-inline .badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 11px;
+      }
+
+      .glassalpha-inline .badge-success {
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .glassalpha-inline .badge-warning {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      .glassalpha-inline .badge-fail {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      /* Section headers */
+      .glassalpha-inline h3 {
+        margin: 16px 0 8px 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #24292e;
+        border-bottom: 1px solid #e1e4e8;
+        padding-bottom: 4px;
+      }
+
+      /* Tables */
+      .glassalpha-inline table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0;
+        font-size: 13px;
+      }
+
+      .glassalpha-inline th,
+      .glassalpha-inline td {
+        text-align: left;
+        padding: 6px 12px;
+        border-bottom: 1px solid #e1e4e8;
+      }
+
+      .glassalpha-inline th {
+        background-color: #f6f8fa;
+        font-weight: 600;
+        color: #24292e;
+      }
+
+      .glassalpha-inline .metric-name {
+        font-weight: 500;
+      }
+
+      .glassalpha-inline .metric-value {
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        color: #0366d6;
+      }
+
+      /* Lineage badge */
+      .glassalpha-inline .lineage-badge {
+        background: #f6f8fa;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        font-size: 11px;
+        color: #586069;
+        margin: 8px 0;
+        word-break: break-all;
+      }
+
+      /* Footer */
+      .glassalpha-inline .footer {
+        margin-top: 16px;
+        padding-top: 12px;
+        border-top: 1px solid #e1e4e8;
+        font-size: 12px;
+      }
+
+      .glassalpha-inline .export-cmd {
+        background: #f6f8fa;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        font-size: 12px;
+        margin: 8px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .glassalpha-inline .copy-btn {
+        background: #0366d6;
+        color: white;
+        border: none;
+        padding: 4px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .glassalpha-inline .copy-btn:hover {
+        background: #0256c7;
+      }
+
+      .glassalpha-inline .links {
+        margin-top: 8px;
+        font-size: 11px;
+        color: #586069;
+      }
+
+      .glassalpha-inline .links a {
+        color: #0366d6;
+        text-decoration: none;
+      }
+
+      .glassalpha-inline .links a:hover {
+        text-decoration: underline;
+      }
+
+      .glassalpha-inline .placeholder {
+        color: #6a737d;
+        font-style: italic;
+        font-size: 12px;
+      }
+
+      .glassalpha-inline .direction-arrow {
+        font-size: 14px;
+        margin-left: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="glassalpha-inline">
+      {# Status Bar #}
+      <div class="status-bar">
+        {% if success %}
+        <span class="badge badge-success">✓ Audit Complete</span>
+        {% else %}
+        <span class="badge badge-warning">⚠ Audit Complete with Warnings</span>
+        {% endif %}
+        <span>{{ generation_date or "N/A" }}</span>
+        <span>Config: <strong>{{ audit_profile or "default" }}</strong></span>
+      </div>
+
+      {# Performance Metrics #} {% if model_performance %}
+      <h3>Performance Metrics</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for metric, value in model_performance.items() %} {% if metric in
+          ['accuracy', 'roc_auc', 'pr_auc', 'f1', 'precision', 'recall'] %}
+          <tr>
+            <td class="metric-name">
+              {{ metric|replace('_', ' ')|title|replace('Roc',
+              'ROC')|replace('Pr', 'PR') }}
+            </td>
+            <td class="metric-value">
+              {{ "%.4f"|format(value) if value is number else value }}
+            </td>
+          </tr>
+          {% endif %} {% endfor %} {% if calibration_ci %}
+          <tr>
+            <td class="metric-name">Calibration (ECE)</td>
+            <td class="metric-value">
+              {% if calibration_ci.get('ece') is not none %} {{
+              "%.4f"|format(calibration_ci['ece']) }} {% else %}N/A{% endif %}
+              {% if calibration_ci.get('ece_ci') %}
+              <span style="font-size: 11px; color: #586069">
+                (95% CI: [{{ "%.3f"|format(calibration_ci['ece_ci']['ci_lower'])
+                }}, {{ "%.3f"|format(calibration_ci['ece_ci']['ci_upper']) }}])
+              </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="metric-name">Calibration (ECE)</td>
+            <td class="placeholder">
+              Not computed (binary classification with probabilities required)
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+      {% endif %} {# Fairness Analysis #} {% if fairness_analysis and
+      fairness_analysis['group_metrics'] %}
+      <h3>Fairness Analysis</h3>
+      {% set ns = namespace(worst_gap=0, worst_attr='', group_a='', group_b='',
+      n_a=0, n_b=0) %} {% for attr, groups in
+      fairness_analysis['group_metrics'].items() %} {% if groups and
+      groups.values()|list|length > 1 %} {% set values = groups.values()|list %}
+      {% set keys = groups.keys()|list %} {% set gap = values|max - values|min
+      %} {% if gap > ns.worst_gap %} {% set ns.worst_gap = gap %} {% set
+      ns.worst_attr = attr %} {% set max_idx = values.index(values|max) %} {%
+      set min_idx = values.index(values|min) %} {% set ns.group_a =
+      keys[max_idx] %} {% set ns.group_b = keys[min_idx] %} {# Sample sizes from
+      data_summary if available #} {% if data_summary and
+      data_summary.get('protected_attribute_distribution') and
+      data_summary['protected_attribute_distribution'].get(attr) %} {% set
+      ns.n_a =
+      data_summary['protected_attribute_distribution'][attr].get(ns.group_a, 0)
+      %} {% set ns.n_b =
+      data_summary['protected_attribute_distribution'][attr].get(ns.group_b, 0)
+      %} {% endif %} {% endif %} {% endif %} {% endfor %} {% if ns.worst_gap > 0
+      %}
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Worst Gap</th>
+            <th>Groups</th>
+            <th>Sample Sizes</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="metric-name">
+              {{ ns.worst_attr|replace('_', ' ')|title }}
+            </td>
+            <td class="metric-value">{{ "%.4f"|format(ns.worst_gap) }}</td>
+            <td>{{ ns.group_a }} vs {{ ns.group_b }}</td>
+            <td>
+              n={{ "{:,}".format(ns.n_a) if ns.n_a else "?" }} vs {{
+              "{:,}".format(ns.n_b) if ns.n_b else "?" }}
+            </td>
+            <td>
+              {% if ns.worst_gap < 0.05 %}
+              <span class="badge badge-success">✓</span>
+              {% elif ns.worst_gap < 0.10 %}
+              <span class="badge badge-warning">⚠</span>
+              {% else %}
+              <span class="badge badge-fail">✗</span>
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size: 11px; color: #6a737d; margin-top: 4px">
+        Thresholds: ✓ &lt;0.05 (pass) | ⚠ &lt;0.10 (warning) | ✗ ≥0.10 (fail)
+      </p>
+      {% else %}
+      <p class="placeholder">
+        No fairness gaps detected or insufficient group data
+      </p>
+      {% endif %} {% endif %} {# Additional Fairness Analysis Features #} {% if
+      dataset_bias or intersectional_fairness or individual_fairness or
+      stability_analysis %}
+      <h3>Advanced Analysis</h3>
+      <div style="font-size: 12px; color: #24292e; margin: 8px 0">
+        {% if dataset_bias %}
+        <div style="margin: 6px 0">
+          <strong>Dataset Bias:</strong>
+          {% if dataset_bias.proxy_correlations %} {{
+          dataset_bias.proxy_correlations|length }} proxy features analyzed {%
+          endif %}
+          <span class="badge badge-success" style="margin-left: 8px">✓</span>
+        </div>
+        {% endif %} {% if intersectional_fairness %}
+        <div style="margin: 6px 0">
+          <strong>Intersectional Fairness:</strong>
+          {{ intersectional_fairness.keys()|list|length }} intersection(s)
+          analyzed
+          <span class="badge badge-success" style="margin-left: 8px">✓</span>
+        </div>
+        {% endif %} {% if individual_fairness %}
+        <div style="margin: 6px 0">
+          <strong>Individual Fairness:</strong>
+          Consistency score {{
+          "%.3f"|format(individual_fairness['consistency_score']) }} {% if
+          individual_fairness['consistency_score'] >= 0.90 %}
+          <span class="badge badge-success" style="margin-left: 8px">✓</span>
+          {% elif individual_fairness['consistency_score'] >= 0.75 %}
+          <span class="badge badge-warning" style="margin-left: 8px">⚠</span>
+          {% else %}
+          <span class="badge badge-fail" style="margin-left: 8px">✗</span>
+          {% endif %}
+        </div>
+        {% endif %} {% if stability_analysis and
+        stability_analysis.get('robustness_score') is not none %}
+        <div style="margin: 6px 0">
+          <strong>Robustness Score:</strong>
+          {{ "%.4f"|format(stability_analysis['robustness_score']) }} {% if
+          stability_analysis.get('gate_status') == "PASS" %}
+          <span class="badge badge-success" style="margin-left: 8px">✓</span>
+          {% elif stability_analysis.get('gate_status') == "WARNING" %}
+          <span class="badge badge-warning" style="margin-left: 8px">⚠</span>
+          {% else %}
+          <span class="badge badge-fail" style="margin-left: 8px">✗</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <p style="font-size: 11px; color: #6a737d; margin-top: 8px">
+        ℹ️ See full PDF report for detailed analysis and confidence intervals
+      </p>
+      {% endif %} {# Top Features #} {% if explanations and
+      explanations.get('feature_importances') %}
+      <h3>Top 5 Important Features</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Importance</th>
+            <th>Direction</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for feature, importance in
+          (explanations.feature_importances.items()|sort(attribute='1',
+          reverse=True))[:5] %}
+          <tr>
+            <td class="metric-name">{{ feature }}</td>
+            <td class="metric-value">{{ "%.4f"|format(importance|abs) }}</td>
+            <td>
+              {% if importance > 0 %}
+              <span class="direction-arrow" title="Positive contribution"
+                >↑</span
+              >
+              {% elif importance < 0 %}
+              <span class="direction-arrow" title="Negative contribution"
+                >↓</span
+              >
+              {% else %}
+              <span class="direction-arrow">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %} {# Data & Lineage Badge #} {% if manifest or execution_info %}
+      <h3>Data & Lineage</h3>
+      <div class="lineage-badge">
+        {% if manifest.get('dataset_hash') %} data_hash: {{
+        manifest['dataset_hash'][:12] }}...{{ manifest['dataset_hash'][-8:] if
+        manifest['dataset_hash']|length > 20 else manifest['dataset_hash'] }} {%
+        endif %} {% if manifest.get('model_hash') %} | model_sha: {{
+        manifest['model_hash'][:12] }}...{{ manifest['model_hash'][-8:] if
+        manifest['model_hash']|length > 20 else manifest['model_hash'] }} {%
+        endif %} {% if manifest.get('package_versions') %} {% if
+        manifest['package_versions'].get('sklearn') %} | sklearn {{
+        manifest['package_versions']['sklearn'] }} {% endif %} {% if
+        manifest['package_versions'].get('xgboost') %} | xgboost {{
+        manifest['package_versions']['xgboost'] }} {% endif %} {% if
+        manifest['package_versions'].get('lightgbm') %} | lightgbm {{
+        manifest['package_versions']['lightgbm'] }} {% endif %} {% endif %} {%
+        if manifest.get('global_seed') is not none %} | seed {{
+        manifest['global_seed'] }} {% endif %} {% if audit_profile %} | cfg {{
+        audit_profile }} {% endif %}
+      </div>
+      {% endif %} {# Audit Status (Policy Gates) #}
+      <h3>Audit Status</h3>
+      {% if execution_info and execution_info['policy_gates'] %} {% set gates =
+      execution_info['policy_gates'] %} {% set passed = gates.get('passed', 0)
+      %} {% set warnings = gates.get('warnings', 0) %} {% set failures =
+      gates.get('failures', 0) %}
+      <p>
+        <span class="badge badge-success">{{ passed }} passed</span>
+        <span class="badge badge-warning"
+          >{{ warnings }} warning{{ 's' if warnings != 1 else '' }}</span
+        >
+        <span class="badge badge-fail"
+          >{{ failures }} failure{{ 's' if failures != 1 else '' }}</span
+        >
+        <a href="#policy-checks" style="margin-left: 8px; font-size: 12px"
+          >view details →</a
+        >
+      </p>
+      {% else %}
+      <p class="placeholder">
+        Policy gates: not configured
+        <a
+          href="https://glassalpha.com/guides/policy-gates"
+          style="font-size: 12px"
+          >add gates →</a
+        >
+      </p>
+      {% endif %} {# Metrics Glossary #}
+      <details
+        style="
+          margin-top: 16px;
+          padding: 12px;
+          background: #f6f8fa;
+          border-radius: 6px;
+        "
+      >
+        <summary style="cursor: pointer; font-weight: 600; font-size: 13px">
+          📖 What do these metrics mean?
+        </summary>
+        <div style="margin-top: 8px; font-size: 12px; line-height: 1.6">
+          <p style="margin: 8px 0"><strong>Performance Metrics:</strong></p>
+          <ul style="margin: 0; padding-left: 20px">
+            <li>
+              <strong>Accuracy:</strong> Fraction of correct predictions (higher
+              is better, target: >0.80)
+            </li>
+            <li>
+              <strong>Precision:</strong> Of positive predictions, how many were
+              correct? (higher is better)
+            </li>
+            <li>
+              <strong>Recall:</strong> Of actual positives, how many did we
+              find? (higher is better)
+            </li>
+            <li>
+              <strong>ROC AUC:</strong> Ability to distinguish classes (higher
+              is better, >0.80 is good)
+            </li>
+          </ul>
+          <p style="margin: 8px 0"><strong>Fairness Metrics:</strong></p>
+          <ul style="margin: 0; padding-left: 20px">
+            <li>
+              <strong>Demographic Parity Gap:</strong> Difference in positive
+              prediction rates across groups (target: <0.10)
+            </li>
+            <li>
+              <strong>Equal Opportunity Gap:</strong> Difference in true
+              positive rates across groups (target: <0.10)
+            </li>
+            <li>
+              <strong>Consistency Score:</strong> Similar individuals get
+              similar predictions (target: >0.75)
+            </li>
+          </ul>
+          <p style="margin: 8px 0"><strong>Calibration Metrics:</strong></p>
+          <ul style="margin: 0; padding-left: 20px">
+            <li>
+              <strong>ECE (Expected Calibration Error):</strong> Predicted
+              probabilities match actual frequencies (target: <0.05)
+            </li>
+            <li>
+              <strong>Brier Score:</strong> Mean squared error of probability
+              predictions (lower is better, <0.15 is good)
+            </li>
+          </ul>
+          <p style="margin: 8px 0"><strong>Status Indicators:</strong></p>
+          <ul style="margin: 0; padding-left: 20px">
+            <li>✓ <strong>Pass:</strong> Metric within target range</li>
+            <li>
+              ⚠ <strong>Warning:</strong> Metric outside target but acceptable
+            </li>
+            <li>✗ <strong>Fail:</strong> Metric requires attention</li>
+          </ul>
+          <p style="margin: 12px 0 4px 0">
+            <a
+              href="https://glassalpha.com/reference/metrics/"
+              style="font-size: 12px"
+            >
+              Full metrics guide →
+            </a>
+          </p>
+        </div>
+      </details>
+
+      {# Footer with Export Command #}
+      <div class="footer">
+        <div class="export-cmd">
+          <span>💾 Export:</span>
+          <code id="export-cmd-inline">result.to_pdf('output.pdf')</code>
+          <button
+            class="copy-btn"
+            onclick="copyToClipboard('export-cmd-inline')"
+          >
+            Copy
+          </button>
+        </div>
+
+        <div class="links">
+          Learn more:
+          <a href="https://glassalpha.com/guides/fairness">Fairness analysis</a>
+          |
+          <a href="https://glassalpha.com/guides/policy-gates">Policy gates</a>
+          | <a href="https://glassalpha.com/guides/recourse">Recourse</a> |
+          <a href="https://glassalpha.com/reference/cli">CLI reference</a>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function copyToClipboard(elementId) {
+        const text = document.getElementById(elementId).innerText;
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            event.target.innerText = "Copied!";
+            setTimeout(() => (event.target.innerText = "Copy"), 2000);
+          })
+          .catch(() => {
+            // Fallback for older browsers
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textArea);
+            event.target.innerText = "Copied!";
+            setTimeout(() => (event.target.innerText = "Copy"), 2000);
+          });
+      }
+    </script>
+  </body>
+</html>

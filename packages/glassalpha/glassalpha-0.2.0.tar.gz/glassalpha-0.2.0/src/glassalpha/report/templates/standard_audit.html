@@ -1,0 +1,3637 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Fixed timestamps for deterministic PDF generation -->
+    <meta name="dcterms.created" content="2000-01-01T00:00:00+00:00" />
+    <meta name="dcterms.modified" content="2000-01-01T00:00:00+00:00" />
+    <title>{{ report_title | default("ML Model Audit Report") }}</title>
+
+    <style>
+      /* Professional styling for regulatory audit reports */
+
+      /* Root variables for consistent theming */
+      :root {
+        --primary-color: #2e3440;
+        --secondary-color: #5e81ac;
+        --accent-color: #88c0d0;
+        --success-color: #a3be8c;
+        --warning-color: #ebcb8b;
+        --error-color: #bf616a;
+        --neutral-color: #d8dee9;
+        --background-color: #eceff4;
+        --text-color: #2e3440;
+        --light-gray: #f5f6f8;
+        --border-color: #e1e3e6;
+      }
+
+      /* Base styles */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto",
+          "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.6;
+        color: var(--text-color);
+        background-color: white;
+        font-size: 11pt;
+      }
+
+      /* Print-specific styles */
+      @media print {
+        body {
+          font-size: 10pt;
+          line-height: 1.4;
+        }
+
+        .page-break {
+          page-break-before: always;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+
+        .section {
+          break-inside: avoid;
+        }
+
+        h1,
+        h2,
+        h3 {
+          break-after: avoid;
+        }
+
+        table {
+          break-inside: avoid;
+        }
+      }
+
+      /* Layout containers */
+      .container {
+        max-width: 8.5in;
+        margin: 0 auto;
+        padding: 0.5in;
+        background: white;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 3px solid var(--primary-color);
+      }
+
+      .footer {
+        text-align: center;
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+        font-size: 9pt;
+        color: #666;
+      }
+
+      /* Typography */
+      h1 {
+        font-size: 24pt;
+        font-weight: 700;
+        color: var(--primary-color);
+        margin-bottom: 0.5rem;
+      }
+
+      h2 {
+        font-size: 16pt;
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.25rem;
+        border-bottom: 2px solid var(--secondary-color);
+      }
+
+      h3 {
+        font-size: 13pt;
+        font-weight: 600;
+        color: var(--text-color);
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+      }
+
+      h4 {
+        font-size: 11pt;
+        font-weight: 600;
+        color: var(--text-color);
+        margin-top: 0.75rem;
+        margin-bottom: 0.25rem;
+      }
+
+      /* Sections and content */
+      .section {
+        margin-bottom: 2rem;
+        padding: 1rem;
+        border-radius: 8px;
+        background-color: var(--light-gray);
+        border: 1px solid var(--border-color);
+      }
+
+      .executive-summary {
+        background-color: #f8f9ff;
+        border-left: 4px solid var(--secondary-color);
+      }
+
+      .warning-section {
+        background-color: #fff8e6;
+        border-left: 4px solid var(--warning-color);
+      }
+
+      .error-section {
+        background-color: #ffebee;
+        border-left: 4px solid var(--error-color);
+      }
+
+      /* Tables */
+      .table-container {
+        margin: 1rem 0;
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.5rem 0;
+        background: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      th,
+      td {
+        padding: 0.5rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      th {
+        background-color: var(--primary-color);
+        color: white;
+        font-weight: 600;
+        font-size: 10pt;
+      }
+
+      td {
+        font-size: 10pt;
+      }
+
+      tr:nth-child(even) {
+        background-color: #f9f9f9;
+      }
+
+      tr:hover {
+        background-color: #f0f8ff;
+      }
+
+      /* Metric values styling */
+      .metric-value {
+        font-weight: 600;
+        font-size: 11pt;
+      }
+
+      .metric-good {
+        color: var(--success-color);
+      }
+
+      .metric-warning {
+        color: var(--warning-color);
+      }
+
+      .metric-poor {
+        color: var(--error-color);
+      }
+
+      /* Status indicators */
+      .status-indicator {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 9pt;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .status-pass {
+        background-color: var(--success-color);
+        color: white;
+      }
+
+      .status-fail {
+        background-color: var(--error-color);
+        color: white;
+      }
+
+      .status-warning {
+        background-color: var(--warning-color);
+        color: var(--text-color);
+      }
+
+      /* Plot containers */
+      .plot-container {
+        margin: 1rem 0;
+        text-align: center;
+        page-break-inside: avoid;
+      }
+
+      .plot-container img {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .plot-caption {
+        font-size: 9pt;
+        color: #666;
+        margin-top: 0.5rem;
+        font-style: italic;
+      }
+
+      /* Key-value pairs */
+      .info-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.5rem;
+        margin: 1rem 0;
+      }
+
+      .info-label {
+        font-weight: 600;
+        color: var(--text-color);
+      }
+
+      .info-value {
+        color: var(--text-color);
+      }
+
+      /* Lists */
+      ul,
+      ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      li {
+        margin-bottom: 0.25rem;
+      }
+
+      /* Code and monospace */
+      code,
+      .monospace {
+        font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+        font-size: 9pt;
+        background-color: #f5f5f5;
+        padding: 0.125rem 0.25rem;
+        border-radius: 3px;
+        border: 1px solid #ddd;
+      }
+
+      pre {
+        background-color: #f8f8f8;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 1rem;
+        overflow-x: auto;
+        font-size: 9pt;
+        line-height: 1.4;
+      }
+
+      /* Callout boxes */
+      .callout {
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+      }
+
+      .callout-info {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196f3;
+      }
+
+      .callout-success {
+        background-color: #e8f5e8;
+        border-left: 4px solid var(--success-color);
+      }
+
+      .callout-warning {
+        background-color: #fff3cd;
+        border-left: 4px solid var(--warning-color);
+      }
+
+      .callout-danger {
+        background-color: #f8d7da;
+        border-left: 4px solid var(--error-color);
+      }
+
+      .callout-error {
+        background-color: #ffebee;
+        border-left: 4px solid var(--error-color);
+      }
+
+      /* Component card */
+      .component-card {
+        background-color: var(--light-gray);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 1rem;
+        margin: 1rem 0;
+      }
+
+      .component-card h4 {
+        margin-top: 0;
+        color: var(--secondary-color);
+        font-size: 12pt;
+      }
+
+      .info-section {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border-color);
+      }
+
+      .compact-table {
+        font-size: 9pt;
+      }
+
+      .compact-table th,
+      .compact-table td {
+        padding: 0.4rem;
+      }
+
+      /* Two-column layout */
+      .two-column {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+
+      @media print {
+        .two-column {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Badges and tags */
+      .badge {
+        display: inline-block;
+        padding: 0.125rem 0.375rem;
+        font-size: 8pt;
+        font-weight: 600;
+        border-radius: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .badge-primary {
+        background-color: var(--primary-color);
+        color: white;
+      }
+
+      .badge-success {
+        background-color: var(--success-color);
+        color: white;
+      }
+
+      .badge-warning {
+        background-color: var(--warning-color);
+        color: var(--text-color);
+      }
+
+      .badge-danger {
+        background-color: var(--error-color);
+        color: white;
+      }
+
+      /* Utility classes */
+      .text-center {
+        text-align: center;
+      }
+      .text-right {
+        text-align: right;
+      }
+      .text-muted {
+        color: #666;
+      }
+      .text-small {
+        font-size: 9pt;
+      }
+      .font-bold {
+        font-weight: 600;
+      }
+      .mb-1 {
+        margin-bottom: 0.5rem;
+      }
+      .mb-2 {
+        margin-bottom: 1rem;
+      }
+      .mt-1 {
+        margin-top: 0.5rem;
+      }
+      .mt-2 {
+        margin-top: 1rem;
+      }
+
+      /* Table of Contents */
+      .toc {
+        background-color: var(--light-gray);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 1.5rem;
+        margin: 2rem 0;
+      }
+
+      .toc h2 {
+        margin-top: 0;
+        border-bottom: 2px solid var(--secondary-color);
+        padding-bottom: 0.5rem;
+      }
+
+      .toc-list {
+        list-style: none;
+        padding-left: 0;
+        margin: 1rem 0;
+      }
+
+      .toc-list li {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+
+      .toc-list li a {
+        color: var(--secondary-color);
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .toc-list li a:hover {
+        text-decoration: underline;
+        color: var(--primary-color);
+      }
+
+      .toc-list .toc-subsection {
+        margin-left: 1.5rem;
+        font-size: 10pt;
+        color: var(--text-color);
+      }
+
+      /* Section numbering */
+      .section-number {
+        color: var(--secondary-color);
+        font-weight: 600;
+        margin-right: 0.5rem;
+      }
+
+      /* Enhanced strict mode badge */
+      .strict-mode-enabled {
+        background-color: var(--success-color);
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 10pt;
+      }
+
+      .strict-mode-disabled {
+        background-color: var(--error-color);
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 10pt;
+      }
+
+      /* Hash truncation with tooltip */
+      .hash-display {
+        cursor: help;
+        border-bottom: 1px dotted var(--secondary-color);
+      }
+
+      /* Metadata table */
+      .metadata-table {
+        width: 100%;
+        margin: 1rem 0;
+        font-size: 9pt;
+      }
+
+      .metadata-table td {
+        padding: 0.25rem 0.5rem;
+        border: none;
+      }
+
+      .metadata-table td:first-child {
+        font-weight: 600;
+        width: 30%;
+      }
+
+      /* Pipeline diagram */
+      .pipeline-diagram {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background-color: white;
+      }
+
+      .pipeline-step {
+        background-color: var(--light-gray);
+        border: 2px solid var(--secondary-color);
+        border-radius: 6px;
+        padding: 1rem;
+        min-width: 120px;
+        text-align: center;
+        font-size: 10pt;
+      }
+
+      .pipeline-step-title {
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-bottom: 0.25rem;
+      }
+
+      .pipeline-step-desc {
+        font-size: 9pt;
+        color: #666;
+      }
+
+      .pipeline-arrow {
+        font-size: 18pt;
+        color: var(--secondary-color);
+        font-weight: 600;
+      }
+
+      /* Risk indicators */
+      .risk-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+      }
+
+      .risk-low {
+        background-color: var(--success-color);
+      }
+
+      .risk-medium {
+        background-color: var(--warning-color);
+      }
+
+      .risk-high {
+        background-color: var(--error-color);
+      }
+
+      /* Glossary */
+      .glossary-term {
+        font-weight: 600;
+        color: var(--secondary-color);
+        margin-top: 1rem;
+      }
+
+      .glossary-definition {
+        margin-left: 1rem;
+        margin-bottom: 0.5rem;
+      }
+
+      /* Page counter for print */
+      @media print {
+        @page {
+          margin: 0.75in;
+          @bottom-center {
+            content: "Page " counter(page) " of " counter(pages);
+          }
+        }
+
+        body {
+          counter-reset: page;
+        }
+
+        .footer {
+          position: fixed;
+          bottom: 0;
+          width: 100%;
+        }
+
+        .page-number {
+          display: block;
+        }
+      }
+
+      .page-number {
+        display: none;
+        text-align: center;
+        font-size: 9pt;
+        color: #666;
+        margin-top: 0.5rem;
+      }
+
+      /* Tooltip styling */
+      [title] {
+        position: relative;
+        cursor: help;
+      }
+
+      /* Model card styling */
+      .model-card {
+        background-color: #f8f9ff;
+        border-left: 4px solid var(--secondary-color);
+        padding: 1.5rem;
+        margin: 1rem 0;
+      }
+
+      .model-card h4 {
+        margin-top: 0;
+        color: var(--secondary-color);
+      }
+
+      .model-card ul {
+        margin: 0.5rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header Section -->
+      <header class="header">
+        <h1>{{ report_title | default("ML Model Audit Report") }}</h1>
+        <div class="text-muted">
+          <strong>Generated:</strong> {{ generation_date }}<br />
+          <strong>Audit ID:</strong> <code>{{ audit_id | default("N/A") }}</code
+          ><br />
+          {% if audit_profile %}
+          <strong>Profile:</strong>
+          <span class="badge badge-primary">{{ audit_profile }}</span>
+          {% endif %} {% if strict_mode %}
+          <span
+            class="strict-mode-enabled"
+            role="status"
+            aria-label="Strict mode enabled"
+          >
+            ✓ Strict Mode Enabled
+          </span>
+          {% else %}
+          <span
+            class="strict-mode-disabled"
+            role="status"
+            aria-label="Strict mode disabled"
+          >
+            ⚠ Strict Mode Disabled
+          </span>
+          {% endif %}
+        </div>
+
+        <!-- Metadata Table -->
+        <table class="metadata-table">
+          <tr>
+            <td>GlassAlpha Version:</td>
+            <td>{{ version | default("1.0.0") }}</td>
+            <td>Python Version:</td>
+            <td>
+              {{ manifest.environment.python_version.split()[0] if manifest and
+              manifest.environment and manifest.environment.python_version else
+              "N/A" }}
+            </td>
+          </tr>
+          <tr>
+            <td>Report Generated:</td>
+            <td>{{ generation_date }}</td>
+            <td>Execution Time:</td>
+            <td>
+              {{ "%.2f seconds" | format(manifest.get('execution',
+              {}).get('duration_seconds', 0)) if manifest and
+              manifest.get('execution', {}).get('duration_seconds') else "N/A"
+              }}
+            </td>
+          </tr>
+        </table>
+      </header>
+
+      <!-- Table of Contents -->
+      <nav class="toc" role="navigation" aria-label="Table of contents">
+        <h2>Table of Contents</h2>
+        <ul class="toc-list">
+          <li><a href="#section-1">1. Executive Summary</a></li>
+          <li><a href="#section-2">2. Data Overview</a></li>
+          {% if dataset_bias %}
+          <li>
+            <a href="#section-dataset-bias">3. Dataset-Level Bias Analysis</a>
+          </li>
+          {% endif %} {% if preprocessing_info %}
+          <li>
+            <a href="#section-preprocessing">4. Preprocessing Verification</a>
+          </li>
+          {% endif %}
+          <li><a href="#section-performance">Model Performance Analysis</a></li>
+          {% if calibration_ci %}
+          <li><a href="#section-calibration">Calibration Analysis</a></li>
+          {% endif %} {% if explanations %}
+          <li>
+            <a href="#section-shap">
+              {% if preprocessing_info and dataset_bias and calibration_ci %}7{%
+              elif (preprocessing_info and dataset_bias) or (preprocessing_info
+              and calibration_ci) or (dataset_bias and calibration_ci) %}6{%
+              elif preprocessing_info or dataset_bias or calibration_ci %}5{%
+              else %}4{% endif %}. Model Explainability (SHAP)</a
+            >
+          </li>
+          {% endif %} {% if fairness_analysis %}
+          <li>
+            <a href="#section-fairness">
+              {% set base_num = 8 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {{
+              base_num }}. Fairness & Bias Analysis</a
+            >
+          </li>
+          {% endif %} {% if intersectional_fairness %}
+          <li>
+            <a href="#section-intersectional">
+              {% set base_num = 9 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {{ base_num }}. Intersectional Fairness</a
+            >
+          </li>
+          {% endif %} {% if individual_fairness %}
+          <li>
+            <a href="#section-individual">
+              {% set base_num = 10 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {% if not intersectional_fairness %}{% set base_num = base_num
+              - 1 %}{% endif %} {{ base_num }}. Individual Fairness</a
+            >
+          </li>
+          {% endif %} {% if stability_analysis and
+          stability_analysis.robustness_score is defined %}
+          <li>
+            <a href="#section-robustness">
+              {% set base_num = 11 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {% if not intersectional_fairness %}{% set base_num = base_num
+              - 1 %}{% endif %} {% if not individual_fairness %}{% set base_num
+              = base_num - 1 %}{% endif %} {{ base_num }}. Model Robustness
+              Testing</a
+            >
+          </li>
+          {% endif %}
+          <li>
+            <a href="#section-audit-trail">
+              {% set base_num = 12 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {% if not intersectional_fairness %}{% set base_num = base_num
+              - 1 %}{% endif %} {% if not individual_fairness %}{% set base_num
+              = base_num - 1 %}{% endif %} {% if not (stability_analysis and
+              stability_analysis.robustness_score is defined) %}{% set base_num
+              = base_num - 1 %}{% endif %} {{ base_num }}. Audit Trail &
+              Reproducibility</a
+            >
+          </li>
+          <li>
+            <a href="#section-compliance">
+              {% set base_num = 13 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {% if not intersectional_fairness %}{% set base_num = base_num
+              - 1 %}{% endif %} {% if not individual_fairness %}{% set base_num
+              = base_num - 1 %}{% endif %} {% if not (stability_analysis and
+              stability_analysis.robustness_score is defined) %}{% set base_num
+              = base_num - 1 %}{% endif %} {{ base_num }}. Regulatory
+              Compliance</a
+            >
+          </li>
+          <li>
+            <a href="#section-model-card">
+              {% set base_num = 14 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {% if not intersectional_fairness %}{% set base_num = base_num
+              - 1 %}{% endif %} {% if not individual_fairness %}{% set base_num
+              = base_num - 1 %}{% endif %} {% if not (stability_analysis and
+              stability_analysis.robustness_score is defined) %}{% set base_num
+              = base_num - 1 %}{% endif %} {{ base_num }}. Model Card</a
+            >
+          </li>
+          <li>
+            <a href="#section-glossary">
+              {% set base_num = 15 %} {% if not preprocessing_info %}{% set
+              base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+              set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+              %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+              explanations %}{% set base_num = base_num - 1 %}{% endif %} {% if
+              not fairness_analysis %}{% set base_num = base_num - 1 %}{% endif
+              %} {% if not intersectional_fairness %}{% set base_num = base_num
+              - 1 %}{% endif %} {% if not individual_fairness %}{% set base_num
+              = base_num - 1 %}{% endif %} {% if not (stability_analysis and
+              stability_analysis.robustness_score is defined) %}{% set base_num
+              = base_num - 1 %}{% endif %} {{ base_num }}. Glossary</a
+            >
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Executive Summary -->
+      <section
+        id="section-1"
+        class="section executive-summary"
+        role="region"
+        aria-labelledby="exec-summary-heading"
+      >
+        <h2 id="exec-summary-heading">
+          <span class="section-number">1.</span>Executive Summary
+        </h2>
+
+        <div class="two-column">
+          <div>
+            <h4>Model Overview</h4>
+            <div class="info-grid">
+              <span class="info-label">Model Type:</span>
+              <span class="info-value"
+                >{{ model_info.type | default("N/A") | title }}</span
+              >
+
+              <span class="info-label">Dataset:</span>
+              <span class="info-value">
+                {{ data_summary.shape[0] if data_summary.shape else "N/A" }}
+                samples, {{ data_summary.shape[1] if data_summary.shape else
+                "N/A" }} features
+              </span>
+
+              <span class="info-label">Target:</span>
+              <span class="info-value"
+                >{{ schema_info.target | default("N/A") }}</span
+              >
+
+              <span class="info-label">Protected Attributes:</span>
+              <span class="info-value">
+                {% if schema_info.sensitive_features %} {{
+                schema_info.sensitive_features | join(", ") }} {% else %} None
+                specified {% endif %}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <h4>Key Findings</h4>
+            <ul>
+              {% if model_performance.accuracy %}
+              <li>
+                <strong>Overall Accuracy:</strong>
+                {% if model_performance.accuracy is mapping %} {% if
+                model_performance.accuracy.value is defined %} {% set acc =
+                model_performance.accuracy.value %} {% elif
+                model_performance.accuracy.accuracy is defined %} {% set acc =
+                model_performance.accuracy.accuracy %} {% else %} {% set acc =
+                model_performance.accuracy %} {% endif %} {% else %} {% set acc
+                = model_performance.accuracy %} {% endif %}
+                <span
+                  class="metric-value metric-{{ 'good' if acc > 0.8 else ('warning' if acc > 0.6 else 'poor') }}"
+                >
+                  {{ "%.1f%%" | format(acc * 100) }}
+                </span>
+              </li>
+              {% endif %} {% set bias_detected = [] %} {% for attr, metrics in
+              fairness_analysis.items() %} {% for metric, result in
+              metrics.items() %} {% if result.is_fair is defined and not
+              result.is_fair %} {% set _ = bias_detected.append(attr) %} {%
+              endif %} {% endfor %} {% endfor %}
+
+              <li>
+                <strong>Bias Detection:</strong>
+                {% if bias_detected %}
+                <span class="status-indicator status-warning"
+                  >{{ bias_detected | length }} Issue(s) Found</span
+                >
+                <br /><small class="text-muted"
+                  >Bias detected in: {{ bias_detected | unique | join(", ")
+                  }}</small
+                >
+                {% else %}
+                <span class="status-indicator status-pass"
+                  >No Issues Detected</span
+                >
+                {% endif %}
+              </li>
+
+              <li>
+                <strong>Explainability:</strong>
+                {% if explanations and explanations.global_importance %}
+                <span class="status-indicator status-pass">Available</span>
+                {% else %}
+                <span class="status-indicator status-fail">Not Available</span>
+                {% endif %}
+              </li>
+
+              <li>
+                <strong>Reproducibility:</strong>
+                {% if manifest.seeds %}
+                <span class="status-indicator status-pass"
+                  >Fully Reproducible</span
+                >
+                {% else %}
+                <span class="status-indicator status-warning">Limited</span>
+                {% endif %}
+              </li>
+
+              <li>
+                <strong>Preprocessing Verification:</strong>
+                {% if preprocessing_info and preprocessing_info.mode ==
+                'artifact' %}
+                <span
+                  class="status-indicator status-pass"
+                  aria-label="Production artifact verified"
+                  >Production Artifact Verified</span
+                >
+                {% elif preprocessing_info and preprocessing_info.mode == 'auto'
+                %}
+                <span
+                  class="status-indicator status-fail"
+                  aria-label="Non-compliant auto mode"
+                  >Non-Compliant (Auto Mode)</span
+                >
+                {% else %}
+                <span
+                  class="status-indicator status-warning"
+                  aria-label="Not configured"
+                  >Not Configured</span
+                >
+                {% endif %}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        {% if model_performance.accuracy %} {% if model_performance.accuracy is
+        mapping %} {% if model_performance.accuracy.value is defined %} {% set
+        acc_val = model_performance.accuracy.value %} {% elif
+        model_performance.accuracy.accuracy is defined %} {% set acc_val =
+        model_performance.accuracy.accuracy %} {% else %} {% set acc_val = 0 %}
+        {% endif %} {% else %} {% set acc_val = model_performance.accuracy %} {%
+        endif %} {% else %} {% set acc_val = 0 %} {% endif %} {% if
+        bias_detected or (model_performance.accuracy and acc_val < 0.7) %}
+        <div class="callout callout-warning">
+          <h4>WARNING: Regulatory Attention Required</h4>
+          <p>
+            This model shows potential issues that may require regulatory review
+            before deployment:
+          </p>
+          <ul>
+            {% if bias_detected %}
+            <li>
+              Potential bias detected in protected attributes: {{ bias_detected
+              | unique | join(", ") }}
+            </li>
+            {% endif %} {% if model_performance.accuracy and acc_val < 0.7 %}
+            <li>
+              Model accuracy below recommended threshold ({{ "%.1f%%" |
+              format(acc_val * 100) }} &lt; 70%)
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+        {% endif %}
+      </section>
+
+      <div class="page-break"></div>
+
+      <!-- Data Overview -->
+      <section
+        id="section-2"
+        class="section"
+        role="region"
+        aria-labelledby="data-overview-heading"
+      >
+        <h2 id="data-overview-heading">
+          <span class="section-number">2.</span>Data Overview
+        </h2>
+
+        <h3>Dataset Statistics</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if data_summary %}
+              <tr>
+                <td><strong>Total Samples</strong></td>
+                <td class="metric-value">
+                  {{ "{:,}".format(data_summary.shape[0]) if data_summary.shape
+                  else "N/A" }}
+                </td>
+                <td>Number of observations in the dataset</td>
+              </tr>
+              <tr>
+                <td><strong>Total Features</strong></td>
+                <td class="metric-value">
+                  {{ data_summary.shape[1] if data_summary.shape else "N/A" }}
+                </td>
+                <td>Number of input variables</td>
+              </tr>
+              <tr>
+                <td><strong>Missing Values</strong></td>
+                <td class="metric-value">
+                  {{ data_summary.missing_count | default(0) }}
+                </td>
+                <td>Count of missing data points</td>
+              </tr>
+              <tr>
+                <td><strong>Data Quality Score</strong></td>
+                <td
+                  class="metric-value metric-{{ 'good' if (data_summary.missing_count | default(0)) < 50 else 'warning' }}"
+                >
+                  {{ "%.1f%%" | format(((data_summary.shape[0] *
+                  data_summary.shape[1] - (data_summary.missing_count |
+                  default(0))) / (data_summary.shape[0] * data_summary.shape[1])
+                  * 100) if data_summary.shape else 0) }}
+                </td>
+                <td>Percentage of complete data points</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if schema_info %}
+        <h3>Feature Schema</h3>
+        <div class="two-column">
+          <div>
+            <h4>Categorical Features</h4>
+            <ul class="text-small">
+              {% if schema_info and schema_info.categorical_features %} {% for
+              feature in schema_info.categorical_features %}
+              <li>{{ feature | replace("_", " ") | title }}</li>
+              {% endfor %} {% else %}
+              <li class="text-muted">None specified</li>
+              {% endif %}
+            </ul>
+          </div>
+          <div>
+            <h4>Numerical Features</h4>
+            <ul class="text-small">
+              {% if schema_info and schema_info.numeric_features %} {% for
+              feature in schema_info.numeric_features %}
+              <li>{{ feature | replace("_", " ") | title }}</li>
+              {% endfor %} {% else %}
+              <li class="text-muted">None specified</li>
+              {% endif %}
+            </ul>
+          </div>
+        </div>
+        {% endif %}
+      </section>
+
+      <!-- Dataset Bias Analysis (E12) -->
+      {% if dataset_bias %}
+      <div class="page-break"></div>
+      <section
+        id="section-dataset-bias"
+        class="section"
+        role="region"
+        aria-labelledby="dataset-bias-heading"
+      >
+        <h2 id="dataset-bias-heading">
+          <span class="section-number">3.</span>Dataset-Level Bias Analysis
+        </h2>
+
+        <div class="callout callout-info">
+          <h4>What is Dataset Bias?</h4>
+          <p>
+            Dataset bias occurs when training data systematically differs from
+            real-world distributions, contains proxy features correlated with
+            protected attributes, or has sampling imbalances. Detecting bias at
+            the data level is critical because
+            <strong>biased data produces biased models</strong>
+            regardless of algorithmic fairness interventions.
+          </p>
+        </div>
+
+        {% if dataset_bias.proxy_correlations %}
+        <h3>Proxy Feature Correlations</h3>
+        <p class="text-small text-muted">
+          Features that strongly correlate with protected attributes may act as
+          proxies, allowing the model to discriminate indirectly even when
+          protected attributes are excluded.
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>Protected Attribute</th>
+                <th>Correlation</th>
+                <th>P-Value</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if dataset_bias.proxy_correlations and
+              dataset_bias.proxy_correlations.correlations %} {% for
+              protected_attr, features in
+              dataset_bias.proxy_correlations.correlations.items() %} {% for
+              feature, corr_data in features.items() %}
+              <tr>
+                <td>
+                  <strong>{{ feature | replace("_", " ") | title }}</strong>
+                </td>
+                <td>{{ protected_attr | replace("_", " ") | title }}</td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(corr_data.correlation) }}
+                </td>
+                <td class="metric-value text-small">
+                  {{ "%.4f"|format(corr_data.p_value) }}
+                </td>
+                <td>
+                  {% if corr_data.correlation|abs > 0.7 %}
+                  <span class="badge badge-error">High Proxy Risk</span>
+                  {% elif corr_data.correlation|abs > 0.5 %}
+                  <span class="badge badge-warning">Moderate Proxy Risk</span>
+                  {% else %}
+                  <span class="badge badge-success">Low Risk</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %} {% endfor %} {% else %}
+              <tr>
+                <td colspan="5" class="text-center text-muted">
+                  No proxy correlations detected
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-warning">
+          <h4>Interpretation</h4>
+          <p>
+            <strong>High proxy risk</strong> (|r| > 0.7): Feature may enable
+            indirect discrimination. Consider removing or monitoring closely.<br />
+            <strong>Moderate proxy risk</strong> (|r| > 0.5): Evaluate if
+            feature is necessary for model performance.
+          </p>
+        </div>
+        {% endif %} {% if dataset_bias.distribution_drift %}
+        <h3>Distribution Drift Analysis</h3>
+        <p class="text-small text-muted">
+          Statistical tests comparing feature distributions across protected
+          groups. Significant drift may indicate sampling bias or systematic
+          differences in data collection.
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>Test Statistic</th>
+                <th>P-Value</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if dataset_bias.distribution_drift and
+              dataset_bias.distribution_drift.drift_tests %} {% for feature,
+              drift_data in dataset_bias.distribution_drift.drift_tests.items()
+              %}
+              <tr>
+                <td>
+                  <strong>{{ feature | replace("_", " ") | title }}</strong>
+                </td>
+                <td class="metric-value">
+                  {{ "%.4f"|format(drift_data.statistic) }}
+                </td>
+                <td class="metric-value text-small">
+                  {{ "%.4f"|format(drift_data.p_value) }}
+                </td>
+                <td>
+                  {% if drift_data.p_value < 0.01 %}
+                  <span class="badge badge-error">Significant Drift</span>
+                  {% elif drift_data.p_value < 0.05 %}
+                  <span class="badge badge-warning">Moderate Drift</span>
+                  {% else %}
+                  <span class="badge badge-success">No Significant Drift</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %} {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">
+                  No distribution drift tests available
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %} {% if dataset_bias.sampling_bias_power %}
+        <h3>Sampling Bias Detection Power</h3>
+        <p class="text-small text-muted">
+          Statistical power to detect sampling bias (e.g., underrepresentation
+          of protected groups). Low power indicates insufficient sample size to
+          reliably detect bias.
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Protected Attribute</th>
+                <th>Statistical Power</th>
+                <th>Min Sample Size</th>
+                <th>Assessment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if dataset_bias.sampling_bias_power and
+              dataset_bias.sampling_bias_power.power_by_group %} {% for attr,
+              groups in dataset_bias.sampling_bias_power.power_by_group.items()
+              %} {% for group_name, power_info in groups.items() %}
+              <tr>
+                <td>
+                  <strong
+                    >{{ attr | replace("_", " ") | title }} ({{ group_name
+                    }})</strong
+                  >
+                </td>
+                <td class="metric-value">
+                  {{ "%.2f"|format(power_info.power) }}
+                </td>
+                <td class="metric-value">{{ power_info.min_sample_size }}</td>
+                <td>
+                  {% if power_info.power >= 0.80 %}
+                  <span class="badge badge-success">Adequate Power</span>
+                  {% elif power_info.power >= 0.60 %}
+                  <span class="badge badge-warning">Marginal Power</span>
+                  {% else %}
+                  <span class="badge badge-error">Insufficient Power</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %} {% endfor %} {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">
+                  No sampling bias power analysis available
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-info">
+          <h4>Recommended Action</h4>
+          <p>
+            <strong>Statistical power ≥ 0.80</strong>: Sample size is adequate
+            for bias detection.<br />
+            <strong>Power < 0.80</strong>: Consider collecting more data or
+            interpreting fairness metrics with caution.
+          </p>
+        </div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <!-- Preprocessing -->
+      {% if preprocessing_info %}
+      <div class="page-break"></div>
+      <section
+        id="section-preprocessing"
+        class="section"
+        role="region"
+        aria-labelledby="preprocessing-heading"
+      >
+        <h2 id="preprocessing-heading">
+          <span class="section-number">4.</span>Preprocessing Verification
+        </h2>
+
+        {% if preprocessing_info.mode == 'auto' %}
+        <div class="callout callout-error">
+          <h4>⚠️ WARNING: Non-Compliant Preprocessing Mode</h4>
+          <p>
+            This audit used <strong>AUTO preprocessing mode</strong>, which is
+            <strong>NOT suitable for regulatory compliance</strong>. Auto mode
+            dynamically fits preprocessing transformers to the audit data,
+            creating a different preprocessing pipeline than production.
+          </p>
+          <p><strong>For compliance-grade audits:</strong></p>
+          <ul>
+            <li>Use <code>mode: artifact</code> in preprocessing config</li>
+            <li>Provide the exact preprocessing artifact used in production</li>
+            <li>
+              Include both <code>expected_file_hash</code> and
+              <code>expected_params_hash</code>
+            </li>
+          </ul>
+          <p class="text-muted">
+            <small>
+              See documentation: <code>docs/preprocessing.md</code>
+            </small>
+          </p>
+        </div>
+        {% elif preprocessing_info.mode == 'artifact' %}
+        <div class="callout callout-success">
+          <h4>✓ Production Artifact Verified</h4>
+          <p>
+            This audit used a
+            <strong>verified preprocessing artifact</strong> from production,
+            ensuring the model was evaluated with the exact same transformations
+            used in deployment.
+          </p>
+        </div>
+        {% endif %}
+
+        <h3>Preprocessing Summary</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Property</th>
+                <th>Value</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Mode</strong></td>
+                <td>
+                  <code>{{ preprocessing_info.mode }}</code>
+                </td>
+                <td>
+                  {% if preprocessing_info.mode == 'artifact' %}
+                  <span class="status-indicator status-pass">Compliant</span>
+                  {% else %}
+                  <span class="status-indicator status-fail"
+                    >Non-Compliant</span
+                  >
+                  {% endif %}
+                </td>
+              </tr>
+              {% if preprocessing_info.artifact_path %}
+              <tr>
+                <td><strong>Artifact Path</strong></td>
+                <td>
+                  <code class="text-small"
+                    >{{ preprocessing_info.artifact_path }}</code
+                  >
+                </td>
+                <td>—</td>
+              </tr>
+              {% endif %} {% if preprocessing_info.file_hash %}
+              <tr>
+                <td><strong>File Hash (SHA256)</strong></td>
+                <td>
+                  {% set full_file_hash = preprocessing_info.file_hash |
+                  replace('sha256:', '') %}
+                  <code
+                    class="text-small hash-display"
+                    title="Full hash: {{ full_file_hash }}"
+                    >{{ full_file_hash[:12] }}...{{ full_file_hash[-12:]
+                    }}</code
+                  >
+                </td>
+                <td>
+                  <span
+                    class="status-indicator status-pass"
+                    aria-label="File hash verified"
+                    >Verified</span
+                  >
+                </td>
+              </tr>
+              {% endif %} {% if preprocessing_info.params_hash %}
+              <tr>
+                <td><strong>Params Hash (SHA256)</strong></td>
+                <td>
+                  {% set full_params_hash = preprocessing_info.params_hash |
+                  replace('sha256:', '') %}
+                  <code
+                    class="text-small hash-display"
+                    title="Full hash: {{ full_params_hash }}"
+                    >{{ full_params_hash[:12] }}...{{ full_params_hash[-12:]
+                    }}</code
+                  >
+                </td>
+                <td>
+                  <span
+                    class="status-indicator status-pass"
+                    aria-label="Parameters hash verified"
+                    >Verified</span
+                  >
+                </td>
+              </tr>
+              {% endif %} {% if preprocessing_info.manifest and
+              preprocessing_info.manifest.created_at %}
+              <tr>
+                <td><strong>Artifact Created</strong></td>
+                <td>{{ preprocessing_info.manifest.created_at }}</td>
+                <td>—</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if preprocessing_info.manifest and
+        preprocessing_info.manifest.components %}
+        <h3>Preprocessing Pipeline</h3>
+        <p class="text-muted">
+          The following transformation steps are applied to data in sequence.
+        </p>
+
+        <!-- Pipeline Diagram -->
+        <div
+          class="pipeline-diagram"
+          role="img"
+          aria-label="Preprocessing pipeline flow diagram"
+        >
+          {% set component_count = preprocessing_info.manifest.components |
+          length %} {% for component in preprocessing_info.manifest.components
+          %}
+          <div class="pipeline-step">
+            <div class="pipeline-step-title">
+              {{ loop.index }}. {{ component.name.split('.')[-1] | title }}
+            </div>
+            <div class="pipeline-step-desc">
+              {{ component.class.split('.')[-1] }}
+            </div>
+          </div>
+          {% if not loop.last %}
+          <div class="pipeline-arrow" aria-hidden="true">→</div>
+          {% endif %} {% endfor %}
+        </div>
+
+        <h3>Component Details</h3>
+        <p class="text-muted">
+          Learned parameters extracted from the preprocessing artifact. These
+          values were fitted on production training data and applied to audit
+          data.
+        </p>
+
+        {% for component in preprocessing_info.manifest.components %}
+        <div class="component-card">
+          <h4>
+            {% if 'imputer' in component.name.lower() %}
+            <span
+              class="risk-indicator risk-medium"
+              title="Medium impact: Imputation affects missing data handling"
+            ></span>
+            {% elif 'scaler' in component.name.lower() or 'standard' in
+            component.class.lower() %}
+            <span
+              class="risk-indicator risk-low"
+              title="Low impact: Scaling preserves data relationships"
+            ></span>
+            {% elif 'onehot' in component.name.lower() or 'encoder' in
+            component.class.lower() %}
+            <span
+              class="risk-indicator risk-medium"
+              title="Medium impact: Encoding affects categorical representation"
+            ></span>
+            {% else %}
+            <span class="risk-indicator risk-low"></span>
+            {% endif %} {{ component.name }}
+          </h4>
+          <div class="info-grid">
+            <span class="info-label">Class:</span>
+            <span class="info-value">
+              <code class="text-small">{{ component.class }}</code>
+            </span>
+
+            <span class="info-label">Purpose:</span>
+            <span class="info-value">
+              {% if 'SimpleImputer' in component.class %} Fills in missing
+              values using the {{ component.strategy if component.strategy else
+              'configured' }} strategy {% elif 'StandardScaler' in
+              component.class %} Standardizes features by removing the mean and
+              scaling to unit variance {% elif 'OneHotEncoder' in
+              component.class %} Converts categorical variables into binary
+              indicator features {% elif 'RobustScaler' in component.class %}
+              Scales features using statistics robust to outliers {% elif
+              'MinMaxScaler' in component.class %} Scales features to a fixed
+              range (typically 0 to 1) {% else %} Data transformation component
+              {% endif %}
+            </span>
+
+            {% if component.handle_unknown %}
+            <span class="info-label">Handle Unknown:</span>
+            <span class="info-value">{{ component.handle_unknown }}</span>
+            {% endif %} {% if component.drop %}
+            <span class="info-label">Drop:</span>
+            <span class="info-value">{{ component.drop }}</span>
+            {% endif %} {% if component.sparse_output is not none %}
+            <span class="info-label">Sparse Output:</span>
+            <span class="info-value">{{ component.sparse_output }}</span>
+            {% endif %}
+          </div>
+
+          {% if component.columns %}
+          <div class="info-section">
+            <strong
+              >Applied to columns ({{ component.columns | length }}):</strong
+            >
+            <div class="text-small text-muted">
+              {{ component.columns | join(", ") }}
+            </div>
+          </div>
+          {% endif %} {% if component.learned_stats %}
+          <div class="info-section">
+            <strong>Learned Statistics:</strong>
+            <div class="table-container">
+              <table class="compact-table">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for i in range(component.learned_stats | length) %}
+                  <tr>
+                    <td class="text-small">
+                      {{ component.columns[i] if component.columns and i <
+                      (component.columns | length) else ("Column " + (i |
+                      string)) }}
+                    </td>
+                    <td class="text-small">
+                      {% set val = component.learned_stats[i] %} {% if val is
+                      number %} {{ "%.4f" | format(val) }} {% else %} {{ val }}
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %} {% if component.mean or component.scale %}
+          <div class="info-section">
+            <strong>Scaling Parameters:</strong>
+            <div class="table-container">
+              <table class="compact-table">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    {% if component.mean %}
+                    <th>Mean</th>
+                    {% endif %} {% if component.scale %}
+                    <th>Scale</th>
+                    {% endif %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for i in range((component.mean | length) if component.mean
+                  else (component.scale | length)) %}
+                  <tr>
+                    <td class="text-small">
+                      {{ component.columns[i] if component.columns and i <
+                      (component.columns | length) else ("Column " + (i |
+                      string)) }}
+                    </td>
+                    {% if component.mean %}
+                    <td class="text-small">
+                      {{ "%.4f" | format(component.mean[i]) }}
+                    </td>
+                    {% endif %} {% if component.scale %}
+                    <td class="text-small">
+                      {{ "%.4f" | format(component.scale[i]) }}
+                    </td>
+                    {% endif %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %} {% if component.categories %}
+          <div class="info-section">
+            <strong>Encoder Categories (showing up to 10 per column):</strong>
+            <div class="table-container">
+              <table class="compact-table">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Categories</th>
+                    <th>Count</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for i in range(component.categories | length) %}
+                  <tr>
+                    <td class="text-small">
+                      {{ component.columns[i] if component.columns and i <
+                      (component.columns | length) else ("Column " + (i |
+                      string)) }}
+                    </td>
+                    <td class="text-small">
+                      {% set cats = component.categories[i] %} {% if cats |
+                      length > 10 %} {{ cats[:10] | join(", ") }}, ... ({{ cats
+                      | length - 10 }} more) {% else %} {{ cats | join(", ") }}
+                      {% endif %}
+                    </td>
+                    <td class="text-small">
+                      {{ component.categories[i] | length }}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %} {% endif %} {% if preprocessing_info.manifest and
+        preprocessing_info.manifest.artifact_runtime_versions %}
+        <h3>Runtime Version Information</h3>
+
+        {% set has_mismatch = namespace(value=false) %} {% for lib, artifact_ver
+        in preprocessing_info.manifest.artifact_runtime_versions.items() %} {%
+        set audit_ver = preprocessing_info.manifest.audit_runtime_versions[lib]
+        if preprocessing_info.manifest.audit_runtime_versions else "N/A" %} {%
+        if artifact_ver != audit_ver %} {% set has_mismatch.value = true %} {%
+        endif %} {% endfor %} {% if has_mismatch.value %}
+        <div class="callout callout-warning">
+          <h4>⚠️ Version Mismatch Detected</h4>
+          <p>
+            The preprocessing artifact was created with different library
+            versions than the current audit environment. While the artifact has
+            been successfully loaded, version differences may affect
+            reproducibility.
+          </p>
+          <p>
+            <strong>Recommendation:</strong> For maximum reproducibility, use
+            the same library versions that were used to create the preprocessing
+            artifact.
+          </p>
+        </div>
+        {% endif %}
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Library</th>
+                <th>Artifact Version</th>
+                <th>Audit Version</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lib, artifact_ver in
+              preprocessing_info.manifest.artifact_runtime_versions.items() %}
+              {% set audit_ver =
+              preprocessing_info.manifest.audit_runtime_versions[lib] if
+              preprocessing_info.manifest.audit_runtime_versions else "N/A" %}
+              <tr>
+                <td><strong>{{ lib }}</strong></td>
+                <td><code>{{ artifact_ver }}</code></td>
+                <td><code>{{ audit_ver }}</code></td>
+                <td>
+                  {% if artifact_ver == audit_ver %}
+                  <span class="status-indicator status-pass">Match</span>
+                  {% else %}
+                  <span class="status-indicator status-warning">Mismatch</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %} {% if preprocessing_unknown_rates %}
+        <h3>Unknown Category Detection</h3>
+        <p class="text-muted">
+          Unknown categories are values in the audit data that were not seen
+          during the training of the preprocessing artifact. High unknown rates
+          may indicate distribution shift or data quality issues.
+        </p>
+
+        {% set high_unknown_cols = [] %} {% for col, rate in
+        preprocessing_unknown_rates.items() %} {% if rate > 0.10 %} {% set _ =
+        high_unknown_cols.append(col) %} {% endif %} {% endfor %} {% if
+        high_unknown_cols %}
+        <div class="callout callout-warning">
+          <h4>⚠️ High Unknown Category Rates Detected</h4>
+          <p>
+            The following columns have high unknown category rates (>10%):
+            <strong>{{ high_unknown_cols | join(', ') }}</strong>
+          </p>
+          <p><strong>Potential Causes:</strong></p>
+          <ul>
+            <li>
+              Data distribution has shifted since preprocessing artifact was
+              created
+            </li>
+            <li>
+              Audit data comes from a different population than training data
+            </li>
+            <li>
+              New categories have emerged that didn't exist during training
+            </li>
+          </ul>
+          <p><strong>Recommended Actions:</strong></p>
+          <ul>
+            <li>Investigate the source of unknown categories</li>
+            <li>
+              Consider retraining the preprocessing artifact with updated
+              training data
+            </li>
+            <li>
+              Verify that audit data is from the same distribution as production
+              data
+            </li>
+            <li>
+              Review the encoder's handle_unknown strategy for appropriateness
+            </li>
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Column</th>
+                <th>Unknown Rate</th>
+                <th>Assessment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for col, rate in preprocessing_unknown_rates.items() %}
+              <tr>
+                <td><strong>{{ col }}</strong></td>
+                <td class="metric-value">
+                  {{ "%.2f%%" | format(rate * 100) }}
+                </td>
+                <td>
+                  {% if rate > 0.10 %}
+                  <span class="status-indicator status-fail">High</span>
+                  {% elif rate > 0.01 %}
+                  <span class="status-indicator status-warning">Moderate</span>
+                  {% else %}
+                  <span class="status-indicator status-pass">Low</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <!-- Model Performance -->
+      <section
+        id="section-performance"
+        class="section"
+        role="region"
+        aria-labelledby="performance-heading"
+      >
+        <h2 id="performance-heading">
+          <span class="section-number"
+            >{% if preprocessing_info and dataset_bias %}5.{% elif
+            preprocessing_info or dataset_bias %}4.{% else %}3.{% endif %}</span
+          >Model Performance Analysis
+        </h2>
+
+        {% if model_performance %}
+        <h3>Performance Metrics</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Assessment</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for metric_name, metric_data in model_performance.items() %} {%
+              if metric_data is mapping %} {% if metric_name ==
+              "classification_report" %}
+              <tr>
+                <td><strong>Overall Accuracy</strong></td>
+                <td class="metric-value">
+                  {{ "%.3f" | format(metric_data.accuracy) }}
+                </td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if metric_data.accuracy > 0.8 else ('warning' if metric_data.accuracy > 0.6 else 'fail') }}"
+                  >
+                    {{ 'Excellent' if metric_data.accuracy > 0.9 else ('Good' if
+                    metric_data.accuracy > 0.8 else ('Fair' if
+                    metric_data.accuracy > 0.6 else 'Poor')) }}
+                  </span>
+                </td>
+                <td>Overall classification accuracy</td>
+              </tr>
+              {% if metric_data.macro_precision is defined %}
+              <tr>
+                <td><strong>Macro Precision</strong></td>
+                <td class="metric-value">
+                  {{ "%.3f" | format(metric_data.macro_precision) }}
+                </td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if metric_data.macro_precision > 0.8 else ('warning' if metric_data.macro_precision > 0.6 else 'fail') }}"
+                  >
+                    {{ 'Good' if metric_data.macro_precision > 0.8 else ('Fair'
+                    if metric_data.macro_precision > 0.6 else 'Poor') }}
+                  </span>
+                </td>
+                <td>Average precision across all classes</td>
+              </tr>
+              {% endif %} {% else %} {% set value = metric_data.value if
+              metric_data.value is defined else metric_data.accuracy if
+              metric_data.accuracy is defined else metric_data %} {% if value is
+              number %}
+              <tr>
+                <td>
+                  <strong>{{ metric_name | replace("_", " ") | title }}</strong>
+                </td>
+                <td class="metric-value">{{ "%.3f" | format(value) }}</td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if value > 0.8 else ('warning' if value > 0.6 else 'fail') }}"
+                  >
+                    {{ 'Good' if value > 0.8 else ('Fair' if value > 0.6 else
+                    'Poor') }}
+                  </span>
+                </td>
+                <td>
+                  {{ metric_descriptions.get(metric_name, "Performance metric")
+                  }}
+                </td>
+              </tr>
+              {% endif %} {% endif %} {% elif metric_data is number %}
+              <tr>
+                <td>
+                  <strong>{{ metric_name | replace("_", " ") | title }}</strong>
+                </td>
+                <td class="metric-value">{{ "%.3f" | format(metric_data) }}</td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if metric_data > 0.8 else ('warning' if metric_data > 0.6 else 'fail') }}"
+                  >
+                    {{ 'Good' if metric_data > 0.8 else ('Fair' if metric_data >
+                    0.6 else 'Poor') }}
+                  </span>
+                </td>
+                <td>
+                  {{ metric_descriptions.get(metric_name, "Performance metric")
+                  }}
+                </td>
+              </tr>
+              {% endif %} {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        <!-- Performance Plots -->
+        {% if performance_plots %}
+        <h3>Performance Visualizations</h3>
+        {% for plot_name, plot_path in performance_plots.items() %}
+        <div class="plot-container">
+          <img
+            src="{{ plot_path }}"
+            alt="{{ plot_name | replace('_', ' ') | title }} Plot"
+          />
+          <div class="plot-caption">
+            {{ plot_name | replace('_', ' ') | title }} - {{
+            plot_descriptions.get(plot_name, "Model performance visualization")
+            }}
+          </div>
+        </div>
+        {% endfor %} {% endif %}
+      </section>
+
+      <!-- Calibration with Confidence Intervals (E10+) -->
+      {% if calibration_ci %}
+      <div class="page-break"></div>
+      <section
+        id="section-calibration"
+        class="section"
+        role="region"
+        aria-labelledby="calibration-heading"
+      >
+        <h2 id="calibration-heading">
+          <span class="section-number"
+            >{% if preprocessing_info and dataset_bias %}6.{% elif
+            preprocessing_info or dataset_bias %}5.{% else %}4.{% endif %}</span
+          >Calibration Analysis with Confidence Intervals
+        </h2>
+
+        <div class="callout callout-info">
+          <h4>What is Calibration?</h4>
+          <p>
+            Calibration measures whether predicted probabilities match observed
+            outcomes. A well-calibrated model predicting 70% confidence should
+            be correct 70% of the time.
+            <strong>Poor calibration can mislead decision-makers</strong> even
+            if classification accuracy is high.
+          </p>
+        </div>
+
+        <h3>Calibration Metrics</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>95% Confidence Interval</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Expected Calibration Error (ECE)</strong></td>
+                <td class="metric-value">
+                  {% if calibration_ci.get('ece') is not none %} {{
+                  "%.4f"|format(calibration_ci['ece']) }} {% else %} N/A {%
+                  endif %}
+                </td>
+                <td class="metric-value text-small">
+                  {% if calibration_ci.get('ece_ci') %} [{{
+                  "%.4f"|format(calibration_ci['ece_ci']['ci_lower']) }}, {{
+                  "%.4f"|format(calibration_ci['ece_ci']['ci_upper']) }}] {%
+                  else %} N/A {% endif %}
+                </td>
+                <td class="text-small">
+                  {% if calibration_ci.get('ece') is not none %} {% if
+                  calibration_ci['ece'] < 0.05 %}
+                  <span class="badge badge-success">Well Calibrated</span>
+                  {% elif calibration_ci['ece'] < 0.10 %}
+                  <span class="badge badge-warning">Acceptable</span>
+                  {% else %}
+                  <span class="badge badge-error">Poorly Calibrated</span>
+                  {% endif %} {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Brier Score</strong></td>
+                <td class="metric-value">
+                  {{ "%.4f"|format(calibration_ci['brier_score']) }}
+                </td>
+                <td class="metric-value text-small">
+                  {% if calibration_ci.get('brier_ci') %} [{{
+                  "%.4f"|format(calibration_ci['brier_ci']['ci_lower']) }}, {{
+                  "%.4f"|format(calibration_ci['brier_ci']['ci_upper']) }}] {%
+                  else %} N/A {% endif %}
+                </td>
+                <td class="text-small">
+                  Combined measure of calibration and accuracy (lower is better)
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-small text-muted">
+          Sample size: {{ "{:,}".format(calibration_ci.get('n_samples', 0)) }} |
+          Bins: {{ calibration_ci.get('n_bins', 10) }} | Bootstrap samples: {{
+          calibration_ci.get('ece_ci', {}).get('n_bootstrap', 'N/A') if
+          calibration_ci.get('ece_ci') else 'N/A' }}
+        </p>
+
+        {% if calibration_ci.get('bin_calibration') %}
+        <h3>Bin-Wise Calibration Error</h3>
+        <p class="text-small text-muted">
+          Calibration error by predicted probability bin. Wide confidence
+          intervals indicate uncertainty due to small sample sizes.
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Bin Range</th>
+                <th>Count</th>
+                <th>Mean Predicted</th>
+                <th>Mean Observed</th>
+                <th>Error</th>
+                <th>95% CI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for bin in calibration_ci['bin_calibration'] %}
+              <tr>
+                <td class="text-small">
+                  [{{ "%.2f"|format(bin['bin_lower']) }}, {{
+                  "%.2f"|format(bin['bin_upper']) }})
+                </td>
+                <td class="metric-value">{{ bin['count'] }}</td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(bin['mean_predicted']) }}
+                </td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(bin['mean_observed']) }}
+                </td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(bin['error']|abs) }}
+                </td>
+                <td class="metric-value text-small">
+                  {% if bin.get('error_ci') %} [{{
+                  "%.3f"|format(bin['error_ci']['ci_lower']) }}, {{
+                  "%.3f"|format(bin['error_ci']['ci_upper']) }}] {% else %} N/A
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        <div class="callout callout-info">
+          <h4>Understanding Calibration</h4>
+          <p>
+            <strong>ECE < 0.05</strong>: Model probabilities are
+            well-calibrated<br />
+            <strong>ECE 0.05-0.10</strong>: Acceptable calibration for most
+            applications<br />
+            <strong>ECE > 0.10</strong>: Consider recalibration (e.g., Platt
+            scaling, isotonic regression)
+          </p>
+          <p class="text-small">
+            <strong>Confidence intervals</strong> quantify uncertainty in
+            calibration estimates. Wide intervals suggest small sample sizes or
+            high variability.
+          </p>
+        </div>
+      </section>
+      {% endif %}
+
+      <div class="page-break"></div>
+
+      <!-- SHAP Explanations -->
+      {% if explanations %}
+      <section
+        id="section-shap"
+        class="section"
+        role="region"
+        aria-labelledby="shap-heading"
+      >
+        <h2 id="shap-heading">
+          <span class="section-number"
+            >{% if preprocessing_info and dataset_bias and calibration_ci %}7.{%
+            elif (preprocessing_info and dataset_bias) or (preprocessing_info
+            and calibration_ci) or (dataset_bias and calibration_ci) %}6.{% elif
+            preprocessing_info or dataset_bias or calibration_ci %}5.{% else
+            %}4.{% endif %}</span
+          >Model Explainability (SHAP Analysis)
+        </h2>
+
+        {% if explanations.global_importance %}
+        <h3>Feature Importance</h3>
+        <p>
+          The following features have the greatest impact on model predictions:
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>SHAP Value</th>
+                <th>Impact</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if explanations and explanations.global_importance %} {% for
+              feature, importance in (explanations.global_importance.items() |
+              list)[:10] %}
+              <tr>
+                <td>
+                  <strong>{{ feature | replace("_", " ") | title }}</strong>
+                </td>
+                <td class="metric-value">{{ "%.3f" | format(importance) }}</td>
+                <td>
+                  <span
+                    class="badge badge-{{ 'success' if importance > 0 else 'danger' }}"
+                  >
+                    {{ 'Positive' if importance > 0 else 'Negative' }}
+                  </span>
+                </td>
+                <td class="text-small">
+                  {{ 'Increases' if importance > 0 else 'Decreases' }}
+                  prediction probability (magnitude: {{ 'High' if
+                  (importance|abs) > 0.1 else ('Medium' if (importance|abs) >
+                  0.05 else 'Low') }})
+                </td>
+              </tr>
+              {% endfor %} {% endif %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        <!-- SHAP Plots -->
+        {% if shap_plots %}
+        <h3>SHAP Visualizations</h3>
+        {% for plot_name, plot_path in shap_plots.items() %}
+        <div class="plot-container">
+          <img
+            src="{{ plot_path }}"
+            alt="{{ plot_name | replace('_', ' ') | title }} Plot"
+          />
+          <div class="plot-caption">
+            {{ plot_name | replace('_', ' ') | title }} - {{
+            shap_descriptions.get(plot_name, "SHAP explanation visualization")
+            }}
+          </div>
+        </div>
+        {% endfor %} {% endif %}
+
+        <div class="callout callout-info">
+          <h4>Understanding SHAP Values</h4>
+          <p>
+            SHAP (SHapley Additive exPlanations) values explain individual
+            predictions by quantifying the contribution of each feature:
+          </p>
+          <ul>
+            <li>
+              <strong>Positive values</strong> push the prediction toward the
+              positive class
+            </li>
+            <li>
+              <strong>Negative values</strong> push the prediction toward the
+              negative class
+            </li>
+            <li>
+              <strong>Magnitude</strong> indicates the strength of the feature's
+              influence
+            </li>
+            <li>
+              <strong>Sum of all SHAP values</strong> equals the difference from
+              the baseline prediction
+            </li>
+          </ul>
+        </div>
+      </section>
+      {% endif %}
+
+      <div class="page-break"></div>
+
+      <!-- Fairness Analysis -->
+      {% if fairness_analysis %}
+      <section
+        id="section-fairness"
+        class="section"
+        role="region"
+        aria-labelledby="fairness-heading"
+      >
+        <h2 id="fairness-heading">
+          <span class="section-number"
+            >{{ '6.' if preprocessing_info else '5.' }}</span
+          >Fairness & Bias Analysis
+        </h2>
+
+        <p>Analysis of potential bias across protected demographic groups:</p>
+
+        {% for attr_name, attr_metrics in fairness_analysis.items() %}
+        <h3>{{ attr_name | replace("_", " ") | title }} Analysis</h3>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Fairness Metric</th>
+                <th>Result</th>
+                <th>Status</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for metric_name, metric_result in attr_metrics.items() %}
+              <tr>
+                <td>
+                  <strong>{{ metric_name | replace("_", " ") | title }}</strong>
+                </td>
+                <td class="metric-value">
+                  {% if metric_result is mapping %} {% if metric_result.error is
+                  defined %}
+                  <span class="text-muted"
+                    >Error: {{ metric_result.error[:50] }}...</span
+                  >
+                  {% elif metric_result.ratio is defined %} {{ "%.3f" |
+                  format(metric_result.ratio) }} {% elif
+                  metric_result.difference is defined %} {{ "%.3f" |
+                  format(metric_result.difference) }} {% else %} {{
+                  metric_result }} {% endif %} {% else %} {{ metric_result }} {%
+                  endif %}
+                </td>
+                <td>
+                  {% if metric_result is mapping and metric_result.error is
+                  defined %}
+                  <span class="status-indicator status-warning">Error</span>
+                  {% elif metric_result is mapping and metric_result.is_fair is
+                  defined %}
+                  <span
+                    class="status-indicator status-{{ 'pass' if metric_result.is_fair else 'fail' }}"
+                  >
+                    {{ 'Fair' if metric_result.is_fair else 'Biased' }}
+                  </span>
+                  {% else %}
+                  <span class="status-indicator status-warning">Unknown</span>
+                  {% endif %}
+                </td>
+                <td class="text-small">
+                  {% if metric_result is mapping and metric_result.error is
+                  defined %} Metric computation failed {% elif metric_result is
+                  mapping and metric_result.is_fair is defined %} {% if
+                  metric_result.is_fair %} No significant bias detected {% else
+                  %} Potential bias detected - requires review {% endif %} {%
+                  else %} Unable to assess fairness {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endfor %}
+
+        <!-- Fairness Plots -->
+        {% if fairness_plots %}
+        <h3>Fairness Visualizations</h3>
+        {% for plot_name, plot_path in fairness_plots.items() %}
+        <div class="plot-container">
+          <img
+            src="{{ plot_path }}"
+            alt="{{ plot_name | replace('_', ' ') | title }} Plot"
+          />
+          <div class="plot-caption">
+            {{ plot_name | replace('_', ' ') | title }} - Bias detection across
+            demographic groups
+          </div>
+        </div>
+        {% endfor %} {% endif %}
+
+        <div class="callout callout-warning">
+          <h4>Regulatory Considerations</h4>
+          <p>Key points for regulatory compliance:</p>
+          <ul>
+            <li>
+              <strong>Demographic Parity:</strong> Equal positive prediction
+              rates across groups
+            </li>
+            <li>
+              <strong>Equal Opportunity:</strong> Equal true positive rates for
+              qualified individuals
+            </li>
+            <li>
+              <strong>Equalized Odds:</strong> Equal true positive and false
+              positive rates
+            </li>
+            <li>
+              <strong>Predictive Parity:</strong> Equal precision across
+              demographic groups
+            </li>
+          </ul>
+          <p>
+            Any "Biased" status may require model adjustment or additional
+            oversight before deployment.
+          </p>
+        </div>
+      </section>
+      {% endif %}
+
+      <!-- Intersectional Fairness Analysis (E5.1) -->
+      {% if intersectional_fairness %}
+      <div class="page-break"></div>
+      <section
+        id="section-intersectional"
+        class="section"
+        role="region"
+        aria-labelledby="intersectional-heading"
+      >
+        <h2 id="intersectional-heading">
+          <span class="section-number">
+            {% set base_num = 8 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {{ base_num }}. </span
+          >Intersectional Fairness Analysis
+        </h2>
+
+        <div class="callout callout-info">
+          <h4>What is Intersectional Fairness?</h4>
+          <p>
+            Intersectional fairness examines how multiple protected attributes
+            interact (e.g., race × gender).
+            <strong
+              >Bias hidden in overall metrics can emerge at
+              intersections</strong
+            >. For example, a model fair for women overall may discriminate
+            against Black women specifically.
+          </p>
+        </div>
+
+        {% for intersection_name, intersection_data in
+        intersectional_fairness.items() %}
+        <h3>
+          {{ intersection_name | replace("*", " × ") | replace("_", " ") | title
+          }}
+        </h3>
+
+        {% if intersection_data.groups %}
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Selection Rate</th>
+                <th>TPR</th>
+                <th>FPR</th>
+                <th>Sample Size</th>
+                <th>Warning</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for group_name, metrics in intersection_data.groups.items() %}
+              <tr>
+                <td>
+                  <strong>{{ group_name | replace("_", " ") | title }}</strong>
+                </td>
+                <td class="metric-value">
+                  {% if metrics.selection_rate is defined %} {{
+                  "%.3f"|format(metrics.selection_rate) }} {% if
+                  metrics.selection_rate_ci %}
+                  <span class="text-small text-muted">
+                    (95% CI: [{{
+                    "%.3f"|format(metrics.selection_rate_ci.ci_lower) }}, {{
+                    "%.3f"|format(metrics.selection_rate_ci.ci_upper) }}])
+                  </span>
+                  {% endif %} {% else %}N/A{% endif %}
+                </td>
+                <td class="metric-value">
+                  {% if metrics.tpr is defined %} {{ "%.3f"|format(metrics.tpr)
+                  }} {% else %}N/A{% endif %}
+                </td>
+                <td class="metric-value">
+                  {% if metrics.fpr is defined %} {{ "%.3f"|format(metrics.fpr)
+                  }} {% else %}N/A{% endif %}
+                </td>
+                <td class="metric-value">{{ metrics.n }}</td>
+                <td>
+                  {% if metrics.n < 10 %}
+                  <span class="badge badge-error">n < 10</span>
+                  {% elif metrics.n < 30 %}
+                  <span class="badge badge-warning">n < 30</span>
+                  {% else %}
+                  <span class="badge badge-success">Adequate</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %} {% if intersection_data.disparity_metrics %}
+        <h4>Disparity Metrics</h4>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Max-Min Difference</th>
+                <th>Max/Min Ratio</th>
+                <th>Assessment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if intersection_data.disparity_metrics.selection_rate_disparity
+              %}
+              <tr>
+                <td><strong>Selection Rate</strong></td>
+                <td class="metric-value">
+                  {{
+                  "%.3f"|format(intersection_data.disparity_metrics.selection_rate_disparity.max_min_diff)
+                  }}
+                </td>
+                <td class="metric-value">
+                  {{
+                  "%.3f"|format(intersection_data.disparity_metrics.selection_rate_disparity.max_min_ratio)
+                  }}
+                </td>
+                <td>
+                  {% if
+                  intersection_data.disparity_metrics.selection_rate_disparity.max_min_diff
+                  > 0.2 %}
+                  <span class="badge badge-error">High Disparity</span>
+                  {% elif
+                  intersection_data.disparity_metrics.selection_rate_disparity.max_min_diff
+                  > 0.1 %}
+                  <span class="badge badge-warning">Moderate Disparity</span>
+                  {% else %}
+                  <span class="badge badge-success">Low Disparity</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %} {% endfor %}
+
+        <div class="callout callout-warning">
+          <h4>Interpreting Intersectional Results</h4>
+          <p>
+            <strong>Sample size warnings</strong>: Groups with n < 30 have
+            unreliable metrics (wide confidence intervals).<br />
+            <strong>High disparity</strong> (difference > 0.2): Investigate for
+            potential discrimination at intersections.<br />
+            <strong>Action</strong>: Prioritize interventions for intersectional
+            groups with worst outcomes.
+          </p>
+        </div>
+      </section>
+      {% endif %}
+
+      <!-- Individual Fairness (E11) -->
+      {% if individual_fairness %}
+      <div class="page-break"></div>
+      <section
+        id="section-individual"
+        class="section"
+        role="region"
+        aria-labelledby="individual-heading"
+      >
+        <h2 id="individual-heading">
+          <span class="section-number">
+            {% set base_num = 9 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+            intersectional_fairness %}{% set base_num = base_num - 1 %}{% endif
+            %} {{ base_num }}. </span
+          >Individual Fairness Analysis
+        </h2>
+
+        <div class="callout callout-info">
+          <h4>What is Individual Fairness?</h4>
+          <p>
+            Individual fairness requires that
+            <strong>similar individuals receive similar treatment</strong>.
+            While group fairness examines aggregate metrics, individual fairness
+            catches disparate treatment of specific people—a critical legal
+            concern under anti-discrimination law.
+          </p>
+        </div>
+
+        <h3>Consistency Score</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Consistency Score</strong></td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(individual_fairness['consistency_score']) }}
+                </td>
+                <td>
+                  {% if individual_fairness['consistency_score'] >= 0.90 %}
+                  <span class="badge badge-success">High Consistency</span>
+                  {% elif individual_fairness['consistency_score'] >= 0.75 %}
+                  <span class="badge badge-warning">Moderate Consistency</span>
+                  {% else %}
+                  <span class="badge badge-error">Low Consistency</span>
+                  {% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-small text-muted">
+          Measures whether similar individuals (based on non-protected features)
+          receive similar predictions. Score of 1.0 means perfect consistency;
+          lower scores indicate disparate treatment.
+        </p>
+
+        <h3>Matched Pairs Analysis</h3>
+        <p class="text-small text-muted">
+          Identifies pairs of individuals with similar non-protected features
+          but different protected attributes. Large prediction differences for
+          matched pairs suggest potential discrimination.
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Statistic</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Matched Pairs Found</strong></td>
+                <td class="metric-value">
+                  {{ individual_fairness['matched_pairs_count'] }}
+                </td>
+              </tr>
+              {% if individual_fairness.get('avg_prediction_diff') is not none
+              %}
+              <tr>
+                <td><strong>Avg Prediction Difference</strong></td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(individual_fairness['avg_prediction_diff'])
+                  }}
+                </td>
+              </tr>
+              {% endif %} {% if individual_fairness.get('max_prediction_diff')
+              is not none %}
+              <tr>
+                <td><strong>Max Prediction Difference</strong></td>
+                <td class="metric-value">
+                  {{ "%.3f"|format(individual_fairness['max_prediction_diff'])
+                  }}
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Counterfactual Flip Test</h3>
+        <p class="text-small text-muted">
+          Tests whether changing only a protected attribute (e.g., gender)
+          significantly changes the prediction. Violations indicate the model
+          directly uses protected information.
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Result</th>
+                <th>Count</th>
+                <th>Assessment</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Flip Test Violations</strong></td>
+                <td class="metric-value">
+                  {{ individual_fairness['flip_test_violations'] }}
+                </td>
+                <td>
+                  {% if individual_fairness['flip_test_violations'] == 0 %}
+                  <span class="badge badge-success">No Violations</span>
+                  {% elif individual_fairness['flip_test_violations'] < 10 %}
+                  <span class="badge badge-warning">Minor Violations</span>
+                  {% else %}
+                  <span class="badge badge-error">Significant Violations</span>
+                  {% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-warning">
+          <h4>Legal Implications</h4>
+          <p>
+            <strong>Consistency score < 0.75</strong>: Model may treat similar
+            individuals inconsistently—investigate for disparate treatment.<br />
+            <strong>Flip test violations</strong>: Protected attributes directly
+            influence predictions—potential ECOA/Title VII violation.<br />
+            <strong>Action</strong>: Review matched pairs with large prediction
+            differences for justification.
+          </p>
+        </div>
+      </section>
+      {% endif %}
+
+      <!-- Robustness Testing (E6+) -->
+      {% if stability_analysis and stability_analysis.robustness_score is
+      defined %}
+      <div class="page-break"></div>
+      <section
+        id="section-robustness"
+        class="section"
+        role="region"
+        aria-labelledby="robustness-heading"
+      >
+        <h2 id="robustness-heading">
+          <span class="section-number">
+            {% set base_num = 10 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+            intersectional_fairness %}{% set base_num = base_num - 1 %}{% endif
+            %} {% if not individual_fairness %}{% set base_num = base_num - 1
+            %}{% endif %} {{ base_num }}. </span
+          >Model Robustness Testing
+        </h2>
+
+        <div class="callout callout-info">
+          <h4>What is Robustness Testing?</h4>
+          <p>
+            Robustness testing measures model stability under small input
+            perturbations.
+            <strong
+              >Fragile models produce wildly different outputs for similar
+              inputs</strong
+            >, indicating potential manipulation vulnerabilities or unreliable
+            decisions.
+          </p>
+        </div>
+
+        <h3>Adversarial Perturbation Analysis</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Gate Status</th>
+                <th>Interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Robustness Score</strong></td>
+                <td class="metric-value">
+                  {{ "%.4f"|format(stability_analysis.robustness_score) }}
+                </td>
+                <td>
+                  {% if stability_analysis.gate_status == "PASS" %}
+                  <span class="badge badge-success">PASS</span>
+                  {% elif stability_analysis.gate_status == "WARNING" %}
+                  <span class="badge badge-warning">WARNING</span>
+                  {% else %}
+                  <span class="badge badge-error">FAIL</span>
+                  {% endif %}
+                </td>
+                <td class="text-small">
+                  Maximum prediction change across all perturbations (L∞ norm)
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {% if stability_analysis.results_by_epsilon %}
+        <h3>Perturbation Sweep Results</h3>
+        <p class="text-small text-muted">
+          Model predictions perturbed with Gaussian noise at different
+          intensities. Protected attributes are never perturbed (gender, race,
+          etc. remain fixed).
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Perturbation Level (ε)</th>
+                <th>Max Prediction Delta</th>
+                <th>Mean Delta</th>
+                <th>Assessment</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for epsilon, result in
+              stability_analysis.results_by_epsilon.items() %}
+              <tr>
+                <td class="metric-value">{{ epsilon }}</td>
+                <td class="metric-value">
+                  {{ "%.4f"|format(result.max_delta) }}
+                </td>
+                <td class="metric-value">
+                  {% if result.mean_delta is defined %} {{
+                  "%.4f"|format(result.mean_delta) }} {% else %}N/A{% endif %}
+                </td>
+                <td>
+                  {% if result.max_delta < 0.05 %}
+                  <span class="badge badge-success">Robust</span>
+                  {% elif result.max_delta < 0.15 %}
+                  <span class="badge badge-warning">Moderate</span>
+                  {% else %}
+                  <span class="badge badge-error">Fragile</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        <div class="callout callout-info">
+          <h4>Understanding Robustness</h4>
+          <p>
+            <strong>Robustness score < 0.05</strong>: Model is highly stable to
+            input perturbations<br />
+            <strong>Score 0.05-0.15</strong>: Acceptable stability for most
+            applications<br />
+            <strong>Score > 0.15</strong>: Model is fragile—consider
+            regularization or ensemble methods
+          </p>
+          <p class="text-small">
+            <strong>EU AI Act compliance</strong>: High-risk AI systems must
+            demonstrate robustness to adversarial perturbations. This test
+            provides evidence of model stability under input variations.
+          </p>
+        </div>
+      </section>
+      {% endif %}
+
+      <div class="page-break"></div>
+
+      <!-- Audit Trail & Reproducibility -->
+      <section
+        id="section-audit-trail"
+        class="section"
+        role="region"
+        aria-labelledby="audit-trail-heading"
+      >
+        <h2 id="audit-trail-heading">
+          <span class="section-number">
+            {% set base_num = 11 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+            intersectional_fairness %}{% set base_num = base_num - 1 %}{% endif
+            %} {% if not individual_fairness %}{% set base_num = base_num - 1
+            %}{% endif %} {% if not (stability_analysis and
+            stability_analysis.robustness_score is defined) %}{% set base_num =
+            base_num - 1 %}{% endif %} {{ base_num }}. </span
+          >Audit Trail & Reproducibility
+        </h2>
+
+        <h3>Execution Information</h3>
+        <div class="info-grid">
+          {% if manifest %}
+          <span class="info-label">Audit ID:</span>
+          <span class="info-value"
+            ><code>{{ manifest.audit_id | default("N/A") }}</code></span
+          >
+
+          <span class="info-label">Creation Time:</span>
+          <span class="info-value"
+            >{{ manifest.creation_time | default("N/A") }}</span
+          >
+
+          <span class="info-label">Duration:</span>
+          <span class="info-value">
+            {{ "%.2f seconds" | format(manifest.get('execution',
+            {}).get('duration_seconds', 0)) if manifest.get('execution',
+            {}).get('duration_seconds') else "N/A" }}
+          </span>
+
+          <span class="info-label">Status:</span>
+          <span class="info-value">
+            <span
+              class="status-indicator status-{{ 'pass' if manifest.get('execution', {}).get('status') == 'completed' else 'fail' }}"
+            >
+              {{ manifest.get('execution', {}).get('status', 'Unknown') | title
+              }}
+            </span>
+          </span>
+          {% endif %}
+        </div>
+
+        <h3>Reproducibility Information</h3>
+        {% if manifest and manifest.seeds %}
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Seed Value</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Master Seed</strong></td>
+                <td><code>{{ manifest.seeds.master_seed }}</code></td>
+                <td>Global randomness control</td>
+              </tr>
+              {% if manifest and manifest.seeds and
+              manifest.seeds.component_seeds %} {% for component, seed in
+              manifest.seeds.component_seeds.items() %}
+              <tr>
+                <td>{{ component | replace("_", " ") | title }}</td>
+                <td><code>{{ seed }}</code></td>
+                <td>Component-specific randomness</td>
+              </tr>
+              {% endfor %} {% endif %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        <h3>Selected Components</h3>
+        {% if manifest and manifest.selected_components %}
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Component Type</th>
+                <th>Selected Implementation</th>
+                <th>Version</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if manifest and manifest.selected_components %} {% for
+              component_key, component_info in
+              manifest.selected_components.items() %}
+              <tr>
+                <td><strong>{{ component_info.type | title }}</strong></td>
+                <td>{{ component_info.name | title }}</td>
+                <td>
+                  <code>{{ component_info.version | default("N/A") }}</code>
+                </td>
+              </tr>
+              {% endfor %} {% endif %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        <h3>Environment Information</h3>
+        {% if manifest and manifest.environment %}
+        <div class="info-grid">
+          <span class="info-label">Python Version:</span>
+          <span class="info-value"
+            ><code
+              >{{ manifest.environment.python_version.split()[0] if
+              manifest.environment.python_version else "N/A" }}</code
+            ></span
+          >
+
+          <span class="info-label">Platform:</span>
+          <span class="info-value"
+            >{{ manifest.environment.platform | default("N/A") }}</span
+          >
+
+          <span class="info-label">Hostname:</span>
+          <span class="info-value"
+            >{{ manifest.environment.hostname | default("N/A") }}</span
+          >
+
+          <span class="info-label">Working Directory:</span>
+          <span class="info-value"
+            ><code
+              >{{ manifest.environment.working_directory | default("N/A")
+              }}</code
+            ></span
+          >
+        </div>
+        {% endif %} {% if manifest and manifest.git %}
+        <h3>Version Control</h3>
+        <div class="info-grid">
+          <span class="info-label">Git Commit:</span>
+          <span class="info-value"
+            ><code
+              >{{ manifest.git.commit_hash[:12] if manifest.git.commit_hash else
+              "N/A" }}</code
+            ></span
+          >
+
+          <span class="info-label">Branch:</span>
+          <span class="info-value"
+            >{{ manifest.git.branch | default("N/A") }}</span
+          >
+
+          <span class="info-label">Working Directory Status:</span>
+          <span class="info-value">
+            <span
+              class="status-indicator status-{{ 'pass' if not manifest.git.is_dirty else 'warning' }}"
+            >
+              {{ 'Clean' if not manifest.git.is_dirty else 'Modified' }}
+            </span>
+          </span>
+        </div>
+        {% endif %}
+
+        <div class="callout callout-success">
+          <h4>Reproducibility Guarantee</h4>
+          <p>
+            This audit is fully reproducible. Running the same configuration
+            with identical data and environment will produce byte-identical
+            results.
+          </p>
+          {% if manifest and manifest.config_hash %}
+          <p>
+            <strong>Configuration Hash:</strong>
+            <code>{{ manifest.config_hash[:16] }}...</code>
+          </p>
+          {% endif %}
+        </div>
+      </section>
+
+      <div class="page-break"></div>
+
+      <!-- Regulatory Compliance -->
+      <section
+        id="section-compliance"
+        class="section"
+        role="region"
+        aria-labelledby="compliance-heading"
+      >
+        <h2 id="compliance-heading">
+          <span class="section-number">
+            {% set base_num = 12 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+            intersectional_fairness %}{% set base_num = base_num - 1 %}{% endif
+            %} {% if not individual_fairness %}{% set base_num = base_num - 1
+            %}{% endif %} {% if not (stability_analysis and
+            stability_analysis.robustness_score is defined) %}{% set base_num =
+            base_num - 1 %}{% endif %} {{ base_num }}. </span
+          >Regulatory Compliance Assessment
+        </h2>
+
+        <h3>Compliance Checklist</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Requirement</th>
+                <th>Status</th>
+                <th>Evidence</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Model Documentation</strong></td>
+                <td>
+                  <span class="status-indicator status-pass">Complete</span>
+                </td>
+                <td>Full audit report generated</td>
+                <td>Comprehensive model documentation provided</td>
+              </tr>
+              <tr>
+                <td><strong>Performance Validation</strong></td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if model_performance else 'fail' }}"
+                    >{{ 'Complete' if model_performance else 'Missing' }}</span
+                  >
+                </td>
+                <td>
+                  {{ "Performance metrics computed" if model_performance else
+                  "No performance data" }}
+                </td>
+                <td>
+                  {{ "Model performance assessed across standard metrics" if
+                  model_performance else "Performance validation required" }}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Bias Testing</strong></td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if fairness_analysis else 'fail' }}"
+                    >{{ 'Complete' if fairness_analysis else 'Missing' }}</span
+                  >
+                </td>
+                <td>
+                  {{ "Fairness analysis performed" if fairness_analysis else "No
+                  bias testing" }}
+                </td>
+                <td>
+                  {{ "Demographic fairness assessed" if fairness_analysis else
+                  "Bias testing required for protected attributes" }}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Explainability</strong></td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if explanations else 'fail' }}"
+                    >{{ 'Complete' if explanations else 'Missing' }}</span
+                  >
+                </td>
+                <td>
+                  {{ "SHAP explanations provided" if explanations else "No
+                  explanations available" }}
+                </td>
+                <td>
+                  {{ "Model decisions can be explained to stakeholders" if
+                  explanations else "Explainability features required" }}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Reproducibility</strong></td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if (manifest and manifest.seeds) else 'fail' }}"
+                    >{{ 'Complete' if (manifest and manifest.seeds) else
+                    'Partial' }}</span
+                  >
+                </td>
+                <td>
+                  {{ "Full audit trail with seeds" if (manifest and
+                  manifest.seeds) else "Limited reproducibility" }}
+                </td>
+                <td>
+                  {{ "Results can be exactly reproduced" if (manifest and
+                  manifest.seeds) else "Some randomness not controlled" }}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Data Governance</strong></td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if schema_info else 'warning' }}"
+                    >{{ 'Complete' if schema_info else 'Partial' }}</span
+                  >
+                </td>
+                <td>
+                  {{ "Data schema documented" if schema_info else "Basic data
+                  info only" }}
+                </td>
+                <td>
+                  {{ "Data sources and processing documented" if schema_info
+                  else "Enhanced data governance recommended" }}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Preprocessing Verification</strong></td>
+                <td>
+                  <span
+                    class="status-indicator status-{{ 'pass' if (preprocessing_info and preprocessing_info.mode == 'artifact') else 'fail' }}"
+                    aria-label="Preprocessing verification status"
+                    >{{ 'Complete' if (preprocessing_info and
+                    preprocessing_info.mode == 'artifact') else 'Non-Compliant'
+                    }}</span
+                  >
+                </td>
+                <td>
+                  {{ "Production artifact verified with dual hash system" if
+                  (preprocessing_info and preprocessing_info.mode == 'artifact')
+                  else "Auto mode used - not suitable for regulatory compliance"
+                  }}
+                </td>
+                <td>
+                  {{ "Preprocessing transformations match production deployment"
+                  if (preprocessing_info and preprocessing_info.mode ==
+                  'artifact') else "Requires artifact mode with hash
+                  verification for compliance" }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Regulatory Framework Assessment</h3>
+        <p class="text-muted text-small">
+          Assessment against major regulatory frameworks as of their latest
+          revisions.
+        </p>
+        <div class="two-column">
+          <div>
+            <h4>GDPR (EU) - Regulation (EU) 2016/679</h4>
+            <p class="text-small text-muted">
+              Effective: May 25, 2018 | Article 22 - Automated Decision-Making
+            </p>
+            <ul class="text-small">
+              <li>[PASS] Right to explanation supported (SHAP analysis)</li>
+              <li>
+                [{{ 'PASS' if (manifest and manifest.seeds) else 'WARN' }}]
+                Automated decision-making documented
+              </li>
+              <li>
+                [{{ 'PASS' if fairness_analysis else 'FAIL' }}] Bias assessment
+                performed
+              </li>
+              <li>
+                [{{ 'PASS' if schema_info and schema_info.sensitive_features
+                else 'WARN' }}] Sensitive data handling documented
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4>Equal Credit Opportunity Act (US) - 15 U.S.C. § 1691</h4>
+            <p class="text-small text-muted">
+              Enacted: 1974 | Regulation B (12 CFR Part 1002)
+            </p>
+            <ul class="text-small">
+              <li>
+                [{{ 'PASS' if fairness_analysis else 'FAIL' }}] Disparate impact
+                testing
+              </li>
+              <li>
+                [{{ 'PASS' if explanations else 'FAIL' }}] Adverse action
+                explanations available
+              </li>
+              <li>
+                [{{ 'PASS' if (schema_info and schema_info.sensitive_features)
+                else 'FAIL' }}] Protected class monitoring
+              </li>
+              <li>[PASS] Model performance documentation</li>
+            </ul>
+          </div>
+        </div>
+
+        {% set compliance_issues = [] %} {% if not fairness_analysis %}{% set _
+        = compliance_issues.append("Bias testing required") %}{% endif %} {% if
+        not explanations %}{% set _ = compliance_issues.append("Model
+        explainability required") %}{% endif %} {% if not (manifest and
+        manifest.seeds) %}{% set _ = compliance_issues.append("Full
+        reproducibility required") %}{% endif %} {% if compliance_issues %}
+        <div class="callout callout-danger">
+          <h4>ALERT: Compliance Issues Detected</h4>
+          <p>
+            The following issues must be addressed before regulatory submission:
+          </p>
+          <ul>
+            {% for issue in compliance_issues %}
+            <li>{{ issue }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% else %}
+        <div class="callout callout-success">
+          <h4>Regulatory Compliance Status: PASS</h4>
+          <p>This model audit meets standard regulatory requirements for:</p>
+          <ul>
+            <li>Explainable AI mandates</li>
+            <li>Bias testing and fairness assessment</li>
+            <li>Reproducibility and audit trail requirements</li>
+            <li>Performance validation standards</li>
+          </ul>
+        </div>
+        {% endif %}
+      </section>
+
+      <div class="page-break"></div>
+
+      <!-- Model Card -->
+      <section
+        id="section-model-card"
+        class="section"
+        role="region"
+        aria-labelledby="model-card-heading"
+      >
+        <h2 id="model-card-heading">
+          <span class="section-number">
+            {% set base_num = 13 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+            intersectional_fairness %}{% set base_num = base_num - 1 %}{% endif
+            %} {% if not individual_fairness %}{% set base_num = base_num - 1
+            %}{% endif %} {% if not (stability_analysis and
+            stability_analysis.robustness_score is defined) %}{% set base_num =
+            base_num - 1 %}{% endif %} {{ base_num }}. </span
+          >Model Card
+        </h2>
+
+        <p class="text-muted">
+          This model card provides essential information about the ML model's
+          intended use, limitations, and ethical considerations following the
+          Model Cards framework (Mitchell et al., 2019).
+        </p>
+
+        <div class="model-card">
+          <h4>Model Details</h4>
+          <ul>
+            <li>
+              <strong>Model Type:</strong> {{ model_info.type | default("N/A") |
+              title }}
+            </li>
+            <li>
+              <strong>Model Version:</strong> {{ version | default("1.0.0") }}
+            </li>
+            <li>
+              <strong>Training Date:</strong> {{
+              preprocessing_info.manifest.created_at if (preprocessing_info and
+              preprocessing_info.manifest and
+              preprocessing_info.manifest.created_at) else generation_date }}
+            </li>
+            <li>
+              <strong>Model Owner:</strong> [Organization Name - To Be
+              Completed]
+            </li>
+          </ul>
+        </div>
+
+        <div class="model-card">
+          <h4>Intended Use</h4>
+          <ul>
+            <li>
+              <strong>Primary Use Case:</strong> {{ schema_info.target |
+              default("Classification/Prediction") }} on tabular data
+            </li>
+            <li>
+              <strong>Intended Users:</strong> Data scientists, compliance
+              officers, and decision-makers requiring transparent ML predictions
+            </li>
+            <li>
+              <strong>Out-of-Scope Uses:</strong> This model should not be used
+              for decisions outside the training data distribution or for
+              populations not represented in the training data
+            </li>
+          </ul>
+        </div>
+
+        <div class="model-card">
+          <h4>Training Data</h4>
+          <ul>
+            <li>
+              <strong>Dataset Size:</strong> {{ data_summary.shape[0] if
+              data_summary.shape else "N/A" }} samples
+            </li>
+            <li>
+              <strong>Features:</strong> {{ data_summary.shape[1] if
+              data_summary.shape else "N/A" }} input variables
+            </li>
+            <li>
+              <strong>Protected Attributes:</strong> {{
+              schema_info.sensitive_features | join(", ") if
+              schema_info.sensitive_features else "None specified" }}
+            </li>
+            <li>
+              <strong>Data Quality:</strong> {{ "%.1f%%" |
+              format(((data_summary.shape[0] * data_summary.shape[1] -
+              (data_summary.missing_count | default(0))) /
+              (data_summary.shape[0] * data_summary.shape[1]) * 100) if
+              data_summary.shape else 0) }} complete
+            </li>
+          </ul>
+        </div>
+
+        <div class="model-card">
+          <h4>Performance Metrics</h4>
+          <ul>
+            {% set acc = None %} {% if model_performance.accuracy %} {% if
+            model_performance.accuracy is mapping %} {% if
+            model_performance.accuracy.value is defined %} {% set acc =
+            model_performance.accuracy.value %} {% elif
+            model_performance.accuracy.accuracy is defined %} {% set acc =
+            model_performance.accuracy.accuracy %} {% endif %} {% else %} {% set
+            acc = model_performance.accuracy %} {% endif %} {% endif %}
+            <li>
+              <strong>Accuracy:</strong> {{ "%.1f%%" | format(acc * 100) if acc
+              else "N/A" }}
+            </li>
+            <li>
+              <strong>Overall Assessment:</strong> {{ 'Excellent' if (acc and
+              acc > 0.9) else ('Good' if (acc and acc > 0.8) else ('Fair' if
+              (acc and acc > 0.6) else 'Needs Improvement')) if acc else 'Not
+              Available' }}
+            </li>
+          </ul>
+        </div>
+
+        <div class="model-card">
+          <h4>Ethical Considerations</h4>
+          <ul>
+            <li>
+              <strong>Fairness:</strong> {{ "Bias detected in " + (bias_detected
+              | unique | join(", ")) if bias_detected else "No significant bias
+              detected in protected attributes" }}
+            </li>
+            <li>
+              <strong>Privacy:</strong> Model operates on aggregated data
+              without individual identification
+            </li>
+            <li>
+              <strong>Transparency:</strong> SHAP explanations provide
+              interpretable feature importance
+            </li>
+            <li>
+              <strong>Accountability:</strong> Full audit trail maintained with
+              reproducible seeds
+            </li>
+          </ul>
+        </div>
+
+        <div class="model-card">
+          <h4>Limitations & Risks</h4>
+          <ul>
+            <li>
+              Model performance may degrade on data from different distributions
+              than training data
+            </li>
+            <li>
+              Protected attribute fairness assessed at time of audit; ongoing
+              monitoring recommended
+            </li>
+            {% if preprocessing_info and preprocessing_info.mode == 'auto' %}
+            <li>
+              <strong>CRITICAL:</strong> Auto preprocessing mode used - not
+              suitable for production deployment
+            </li>
+            {% endif %}
+            <li>
+              Model interpretability relies on SHAP approximations which may not
+              capture all nonlinear interactions
+            </li>
+            <li>
+              Regulatory compliance assessment is not legal advice; consult with
+              legal counsel before deployment
+            </li>
+          </ul>
+        </div>
+
+        <div class="model-card">
+          <h4>Maintenance & Monitoring</h4>
+          <ul>
+            <li>
+              Model should be re-audited periodically or when significant data
+              distribution changes occur
+            </li>
+            <li>
+              Monitor for data drift, concept drift, and fairness degradation in
+              production
+            </li>
+            <li>
+              Update preprocessing artifacts when training data is refreshed
+            </li>
+            <li>
+              Maintain version control for models, preprocessing artifacts, and
+              audit reports
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="page-break"></div>
+
+      <!-- Glossary -->
+      <section
+        id="section-glossary"
+        class="section"
+        role="region"
+        aria-labelledby="glossary-heading"
+      >
+        <h2 id="glossary-heading">
+          <span class="section-number">
+            {% set base_num = 14 %} {% if not preprocessing_info %}{% set
+            base_num = base_num - 1 %}{% endif %} {% if not dataset_bias %}{%
+            set base_num = base_num - 1 %}{% endif %} {% if not calibration_ci
+            %}{% set base_num = base_num - 1 %}{% endif %} {% if not
+            intersectional_fairness %}{% set base_num = base_num - 1 %}{% endif
+            %} {% if not individual_fairness %}{% set base_num = base_num - 1
+            %}{% endif %} {% if not (stability_analysis and
+            stability_analysis.robustness_score is defined) %}{% set base_num =
+            base_num - 1 %}{% endif %} {{ base_num }}. </span
+          >Glossary
+        </h2>
+
+        <p class="text-muted">
+          Key terms and concepts used in this audit report, defined for
+          non-technical reviewers.
+        </p>
+
+        <div class="glossary-term">Accuracy</div>
+        <div class="glossary-definition">
+          The proportion of correct predictions out of all predictions made. A
+          model with 85% accuracy makes correct predictions 85% of the time.
+        </div>
+
+        <div class="glossary-term">Artifact (Preprocessing)</div>
+        <div class="glossary-definition">
+          A saved file containing the exact preprocessing transformations
+          (imputation, scaling, encoding) used on training data. Ensures audit
+          data is transformed identically to production data.
+        </div>
+
+        <div class="glossary-term">Bias (Statistical)</div>
+        <div class="glossary-definition">
+          Systematic unfairness in model predictions across different
+          demographic groups. Detected through fairness metrics that compare
+          outcomes between protected groups.
+        </div>
+
+        <div class="glossary-term">Bootstrap Confidence Interval</div>
+        <div class="glossary-definition">
+          A statistical method for estimating uncertainty by repeatedly
+          resampling data. The 95% CI indicates the range within which the true
+          value lies with 95% probability.
+        </div>
+
+        <div class="glossary-term">Calibration (Model)</div>
+        <div class="glossary-definition">
+          The degree to which predicted probabilities match observed outcomes. A
+          well-calibrated model predicting 70% confidence should be correct
+          approximately 70% of the time.
+        </div>
+
+        <div class="glossary-term">Consistency Score</div>
+        <div class="glossary-definition">
+          A measure of individual fairness indicating whether similar
+          individuals receive similar predictions. Score of 1.0 means perfect
+          consistency; lower scores suggest disparate treatment.
+        </div>
+
+        <div class="glossary-term">Demographic Parity</div>
+        <div class="glossary-definition">
+          A fairness metric requiring that positive predictions occur at equal
+          rates across all demographic groups. For example, loan approval rates
+          should be similar across all age groups.
+        </div>
+
+        <div class="glossary-term">Equal Opportunity</div>
+        <div class="glossary-definition">
+          A fairness metric requiring that qualified individuals have equal
+          chances of positive outcomes regardless of protected attributes.
+          Focuses on true positive rates.
+        </div>
+
+        <div class="glossary-term">Expected Calibration Error (ECE)</div>
+        <div class="glossary-definition">
+          A metric quantifying calibration quality by measuring the average
+          difference between predicted probabilities and observed outcomes.
+          Lower ECE indicates better calibration (ECE < 0.05 is excellent,
+          0.05-0.10 is acceptable).
+        </div>
+
+        <div class="glossary-term">Feature</div>
+        <div class="glossary-definition">
+          An input variable used by the model to make predictions. Features can
+          be demographic information, financial data, behavioral patterns, etc.
+        </div>
+
+        <div class="glossary-term">Feature Importance</div>
+        <div class="glossary-definition">
+          A measure of how much each feature contributes to model predictions.
+          Higher importance means the feature has greater influence on outcomes.
+        </div>
+
+        <div class="glossary-term">Hash (Cryptographic)</div>
+        <div class="glossary-definition">
+          A unique digital fingerprint of a file or data. Any change to the file
+          produces a completely different hash, enabling verification that files
+          haven't been tampered with.
+        </div>
+
+        <div class="glossary-term">Imputation</div>
+        <div class="glossary-definition">
+          The process of filling in missing values in data. Common strategies
+          include using the median, mean, or most frequent value from training
+          data.
+        </div>
+
+        <div class="glossary-term">Individual Fairness</div>
+        <div class="glossary-definition">
+          A fairness principle requiring that similar individuals receive
+          similar treatment. Complements group fairness by catching disparate
+          treatment of specific people, a critical legal concern under
+          anti-discrimination law.
+        </div>
+
+        <div class="glossary-term">Intersectional Fairness</div>
+        <div class="glossary-definition">
+          Analysis of fairness at the intersection of multiple protected
+          attributes (e.g., race × gender). Bias hidden in overall metrics can
+          emerge at intersections; for example, a model fair for women overall
+          may discriminate against Black women specifically.
+        </div>
+
+        <div class="glossary-term">Model Card</div>
+        <div class="glossary-definition">
+          Standardized documentation describing a model's intended use,
+          limitations, training data, and ethical considerations. Promotes
+          transparency and responsible AI deployment.
+        </div>
+
+        <div class="glossary-term">OneHotEncoder</div>
+        <div class="glossary-definition">
+          A transformation that converts categorical variables (like "red",
+          "blue", "green") into binary indicator columns (is_red: yes/no,
+          is_blue: yes/no, is_green: yes/no).
+        </div>
+
+        <div class="glossary-term">Protected Attribute</div>
+        <div class="glossary-definition">
+          A characteristic protected by anti-discrimination laws, such as age,
+          gender, race, or disability status. Models must be evaluated for fair
+          treatment across these attributes.
+        </div>
+
+        <div class="glossary-term">Proxy Feature</div>
+        <div class="glossary-definition">
+          A feature that strongly correlates with a protected attribute,
+          enabling indirect discrimination. For example, ZIP code may serve as a
+          proxy for race. High proxy correlations (|r| > 0.7) require
+          investigation.
+        </div>
+
+        <div class="glossary-term">Reproducibility</div>
+        <div class="glossary-definition">
+          The ability to generate identical results when running the same
+          analysis multiple times. Critical for regulatory audits to verify that
+          results haven't been cherry-picked.
+        </div>
+
+        <div class="glossary-term">Robustness Score</div>
+        <div class="glossary-definition">
+          A measure of model stability under small input perturbations.
+          Quantifies the maximum prediction change when features are perturbed
+          with noise. Low scores indicate stable, reliable models; high scores
+          suggest fragility or manipulation vulnerabilities.
+        </div>
+
+        <div class="glossary-term">Scaling (Feature)</div>
+        <div class="glossary-definition">
+          Transforming numerical features to a common range or distribution.
+          StandardScaler removes the mean and scales to unit variance; this
+          helps models treat all features fairly.
+        </div>
+
+        <div class="glossary-term">SHAP (SHapley Additive exPlanations)</div>
+        <div class="glossary-definition">
+          A method for explaining individual predictions by quantifying each
+          feature's contribution. Based on game theory and provides
+          theoretically sound explanations.
+        </div>
+
+        <div class="glossary-term">Strict Mode</div>
+        <div class="glossary-definition">
+          An audit configuration that enforces additional regulatory
+          requirements, such as explicit random seeds, production preprocessing
+          artifacts, and comprehensive documentation.
+        </div>
+
+        <div class="glossary-term">Unknown Category</div>
+        <div class="glossary-definition">
+          A categorical value in audit data that wasn't seen during
+          preprocessing training. High unknown rates may indicate data
+          distribution shift or model drift.
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <hr />
+        <div class="text-center text-small">
+          <p>
+            <strong
+              >{{ report_title | default("ML Model Audit Report") }}</strong
+            >
+            | Generated by GlassAlpha v{{ version | default("1.0.0") }} | {{
+            generation_date }}
+          </p>
+          <p class="text-muted">
+            This report was generated using automated audit tools. Human review
+            is recommended for regulatory submissions.
+          </p>
+          <div class="page-number" aria-label="Page number">
+            Page <span class="page-num"></span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,123 @@
+# German Credit Dataset Audit Configuration (Simplified)
+# This configuration demonstrates a complete ML audit pipeline for credit risk assessment
+# using the German Credit dataset with fairness and bias analysis.
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+
+model:
+  # Model type - triggers XGBoostWrapper directly
+  type: "xgboost"
+
+  # Additional model parameters (will be used to create a new model)
+  params:
+    max_depth: 6
+    learning_rate: 0.1
+    n_estimators: 100
+    objective: "binary:logistic"
+    eval_metric: "logloss"
+    random_state: 42
+
+# =============================================================================
+# DATA CONFIGURATION
+# =============================================================================
+
+data:
+  # Dataset key for built-in datasets
+  dataset: "german_credit"
+
+  # Target column for prediction
+  target_column: "credit_risk"
+
+  # Protected attributes for fairness analysis
+  protected_attributes:
+    - "gender"
+    - "age_group"
+    - "foreign_worker"
+
+# =============================================================================
+# EXPLAINER CONFIGURATION
+# =============================================================================
+
+explainers:
+  # Strategy for selecting explainers
+  strategy: "first_compatible"
+
+  # Priority order - first compatible explainer will be selected
+  priority:
+    - "treeshap"
+    - "coefficients"
+
+  # Explainer-specific configuration
+  config:
+    treeshap:
+      max_samples: 500 # Reduced from 1000 for CI performance
+      check_additivity: false # Disabled for speed (still deterministic)
+
+# =============================================================================
+# METRICS CONFIGURATION
+# =============================================================================
+
+metrics:
+  # Performance metrics for model evaluation
+  performance:
+    metrics:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1"
+      - "auc_roc"
+
+  # Fairness metrics for bias detection
+  fairness:
+    metrics:
+      - "demographic_parity"
+      - "equal_opportunity"
+      - "equalized_odds"
+
+  # Enable confidence intervals (reduced for CI speed)
+  compute_confidence_intervals: true
+  n_bootstrap: 100 # Reduced from 1000 for CI performance (still deterministic)
+
+# =============================================================================
+# REPRODUCIBILITY CONFIGURATION
+# =============================================================================
+
+# Master random seed for all randomness sources
+random_seed: 42
+
+# Enforce strict determinism controls (thread control, advanced seeding)
+strict: true
+
+# Control thread counts for deterministic parallel processing
+thread_control: true
+
+# =============================================================================
+# REPORT CONFIGURATION
+# =============================================================================
+
+report:
+  # Output format (HTML for examples, PDF for production)
+  output_format: "html"
+
+  # Output path for the generated report
+  output_path: "audit_report.html"
+
+  # Report sections to include
+  include_sections:
+    - "executive_summary"
+    - "data_overview"
+    - "model_performance"
+    - "global_explanations"
+    - "local_explanations"
+    - "fairness_analysis"
+    - "audit_manifest"
+
+# =============================================================================
+# PREPROCESSING CONFIGURATION
+# =============================================================================
+
+preprocessing:
+  # Mode for preprocessing
+  mode: "auto"
