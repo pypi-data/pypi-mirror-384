@@ -1,0 +1,107 @@
+---
+- hosts: localhost
+  collections:
+    - theforeman.foreman
+  gather_facts: false
+  vars_files:
+    - vars/server.yml
+    - vars/resource_info.yml
+  tasks:
+    - include_tasks: tasks/organization.yml
+      vars:
+        organization_name: "{{ item.organization }}"
+        organization_state: present
+      loop: "{{ test_resources }}"
+    - include_tasks: tasks/domain.yml
+      vars:
+        domain_name: "{{ item.domain }}"
+        domain_locations: "{{ omit }}"
+        domain_organizations:
+          - "{{ item.organization }}"
+        domain_state: present
+      loop: "{{ test_resources }}"
+
+- hosts: tests
+  collections:
+    - theforeman.foreman
+  gather_facts: false
+  vars_files:
+    - vars/server.yml
+  tasks:
+    - name: Search for a setting
+      include_tasks: tasks/resource_info.yml
+      vars:
+        resource: settings
+        search: name = http_proxy
+        return_length: 1
+    - name: List all entities of a resource without any filtering
+      include_tasks: tasks/resource_info.yml
+      vars:
+        resource: instance_hosts
+        return_length: 1
+    - name: Search for an organization and return full details
+      include_tasks: tasks/resource_info.yml
+      vars:
+        resource: organizations
+        search: name="Test Organization"
+        full_details: true
+        return_length: 1
+    - name: List all entities of an organization
+      include_tasks: tasks/resource_info.yml
+      vars:
+        resource: domains
+        organization: "Facts Organization"
+        return_length: 1
+    - name: find organization id
+      resource_info:
+        username: "{{ foreman_username }}"
+        password: "{{ foreman_password }}"
+        server_url: "{{ foreman_server_url }}"
+        validate_certs: "{{ foreman_validate_certs }}"
+        resource: organizations
+        search: name="Facts Organization"
+      register: org_search
+    - name: List all entities of an organization by injecting params manually
+      include_tasks: tasks/resource_info.yml
+      vars:
+        resource: domains
+        params:
+          organization_id: "{{ org_search.resources[0]['id'] }}"
+        return_length: 1
+    - name: Run with invalid resource
+      resource_info:
+        username: "{{ foreman_username }}"
+        password: "{{ foreman_password }}"
+        server_url: "{{ foreman_server_url }}"
+        validate_certs: "{{ foreman_validate_certs }}"
+        resource: foo
+      register: result
+      ignore_errors: true
+    - assert:
+        that:
+          - "'hostgroups' in result.msg"
+          - "'home' not in result.msg"
+        fail_msg: "{{ result.msg }} should have contained all available resources"
+
+- hosts: localhost
+  collections:
+    - theforeman.foreman
+  gather_facts: false
+  vars_files:
+    - vars/server.yml
+    - vars/resource_info.yml
+  tasks:
+    - include_tasks: tasks/domain.yml
+      vars:
+        domain_name: "{{ item.domain }}"
+        domain_locations: "{{ omit }}"
+        domain_organizations:
+          - "{{ item.organization }}"
+        domain_state: absent
+      loop: "{{ test_resources }}"
+    - include_tasks: tasks/organization.yml
+      vars:
+        organization_name: "{{ item.organization }}"
+        organization_state: absent
+      loop: "{{ test_resources }}"
+...
