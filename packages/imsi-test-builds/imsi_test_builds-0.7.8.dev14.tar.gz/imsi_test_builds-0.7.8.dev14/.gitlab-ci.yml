@@ -1,0 +1,79 @@
+stages:
+  - test
+  - deploy
+  - publish
+
+variables:
+  UV_LINK_MODE: copy
+  UV_PUBLISH_TOKEN: $UV_PUBLISH_TOKEN
+  CI_RUN_PATH: "/home/scrd105/s5-runpath/imsi-ci/$CI_JOB_ID"
+  IMSI_DEPLOYED_PYTHON_VER: "3.10"
+  IMSI_DEPLOY_PATH: "/home/scrd105/canesm_libs/imsi/"
+  UV_BINARY: "/home/scrd102/.local/bin/uv"
+
+before_script:
+  # create run path where the job will run
+  - mkdir -p ${CI_RUN_PATH}
+  # make the deploy location
+  - mkdir -p ${IMSI_DEPLOY_PATH}
+  - mkdir -p ${IMSI_DEPLOY_PATH}/latest
+
+.test_job_template: &test_job_template
+  # note that tests will run on the defined branch, repo, model and experiment
+  # in the .env.test file
+  script: |
+    git clone --depth 20 "$CI_PROJECT_DIR" "$CI_RUN_PATH"
+    git fetch --unshallow --tags || git fetch --tags
+
+    # Ensure cleanup happens even if tests fail
+    trap 'echo "Cleaning up CI path"; rm -rf ${CI_RUN_PATH}' EXIT
+
+    # move into runpath
+    cd ${CI_RUN_PATH}
+
+    # setup environment
+    ${UV_BINARY} venv --python=${PYTHON_VERSION}
+    source .venv/bin/activate && ${UV_BINARY} pip install pip
+    pip install --upgrade setuptools
+    pip install $CI_PROJECT_DIR[tests]
+
+    # Run tests
+    coverage run -m pytest ${CI_PROJECT_DIR}/tests/
+    coverage report -m
+    coverage xml -o coverage.xml
+  coverage: '/TOTAL\s+[0-9]+\s+[0-9]+\s+([0-9]+)%/'
+
+.matrix_job_template: &matrix_job_template
+  <<: *test_job_template
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ['3.10', '3.11', '3.12', '3.13']
+
+test:
+  stage: test
+  <<: *matrix_job_template
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+
+deploy:
+  stage: deploy
+  before_script:
+    - git fetch --unshallow --tags || git fetch --tags
+  script: |
+    cd ${IMSI_DEPLOY_PATH}
+    # pass Python version, tag, and deploy path as arguments
+    source ${CI_PROJECT_DIR}/tests/deploy_imsi_env.sh "${IMSI_DEPLOYED_PYTHON_VER}" "${CI_COMMIT_TAG}" "${IMSI_DEPLOY_PATH}"
+  rules:
+    - if: $CI_COMMIT_TAG
+
+publish:
+  stage: publish
+  before_script:
+    - git fetch --unshallow --tags || git fetch --tags
+  script:
+    - ${UV_BINARY} build
+    - ${UV_BINARY} publish
+  # rules:
+  #   - if: $CI_COMMIT_TAG
+
