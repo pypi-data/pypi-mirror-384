@@ -1,0 +1,96 @@
+Pyr
+===
+
+    pyr [TARGET [OPT..] [ARG..]]
+
+Pyr is an experimental Python front-end to replace "python file", "python -m module", and even "python -c code".
+
+* Pyr isolates Python (-I).
+* Pyr parses command lines consistently.
+* Pyr handles signals.
+
+
+## Quick Example
+
+    $ cat >example <<'END'
+    #!/usr/bin/env /path/to/pyr
+    import pyr
+
+    def main(opts, args):
+        print(f"{opts = }")
+        print(f"{args = }")
+        pyr.print_info("info")
+        pyr.print_error("message")
+        return "exit"
+
+    if __name__ == "__main__":
+        pyr.run(main)
+    END
+    $ chmod +x example
+    $ ./example -a -b1 --cc --dd= --ee=2 foo 'bar baz'
+    opts = [('a', None), ('b', '1'), ('cc', None), ('dd', ''), ('ee', '2')]
+    args = ['foo', 'bar baz']
+    example: info
+    example error: message
+    example error: exit
+
+## Options & Arguments
+
+Options must come before all arguments.
+All options follow identical syntax in two flavors: short and long.
+Short options have a hyphen, a single-character name, and an optional value.
+Long options have two hyphens, a name, and optionally an equals with a possibly-empty value.
+Long options can distinguish an empty value from no value, eg. --empty= vs --no-value.
+An option with a single-character name can used as either a short or long option (eg. -nv, --n=v).
+Option names cannot contain ASCII punctuation other than "+-.:_", though punctuation should be used sparingly.
+
+Arguments follow all options.
+The first argument either starts without a hyphen or is one of two special arguments: "-" (which is retained) or "--" (which is discarded).
+
+
+### Combining Short Options
+
+The special "+" option combines short options.
+This is parsed consistently, so that "-+abc", "-a -b -c", and "--+=abc" are all equivalent and indistinguishable.
+This avoids the problem where combined options cannot be parsed without knowing which options take a value.
+
+### Signal Exits
+
+By default, Python shows tracebacks for several signals, such as SIGINT and SIGPIPE.
+Instead, Pyr exits without traceback using an exit code of 128 plus the signal number, like several common Unix tools.
+Option --signal-tb will instead re-raise these exceptions to show tracebacks.
+Pyr includes signal management in module pyr.sigexcept.
+
+Use doc/yes.py and doc/date.py to see differences with SIGPIPE:
+
+    $ pyr doc/yes.py | head -n1
+    y
+
+    $ yes | head -n1
+    y
+
+    $ python3 -c 'while True: print("y")' | head -n1
+    y
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+    BrokenPipeError: [Errno 32] Broken pipe
+
+    $ pyr doc/date.py | true
+    [no output]
+
+    $ date | true
+    [no output]
+
+    $ python3 -c 'import datetime; print(datetime.datetime.now())' | true
+    Exception ignored while flushing sys.stdout:
+    BrokenPipeError: [Errno 32] Broken pipe
+
+Use doc/sigint and doc/sleep.py to see differences with SIGINT:
+
+    $ doc/sigint pyr doc/sleep.py
+    [no output]
+
+    $ doc/sigint python3 -c 'import time; time.sleep(3)'
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+    KeyboardInterrupt
