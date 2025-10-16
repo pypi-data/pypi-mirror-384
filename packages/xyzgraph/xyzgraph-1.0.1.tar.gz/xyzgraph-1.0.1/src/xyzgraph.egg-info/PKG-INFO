@@ -1,0 +1,656 @@
+Metadata-Version: 2.4
+Name: xyzgraph
+Version: 1.0.1
+Summary: Convert xyz molecule file to a graph.
+Author: Dr Alister Goodfellow
+Project-URL: homepage, https://github.com/aligfellow/xyzgraph
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: rdkit
+Requires-Dist: networkx
+Dynamic: license-file
+
+# xyzgraph: Molecular Graph Construction from Cartesian Coordinates
+
+**xyzgraph** is a Python toolkit for building molecular graphs (bond connectivity, bond orders, formal charges, and partial charges) directly from 3D atomic coordinates in XYZ format. It provides both **cheminformatics-based** and **quantum chemistry-based** (xTB) workflows.
+
+---
+
+## Table of Contents
+
+1. [Key Features](#key-features)
+2. [Installation](#installation)
+3. [Quick Start](#quick-start)
+4. [Methodology Overview](#methodology-overview)
+5. [Workflow Comparison](#workflow-comparison)
+6. [CLI Reference](#cli-reference)
+7. [Python API](#python-api)
+8. [Visualization](#visualization)
+9. [Limitations & Future Work](#limitations--future-work)
+10. [References](#references)
+11. [Contributing & Contact](#contributing--contact)
+
+---
+
+## Key Features
+
+- **Distance-based initial bonding** using *consistent* van der Waals radii across *all elements* from Charry and Tkatchenko [[1]](https://doi.org/10.1021/acs.jctc.4c00784)
+- **Two construction methods**:
+  - `cheminf`: Pure cheminformatics with bond order optimization
+  - `xtb`: semi-empirical calculation of bond orders via xTB Wiberg bond orders with Mulliken charges [[2]](https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176)
+- **Cheminformatics modes**:
+  - `--quick`: Fast (crude) valence adjustment
+  - Full optimization with valence and charge minimisation
+     - `--optimizer`:  
+      **beam**: optimization across multiple paths (slightly slower)  
+      **greedy**: iterative valence adjustment
+- **Aromatic detection**: Hückel 4n+2 rule for 6-membered rings
+- **Charge computation**: Gasteiger (cheminf) or Mulliken (xTB) partial charges
+- **RDkit/xyz2mol comparison** validation against RDKit bond perception [[3]](https://github.com/jensengroup/xyz2mol), [[4]](https://github.com/rdkit)
+- **ASCII 2D depiction** with layout alignment for method comparison (see also [[5]](https://github.com/whitead/moltext))
+
+---
+
+## Installation
+
+### From PyPI - *coming soon (maybe)*
+```bash
+pip install xyzgraph
+```
+
+### From Source
+```bash
+git clone https://github.com/aligfellow/xyzgraph
+cd xyzgraph
+pip install .
+```
+
+### Dependencies
+- **Core**: `numpy`, `networkx`, `rdkit`
+- **Optional**: [xTB binary](https://github.com/grimme-lab/xtb) (for `--method xtb`)
+
+To install xTB (Linux/macOS) see [here](https://github.com/grimme-lab/xtb):
+```bash
+conda install -c conda-forge xtb # or download from GitHub releases
+```
+
+---
+
+## Quick Start
+
+### CLI Examples
+
+**Minimal usage** (auto-displays ASCII depiction):
+```bash
+xyzgraph molecule.xyz
+```
+
+**Specify charge and method**:
+```bash
+xyzgraph molecule.xyz --method xtb --charge -1 --multiplicity 2
+```
+
+**Detailed debug output**:
+```bash
+xyzgraph molecule.xyz --debug
+```
+
+**Compare with RDKit**:
+```bash
+xyzgraph molecule.xyz --compare-rdkit
+```
+
+### Python API
+
+**Basic usage**:
+```python
+from xyzgraph import build_graph, graph_to_ascii, read_xyz_file
+
+atoms = read_xyz_file("molecule.xyz") 
+G = build_graph(atoms, charge=0)
+# OR
+G = build_graph("molecule.xyz", charge=0)
+
+# Print ASCII structure
+print(graph_to_ascii(G, scale=3.0, include_h=False))
+```
+
+---
+
+## Methodology Overview
+
+### Design Philosophy
+
+xyzgraph offers two distinct pathways for molecular graph construction:
+
+1. **Cheminformatics Path** (`method='cheminf'`): 
+   - Pure graph-based approach using chemical heuristics
+   - No external quantum chemistry calls
+   - Cached scoring, valence, edge and graph properties
+   - Fast and suitable for both organic *and* inorganic molecules
+
+2. **Quantum Chemistry Path** (`method='xtb'`):
+   - Uses GFN2-xTB (extended tight-binding) calculations [[2]](https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176)
+   - Reads in Wiberg bond orders and Mulliken charges from output
+   - Potentially more accurate for unusual bonding situations 
+      - *though, xTB may be less robust in these situations*
+   - Requires xTB binary installation
+
+### Cheminformatics Workflow (method='cheminf')
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. Input Processing                                             │
+│    • Parse XYZ file internally                                  │
+│    • Load reference data (VDW radii, valences, electrons)       │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 2. Initial Bond Graph (Distance-Based)                          │
+│    • Compute pairwise distances                                 │
+│    • Apply scaled VDW thresholds:                               │
+│      - H-nonmetal: 0.42 × (r₁ + r₂)                             │
+│      - H-metal: 0.50 × (r₁ + r₂)                                │
+│      - Nonmetal-nonmetal: 0.55 × (r₁ + r₂)                      │
+│      - Metal-ligand: 0.65 × (r₁ + r₂)                           │
+│    • Create graph with single bonds (order = 1.0)               │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 3. Ring Pruning                                                 │
+│    • Detect cycles (NetworkX cycle_basis)                       │
+│    • Remove geometrically distorted small rings (3,4-membered)  │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 3.5 Kekulé Initialization for Aromatic Rings                    │
+│    • Find 6-membered planar rings with C/N/O/S/B                │
+│    • Initialize alternating bond orders: 2-1-2-1-2-1            │
+│    • Handle fused rings (naphthalene, anthracene):              │
+│      - Detecting shared edges from previous rings               │
+│      - Validated across extended ring system                    │
+│    • Gives optimizer excellent starting point                   │
+│    • Reduces iterations needed for aromatic systems             │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+          ┌──────────┴─────────────┐
+          │                        │
+┌─────────▼────────────┐   ┌───────▼──────────────────────────────┐
+│ 4a. Quick Mode       │   │ 4b. Full Optimization                │
+│  • Lock metal bonds  │   │  • Lock metal bonds at 1.0           │
+│  • 3 iterations      │   │  • Iterative BIDIRECTIONAL search:   │
+│  • Promote bonds     │   │    - Test both +1 AND -1 changes     │
+│    where both atoms  │   │    - Allows Kekulé structure swaps   │
+│    need increased    │   │  • Score = f(valence_error,          │
+│    valence           │   │             formal_charges,          │
+│  • Distance check    │   │             electronegativity,       │
+│                      │   │             conjugation_penalty)     │
+│                      │   │  • Optimizer choice:                 │
+│                      │   │    - Beam: parallel hypotheses       │
+│                      │   │    - Greedy: single best change      │
+│                      │   │  • Cache where possible for speed    │
+│                      │   │  • Top-k edge candidate selection    │
+└─────────┬────────────┘   └──────────┬───────────────────────────┘
+          └───────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 5. Aromatic Detection (Hückel 4n+2)                             │
+│    • Find 5/6-membered rings with C/N/O/S/P                     │
+│    • Count π electrons (sp² carbons → 1e, N/O/S LP → 2e)        │
+│    • Apply Hückel rule: 4n+2 π electrons                        │
+│    • Set aromatic bonds to 1.5                                  │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 6. Formal Charge Assignment                                     │
+│    • For each non-metal atom:                                   │
+│      - B = 2 × Σ(bond_orders)                                   │
+│      - L = max(0, target - B)  [target: 2 for H, 8 otherwise]   │
+│      - formal = V_electrons - (L + B/2)                         │
+│    • Balance total to match system charge                       │
+│    • Metals forced to 0 (coordination not oxidation state)      │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 7. Gasteiger Partial Charges                                    │
+│    • Convert bond orders to RDKit bond types                    │
+│    • Compute Gasteiger charges                                  │
+│    • Adjust for total charge conservation                       │
+│    • Aggregate H charges onto heavy atoms                       │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 9. Output Graph                                                 │
+│    Nodes: symbol, formal_charge, charges{}, agg_charge, valence │
+│    Edges: bond_order, bond_type, metal_coord                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### xTB Workflow (method='xtb')
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. Input Processing                                             |
+│    • Parse XYZ file internally                                  │
+│    • Write XYZ to temporary directory                           │
+│    • Set up xTB calculation parameters                          │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 2. Run xTB Calculation                                          │
+│    Command: xtb <file>.xyz --chrg <charge> --uhf <unpaired>     │
+│    • GFN2-xTB Hamiltonian                                       │
+│    • Single-point calculation                                   │
+│    • Wiberg bond order analysis                                 │
+│    • Mulliken population analysis                               │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 3. Parse xTB Output                                             │
+│    • Read wbo file (Wiberg bond orders)                         │
+│    • Read charges file (Mulliken atomic charges)                │
+│    • Threshold: bond_order > 0.5 → create edge                  │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 4. Build Graph from xTB Data                                    │
+│    • Create nodes with Mulliken charges                         │
+│    • Create edges with Wiberg bond orders                       │
+│    • No further optimization needed                             │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 5. Cleanup (optional)                                           │
+│    • Remove temporary xTB files (unless --no-clean)             │
+└────────────────────┬────────────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────────────┐
+│ 6. Output Graph                                                 │
+│    Nodes: symbol, charges{'mulliken': ...}, agg_charge, valence │
+│    Edges: bond_order (Wiberg), bond_type, metal_coord           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Workflow Comparison
+
+| Feature | cheminf (quick) | cheminf (full) | xtb |
+|---------|----------------|----------------|-----|
+| **Speed** | Very Fast | Fast | Moderate |
+| **Accuracy** | Okay for simple molecules | Very good across various systems | Only limited by xTB performance (QM-based) |
+| **External deps** | None | None | Requires xTB binary |
+| **Bond orders** | Heuristic (integer-like) | Optimized formal charge and valency | Wiberg (fractional) |
+| **Charges** | Gasteiger | Gasteiger | Mulliken |
+| **Metal complexes** | Limited | Reasonable | Reasonable (limited by xTB metal performance) |
+| **Conjugated systems** | Basic | Excellent | Excellent |
+| **Best for** | Quick checks, where connectivity most important | Most cases | Awkward bonding, validation |
+
+### When to Use Each Method
+
+**Use `--method cheminf` (default)**:
+- Most use cases
+- No xTB installation available
+- Batch processing structures
+
+**Use `--method cheminf --quick`**:
+- Extremely large molecules
+- Initial rapid screening
+- When approximate bond orders suffice
+
+**Use `--method xtb`**:
+- Validation of cheminf results
+- Unusual electronic structures
+- Low confidence in bonding structure
+
+### Optimizer Algorithms (cheminf full mode only)
+
+**Beam Search Optimizer** (`--optimizer beam`, default `--beam-width 3`):
+- Explores multiple optimization paths in parallel
+- Maintains top-k hypotheses at each iteration
+- Bidirectional: tests both +1 and -1 bond orders for each hypothesis
+- More robust against local minima
+- Slower, but better convergence
+- Best for robust bonding assignment across periodic table
+
+**Greedy Optimizer** (`--optimizer greedy`, default in code):
+- Tests all candidate edges, picks single best change per iteration
+- Bidirectional: tests both +1 and -1 bond order changes
+- Fast and effective for most molecules
+- Can get stuck in local minima (*e.g.* alpha, beta unsaturated systems)
+
+---
+
+## CLI Reference
+
+### Command Syntax
+```bash
+> xyzgraph -h
+usage: xyzgraph [-h] [--method {cheminf,xtb}] [-q] [--max-iter MAX_ITER] [--edge-per-iter EDGE_PER_ITER] [-o {greedy,beam}] [-bw BEAM_WIDTH] [--bond BOND]
+                [--unbond UNBOND] [-c CHARGE] [-m MULTIPLICITY] [-b] [-d] [-a] [-as ASCII_SCALE] [-H] [--compare-rdkit] [--no-clean]
+                xyz
+
+Build molecular graph from XYZ.
+
+positional arguments:
+  xyz                   Input XYZ file
+
+options:
+  -h, --help            show this help message and exit
+  --method {cheminf,xtb}
+                        Graph construction method (default: cheminf) (xtb requires xTB binary installed and available in PATH)
+  -q, --quick           Quick mode: fast heuristics, less accuracy (NOT recommended)
+  --max-iter MAX_ITER   Maximum iterations for bond order optimization (default: 50, cheminf only)
+  -t THRESHOLD, --threshold THRESHOLD
+                        Scaling factor for bond detection thresholds (default: 1.0)
+  --edge-per-iter EDGE_PER_ITER
+                        Number of edges to adjust per iteration (default: 10, cheminf only)
+  -o {greedy,beam}, --optimizer {greedy,beam}
+                        Optimization algorithm (default: beam, cheminf , BEAM recommended)
+  -bw BEAM_WIDTH, --beam-width BEAM_WIDTH
+                        Beam width for beam search (default: 3). i.e. number of candidate graphs to retain per iteration
+  --bond BOND           Specify atoms that must be bonded in the graph construction. Example: --bond 0,1 2,3
+  --unbond UNBOND       Specify that two atoms indices are NOT bonded in the graph construction. Example: --unbond 0,1 1,2
+  -c CHARGE, --charge CHARGE
+                        Total molecular charge (default: 0)
+  -m MULTIPLICITY, --multiplicity MULTIPLICITY
+                        Spin multiplicity (auto-detected if not specified)
+  -b, --bohr            XYZ file provided in units bohr (default is Angstrom)
+  -d, --debug           Enable debug output (construction details + graph report)
+  -a, --ascii           Show 2D ASCII depiction (auto-enabled if no other output)
+  -as ASCII_SCALE, --ascii-scale ASCII_SCALE
+                        ASCII scaling factor (default: 3.0)
+  -H, --show-h          Include hydrogens in visualizations (hidden by default)
+  --compare-rdkit       Compare with xyz2mol output (uses rdkit implementation)
+  --no-clean            Keep temporary xTB files (only for --method xtb)
+```
+
+**Method comparison**:
+```bash
+xyzgraph molecule.xyz --debug > cheminf.txt
+xyzgraph molecule.xyz --method xtb --debug > xtb.txt
+diff cheminf.txt xtb.txt
+```
+
+**Validate against RDKit**:
+```bash
+xyzgraph molecule.xyz --compare-xyz2mol
+```
+
+---
+
+## Python API
+
+Direct graph construction:
+
+```python
+from xyzgraph import build_graph, graph_debug_report
+
+# Cheminf full optimization
+G_full = build_graph(
+      atoms='molecule.xyz',
+      charge=0,
+      max_iter=50,              # maximum iterations (normally converged <20)
+      edge_per_iter=6,
+      bond=[(0,1)],             # ensure a bond between 0 and 1
+      debug=True
+   )
+```
+
+---
+
+## Visualization
+
+### ASCII Depiction
+
+xyzgraph includes a built-in ASCII renderer for 2D molecular structures. This is heavily inspired by work elsewhere, *e.g.* [[5]](https://github.com/whitead/moltext) by Andrew White.
+
+```python
+from xyzgraph import graph_to_ascii
+
+# Basic rendering
+ascii_art = graph_to_ascii(G, scale=3.0, include_h=False)
+print(ascii_art)
+```
+
+**Output example** (acyl isothiouronium):
+```
+                                       C
+                                        \
+                                        \
+                                         C-------C
+                                      ///
+        ---C-               /C-------C
+    C---     ---          //          \           /C----
+   /            -C------N\            \          /      ---C
+  C             /        \\           /C-------C/           \\
+   \\          /          \\        //          \             C
+     \\    ---C-          -C\-----N/            \           //
+       C---     ----   ---         \             C---     //
+                    -S-             \                ----C
+                                    /C===
+                                  // =======O
+                                C\       ====
+                                 \\
+                                  \\
+                                  /C\
+                                //
+                              C/
+```
+
+**Features**:
+- Single bonds: `-`, `|`, `/`, `\`
+- Double bonds: `=`, `‖` (parallel lines)
+- Triple bonds: `#`
+- Aromatic: 1.5 bond orders shown as single
+- Special edges: `*` (TS), `.` (NCI) if `G.edges[i,j]['TS']=True`
+
+### Layout Alignment
+
+Compare methods by aligning their ASCII depictions:
+
+```python
+from xyzgraph import build_graph, graph_to_ascii
+
+# Build with both methods
+G_cheminf = build_graph(atoms, method='cheminf')
+G_xtb = build_graph(atoms, method='xtb')
+
+# Generate aligned depictions
+ascii_ref, layout = graph_to_ascii(G_cheminf)
+ascii_xtb = graph_to_ascii(G_xtb, reference_layout=layout)
+
+print("Cheminf:\n", ascii_ref)
+print("\nxTB:\n", ascii_xtb)
+```
+
+### Debug Report
+
+Tabular listing of all atoms and bonds:
+
+```python
+from xyzgraph import graph_debug_report
+
+report = graph_debug_report(G, include_h=False)
+print(report)
+```
+
+**Full example**:
+```text
+> xyzgraph benzene_NH4-cation-pi.xyz -c 1 -a -d
+
+============================================================
+BUILDING GRAPH (CHEMINF, FULL MODE)
+Atoms: 17, Charge: 1, Multiplicity: 1
+============================================================
+
+  Added 17 atoms
+  Initial bonds: 16
+  Found 1 rings
+  Initial bonds: 16
+  Pruning distorted rings (sizes: [3, 4])
+  Initialized 1 6-membered carbon rings with Kekulé pattern
+============================================================
+  
+BEAM SEARCH OPTIMIZATION (width=3)
+============================================================
+  Initial score: 15.50
+  
+Iteration 1:
+      No improvements found in any beam, stopping
+  
+Applying best solution to graph...
+------------------------------------------------------------
+  Explored 13 states across 1 iterations
+  Found 0 improvements
+  Score: 15.50 → 15.50
+------------------------------------------------------------
+
+============================================================
+AROMATIC RING DETECTION (Hückel 4n+2)
+============================================================
+  
+Ring 1 (6-membered): ['C0', 'C1', 'C2', 'C3', 'C4', 'C5']
+    π electrons: 6 (C0:1, C1:1, C2:1, C3:1, C4:1, C5:1)
+    ✓ AROMATIC (4n+2 rule: n=1)
+
+------------------------------------------------------------
+  SUMMARY: 1 aromatic rings, 6 bonds set to 1.5
+------------------------------------------------------------
+
+    Gasteiger charge calculation failed: Explicit valence for atom # 12 N, 4, is greater than permitted
+
+============================================================
+GRAPH CONSTRUCTION COMPLETE
+============================================================
+
+# Molecular Graph: 17 atoms, 16 bonds
+# total_charge=1  multiplicity=1  sum(gasteiger)=+1.000  sum(gasteiger_raw)=+0.000
+# (C–H hydrogens hidden; heteroatom-bound hydrogens shown; valences still include all H)
+# [idx] Sym  val=.. chg=.. agg=.. | neighbors: idx(order / aromatic flag)
+[  0]  C  val=4.00  formal=+0  chg=+0.059  agg=+0.118 | 1(1.50*) 5(1.50*)
+[  1]  C  val=4.00  formal=+0  chg=+0.059  agg=+0.118 | 0(1.50*) 2(1.50*)
+[  2]  C  val=4.00  formal=+0  chg=+0.059  agg=+0.118 | 1(1.50*) 3(1.50*)
+[  3]  C  val=4.00  formal=+0  chg=+0.059  agg=+0.118 | 2(1.50*) 4(1.50*)
+[  4]  C  val=4.00  formal=+0  chg=+0.059  agg=+0.118 | 3(1.50*) 5(1.50*)
+[  5]  C  val=4.00  formal=+0  chg=+0.059  agg=+0.118 | 0(1.50*) 4(1.50*)
+[ 12]  N  val=4.00  formal=+1  chg=+0.059  agg=+0.294 | 13(1.00) 14(1.00) 15(1.00) 16(1.00)
+[ 13]  H  val=1.00  formal=+0  chg=+0.059  agg=+0.059 | 12(1.00)
+[ 14]  H  val=1.00  formal=+0  chg=+0.059  agg=+0.059 | 12(1.00)
+[ 15]  H  val=1.00  formal=+0  chg=+0.059  agg=+0.059 | 12(1.00)
+[ 16]  H  val=1.00  formal=+0  chg=+0.059  agg=+0.059 | 12(1.00)
+
+# Bonds (i-j: order) (filtered)
+[ 0- 1]: 1.50
+[ 0- 5]: 1.50
+[ 1- 2]: 1.50
+[ 2- 3]: 1.50
+[ 3- 4]: 1.50
+[ 4- 5]: 1.50
+[12-13]: 1.00
+[12-14]: 1.00
+[12-15]: 1.00
+[12-16]: 1.00
+
+============================================================
+# ASCII Depiction
+============================================================
+         -C-------------------C-
+      ---                       ----
+  ----                              ----
+C-                                      -C
+  \\                                 ///
+    \\\                            //
+       \\                       ///
+         \C-------------------C/
+
+
+                    H
+                    |
+                    |
+                    |
+H-------------------N--------------------H
+                    |
+                    |
+                    |
+                    H
+```
+
+---
+
+## Limitations & Future Work
+
+### Current Limitations
+
+1. **Metal Complexes**
+   - Bond orders locked at 1.0 (no d-orbital chemistry)
+   - Formal charges set to 0 (coordination, not oxidation state)
+   - Metal-metal bonds *not* supported
+   - **Future**:  
+      - Metal-metal bonds
+
+2. **Radicals & Open-Shell Systems**
+   - Should solve a valence structure
+   - Not explicity dealt with currently 
+   - *May* behave, *may* be unreliable
+
+3. **Zwitterions**
+   - Formal charge and valence analysis does identify `-[N+](=O)(-[O-])` bonding and formal charge pattern
+   - *May* not always be fully robust
+
+4. **Large Conjugated Systems**
+   - May need many iterations for convergence (better with kekule initialised rings)
+   - Conjugation penalty heuristic (not full π-MO analysis)
+   
+5. **Charged Aromatics**
+   - Hückel electron counting simplified (doesn't account for ionic charge)
+   - Should still solve with valence/charge optimisation
+
+---
+
+### Built-in Comparison
+
+xyzgraph can directly compare its output to rdkit/xyz2mol:
+
+```bash
+xyzgraph molecule.xyz --compare-rdkit --debug
+```
+
+**Output includes**:
+- Layout-aligned ASCII depictions
+- Edge differences (bonds only in one method)
+- Bond order differences (Δ ≥ 0.25)
+
+**Example**:
+```
+# Bond differences: only_in_native=1   only_in_rdkit=0   bond_order_diffs=2
+#   only_in_native: 4-7
+#   bond_order_diffs (Δ≥0.25):
+#     1-2   native=1.50   rdkit=1.00   Δ=+0.50
+#     2-3   native=2.00   rdkit=1.50   Δ=+0.50
+```
+
+---
+
+## References
+
+1. **van der Waals Radii**: Jorge Charry and Alexandre Tkatchenko, *J. Chem. Theory Comput.*, 2024, **20**, 7469–7478. [DOI](https://doi.org/10.1021/acs.jctc.4c00784).
+
+2. **xTB (Extended Tight Binding)**: Christoph Bannwarth, Sebastian Ehlert, and Stefan Grimme, *J. Chem. Theory Comput.* 2019, **15**, 1652–1671. [DOI](https://pubs.acs.org/doi/10.1021/acs.jctc.8b01176). [Repo](https://github.com/grimme-lab/xtb).
+
+3. **xyz2mol**: Jan Jensen *et al.*, [xyz2mol](https://github.com/jensengroup/xyz2mol). Now integrated into RDKit as `Chem.rdDetermineBonds.DetermineBonds()`. See also Y. Kim, W. Y. Kim, *Bull. Korean Chem. Soc.*, 2015, **36**, 1769–1777.
+
+4. **RDKit**: RDKit: Open-source cheminformatics. [https://www.rdkit.org](https://www.rdkit.org). [Repo](https://github.com/rdkit).
+
+5. **moltext**: A. White, *moltext*. [Repo](https://github.com/whitead/moltext)
+
+---
+
+## Contributing & Contact
+
+Contributions welcome! Please open an issue or pull request and get in touch with any questions [here](https://github.com/aligfellow/xyzgraph/issues).
