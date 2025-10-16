@@ -1,0 +1,115 @@
+Metadata-Version: 2.4
+Name: LaraQueue
+Version: 0.0.2
+Summary: Sync Laravel queue with Python - simple and lightweight.
+Author: Anton Mashkovtsev
+Author-email: mashkovtsev@protonmail.com
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: redis
+Requires-Dist: pyee
+Dynamic: license-file
+
+## LaraQueue
+
+Простая и легковесная синхронизация очередей между Python и Laravel через Redis. Обрабатывайте задачи Laravel в Python и наоборот.
+
+**English:** Queue sync between Python and Laravel using Redis driver. You can process jobs dispatched from Laravel in Python.
+
+> **Fork Notice:** This package is a fork of the original [python-laravel-queue](https://github.com/sinanbekar/python-laravel-queue) by [@sinanbekar](https://github.com/sinanbekar). This version includes critical bug fixes, comprehensive tests, and updated compatibility with newer dependencies.
+
+**NOTE: This package is in beta and only Redis is supported currently. Production usage is not recommended until stable release.**
+
+### Установка / Install
+
+```bash
+pip install LaraQueue
+```
+
+### Usage
+
+- Прослушивание задач в Python / Listen for jobs on Python:
+
+```python
+from lara_queue import Queue
+from redis import Redis
+
+r = Redis(host='localhost', port=6379, db=0)
+queue_python = Queue(r, queue='python')
+
+@queue_python.handler
+def handle(data):
+    name = data['name'] # job name
+    data = data['data'] # job data
+    print('TEST: ' + data['a'] + ' ' + data['b'] + ' ' + data['c'])
+
+queue_python.listen()
+```
+
+- Sending jobs from Laravel :
+
+```php
+<?php
+$job = new \App\Jobs\TestJob('hi','send to','python');
+dispatch($job)->onQueue('python');
+```
+
+- Отправка задачи в Laravel из Python / Schedule a job to be run in Laravel from Python:
+
+```python
+from lara_queue import Queue
+from redis import Redis
+
+r = Redis(host='localhost', port=6379, db=0)
+queue_laravel = Queue(r, queue='laravel')
+queue_laravel.push('App\\Jobs\\TestJob', {'a': 'hello', 'b': 'send to', 'c': 'laravel'})
+
+```
+
+**TestJob** in Laravel:
+
+```php
+<?php
+
+namespace App\Jobs;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+
+class TestJob extends Job implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public $a, $b, $c;
+
+    /**
+     * Create a new job instance.
+     *
+     * @return void
+     */
+    public function __construct ($a, $b, $c) {
+        $this->a = $a;
+        $this->b = $b;
+        $this->c = $c;
+    }
+
+    public function handle () {
+        Log::info('TEST: ' . $this->a . ' '. $this->b . ' ' . $this->c);
+    }
+}
+
+```
+
+- You need to :listen (or :work) the preferred queue name above to handle data sent from Python in Laravel.
+
+```bash
+php artisan queue:listen --queue=laravel
+```
