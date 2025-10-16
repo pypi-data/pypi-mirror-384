@@ -1,0 +1,109 @@
+# https://www.elastic.co/docs/api/doc/kibana/group/endpoint-data-views
+
+import json
+import re
+
+from loguru import logger
+
+import src.curcuma as curcuma
+from src.curcuma.endpoint import Endpoint
+
+
+# logger = logging.getLogger("DataView")
+
+
+class DataView(Endpoint):
+    BASE_URL = "/api/data_views"
+
+    def get(self, space_id, id):
+        logger.info(f"Reading data view '{id}' ... ")
+        r = self._clt.get(f"/s/{space_id}{DataView.BASE_URL}/data_view/{id}")
+        return self._response_handler(r)
+
+    def show(self, space_id, id):
+        role = self.get(space_id, id)
+        print(json.dumps(role, indent=2))
+
+    def exits(self, space_id, name=None, id=None):
+        if name is not None and id is not None:
+            raise Exception("name and id is not supported")
+        if id is not None:
+            print(f"id = {id}")
+            r = self._clt.get(f"/s/{space_id}{DataView.BASE_URL}/data_view/{id}")
+            return r.status_code < 300
+        else:
+            print(f"name = {name}")
+            for dv in self.get_all(space_id, silent=True):
+                print(dv)
+                if dv.get("name") == name and space_id in dv.get("namespaces"):
+                    return True
+            return False
+
+    def get_all(self, space_id, silent=False):
+        if not silent:
+            logger.info("Reading data views ... ")
+        r = self._clt.get(f"{DataView.BASE_URL}")
+        return self._response_handler(r).get("data_view")
+
+    def list(self, space_id):
+        for data_view in self.get(space_id):
+            print(f"DataView: {data_view}")
+
+    def create(self, config):
+        data_view = config.get("data_view")
+        logger.info(f"Creating data view '{data_view.get('id')}' ... ")
+        # print(config)
+        r = self._clt.post(f"{DataView.BASE_URL}/data_view", json=config)
+        self._status_handler(r)
+
+    def update(self, id, config):
+        logger.info(f"Updating data view '{id}' ... ")
+        namespaces = config["data_view"]["namespaces"]
+        del config["data_view"]["id"]
+        del config["data_view"]["namespaces"]
+        # print(config)
+        for namespace in namespaces:
+            r = self._clt.post(f"/s/{namespace}{DataView.BASE_URL}/data_view/{id}", json=config)
+            self._status_handler(r)
+
+    def build_id(self, name):
+        id = ""
+        if blacebo.generics.prefix is not None:
+            id += blacebo.generics.prefix
+        if blacebo.generics.identifier is not None:
+            id += f"_{blacebo.generics.identifier}"
+        return id + "_" + re.sub("[^a-z0-9_]", "", name.lower().replace(" ", "_"))
+
+    def set_id(self, params):
+        if "id" not in params:
+            params["id"] = self.build_id(params.get("name"))
+
+    # def set_spaces(self, params):
+    #     if "spaces" not in params:
+    #         params["spaces"] = [
+    #             f"{curcuma.generics.prefix}_{curcuma.generics.identifier}",
+    #         ]
+
+    def create_with_template(self, template_name, params):
+        self.set_id(params)
+        # self.set_spaces(params)
+        config = self._render_template("data_view", template_name, params)
+        self.create(config)
+
+    def update_with_template(self, template_name, params):
+        config = self._render_template("data_view", template_name, params)
+        self.update(self.build_id(params.get("name")), config)
+
+    def set_with_template(self, template_name, params):
+        if not self.exits(self.build_id(params.get("name")), name=params.get("name")):
+            self.create_with_template(template_name, params)
+        else:
+            self.update_with_template(template_name, params)
+
+    def delete(self, id):
+        logger.info(f"Deleting data view '{id}'")
+        r = self._clt.delete(f"{DataView.BASE_URL}/data_view/{id}")
+        self._status_handler(r)
+
+    def delete_by_name(self, name):
+        self.delete(self.build_id(name))
