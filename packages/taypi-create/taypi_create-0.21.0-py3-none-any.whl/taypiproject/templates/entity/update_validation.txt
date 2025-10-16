@@ -1,0 +1,33 @@
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from uuid import UUID
+import re
+
+from config.database.connections import db_client
+
+from app.{{ name }}.infrastructure.dto.input_{{ name }} import InputUpdate{{ pascal_case }}
+from app.{{ name }}.infrastructure.models.{{ name }}_model import {{ pascal_case }}Model
+
+class {{ pascal_case }}UpdateValidation:
+    @staticmethod
+    def validate({{ name }}: InputUpdate{{ pascal_case }}, id: UUID, db: Session = Depends(db_client)) -> InputUpdate{{ pascal_case }}:
+        errors = {}
+
+        # Check if the name is contained in special characters using regex
+        if {{ name }}.example is not None and not re.match(r"^[a-zA-ZÀ-ÿ\u00f1\u00d1\s0-9]+$", {{ name }}.example.strip()):
+            errors.setdefault("example", []).append("El nombre no puede contener caracteres especiales.")
+
+        # Check if the identification is already in use
+        existing_example = db.query({{ pascal_case }}Model).filter({{ pascal_case }}Model.id!=id, {{ pascal_case }}Model.example=={{ name }}.example).first()
+        if existing_example:
+            errors.setdefault("example", []).append("La example ya se encuentra registrada.")
+
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+
+        update_data = {}
+        if {{ name }}.example is not None:
+            update_data["example"] = {{ name }}.example.strip()
+
+        # Additional validation logic can be added here
+        return update_data

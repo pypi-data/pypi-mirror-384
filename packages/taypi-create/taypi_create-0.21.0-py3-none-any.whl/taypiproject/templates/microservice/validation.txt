@@ -1,0 +1,24 @@
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
+from fastapi import Request
+import os
+
+from config.settings import Settings
+
+class Validation(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        settings = Settings()
+
+        token_header = request.headers.get("X-Validate")
+        expected_token = settings.SECRET_TOKEN
+
+        if not token_header or token_header != expected_token:
+            return JSONResponse(status_code=401, content={"message": "Token no válido"})
+
+        request.state.connection = request.headers.get("X-Connection", None)
+
+        if not request.state.connection:
+            return JSONResponse(status_code=400, content={"message": "Conexión no valida"})
+
+        response = await call_next(request)
+        return response

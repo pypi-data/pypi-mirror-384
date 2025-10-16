@@ -1,0 +1,85 @@
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+from app.{{ name }}.domain.value_objects.datetime import DateTime
+from app.Traits.filters import Filterable
+
+from app.{{ name }}.domain.repositories.{{ name }}_repository import {{ pascal_case }}Repository
+from app.{{ name }}.infrastructure.models.{{ name }}_model import {{ pascal_case }}Model
+from app.{{ name }}.domain.entities.{{ name }} import {{ pascal_case }}
+
+class {{ pascal_case }}RepositoryImpl({{ pascal_case }}Repository):
+    def __init__(self, db):
+        self.db = db
+        self.filterable = Filterable()
+
+    def all(self,
+            trashed: int,
+            paginate: int,
+            page: int,
+            rows: int,
+            filters: Optional[Dict[str, Any]] = None
+        ) -> List[{{ pascal_case }}]:
+
+        query = self.db.query({{ pascal_case }}Model)
+
+        columns_change = {
+            'example': {{ pascal_case }}Model.example,
+        }
+
+        if trashed == 0:
+            query = query.filter({{ pascal_case }}Model.deleted_at.is_(None))
+
+        if filters:
+            query = self.filterable.apply_filters(query, filters, columns_change)
+
+        if paginate == 1:
+            total = query.count()
+            offset = (page - 1) * rows
+            items = query.offset(offset).limit(rows).all()
+        else:
+            items = query.all()
+            total = len(items)
+
+        data = [item.to_dict() for item in items]
+
+        return {
+            'total': total,
+            'data':  data,
+        }
+
+    def find(self, id: str) -> Optional[{{ pascal_case }}]:
+        return self.db.query({{ pascal_case }}Model).filter_by(id=id).first()
+
+    def create(self, {{ name }}: {{ pascal_case }}) -> {{ pascal_case }}:
+        try:
+            {{ name }}_model = {{ pascal_case }}Model(**{{ name }})
+            self.db.add({{ name }}_model)
+            self.db.commit()
+            self.db.refresh({{ name }}_model)
+            return {{ name }}_model
+        except Exception as e:
+            self.db.rollback()
+            raise e
+
+    def update(self, id: str, {{ name }}: {{ pascal_case }}) -> Optional[{{ pascal_case }}]:
+        existing_{{ name }} = self.find(id)
+        if existing_{{ name }}:
+            for key, value in {{ name }}.items():
+                setattr(existing_{{ name }}, key, value)
+            self.db.commit()
+            self.db.refresh(existing_{{ name }})
+            return existing_{{ name }}
+        return None
+
+    def delete(self, id: str) -> Optional[{{ pascal_case }}]:
+        {{ name }} = self.find(id)
+        if {{ name }} and {{ name }}.deleted_at is None:
+            {{ name }}.deleted_at = DateTime.now().to_native()
+            self.db.commit()
+            self.db.refresh({{ name }})
+        elif {{ name }} and {{ name }}.deleted_at is not None:
+            {{ name }}.deleted_at = None
+            self.db.commit()
+            self.db.refresh({{ name }})
+        return {{ name }}
