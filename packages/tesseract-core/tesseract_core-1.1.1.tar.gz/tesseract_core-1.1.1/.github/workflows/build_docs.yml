@@ -1,0 +1,41 @@
+name: Build documentation
+
+on:
+  # run on PRs for validation
+  pull_request:
+
+jobs:
+  test-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Git repository
+        uses: actions/checkout@v5
+
+      - name: Install system requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Restore UV environment
+        run: cp production.uv.lock uv.lock
+
+      - name: Install doc requirements
+        run: |
+          uv sync --extra docs --frozen
+
+      - name: Build docs
+        working-directory: docs
+        run: |
+          export SPHINXOPTS="-W"  # treat warnings as errors
+          uv run --no-sync make html
