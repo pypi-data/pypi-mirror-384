@@ -1,0 +1,1 @@
+ADOC is a complete solution to observe the quality of the data present in your data lake and warehouse. Using ADOC, you can ensure that high-quality data backs your business decisions.
