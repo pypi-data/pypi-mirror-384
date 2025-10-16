@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  pull_request:
+    branches:
+      - "main*"
+  workflow_call:
+
+jobs:
+  tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv and sync dev dependencies
+        run: |
+          pip install uv
+          uv venv
+          echo "VIRTUAL_ENV=$PWD/.venv" >> $GITHUB_ENV
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          uv sync --dev
+      - name: Run tests with pytest and collect coverage
+        run:
+          pytest --cov=pdfbaker --cov-report=xml --junitxml=junit.xml -o
+          junit_family=legacy
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
