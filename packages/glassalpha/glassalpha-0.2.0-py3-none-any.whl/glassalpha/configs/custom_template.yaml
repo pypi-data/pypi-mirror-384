@@ -1,0 +1,564 @@
+# GlassAlpha Template: Comprehensive Custom Audit Configuration
+#
+# This is a CUSTOMIZABLE TEMPLATE - copy and modify for your specific use case.
+#
+# Before using:
+#   1. Replace data.path with your CSV file path (currently: /path/to/your/dataset.csv)
+#   2. Update all sections marked with "CUSTOMIZE:" comments
+#   3. Remove sections you don't need
+#   4. Test with: glassalpha validate --config your_custom_config.yaml
+#
+# Documentation: https://glassalpha.com/getting-started/custom-data/
+# Example Usage: glassalpha audit --config your_custom_config.yaml
+
+# ============================================================================
+# GlassAlpha Custom Audit Configuration Template
+# ============================================================================
+#
+# This is a comprehensive template for auditing your own ML models with GlassAlpha.
+# Copy this file and customize it for your specific use case.
+#
+# For detailed guidance:
+# - Getting Started: https://glassalpha.org/getting-started/quickstart/
+# - Custom Data Guide: https://glassalpha.org/getting-started/custom-data/
+# - Model Selection: https://glassalpha.org/reference/model-selection/
+# - Configuration Reference: https://glassalpha.org/getting-started/configuration/
+#
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# AUDIT PROFILE (Required)
+# ----------------------------------------------------------------------------
+# The audit profile determines which components and metrics are available.
+# Currently, only 'tabular_compliance' is supported.
+#
+# Options:
+#   - tabular_compliance: For structured/tabular data models
+#
+# Future profiles (not yet available):
+#   - llm_safety: For large language models
+#   - vision_compliance: For computer vision models
+# ----------------------------------------------------------------------------
+
+audit_profile: tabular_compliance
+
+# ----------------------------------------------------------------------------
+# REPRODUCIBILITY (Required)
+# ----------------------------------------------------------------------------
+# Ensures audits are deterministic and reproducible.
+# Critical for regulatory compliance and scientific rigor.
+#
+# Best practices:
+#   - Always set a fixed random_seed (not just for initial runs)
+#   - Use 'auto' for hashing to capture exact configuration state
+#   - Document your git commit for complete lineage tracking
+# ----------------------------------------------------------------------------
+
+# Random seed for all stochastic operations
+# Integer value ensures exact reproducibility across runs
+# Same seed = byte-identical PDF reports
+random_seed: 42
+
+# Enforce strict determinism controls (thread control, advanced seeding)
+strict: true
+
+# Control thread counts for deterministic parallel processing
+thread_control: true
+
+# Configuration hash and git tracking
+# Note: These are automatically captured in the audit manifest
+
+# ----------------------------------------------------------------------------
+# DATA CONFIGURATION (Required)
+# ----------------------------------------------------------------------------
+# Specify your dataset, target variable, and protected attributes.
+#
+# CRITICAL: Use absolute paths or ~ for home directory.
+# Relative paths will cause errors.
+#
+# Supported formats:
+#   - CSV (.csv)
+#   - Parquet (.parquet, .pq)
+#   - Feather (.feather)
+#   - Pickle (.pkl, .pickle)
+#
+# See: https://glassalpha.org/getting-started/custom-data/
+# ----------------------------------------------------------------------------
+
+data:
+  # Data source specification
+  # For custom data, specify dataset: custom and path below
+  # For built-in datasets, use dataset: german_credit
+  dataset: custom
+
+  # Path to your dataset file (REQUIRED - replace this!)
+  # Use relative paths from your project directory or absolute paths
+  # Examples:
+  #   - data/my_data.csv  # Relative path (recommended)
+  #   - ~/data/my_model_data.csv  # Home directory
+  #   - /absolute/path/to/training_set.parquet  # Absolute path
+  path: data/my_data.csv # REQUIRED: Replace with your CSV path
+
+  # Target column (the variable your model predicts)
+  # Must be a binary column (0/1, True/False, Yes/No)
+  # Examples: 'credit_risk', 'will_default', 'outcome', 'label'
+  target_column: target # REQUIRED: Replace with your target column name
+
+  # Protected attributes (sensitive demographic features)
+  # These are analyzed for fairness and bias
+  # Common examples:
+  #   - race, ethnicity, national_origin
+  #   - sex, gender
+  #   - age, age_group
+  #   - disability, disability_status
+  #   - religion
+  #   - marital_status
+  #
+  # IMPORTANT: Column names must match your dataset exactly (case-sensitive)
+  protected_attributes: # REQUIRED: Replace with your protected attributes
+    - gender # Example - replace with actual column name
+    - age_group # Example - replace with actual column name
+
+  # Feature columns (optional)
+  # If not specified, uses all columns except target and protected attributes
+  #
+  # Explicit example (uncomment to use):
+  # feature_columns:
+  #   - age
+  #   - income
+  #   - education_level
+  #   - years_employed
+  #   - credit_score
+
+  # Dataset fetching and caching (for built-in datasets only)
+  # Ignored when using custom data
+  # fetch: if_missing
+  # offline: false
+
+# ----------------------------------------------------------------------------
+# MODEL CONFIGURATION (Required)
+# ----------------------------------------------------------------------------
+# Specify which model to use and its hyperparameters.
+#
+# Supported models:
+#   - logistic_regression: Simple, fast, interpretable baseline
+#   - xgboost: Best performance for most tabular data
+#   - lightgbm: Faster than XGBoost, lower memory, good for large data
+#
+# Decision guide:
+#   - Testing/prototyping → logistic_regression
+#   - Best accuracy, small-medium data → xgboost
+#   - Large datasets (>100K rows) → lightgbm
+#   - Maximum interpretability → logistic_regression
+#
+# See: https://glassalpha.org/reference/model-selection/
+# ----------------------------------------------------------------------------
+
+model:
+  # Model type (required)
+  # Options: logistic_regression, xgboost, lightgbm
+  type: xgboost
+
+  # Model-specific parameters
+  # These vary by model type - see examples below
+  params:
+    # ========================================================================
+    # XGBOOST PARAMETERS
+    # ========================================================================
+    # Recommended starting point for binary classification
+
+    # Objective function
+    # Options: binary:logistic, binary:hinge, reg:squarederror (regression)
+    objective: binary:logistic
+
+    # Number of boosting rounds (trees)
+    # Range: 50-1000+
+    # - 50-100: Quick baseline
+    # - 100-300: Production use
+    # - 300+: Maximum accuracy (slower)
+    n_estimators: 100
+
+    # Maximum tree depth
+    # Range: 3-10
+    # - 3-5: Prevents overfitting, faster
+    # - 6-8: Good for complex patterns
+    # - 9-10: Risk of overfitting
+    max_depth: 6
+
+    # Learning rate (shrinkage)
+    # Range: 0.01-0.3
+    # - 0.01-0.05: Slower but more accurate
+    # - 0.1: Good default balance
+    # - 0.2-0.3: Faster but may underfit
+    learning_rate: 0.1
+
+    # Row sampling ratio
+    # Range: 0.5-1.0
+    # - 0.8: Good default (prevents overfitting)
+    # - 1.0: Use all data (may overfit)
+    subsample: 0.8
+
+    # Column sampling ratio per tree
+    # Range: 0.5-1.0
+    # - 0.8: Good default (prevents overfitting)
+    # - 1.0: Use all features
+    colsample_bytree: 0.8
+
+    # Random seed for model training
+    # Should match reproducibility.random_seed above
+    random_state: 42
+
+    # Advanced options (uncomment to use):
+
+    # Handle imbalanced classes (e.g., fraud detection)
+    # Ratio = (# negative samples) / (# positive samples)
+    # Example: 99:1 imbalance → scale_pos_weight: 99
+    # scale_pos_weight: 1
+
+    # Tree construction algorithm
+    # Options: auto, exact, approx, hist
+    # - hist: Faster for large datasets
+    # tree_method: hist
+
+    # Maximum number of bins for histogram-based algorithms
+    # Higher = more accurate but slower
+    # max_bin: 256
+
+    # Minimum loss reduction to make a split
+    # Higher = more conservative (prevents overfitting)
+    # gamma: 0
+
+    # L2 regularization
+    # Higher = more regularization
+    # reg_lambda: 1
+
+    # L1 regularization
+    # Higher = more feature selection
+    # reg_alpha: 0
+
+    # ========================================================================
+    # LIGHTGBM PARAMETERS (Alternative to XGBoost)
+    # ========================================================================
+    # Uncomment and use these instead if you chose lightgbm above
+
+    # objective: binary
+    # n_estimators: 100
+    # num_leaves: 31  # Max leaves per tree (15-63 typical)
+    # learning_rate: 0.1
+    # feature_fraction: 0.9  # Column sampling
+    # bagging_fraction: 0.8  # Row sampling
+    # bagging_freq: 5  # Bagging frequency
+    # random_state: 42
+
+    # Advanced LightGBM options:
+    # min_child_samples: 20  # Minimum data in leaf
+    # reg_alpha: 0  # L1 regularization
+    # reg_lambda: 0  # L2 regularization
+    # scale_pos_weight: 1  # Handle imbalanced classes
+
+    # ========================================================================
+    # LOGISTIC REGRESSION PARAMETERS (Alternative baseline)
+    # ========================================================================
+    # Uncomment and use these instead if you chose logistic_regression above
+
+    # random_state: 42
+    # max_iter: 2000  # Maximum iterations for convergence (increased to prevent warnings)
+    # C: 1.0  # Inverse regularization strength (lower = more regularization)
+    # penalty: l2  # Regularization type: l1, l2, elasticnet
+    # solver: lbfgs  # Optimization algorithm: lbfgs, saga, liblinear
+
+    # Advanced Logistic Regression options:
+    # class_weight: balanced  # Handle imbalanced classes
+    # l1_ratio: 0.5  # For elasticnet penalty only
+
+# ----------------------------------------------------------------------------
+# EXPLAINER CONFIGURATION (Optional but Recommended)
+# ----------------------------------------------------------------------------
+# Explainers provide interpretability by showing which features influenced predictions.
+#
+# Available explainers:
+#   - treeshap: Exact SHAP for tree models (XGBoost, LightGBM)
+#   - kernelshap: Model-agnostic SHAP (works with any model, slower)
+#   - permutation: Feature importance via permutation (fast, approximate)
+#   - coefficients: For LogisticRegression only (exact, instant)
+#
+# Decision guide:
+#   - XGBoost/LightGBM → treeshap (exact and fast)
+#   - Logistic Regression → coefficients (exact and instant)
+#   - Any model, need flexibility → kernelshap (slower but works everywhere)
+#
+# See: https://glassalpha.org/reference/explainers/
+# ----------------------------------------------------------------------------
+
+explainers:
+  # Explainer selection strategy
+  # Options:
+  #   - first_compatible: Use first explainer that works with model
+  #   - all: Try all compatible explainers (experimental)
+  strategy: first_compatible
+
+  # Priority order (first match wins)
+  # Determines which explainer is selected when multiple are compatible
+  priority:
+    - treeshap # Preferred for tree models
+    - kernelshap # Fallback for any model
+    - permutation # Alternative fallback
+
+  # Explainer-specific configuration
+  config:
+    # TreeSHAP configuration (for XGBoost/LightGBM)
+    treeshap:
+      # Maximum samples to use for SHAP computation
+      # Higher = more accurate but slower
+      # Range: 100-5000
+      # - 100-500: Quick testing
+      # - 500-1000: Production use
+      # - 1000+: Maximum accuracy
+      max_samples: 1000
+
+      # Check SHAP value additivity (quality check)
+      # true: Slower but verifies correctness
+      # false: Faster, skip verification
+      check_additivity: true
+
+      # Background samples for tree explainer
+      # Smaller = faster but less accurate
+      # background_samples: 100
+
+    # KernelSHAP configuration (model-agnostic)
+    kernelshap:
+      # Number of samples for SHAP estimation
+      # Higher = more accurate but much slower
+      # Range: 100-2000
+      # - 100-500: Testing
+      # - 500-1000: Standard
+      # - 1000+: High accuracy (very slow)
+      n_samples: 500
+
+      # Background data size
+      # Smaller = faster
+      background_samples: 100
+
+    # Permutation importance configuration
+    permutation:
+      # Number of permutation rounds
+      # Higher = more stable estimates
+      n_repeats: 10
+
+      # Random seed for permutation
+      random_state: 42
+
+# ----------------------------------------------------------------------------
+# METRICS CONFIGURATION (Optional but Recommended)
+# ----------------------------------------------------------------------------
+# Define which performance and fairness metrics to compute.
+#
+# Performance metrics evaluate model accuracy.
+# Fairness metrics evaluate disparate impact on protected groups.
+#
+# See: https://glassalpha.org/getting-started/configuration/#metrics
+# ----------------------------------------------------------------------------
+
+metrics:
+  # Performance metrics (how well does the model predict?)
+  performance:
+    # Standard classification metrics
+    metrics:
+      - accuracy # Overall correct predictions
+      - precision # True positives / (True positives + False positives)
+      - recall # True positives / (True positives + False negatives)
+      - f1 # Harmonic mean of precision and recall
+      - roc_auc # Area under ROC curve
+
+    # Additional performance metrics (uncomment to enable):
+    # - pr_auc         # Precision-Recall AUC (good for imbalanced data)
+    # - log_loss       # Logarithmic loss
+    # - brier_score    # Calibration metric
+    # - specificity    # True negative rate
+
+    # Performance metric configuration (optional)
+    # config:
+    #   accuracy:
+    #     threshold: 0.5  # Classification threshold
+
+  # Fairness metrics (are predictions fair across protected groups?)
+  fairness:
+    # Standard fairness metrics
+    metrics:
+      - demographic_parity # Equal positive prediction rates
+      - equal_opportunity # Equal true positive rates
+      - equalized_odds # Equal TPR and FPR
+      - predictive_parity # Equal precision across groups
+
+    # Additional fairness metrics (uncomment to enable):
+    # - disparate_impact      # Ratio of positive rates
+    # - treatment_equality    # Ratio of FP to FN
+    # - calibration           # Prediction calibration by group
+
+    # Fairness metric configuration
+    config:
+      # Demographic parity threshold
+      # Difference in positive prediction rates between groups
+      # Range: 0.01-0.10
+      # - 0.01-0.03: Very strict (healthcare, criminal justice)
+      # - 0.05: Standard threshold
+      # - 0.10: More lenient
+      demographic_parity:
+        threshold: 0.05
+
+      # Equal opportunity threshold
+      # Difference in true positive rates between groups
+      equal_opportunity:
+        threshold: 0.05
+
+      # Equalized odds threshold
+      # Maximum difference in TPR or FPR between groups
+      equalized_odds:
+        threshold: 0.05
+
+      # Predictive parity threshold
+      # Difference in precision between groups
+      predictive_parity:
+        threshold: 0.05
+
+# ----------------------------------------------------------------------------
+# REPORT CONFIGURATION (Required)
+# ----------------------------------------------------------------------------
+# Customize the audit report output.
+#
+# The report is a PDF document containing:
+#   - Overview: Model and data summary
+#   - Performance: Accuracy, precision, recall, etc.
+#   - Explanations: SHAP values and feature importance
+#   - Fairness: Demographic parity, equal opportunity, etc.
+#   - Recommendations: Suggested actions based on findings
+# ----------------------------------------------------------------------------
+
+report:
+  # Report title (appears on cover page)
+  title: "Custom ML Model Audit Report"
+
+  # Report description (appears in overview section)
+  # Use | for multi-line descriptions
+  description: |
+    Comprehensive audit of [YOUR MODEL NAME] for regulatory compliance
+    and fairness assessment. This report evaluates model performance,
+    interpretability, and potential bias across protected demographic groups.
+
+  # Output path for generated PDF
+  # Can be relative or absolute path
+  # Examples:
+  #   - audit_report.pdf
+  #   - ~/reports/model_audit_2024.pdf
+  #   - /path/to/outputs/compliance_report.pdf
+  output_path: audit_report.pdf
+
+  # Report template (optional)
+  # Options:
+  #   - default: Standard compliance report
+  #   - minimal: Compact version (future)
+  #   - detailed: Extended analysis (future)
+  template: default
+
+  # Report sections to include (optional)
+  # Defaults to all sections if not specified
+  sections:
+    - overview # Executive summary
+    - performance # Performance metrics
+    - explanations # SHAP explanations
+    - fairness # Fairness analysis
+    - recommendations # Action items
+
+
+  # Additional report options (optional)
+  # styling:
+  #   logo: /path/to/company_logo.png
+  #   primary_color: "#1976D2"
+  #   font: "Helvetica"
+
+  # metadata:
+  #   author: "Data Science Team"
+  #   organization: "Your Company"
+  #   department: "Risk & Compliance"
+  #   contact: "compliance@example.com"
+# ============================================================================
+# ADVANCED OPTIONS (Optional)
+# ============================================================================
+# These options are for advanced users and specific use cases.
+# Most users can safely ignore this section.
+# ============================================================================
+
+# Strict mode (enforces regulatory requirements)
+# When true:
+#   - All optional fields become required
+#   - Warnings are treated as errors
+#   - Deterministic behavior is strictly enforced
+#   - No default values are used
+#
+# Use strict mode for:
+#   - Regulatory submissions
+#   - Production audits
+#   - Compliance documentation
+#
+# strict_mode: false
+
+# Logging configuration
+# logging:
+#   level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+#   file: audit.log
+#   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Parallel processing
+# parallel:
+#   n_jobs: -1  # -1 = use all CPU cores
+#   backend: loky  # loky, threading, multiprocessing
+
+# Caching
+# cache:
+#   enabled: true
+#   directory: ~/.glassalpha/cache
+#   max_size_mb: 1000
+
+# Privacy and security
+# privacy:
+#   anonymize_output: false  # Redact sensitive information
+#   encrypt_manifest: false  # Encrypt audit manifest
+#   pii_columns: []  # Columns to exclude from reports
+
+# ============================================================================
+# NEXT STEPS
+# ============================================================================
+#
+# 1. Copy this template:
+#    cp custom_template.yaml my_audit_config.yaml
+#
+# 2. Edit your config:
+#    - Update data.path to your dataset
+#    - Set data.target_column to your prediction target
+#    - Set data.protected_attributes to your sensitive features
+#    - Choose appropriate model type
+#    - Adjust model parameters as needed
+#
+# 3. Run audit:
+#    glassalpha audit --config my_audit_config.yaml --output my_audit.pdf
+#
+# 4. Review results:
+#    - Open my_audit.pdf
+#    - Check performance metrics
+#    - Examine SHAP explanations
+#    - Assess fairness metrics
+#    - Follow recommendations
+#
+# 5. Iterate:
+#    - Adjust thresholds based on findings
+#    - Try different models
+#    - Refine protected attributes
+#    - Re-run audit until satisfied
+#
+# For help:
+#   - Documentation: https://glassalpha.org/
+#   - Examples: https://glassalpha.org/examples/
+#   - FAQ: https://glassalpha.org/reference/faq/
+#   - GitHub Issues: https://github.com/GlassAlpha/glassalpha/issues
+#
+# ============================================================================
