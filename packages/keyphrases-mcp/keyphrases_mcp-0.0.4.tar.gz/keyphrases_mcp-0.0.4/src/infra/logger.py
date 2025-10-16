@@ -1,0 +1,6 @@
+from typing import Callable, Protocol
+
+
+class LoggerProtocol(Protocol):
+    def print(self, message: str) -> None: ...
+    def print_spinner(self, message: str) -> Callable[[str], None]: ...
