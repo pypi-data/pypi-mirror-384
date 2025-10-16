@@ -1,0 +1,210 @@
+Metadata-Version: 2.4
+Name: c2i-athena-mcp
+Version: 1.0.0
+Summary: C2i Genomics Athena MCP Server with MRD calculation tools
+Project-URL: Homepage, https://github.com/c2i-genomics/c2i-athena-mcp
+Project-URL: Repository, https://github.com/c2i-genomics/c2i-athena-mcp
+Project-URL: Issues, https://github.com/c2i-genomics/c2i-athena-mcp/issues
+Author-email: C2i Genomics <dev@c2i-genomics.com>
+License: MIT
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: >=3.11
+Requires-Dist: boto3>=1.34.0
+Requires-Dist: fastmcp>=0.3.0
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: pydantic>=2.0.0
+Provides-Extra: dev
+Requires-Dist: black>=23.0.0; extra == 'dev'
+Requires-Dist: mypy>=1.0.0; extra == 'dev'
+Requires-Dist: pytest>=7.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# C2i Athena MCP Server
+
+A Model Context Protocol (MCP) server for C2i Genomics Athena database operations and MRD (Minimal Residual Disease) calculations.
+
+## Features
+
+- **Athena Database Operations**: Query AWS Athena databases with natural language
+- **MRD Calculations**: Calculate Minimal Residual Disease scores for genomic samples
+- **Dataset Processing**: Batch process MRD calculations for entire datasets
+- **Secure Access**: Uses AWS IAM roles and least-privilege access
+
+## Available Tools
+
+### Database Operations
+- `list_databases`: List available Athena databases
+- `list_tables`: Show tables in a specific database
+- `get_table_schema`: View table structure and columns
+- `execute_query`: Execute SQL queries against Athena
+- `get_query_history`: View recent query execution history
+
+### MRD Analysis
+- `calculate_mrd_score_for_sample`: Calculate MRD score for a single sample
+- `calculate_mrd_for_dataset`: Process MRD calculations for entire datasets
+- `get_mrd_calculation_history`: View MRD calculation results
+
+## Installation
+
+### For VS Code with GitHub Copilot
+
+1. **Ensure MCP is enabled** in your VS Code settings
+2. **Add to your MCP configuration** (`~/.vscode/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "c2i-athena": {
+      "command": "uvx",
+      "args": ["c2i-athena-mcp"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "AWS_PROFILE": "your-aws-profile"
+      }
+    }
+  }
+}
+```
+
+### For Claude Desktop
+
+Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "c2i-athena": {
+      "command": "uvx",
+      "args": ["c2i-athena-mcp"],
+      "env": {
+        "AWS_REGION": "us-east-1", 
+        "AWS_PROFILE": "your-aws-profile"
+      }
+    }
+  }
+}
+```
+
+## Requirements
+
+- **Python 3.11+**
+- **AWS CLI configured** with appropriate permissions
+- **Access to C2i Genomics AWS environment**
+
+## AWS Permissions Required
+
+The MCP server requires the following AWS permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "athena:ListDataCatalogs",
+        "athena:ListDatabases", 
+        "athena:ListTableMetadata",
+        "athena:GetQueryExecution",
+        "athena:GetQueryResults",
+        "athena:StartQueryExecution",
+        "athena:ListQueryExecutions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::airflow-research-main-1-us-east-1/*",
+        "arn:aws:s3:::airflow-research-main-1-us-east-1"
+      ]
+    }
+  ]
+}
+```
+
+## Development
+
+### Local Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/c2i-genomics/c2i-athena-mcp.git
+cd c2i-athena-mcp
+
+# Install with development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+black .
+ruff check .
+```
+
+### Testing the MCP Server
+
+```bash
+# Start the server
+c2i-athena-mcp
+
+# Test with MCP inspector
+npx @modelcontextprotocol/inspector c2i-athena-mcp
+```
+
+## Configuration
+
+### Environment Variables
+
+- `AWS_REGION`: AWS region (default: us-east-1)
+- `AWS_S3_OUTPUT_URI`: S3 URI for Athena query results
+- `AWS_PROFILE`: AWS profile to use for authentication
+
+### Example Usage
+
+Once connected through VS Code or Claude Desktop:
+
+```
+List all available databases
+→ Shows: default, research_db, clinical_data
+
+Show tables in research_db
+→ Shows: samples, variants, mrd_scores
+
+Calculate MRD score for sample SAMPLE123
+→ Returns: MRD score calculation with confidence intervals
+
+Execute query: SELECT * FROM samples WHERE sample_id = 'SAMPLE123'
+→ Returns: Sample data from Athena
+```
+
+## Security Considerations
+
+- Uses AWS IAM roles for authentication (no hardcoded credentials)
+- Implements least-privilege access patterns
+- Query results are stored in designated S3 buckets
+- All database operations are logged and auditable
+
+## Support
+
+For issues and questions:
+- **Internal**: Contact the R&D Platform team
+- **GitHub Issues**: [c2i-genomics/c2i-athena-mcp/issues](https://github.com/c2i-genomics/c2i-athena-mcp/issues)
+
+## License
+
+MIT License - see LICENSE file for details.
