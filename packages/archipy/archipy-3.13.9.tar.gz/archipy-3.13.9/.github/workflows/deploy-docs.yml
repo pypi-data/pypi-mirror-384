@@ -1,0 +1,49 @@
+name: Deploy MkDocs to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+      - docs
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy-docs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Fetch all history for proper versioning
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+
+      - name: Cache UV
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-docs-${{ hashFiles('uv.lock') }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --group docs
+
+      - name: Configure Git user
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Deploy documentation
+        run: |
+          uv run --group docs mkdocs gh-deploy --force -f docs/mkdocs-full.yml
