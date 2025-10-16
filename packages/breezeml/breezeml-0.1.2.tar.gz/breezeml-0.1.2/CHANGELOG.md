@@ -1,0 +1,16 @@
+# 📜 Changelog
+
+All notable changes to this project will be documented here.
+Format based on Keep a Changelog.
+
+## [0.1.2] - 2025-10-16
+### Added
+- Colab Quickstart notebook + README badge.
+- Beginner-friendly README with CSV guide and troubleshooting.
+- **New modules**: `classifiers` (LogReg, SVM, Naïve Bayes, Decision Tree, Random Forest) and `clustering` (KMeans, Agglomerative, DBSCAN).
+
+### Fixed
+- RMSE computed as sqrt(MSE) for wider scikit-learn compatibility.
+
+## [0.1.1] - 2025-10-03
+- First PyPI release with fit/predict/auto, datasets, save/load, examples, easter egg.
