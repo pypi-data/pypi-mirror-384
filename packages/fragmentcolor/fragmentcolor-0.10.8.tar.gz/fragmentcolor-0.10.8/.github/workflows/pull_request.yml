@@ -1,0 +1,332 @@
+name: "Pull Request"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # SCCACHE_GHA_ENABLED: "true"
+  # RUSTC_WRAPPER: "sccache"
+  CARGO_TERM_COLOR: "always"
+
+jobs:
+  changes:
+    timeout-minutes: 20
+    name: Check file changes
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.changes.outputs.core }}
+      web: ${{ steps.changes.outputs.web }}
+      python: ${{ steps.changes.outputs.python }}
+      # swift: ${{ steps.changes.outputs.swift }}
+      # kotlin: ${{ steps.changes.outputs.kotlin }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'push' }}
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            core:
+              - "**/*.rs"
+              - "**/*.c"
+              - "**/*.h"
+              - "**/*.toml"
+              - "*.toml"
+              - "**/*.sh"
+              - ".github/**/*"
+            web:
+              - "platforms/web/**/*"
+            python:
+              - "platforms/python/fragmentcolor/**/*"
+
+          # swift:
+          #   - "platforms/swift/**/*"
+          # kotlin:
+          #   - "platforms/kotlin/**/*"
+
+  test_core:
+    timeout-minutes: 20
+    name: Lint & Tests
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Collect telemetry data
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          lfs: true
+
+      - name: Install system dependencies for headless GPU
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y libosmesa6-dev libegl1 libgl1-mesa-dri libxcb-xfixes0-dev mesa-vulkan-drivers
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: ${{ github.workspace }}/target
+          cache-all-crates: true
+
+      # - name: Run sccache-cache
+      #   uses: mozilla-actions/sccache-action@v0.0.8
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Format
+        run: cargo fmt --check --message-format human
+
+      - name: Tests
+        run: cargo test
+
+      # @TODO Implement image diffs
+      # - name: Upload artifacts (on failure)
+      #   if: failure()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: image-diffs
+      #     overwrite: true
+      #     compression-level: 0
+      #     path: photograph/src/filters/tests/error/
+
+      - name: Build example triangle
+        run: cargo build -p fce --example triangle
+
+      - name: Build example circle
+        run: cargo build -p fce --example circle
+
+      - name: Build example multiobject
+        run: cargo build -p fce --example multiobject
+
+      - name: Build example multipass
+        run: cargo build -p fce --example multipass
+
+      - name: Build example app_healthcheck
+        run: cargo build -p fce --example app_healthcheck
+
+  # @TODO Implement Swift bindings
+  # test_swift_bindings:
+  #   timeout-minutes: 20
+  #   name: Test Swift Bindings
+  #   needs: changes
+  #   if: needs.changes.outputs.swift == 'true' || needs.changes.outputs.core == 'true'
+  #   runs-on: [self-hosted, macOS, ARM64]
+  #   env:
+  #     # Disables sccache for iOS: https://github.com/mozilla/sccache/issues/2253
+  #     RUSTC_WRAPPER: ""
+  #   steps:
+  #     - name: Collect telemetry data
+  #       uses: catchpoint/workflow-telemetry-action@v2
+  #       with:
+  #         comment_on_pr: false
+
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #       with:
+  #         submodules: "recursive"
+
+  #     - name: Setup Rust
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         cache: false
+
+  #     - name: Setup Rust cache
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-directories: ${{ github.workspace }}/build
+  #         cache-all-crates: true
+
+  #     - name: Build iOS
+  #       run: ./build_ios.sh
+
+  #     - name: Build demo App
+  #       working-directory: examples/ios/
+  #       run: |
+  #         set -o pipefail
+  #         xcodebuild \
+  #             -project PhotoGraphDemo_iOS.xcodeproj \
+  #             -scheme PhotoGraphDemo_iOS \
+  #             -sdk iphonesimulator \
+  #             -allowProvisioningUpdates \
+  #             -destination 'platform=iOS Simulator,OS=18.0,name=iPhone 16' \
+  #             build
+
+  # @TODO Implement Kotlin bindings
+  # test_android_bindings:
+  #   timeout-minutes: 30
+  #   name: Test Android Bindings
+  #   needs: changes
+  #   if: needs.changes.outputs.kotlin == 'true' || needs.changes.outputs.core == 'true'
+  #   runs-on: x86_64-ubuntu-engine
+  #   steps:
+  #     - name: Collect telemetry data
+  #       uses: catchpoint/workflow-telemetry-action@v2
+  #       with:
+  #         comment_on_pr: false
+
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #       with:
+  #         submodules: "recursive"
+
+  #     - name: Set up Java
+  #       uses: actions/setup-java@v4
+  #       with:
+  #         distribution: "temurin"
+  #         java-version: 17
+
+  #     - name: Setup Rust
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         cache: false
+
+  #     - name: Setup Rust cache
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-directories: ${{ github.workspace }}/build
+  #         cache-all-crates: true
+
+  #     - name: Run sccache-cache
+  #       uses: mozilla-actions/sccache-action@v0.0.4
+
+  #     - name: Build Android for CI runner
+  #       run: ./build_android.sh i686-linux-android
+
+  #     - name: Enable KVM
+  #       run: |
+  #         echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+  #         sudo udevadm control --reload-rules
+  #         sudo udevadm trigger --name-match=kvm
+
+  #     - name: Gradle cache
+  #       uses: gradle/actions/setup-gradle@v3
+
+  #     - name: Setup PATH
+  #       run: |
+  #         echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> "${GITHUB_PATH}"
+  #         echo "${ANDROID_HOME}/platform-tools" >> "${GITHUB_PATH}"
+  #         echo "${ANDROID_HOME}/emulator" >> "${GITHUB_PATH}"
+
+  #     - name: Install Android Emulator
+  #       env:
+  #         API_LEVEL: 29
+  #         ARCH: x86
+  #         TARGET: default
+  #       run: |
+  #         yes | sdkmanager --licenses > /dev/null
+  #         sdkmanager --install "emulator" "platform-tools" "platforms;android-${API_LEVEL}"
+  #         sdkmanager --install "system-images;android-${API_LEVEL};${TARGET};${ARCH}"
+  #         avdmanager create avd -n pixel -k "system-images;android-${API_LEVEL};${TARGET};${ARCH}" --device pixel
+
+  #     - name: Build demo App
+  #       run: |
+  #         emulator -avd pixel -no-window -no-audio &
+  #         cd examples/android/; ./gradlew connectedAndroidTest
+
+  test_web_bindings:
+    timeout-minutes: 20
+    name: Test Web bindings
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.core == 'true'
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Collect telemetry data
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          comment_on_pr: false
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+
+      - name: Setup wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: "latest"
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: ${{ github.workspace }}/build
+          cache-all-crates: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: |
+            examples/javascript/pnpm-lock.yaml
+            platforms/web/repl/pnpm-lock.yaml
+            platforms/web/healthcheck/pnpm-lock.yaml
+            docs/website/pnpm-lock.yaml
+
+      - name: Sync JS dependencies (major-only policy)
+        run: |
+          chmod +x ./sync_js
+          ./sync_js
+
+      - name: Install system dependencies for headless GPU
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y libosmesa6-dev libegl1 libgl1-mesa-dri libxcb-xfixes0-dev mesa-vulkan-drivers
+
+      - name: Build web package
+        run: |
+          chmod +x ./build_web
+          ./build_web
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Web healthcheck (Playwright)
+        env:
+          FC_HEALTHCHECK_VERBOSE: 1
+          PORT: 8765
+        run: |
+          chmod +x ./healthcheck
+          ./healthcheck web
+
+      - name: Upload Playwright artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-healthcheck-artifacts
+          path: platforms/web/healthcheck/playwright-artifacts
+          if-no-files-found: ignore
