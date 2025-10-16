@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Data Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #0f0;
+        }
+        button {
+            padding: 10px;
+            margin: 5px;
+            background: #333;
+            color: #0f0;
+            border: 1px solid #0f0;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #444;
+        }
+        pre {
+            background: #000;
+            padding: 10px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Data Debug Test</h1>
+
+    <div class="section">
+        <h2>Test Controls</h2>
+        <button onclick="checkDashboard()">Check Dashboard</button>
+        <button onclick="checkFileToolTracker()">Check FileToolTracker</button>
+        <button onclick="checkFileOperations()">Check File Operations</button>
+        <button onclick="checkEvents()">Check Events</button>
+        <button onclick="simulateFileEvent()">Simulate File Event</button>
+        <button onclick="forceUpdate()">Force Update All</button>
+    </div>
+
+    <div class="section">
+        <h2>Results</h2>
+        <pre id="output"></pre>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+
+        function log(msg, data) {
+            output.textContent += msg + '\n';
+            if (data) {
+                output.textContent += JSON.stringify(data, null, 2) + '\n\n';
+            }
+        }
+
+        function checkDashboard() {
+            output.textContent = '';
+            log('=== DASHBOARD CHECK ===');
+
+            if (window.dashboard) {
+                log('✅ Dashboard exists');
+                log('Dashboard properties:', {
+                    hasFileToolTracker: !!window.dashboard.fileToolTracker,
+                    hasEventViewer: !!window.dashboard.eventViewer,
+                    hasSocketManager: !!window.dashboard.socketManager,
+                    hasAgentInference: !!window.dashboard.agentInference
+                });
+            } else {
+                log('❌ Dashboard not found!');
+                log('Trying to access parent window...');
+                if (window.parent && window.parent.dashboard) {
+                    log('✅ Found dashboard in parent window');
+                    window.dashboard = window.parent.dashboard;
+                }
+            }
+        }
+
+        function checkFileToolTracker() {
+            output.textContent = '';
+            log('=== FILE TOOL TRACKER CHECK ===');
+
+            if (!window.dashboard) {
+                log('❌ Dashboard not available');
+                return;
+            }
+
+            if (window.dashboard.fileToolTracker) {
+                const tracker = window.dashboard.fileToolTracker;
+                log('✅ FileToolTracker exists');
+
+                const fileOps = tracker.getFileOperations();
+                const toolCalls = tracker.getToolCalls();
+
+                log('FileToolTracker status:', {
+                    fileOperationsSize: fileOps.size,
+                    toolCallsSize: toolCalls.size,
+                    hasAgentInference: !!tracker.agentInference,
+                    hasWorkingDirectoryManager: !!tracker.workingDirectoryManager
+                });
+
+                // Log methods available
+                log('FileToolTracker methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(tracker)).filter(m => typeof tracker[m] === 'function'));
+            } else {
+                log('❌ FileToolTracker not found!');
+            }
+        }
+
+        function checkFileOperations() {
+            output.textContent = '';
+            log('=== FILE OPERATIONS CHECK ===');
+
+            if (!window.dashboard || !window.dashboard.fileToolTracker) {
+                log('❌ Dashboard or FileToolTracker not available');
+                return;
+            }
+
+            const fileOps = window.dashboard.fileToolTracker.getFileOperations();
+            log(`Found ${fileOps.size} file operations`);
+
+            if (fileOps.size > 0) {
+                log('File operations:');
+                let count = 0;
+                fileOps.forEach((data, path) => {
+                    if (count < 5) { // Show first 5
+                        log(`  ${path}:`, {
+                            operations: data.operations.length,
+                            lastOperation: data.lastOperation,
+                            firstOp: data.operations[0]
+                        });
+                    }
+                    count++;
+                });
+                if (count > 5) {
+                    log(`  ... and ${count - 5} more files`);
+                }
+            } else {
+                log('⚠️ No file operations found');
+                log('Checking if events exist...');
+
+                if (window.dashboard.eventViewer) {
+                    const events = window.dashboard.eventViewer.events;
+                    log(`Total events in viewer: ${events.length}`);
+
+                    // Check for file operation events
+                    const fileEvents = events.filter(e => {
+                        const toolName = e.tool_name || (e.data && e.data.tool_name);
+                        const fileTools = ['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Grep', 'Glob'];
+                        return toolName && fileTools.includes(toolName);
+                    });
+
+                    log(`File operation events found: ${fileEvents.length}`);
+                    if (fileEvents.length > 0) {
+                        log('Sample file event:', fileEvents[0]);
+                    }
+                }
+            }
+        }
+
+        function checkEvents() {
+            output.textContent = '';
+            log('=== EVENTS CHECK ===');
+
+            if (!window.dashboard || !window.dashboard.eventViewer) {
+                log('❌ Dashboard or EventViewer not available');
+                return;
+            }
+
+            const events = window.dashboard.eventViewer.events;
+            log(`Total events: ${events.length}`);
+
+            if (events.length > 0) {
+                // Analyze event types
+                const eventTypes = {};
+                const toolTypes = {};
+
+                events.forEach(e => {
+                    const type = e.type || 'unknown';
+                    eventTypes[type] = (eventTypes[type] || 0) + 1;
+
+                    const toolName = e.tool_name || (e.data && e.data.tool_name);
+                    if (toolName) {
+                        toolTypes[toolName] = (toolTypes[toolName] || 0) + 1;
+                    }
+                });
+
+                log('Event types:', eventTypes);
+                log('Tool types:', toolTypes);
+
+                // Show last 3 events
+                log('Last 3 events:');
+                events.slice(-3).forEach((e, i) => {
+                    log(`Event ${events.length - 3 + i}:`, {
+                        type: e.type,
+                        subtype: e.subtype,
+                        tool_name: e.tool_name || (e.data && e.data.tool_name),
+                        timestamp: e.timestamp
+                    });
+                });
+            }
+        }
+
+        function simulateFileEvent() {
+            output.textContent = '';
+            log('=== SIMULATING FILE EVENT ===');
+
+            const testEvent = {
+                type: 'hook',
+                subtype: 'pre_tool',
+                tool_name: 'Read',
+                tool_parameters: {
+                    file_path: '/test/simulated/file.js'
+                },
+                data: {
+                    tool_name: 'Read',
+                    tool_parameters: {
+                        file_path: '/test/simulated/file.js'
+                    }
+                },
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session'
+            };
+
+            log('Creating test event:', testEvent);
+
+            if (window.dashboard && window.dashboard.fileToolTracker) {
+                // Process the event
+                window.dashboard.fileToolTracker.updateFileOperations([testEvent]);
+
+                // Check if it was added
+                const fileOps = window.dashboard.fileToolTracker.getFileOperations();
+                log(`File operations after simulation: ${fileOps.size}`);
+
+                if (fileOps.has('/test/simulated/file.js')) {
+                    log('✅ Test file was added successfully!');
+                    log('File data:', fileOps.get('/test/simulated/file.js'));
+                } else {
+                    log('❌ Test file was not added');
+                    log('Checking why...');
+
+                    // Check if event passes the filter
+                    const tracker = window.dashboard.fileToolTracker;
+                    const isFileOp = tracker.isFileOperation(testEvent);
+                    log(`Is file operation: ${isFileOp}`);
+
+                    if (!isFileOp) {
+                        log('Event did not pass isFileOperation check');
+                    }
+                }
+            } else {
+                log('❌ FileToolTracker not available');
+            }
+        }
+
+        function forceUpdate() {
+            output.textContent = '';
+            log('=== FORCING UPDATE ===');
+
+            if (!window.dashboard) {
+                log('❌ Dashboard not available');
+                return;
+            }
+
+            // Get all events and reprocess
+            if (window.dashboard.eventViewer) {
+                const events = window.dashboard.eventViewer.events;
+                log(`Reprocessing ${events.length} events...`);
+
+                if (window.dashboard.fileToolTracker) {
+                    window.dashboard.fileToolTracker.updateFileOperations(events);
+                    window.dashboard.fileToolTracker.updateToolCalls(events);
+
+                    const fileOps = window.dashboard.fileToolTracker.getFileOperations();
+                    const toolCalls = window.dashboard.fileToolTracker.getToolCalls();
+
+                    log('After reprocessing:', {
+                        fileOperations: fileOps.size,
+                        toolCalls: toolCalls.size
+                    });
+                }
+
+                // Update CodeViewer
+                if (window.CodeViewer && window.CodeViewer.refreshFromFileToolTracker) {
+                    window.CodeViewer.refreshFromFileToolTracker();
+                    log('✅ CodeViewer refreshed');
+                }
+
+                // Render current tab
+                if (window.dashboard.renderCurrentTab) {
+                    window.dashboard.renderCurrentTab();
+                    log('✅ Current tab re-rendered');
+                }
+            }
+        }
+
+        // Auto-check on load
+        setTimeout(() => {
+            log('=== AUTO-CHECK ON LOAD ===');
+            checkDashboard();
+            if (window.dashboard) {
+                checkFileToolTracker();
+                checkFileOperations();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Viewer Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4EC9B0;
+        }
+        .info {
+            background: #2d2d30;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .test-files {
+            background: #252526;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .file-link {
+            display: block;
+            padding: 10px;
+            margin: 5px 0;
+            background: #3e3e42;
+            border-radius: 3px;
+            cursor: pointer;
+            text-decoration: none;
+            color: #4EC9B0;
+        }
+        .file-link:hover {
+            background: #4e4e52;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .status.connected {
+            background: #2d5a2d;
+            color: #4EC9B0;
+        }
+        .status.disconnected {
+            background: #5a2d2d;
+            color: #f48771;
+        }
+        .debug-output {
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            padding: 10px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .debug-line {
+            margin: 2px 0;
+        }
+        .debug-line.error {
+            color: #f48771;
+        }
+        .debug-line.success {
+            color: #4EC9B0;
+        }
+        .debug-line.info {
+            color: #69b7ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>File Viewer Test Page</h1>
+        
+        <div class="info">
+            <p>This page tests the file viewer functionality. Click on any file below to test the viewer.</p>
+            <p>Open the browser console (F12) to see debug output.</p>
+        </div>
+
+        <div id="connection-status" class="status disconnected">
+            Socket.IO Status: <span id="status-text">Disconnected</span>
+        </div>
+
+        <div class="test-files">
+            <h2>Test Files</h2>
+            <a class="file-link" onclick="testFileViewer('/Users/masa/Projects/claude-mpm/README.md')">
+                📄 /Users/masa/Projects/claude-mpm/README.md
+            </a>
+            <a class="file-link" onclick="testFileViewer('/Users/masa/Projects/claude-mpm/pyproject.toml')">
+                📄 /Users/masa/Projects/claude-mpm/pyproject.toml
+            </a>
+            <a class="file-link" onclick="testFileViewer('/Users/masa/Projects/claude-mpm/VERSION')">
+                📄 /Users/masa/Projects/claude-mpm/VERSION
+            </a>
+            <a class="file-link" onclick="testFileViewer('/Users/masa/Projects/claude-mpm/src/claude_mpm/__init__.py')">
+                📄 /Users/masa/Projects/claude-mpm/src/claude_mpm/__init__.py
+            </a>
+        </div>
+
+        <div class="debug-output" id="debug-output">
+            <div class="debug-line info">Debug output will appear here...</div>
+        </div>
+    </div>
+
+    <!-- Load Socket.IO client -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        // Debug logging
+        function log(message, level = 'info') {
+            console.log(`[FileViewerTest] ${message}`);
+            const debugOutput = document.getElementById('debug-output');
+            const line = document.createElement('div');
+            line.className = `debug-line ${level}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            debugOutput.appendChild(line);
+            debugOutput.scrollTop = debugOutput.scrollHeight;
+        }
+
+        // Initialize Socket.IO connection
+        log('Initializing Socket.IO connection...');
+        const socket = io('http://localhost:8765', {
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 5
+        });
+
+        // Connection status handling
+        socket.on('connect', () => {
+            log('Connected to Socket.IO server!', 'success');
+            document.getElementById('connection-status').className = 'status connected';
+            document.getElementById('status-text').textContent = 'Connected';
+        });
+
+        socket.on('disconnect', () => {
+            log('Disconnected from Socket.IO server', 'error');
+            document.getElementById('connection-status').className = 'status disconnected';
+            document.getElementById('status-text').textContent = 'Disconnected';
+        });
+
+        socket.on('connect_error', (error) => {
+            log(`Connection error: ${error.message}`, 'error');
+        });
+
+        // Test file viewer function
+        function testFileViewer(filePath) {
+            log(`Testing file viewer with: ${filePath}`);
+            
+            if (!socket.connected) {
+                log('Socket not connected! Please ensure the dashboard server is running on port 8765', 'error');
+                alert('Not connected to server. Please ensure the dashboard server is running.');
+                return;
+            }
+
+            // Set up response handler
+            socket.once('file_content_response', (data) => {
+                log(`Received file_content_response:`, 'info');
+                console.log('Response data:', data);
+                
+                if (data.success) {
+                    log(`Successfully loaded file: ${data.file_path}`, 'success');
+                    log(`File size: ${data.file_size} bytes`, 'info');
+                    log(`Extension: ${data.extension}`, 'info');
+                    log(`Encoding: ${data.encoding}`, 'info');
+                    
+                    // Display first 500 characters of content
+                    const preview = data.content.substring(0, 500);
+                    log(`Content preview (first 500 chars):`, 'info');
+                    log(preview, 'info');
+                    
+                    // Show success alert with file info
+                    alert(`File loaded successfully!\n\nPath: ${data.file_path}\nSize: ${data.file_size} bytes\nType: ${data.extension}\n\nCheck console and debug output for content preview.`);
+                } else {
+                    log(`Failed to load file: ${data.error}`, 'error');
+                    alert(`Failed to load file:\n${data.error}`);
+                }
+            });
+
+            // Set timeout for response
+            const timeoutId = setTimeout(() => {
+                log('Request timed out after 10 seconds', 'error');
+                alert('Request timed out. The server may not be responding.');
+            }, 10000);
+
+            // Send read_file request
+            const requestData = {
+                file_path: filePath,
+                working_dir: '/Users/masa/Projects/claude-mpm',
+                max_size: 5 * 1024 * 1024  // 5MB limit
+            };
+            
+            log(`Sending read_file event with data: ${JSON.stringify(requestData)}`);
+            socket.emit('read_file', requestData);
+            
+            // Clear timeout if we get a response
+            socket.once('file_content_response', () => {
+                clearTimeout(timeoutId);
+            });
+        }
+
+        // Test connection on load
+        window.addEventListener('load', () => {
+            log('Page loaded, checking Socket.IO connection...');
+            if (socket.connected) {
+                log('Already connected to Socket.IO server', 'success');
+            } else {
+                log('Waiting for Socket.IO connection...', 'info');
+            }
+        });
+    </script>
+</body>
+</html>
