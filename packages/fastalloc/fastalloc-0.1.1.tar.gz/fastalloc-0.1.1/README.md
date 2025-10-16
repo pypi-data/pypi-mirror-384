@@ -1,0 +1,172 @@
+# fastalloc
+
+[![Python Version](https://img.shields.io/pypi/pyversions/fastalloc)](https://pypi.org/project/fastalloc/)
+[![PyPI Version](https://img.shields.io/pypi/v/fastalloc)](https://pypi.org/project/fastalloc/)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](https://gitlab.com/TIVisionOSS/python/fastalloc)
+[![CI Status](https://gitlab.com/TIVisionOSS/python/fastalloc/badges/main/pipeline.svg)](https://gitlab.com/TIVisionOSS/python/fastalloc/-/pipelines)
+[![Coverage](https://gitlab.com/TIVisionOSS/python/fastalloc/badges/main/coverage.svg)](https://gitlab.com/TIVisionOSS/python/fastalloc/-/pipelines)
+
+A high-performance Python memory pool library providing pre-allocated object pools for frequently created and destroyed objects. Reduce allocation overhead, minimize garbage collection pressure, and eliminate memory fragmentation.
+
+## Features
+
+- **Multiple Pool Types**: Fixed-size, growing, thread-safe, thread-local, and async pools
+- **High Performance**: < 50ns object acquisition, 80%+ reduction in GC cycles
+- **Thread Safety**: Built-in thread-safe and thread-local pool variants
+- **Async Support**: First-class async/await integration
+- **Type Safe**: Full type hints with mypy strict mode support
+- **Easy to Use**: Context managers, decorators, and builder patterns
+- **Statistics**: Built-in performance monitoring and reporting
+- **Production Ready**: Comprehensive tests (95%+ coverage), benchmarks, and documentation
+
+## Installation
+
+```bash
+pip install fastalloc
+```
+
+## Quick Start
+
+### Basic Usage
+
+```python
+from fastalloc import Pool
+
+pool = Pool(MyObject, capacity=1000)
+
+with pool.allocate() as obj:
+    obj.do_something()
+    result = obj.get_result()
+```
+
+### Builder Pattern
+
+```python
+from fastalloc import Pool, GrowthStrategy
+
+pool = (Pool.builder()
+    .type(Entity)
+    .capacity(10_000)
+    .max_capacity(100_000)
+    .growth_strategy(GrowthStrategy.LINEAR, increment=1000)
+    .pre_initialize(True)
+    .reset_method('reset')
+    .enable_statistics(True)
+    .build())
+```
+
+### Thread Safety
+
+```python
+from fastalloc import ThreadSafePool, ThreadLocalPool
+
+# shared pool with locking
+pool = ThreadSafePool(MyObject, capacity=1000)
+
+# per-thread pools without locking
+thread_local_pool = ThreadLocalPool(MyObject, capacity=100)
+```
+
+### Async Support
+
+```python
+import asyncio
+from fastalloc import AsyncPool
+
+async def main():
+    pool = AsyncPool(Connection, capacity=100)
+    async with pool.allocate() as conn:
+        await conn.fetch_data()
+        result = await conn.process()
+
+asyncio.run(main())
+```
+
+### Decorator Pattern
+
+```python
+from fastalloc import pooled
+
+@pooled(capacity=1000, thread_safe=True)
+class Worker:
+    def process(self, data):
+        pass
+
+with Worker.pool.allocate() as worker:
+    worker.process(data)
+```
+
+## Use Cases
+
+- **Game Development**: Entity systems, particles, physics objects
+- **Data Processing**: ETL pipelines, streaming transforms, hot-path temporaries
+- **Web Servers**: Request/response objects, connection pools, worker reuse
+- **Scientific Computing**: Simulation particles, graph nodes, computational wrappers
+- **Real-Time Systems**: Audio/video processing, robotics loops
+- **Machine Learning**: Training loop temporaries, batch processing
+
+## Performance
+
+fastalloc delivers significant performance improvements over standard object creation:
+
+- **Object Acquisition**: < 50ns (vs ~200ns for standard allocation)
+- **GC Reduction**: 80%+ fewer collection cycles
+- **Memory Overhead**: < 10% for pools over 1000 objects
+- **Thread-Safe**: < 200ns with moderate contention
+
+See [benchmarks](docs/benchmarks/methodology.md) for detailed results.
+
+## Documentation
+
+- [Getting Started Guide](docs/guides/getting_started.rst)
+- [API Reference](docs/api/pool.rst)
+- [Architecture](docs/guides/architecture.md)
+- [Performance Guide](docs/guides/performance_guide.md)
+- [Examples](examples/)
+
+## Requirements
+
+- Python 3.8+
+- No external dependencies for core functionality
+- Optional: `numpy` for array-backed pools
+
+## Development
+
+```bash
+# Clone repository
+git clone https://gitlab.com/TIVisionOSS/python/fastalloc.git
+cd fastalloc
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+./scripts/test_all.sh
+
+# Run benchmarks
+./scripts/benchmark.sh
+
+# Type check
+./scripts/type_check.sh
+
+# Lint
+./scripts/lint.sh
+```
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+This project is dual-licensed under MIT OR Apache-2.0. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) for details.
+
+## Author
+
+**Eshan Roy** <eshanized@proton.me>
+
+Organization: Tonmoy Infrastructure & Vision
+
+## Repository
+
+https://gitlab.com/TIVisionOSS/python/fastalloc
