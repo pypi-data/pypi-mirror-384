@@ -1,0 +1,31 @@
+## PUBLISH STAGE
+
+publish_package:
+  stage: publish
+  image: python:3.11
+  needs:
+    - job: push_to_github_job
+  before_script:
+    - apt-get update
+    - apt-get install -y curl
+    - curl -s https://deb.nodesource.com/setup_18.x | bash
+    - pip install --upgrade awscli
+    - pip install GitPython
+    - pip install virtualenv
+    - virtualenv venv
+    - source venv/bin/activate
+  script:
+    - pip install build
+    - pip install twine
+    - python -m build
+    - TWINE_USERNAME=__token__ TWINE_PASSWORD=${PYPI_TOKEN}  python -m twine upload --repository pypi dist/*
+    - TWINE_USERNAME=gitlab-ci-token TWINE_PASSWORD=${CI_JOB_TOKEN} python -m twine upload --skip-existing --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
+  tags:
+    - Docker
+    - Centos9
+    - IT4I_Network
+  artifacts:
+    paths:
+      - dist/*.whl
+  only:
+    - master

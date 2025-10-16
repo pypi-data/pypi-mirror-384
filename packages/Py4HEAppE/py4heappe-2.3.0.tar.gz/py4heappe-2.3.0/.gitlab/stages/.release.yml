@@ -1,0 +1,105 @@
+# RELEASE STAGE
+
+release_msg_job:
+  stage: release
+  image: alpine:latest
+  needs:
+    - job: check_changelog
+  script:
+    - TAG_NAME=$(awk '/^## /{sub(/^## /, ""); print; exit}' CHANGELOG.md)
+    - TAG_MESSAGE=$(awk '/^### /{flag=1} /^## /{if(flag) exit} flag' CHANGELOG.md)
+    - TAG_MESSAGE_BASE64=$(echo -n "${TAG_MESSAGE}" | base64 -w 0)
+    - echo "TAG_NAME=${TAG_NAME}" >> release_variables.env
+    - echo "TAG_MESSAGE=${TAG_MESSAGE_BASE64}" >> release_variables.env
+  before_script:
+    - apk update && apk upgrade
+  variables:
+    GIT_STRATEGY: clone
+  artifacts:
+    reports:
+      dotenv: release_variables.env  
+  tags:
+    - Docker
+    - Centos9
+    - IT4I_Network
+  only:
+    - master
+
+release_job:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: release_msg_job
+      artifacts: true                     
+  script:
+    - echo "Creating RELEASE \"$TAG_NAME"\"
+    - git config --global user.name "HEAppE Pipeline"
+    - git config --global user.email "support.heappe@it4i.cz" 
+    - git checkout master
+    - git status
+  before_script:
+    - apk update && apk upgrade
+    - apk add git
+  release:
+    name: '${TAG_NAME}'
+    description: '$(echo "${TAG_MESSAGE}" | base64 -d)'
+    tag_name: '${TAG_NAME}'
+  variables:
+    GIT_STRATEGY: clone
+  tags:
+    - Docker
+    - Centos9
+    - IT4I_Network
+  only:
+    - master
+
+push_to_github_job:
+  stage: release
+  needs:
+    - job: release_msg_job
+      artifacts: true
+  image: alpine:latest
+  script:
+     - git config --global user.name "HEAppE Pipeline"
+     - git config --global user.email "support.heappe@it4i.cz" 
+     - git checkout origin/master
+     - git remote add github https://x-access-token:$GITHUB_TOKEN@github.com/It4innovations/Py4HEAppE.git
+     - git push github HEAD:$CI_COMMIT_REF_NAME --force
+     - git push github --tags --force
+     - echo "${TAG_MESSAGE}"
+     - MODIFICATION_TAG_MESSAGE=$(echo "${TAG_MESSAGE}" | base64 -d | sed '/^[[:space:]]*$/s/^.*$/\\n/' | sed -E ':a;N;$!ba;s/\r{0,1}\n/\\n/g')
+     - |
+        BODY=$(jq -n --arg tag_name "$TAG_NAME" \
+                     --arg name "$TAG_NAME" \
+                     --arg body "$MODIFICATION_TAG_MESSAGE" \
+                     '{
+                        tag_name: $tag_name,
+                        name: $name,
+                        body: $body,
+                        draft: false,
+                        prerelease: false
+                      }')
+     - echo "${BODY}" | jq 
+     - |
+        HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" -X POST -H "Authorization: token $GITHUB_TOKEN" -d "$BODY" https://api.github.com/repos/It4innovations/Py4HEAppE/releases)
+        if [ "$HTTP_STATUS" -ne 201 ]; then
+          echo "Error: Failed to create GitHub release. HTTP status code: $HTTP_STATUS"
+          cat response.txt  # Print the response for debugging
+          exit 1
+        else
+          echo "GitHub release created successfully. HTTP status code: $HTTP_STATUS"
+          echo "Response body:"
+          cat response.txt  # Print the response body
+        fi
+  before_script:
+    - apk update && apk upgrade
+    - apk add --no-cache git curl jq
+  variables:
+    GIT_STRATEGY: clone
+  tags:
+    - Docker
+    - Centos9
+    - IT4I_Network
+  only:
+    - master 
+
