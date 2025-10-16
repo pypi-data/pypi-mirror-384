@@ -1,0 +1,40 @@
+The top-level `isqx` public API contains the re-exports of the following modules:
+
+- [`isqx._core`][]: Expression tree, simplification, conversion.
+- [`isqx._fmt`][]: Serialisation
+- [`isqx._iso80000`][]: SI base units, derived units ([meters][isqx.M], [kilograms][isqx.KG], [newtons][isqx.N], [joules][isqx.J], etc.) and quantity kinds.
+
+Restrictions for composing [expressions][isqx.Expr] with examples:
+
+| Inner `→`<br/> Outer `↓`                                       |      [`isqx.BaseDimension`][]       |        [`isqx.BaseUnit`][]         |       [`isqx.Dimensionless`][]        |             [`isqx.Exp`][]             |                            [`isqx.Mul`][]                             |            [`isqx.Scaled`][]             |       [`isqx.Aliased`][]        |                             [`isqx.Tagged`][]                              |            [`isqx.Translated`][]            |             [`isqx.Log`][]              |
+| :------------------------------------------------------------- | :--------------------------------: | :-------------------------------: | :----------------------------------: | :-----------------------------------: | :------------------------------------------------------------------: | :-------------------------------------: | :----------------------------: | :-----------------------------------------------------------------------: | :----------------------------------------: | :------------------------------------: |
+| [`isqx.Exp`][]<br/>[`__pow__`][isqx.ExprBase.__pow__]            |         ✅<br/>$\text{L}^2$         |        ✅<br/>$\text{m}^2$         |       ✅<br/>$\text{Re}^{1/5}$        |        ✅<br/>$(\text{m}^2)^2$         |                ✅<br/>$(\text{m}\cdot\text{s}^{-1})^2$                |           ✅<br/>$\text{ft}^2$           |               ✅                |                                     ✅                                     |         ❌¹<br/>$\degree\text{C}^2$         |         ❌¹³<br/>$\text{dBV}^2$         |
+| [`isqx.Mul`][]<br/>[`__mul__`][isqx.ExprBase.__mul__]            | ✅<br/>$\text{L}\cdot\text{T}^{-2}$ |   ✅<br/>$\text{N}\cdot\text{m}$   | ✅<br/>$\text{rad}\cdot\text{s}^{-1}$ |  ✅<br/>$\text{m}\cdot\text{s}^{-2}$   | ✅<br/>$(\text{kg}\cdot\text{m}\cdot\text{s}^{-1})\cdot\text{s}^{-1}$ |    ✅<br/>$\text{lbf}\cdot\text{ft}$     | ✅<br/>$\text{N}\cdot\text{m}$  |            ✅<br/>$\text{m}_\text{geometric}\cdot\text{s}^{-2}$            | ❌¹<br/>$\text{J}\cdot\degree\text{C}^{-1}$ | ⚠️¹⁴<br/>$\text{dBV}\cdot\text{s}^{-1}$ |
+| [`isqx.Scaled`][]<br/>[`__rmul__`][isqx.ExprBase.__rmul__]       |                 ❌                  |     ✅<br/>$1000\cdot\text{m}$     |                  ❌                   |      ✅<br/>$100\cdot\text{m}^2$       |             ✅<br/>$3.6\cdot(\text{m}\cdot\text{s}^{-1})$             |      ✅<br/>$\frac{1}{12}\text{ft}$      |      ✅<br/>$10^3\text{J}$      | ✅<br/>$\text{ft}_\text{geometric} = 0.3048\cdot\text{m}_\text{geometric}$ |      ❌¹<br/>$1.8\cdot\degree\text{C}$      |        ✅<br/>$10\cdot \text{B}$        |
+| [`isqx.Prefix`][]^<br/>[`__mul__`][isqx.ExprBase.__mul__]        |                 ❌²                 |        ✅³<br/>$\text{km}$         |  ❌²<br/>$\text{kilo}\cdot\text{Re}$  |  ❌⁴<br/>$\text{kilo}\cdot\text{m}^2$  |        ❌⁴<br/>$\text{kilo}\cdot(\text{m}\cdot\text{s}^{-1})$         |   ❌⁴<br/>$\text{kilo}\cdot\text{ft}$    |       ✅⁶<br/>$\text{kJ}$       |                    ⚠️⁷<br/>$\text{km}_\text{geometric}$                    |  ❌¹<br/>$\text{kilo}\cdot\degree\text{C}$  |          ✅⁵<br/>$\text{mNp}$           |
+| [`isqx.Aliased`][]<br/>[`.alias`][isqx.AliasMixin.alias]         |                 ❌⁸                 |                ❌⁸                 |                  ❌⁸                  |   ✅<br/>$\text{sqft} = \text{ft}^2$   |                ✅<br/>$\text{J}=\text{N}\cdot\text{m}$                | ✅<br/>$\text{ft} = 0.3048\cdot\text{m}$ |               ❌⁹               |                      ✅<br/>$\text{N}_\text{thrust}$                       |                     ❌¹                     |       ✅<br/>$\text{B} = \log...$       |
+| [`isqx.Tagged`][]<br/>[`__getitem__`][isqx.ExprBase.__getitem__] | ✅<br/>$\text{L}_\text{geometric}$  | ✅<br/>$\text{m}_\text{geometric}$ |    ✅<br/>$\text{Re}_\text{chord}$    | ✅<br/>$({\text{m}^2})_\text{surface}$ |            ✅<br/>$(\text{N}\cdot\text{m})_\text{torque}$             |   ✅<br/>$\text{ft}_\text{geometric}$    | ✅<br/>$\text{N}_\text{thrust}$ |                                    ⚠️¹⁰                                    |  ✅<br/>$(\degree\text{C})_\text{surface}$  |          ✅<br/>$\text{dB(A)}$          |
+| [`isqx.Translated`][]                                           |      ❌¹¹<br/>$\text{L} + 13$       |     ✅<br/>$\text{K} - 273.15$     |       ❌¹¹<br/>$\text{Re} - 13$       |       ❌¹¹<br/>$\text{m}^2 + 13$       |                ❌¹¹<br/>$(\text{N}\cdot\text{m}) + 13$                |    ✅<br/>$\degree\text{R} - 459.67$     |               ⚠️                |                   ✅<br/>$\text{K}_\text{ambient} + 13$                    |       ❌¹<br/>$\degree\text{C} + 13$        |        ❌¹<br/>$\text{dBV} + 10$        |
+| [`isqx.Log`][]                                                  |                ❌¹²                 |                ❌¹²                |           ✅<br/>$\text{B}$           |      ❌¹²<br/>$\log(\text{m}^2)$       |    ❌¹²<br/>$\log(\text{W}\cdot\text{m}^{-2}\cdot\text{Hz}^{-1})$     |        ❌¹²<br/>$\log(\text{mW})$        |    ❌¹²<br/>$\log(\text{W})$    |                   ✅<br/>$\log(\text{ratio}_\text{V/V})$                   |       ❌¹<br/>$\log(\degree\text{C})$       |       ❌¹²<br/>$\log(\text{dBV})$       |
+
+    
+^ a [prefix][isqx.Prefix] is not an expression, but a factory that produces an [aliased][isqx.Aliased] scaled unit.
+
+1.  [`isqx.Translated`][] is considered *terminal* and cannot be further composed with other expressions, except for being [tagged][isqx.Tagged]. for example, `℃²` is physically meaningless, as are `kilo(℃)`. operations on intervals must use the absolute reference unit (e.g., `J K⁻¹` instead of `J ℃⁻¹`).
+2.  prefixes like [`kilo-`][isqx.KILO] or [`milli-`][isqx.MILLI] can only be applied to units, not [dimensionless numbers][isqx.Dimensionless] or [dimensions][isqx.BaseDimension].
+3.  prefixes can be applied to any [`isqx.BaseUnit`][] *except* for the [kilogram][isqx.KG].
+4.  a [prefix][isqx.Prefix] must be applied to a *named* unit, which is either a [`isqx.BaseUnit`][] or an [`isqx.Aliased`][]. it cannot be applied to structural expressions like `Exp`, `Mul`, or `Scaled` directly.
+5.  a [logarithmic][isqx.Log] can only be [prefixed][isqx.Prefix] if its `allow_prefix` flag is `True`.
+6.  a [prefix][isqx.Prefix] can be applied to an [`isqx.Aliased`][] if its `allow_prefix` flag is `True` (e.g., `kilo * N`).
+7.  the legality of wrapping a [`isqx.Tagged`][] type depends on the rules for its inner reference. for example, `Prefix * N["thrust"]` is legal because `Prefix * N` is legal.
+8.  an [`isqx.Aliased`][] must wrap a structural expression (`Exp`, `Mul`, `Scaled`). it cannot wrap fundamental, terminal or aliased expressions.
+9.  nesting [`isqx.Aliased`][] types is forbidden.
+10. nesting [`isqx.Tagged`][] types is forbidden. repeated [`__getitem__`][isqx.ExprBase.__getitem__] calls will "extend" the tag tuple.
+11. a [translated][isqx.Translated] unit (like [Celsius][isqx.CELSIUS]) must have a [`isqx.BaseUnit`][] or a [`isqx.Scaled`][] unit (like [Rankine][isqx.usc.R]) as its reference.
+12. a [logarithmic][isqx.Log] expression must wrap a [dimensionless][isqx.Dimensionless] expression. it cannot wrap another logarithmic expression or an expression with a physical dimension.
+13. a [logarithmic][isqx.Log] expression is considered terminal and cannot be exponentiated.
+14. a product can contain at most one [logarithmic][isqx.Log] expression. this is to allow common units like `dB/m` or `dB/Hz` while forbidding physically meaningless compositions like `dB·m` or `dB²`.
+
+::: isqx._core
+::: isqx._fmt
+::: isqx._citations

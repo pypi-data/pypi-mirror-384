@@ -1,0 +1,1 @@
+::: isqx.details

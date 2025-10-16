@@ -1,0 +1,56 @@
+select
+  ?quantity
+  (group_concat(distinct ?isoiec_item; separator="@@@") as ?isoiec_items)
+  (sample(?label) as ?label)
+  (sample(?desc) as ?desc)
+  (group_concat(distinct ?symbol; separator="@@@") as ?symbols)
+  (group_concat(distinct ?dim; separator="@@@") as ?dims)
+  (group_concat(distinct ?unit; separator="@@@") as ?units)
+  (group_concat(distinct ?wolfram_id; separator="@@@") as ?wolfram_ids)
+  (group_concat(distinct ?qudt_id; separator="@@@") as ?qudt_ids)
+  (group_concat(distinct ?defining_formula; separator="@@@") as ?defining_formulas)
+  (group_concat(distinct ?symbol_in_formula; separator="@@@") as ?symbols_in_formula)
+with {
+  select distinct ?quantity where {
+    {
+      wd:Q71550118 ^wdt:P279+ ?quantity . # individual quantity
+    }
+    union
+    {
+      ?quantity wdt:P31 wd:Q173227 . # physical constant
+    }
+  }
+} as %quantities
+where {
+  include %quantities .
+  optional {
+    ?isoiec wdt:P629 / wdt:P361 wd:Q568496 .  # any edition of any part of ISO/IEC 80000
+    ?isoiec wdt:P577 ?isoiec_timestamp .
+    ?quantity p:P1343 [
+      ps:P1343 ?isoiec ;
+      pq:P958 ?isoiec_clause
+    ]
+    bind (concat(str(?isoiec_timestamp), "|||", ?isoiec_clause) as ?isoiec_item)
+  }
+  optional { ?quantity rdfs:label ?label . filter (lang(?label) = "en") }
+  optional { ?quantity schema:description ?desc . filter (lang(?desc) = "en") }
+  optional { ?quantity wdt:P7973 ?symbol . }
+  optional { ?quantity wdt:P4020 ?dim .  }
+  optional { ?quantity wdt:P8111 / wdt:P5061 ?unit . filter (lang(?unit) = "en") }
+  optional { ?quantity wdt:P7431 ?wolfram_id. }
+  optional { ?quantity wdt:P8393 ?qudt_id. }
+  optional { ?quantity wdt:P2534 ?defining_formula. }
+  optional {
+    ?quantity p:P7235 ?statement .
+    ?statement ps:P7235 ?symbol_text .
+    ?statement pq:P9758 ?represents_item .
+    ?represents_item rdfs:label ?represents_label .
+    filter(lang(?represents_label) = "en")
+    bind(concat(
+      str(?symbol_text), "|||",
+      ?represents_label, "|||",
+      str(?represents_item)
+    ) as ?symbol_in_formula)
+  }
+}
+group by ?quantity
