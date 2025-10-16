@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Test - Claude MPM</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 0;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            color: #856404;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .event-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-top: 10px;
+            background: #f9f9f9;
+        }
+        .event-item {
+            padding: 5px;
+            margin: 2px 0;
+            background: white;
+            border-left: 3px solid #007bff;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dashboard Component Test Suite</h1>
+
+    <div class="test-section">
+        <h2>🔌 Connection Test</h2>
+        <button onclick="testConnection()">Test Socket Connection</button>
+        <div id="connection-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Event Generation Test</h2>
+        <button onclick="generateTestEvents()">Generate Test Events</button>
+        <button onclick="clearTestEvents()">Clear Events</button>
+        <div id="event-result"></div>
+        <div id="event-list" class="event-list" style="display:none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔧 Tool Detection Test</h2>
+        <button onclick="testToolDetection()">Test Tool Detection</button>
+        <div id="tool-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📁 File Detection Test</h2>
+        <button onclick="testFileDetection()">Test File Detection</button>
+        <div id="file-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>🤖 Agent Detection Test</h2>
+        <button onclick="testAgentDetection()">Test Agent Detection</button>
+        <div id="agent-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📈 Dashboard Integration Test</h2>
+        <button onclick="testDashboardIntegration()">Run Full Integration Test</button>
+        <div id="integration-result"></div>
+    </div>
+
+    <script>
+        // Test data
+        const testEvents = [
+            // Tool events
+            {
+                type: 'hook',
+                subtype: 'pre_tool',
+                tool_name: 'Read',
+                tool_parameters: { file_path: '/test/file1.py' },
+                agent_type: 'Engineer',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-1'
+            },
+            {
+                type: 'hook',
+                subtype: 'post_tool',
+                tool_name: 'Read',
+                tool_parameters: { file_path: '/test/file1.py' },
+                agent_type: 'Engineer',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-1',
+                success: true,
+                duration_ms: 100
+            },
+            {
+                type: 'tool_use',
+                tool_name: 'Write',
+                tool_parameters: { file_path: '/test/file2.js', content: 'test content' },
+                agent_type: 'PM',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-1'
+            },
+            {
+                type: 'hook',
+                subtype: 'pre_tool',
+                tool_name: 'Bash',
+                tool_parameters: { command: 'ls -la /test' },
+                agent_type: 'DevOps',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-2'
+            },
+            // Agent events
+            {
+                type: 'agent',
+                subtype: 'subagent_start',
+                agent_type: 'Engineer',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-1'
+            },
+            {
+                type: 'agent',
+                subtype: 'subagent_stop',
+                agent_type: 'Engineer',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-1'
+            },
+            // File operations in bash
+            {
+                type: 'hook',
+                subtype: 'pre_tool',
+                tool_name: 'Bash',
+                tool_parameters: { command: 'cat /test/config.json' },
+                agent_type: 'QA',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-3'
+            },
+            {
+                type: 'hook',
+                subtype: 'pre_tool',
+                tool_name: 'Grep',
+                tool_parameters: { pattern: 'TODO', path: '/test' },
+                agent_type: 'QA',
+                timestamp: new Date().toISOString(),
+                session_id: 'test-session-3'
+            }
+        ];
+
+        function testConnection() {
+            const resultDiv = document.getElementById('connection-result');
+            resultDiv.innerHTML = '<div class="info">Testing socket connection...</div>';
+
+            // Check if dashboard components are loaded
+            const checks = {
+                'Dashboard': typeof window.Dashboard !== 'undefined',
+                'FileToolTracker': typeof window.FileToolTracker !== 'undefined',
+                'AgentInference': typeof window.AgentInference !== 'undefined',
+                'EventProcessor': typeof window.EventProcessor !== 'undefined'
+            };
+
+            let allLoaded = true;
+            let html = '';
+
+            for (const [component, loaded] of Object.entries(checks)) {
+                if (loaded) {
+                    html += `<div class="success">✅ ${component} loaded</div>`;
+                } else {
+                    html += `<div class="error">❌ ${component} not loaded</div>`;
+                    allLoaded = false;
+                }
+            }
+
+            if (allLoaded) {
+                html += '<div class="success"><strong>All dashboard components loaded successfully!</strong></div>';
+            } else {
+                html += '<div class="warning"><strong>Some components are missing. Check if dashboard is properly loaded.</strong></div>';
+            }
+
+            resultDiv.innerHTML = html;
+        }
+
+        function generateTestEvents() {
+            const resultDiv = document.getElementById('event-result');
+            const listDiv = document.getElementById('event-list');
+
+            resultDiv.innerHTML = '<div class="info">Generating test events...</div>';
+            listDiv.style.display = 'block';
+            listDiv.innerHTML = '';
+
+            testEvents.forEach((event, index) => {
+                const eventDiv = document.createElement('div');
+                eventDiv.className = 'event-item';
+                eventDiv.innerHTML = `
+                    <strong>Event ${index + 1}:</strong>
+                    Type: ${event.type},
+                    Tool: ${event.tool_name || 'N/A'},
+                    Agent: ${event.agent_type || 'N/A'}
+                `;
+                listDiv.appendChild(eventDiv);
+            });
+
+            resultDiv.innerHTML = `<div class="success">Generated ${testEvents.length} test events</div>`;
+        }
+
+        function clearTestEvents() {
+            document.getElementById('event-list').style.display = 'none';
+            document.getElementById('event-result').innerHTML = '<div class="info">Events cleared</div>';
+        }
+
+        function testToolDetection() {
+            const resultDiv = document.getElementById('tool-result');
+
+            if (typeof window.FileToolTracker === 'undefined') {
+                resultDiv.innerHTML = '<div class="error">FileToolTracker not loaded</div>';
+                return;
+            }
+
+            // Create a test instance
+            const tracker = new window.FileToolTracker();
+
+            // Test tool detection
+            const toolEvents = testEvents.filter(e => tracker.isToolOperation(e));
+
+            resultDiv.innerHTML = `
+                <div class="success">Tool Detection Results:</div>
+                <div class="info">Found ${toolEvents.length} tool operations out of ${testEvents.length} events</div>
+                ${toolEvents.map(e => `
+                    <div class="test-result success">
+                        ✅ Detected: ${e.tool_name} (${e.type}/${e.subtype})
+                    </div>
+                `).join('')}
+            `;
+
+            // Update tool calls
+            tracker.updateToolCalls(testEvents);
+            const toolCalls = tracker.getToolCalls();
+
+            resultDiv.innerHTML += `
+                <div class="info">Tool calls map size: ${toolCalls.size}</div>
+            `;
+        }
+
+        function testFileDetection() {
+            const resultDiv = document.getElementById('file-result');
+
+            if (typeof window.FileToolTracker === 'undefined') {
+                resultDiv.innerHTML = '<div class="error">FileToolTracker not loaded</div>';
+                return;
+            }
+
+            // Create a test instance
+            const tracker = new window.FileToolTracker();
+
+            // Test file detection
+            const fileEvents = testEvents.filter(e => tracker.isFileOperation(e));
+
+            resultDiv.innerHTML = `
+                <div class="success">File Detection Results:</div>
+                <div class="info">Found ${fileEvents.length} file operations out of ${testEvents.length} events</div>
+                ${fileEvents.map(e => `
+                    <div class="test-result success">
+                        ✅ Detected: ${e.tool_name} - ${e.tool_parameters?.file_path || e.tool_parameters?.command || 'N/A'}
+                    </div>
+                `).join('')}
+            `;
+
+            // Update file operations
+            tracker.updateFileOperations(testEvents);
+            const fileOps = tracker.getFileOperations();
+
+            resultDiv.innerHTML += `
+                <div class="info">File operations map size: ${fileOps.size}</div>
+                ${Array.from(fileOps.entries()).map(([path, data]) => `
+                    <div class="test-result info">
+                        📁 ${path}: ${data.operations.length} operations
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function testAgentDetection() {
+            const resultDiv = document.getElementById('agent-result');
+
+            if (typeof window.AgentInference === 'undefined') {
+                resultDiv.innerHTML = '<div class="error">AgentInference not loaded</div>';
+                return;
+            }
+
+            // Create a test instance with mock event viewer
+            const mockEventViewer = { events: testEvents };
+            const inference = new window.AgentInference(mockEventViewer);
+
+            // Test agent inference
+            const results = testEvents.map(e => {
+                const result = inference.inferAgentFromEvent(e);
+                return { event: e, inference: result };
+            });
+
+            resultDiv.innerHTML = `
+                <div class="success">Agent Detection Results:</div>
+                ${results.map(r => `
+                    <div class="test-result ${r.inference.type === 'subagent' ? 'success' : 'info'}">
+                        ${r.inference.type === 'subagent' ? '🤖' : '🎯'}
+                        ${r.inference.agentName}
+                        (${r.inference.confidence}) -
+                        ${r.event.type}/${r.event.subtype || 'N/A'}
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function testDashboardIntegration() {
+            const resultDiv = document.getElementById('integration-result');
+
+            resultDiv.innerHTML = '<div class="info">Running full integration test...</div>';
+
+            // Run all tests
+            const tests = [
+                { name: 'Connection', fn: testConnection },
+                { name: 'Event Generation', fn: generateTestEvents },
+                { name: 'Tool Detection', fn: testToolDetection },
+                { name: 'File Detection', fn: testFileDetection },
+                { name: 'Agent Detection', fn: testAgentDetection }
+            ];
+
+            let allPassed = true;
+            let results = [];
+
+            tests.forEach(test => {
+                try {
+                    test.fn();
+                    results.push(`<div class="success">✅ ${test.name} passed</div>`);
+                } catch (error) {
+                    results.push(`<div class="error">❌ ${test.name} failed: ${error.message}</div>`);
+                    allPassed = false;
+                }
+            });
+
+            resultDiv.innerHTML = `
+                <h3>Integration Test Results:</h3>
+                ${results.join('')}
+                <div class="${allPassed ? 'success' : 'warning'}">
+                    <strong>${allPassed ? '✅ All tests passed!' : '⚠️ Some tests failed'}</strong>
+                </div>
+            `;
+        }
+
+        // Auto-run connection test on load
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(testConnection, 500);
+        });
+    </script>
+</body>
+</html>

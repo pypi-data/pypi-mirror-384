@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Dashboard Connection Test - Final</title>
+
+    <!-- Load Socket.IO from CDN directly -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e293b;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .status {
+            padding: 15px;
+            border: 2px solid #333;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+        .connected {
+            background: #065f46;
+            border-color: #4ade80;
+        }
+        .disconnected {
+            background: #7f1d1d;
+            border-color: #f87171;
+        }
+        .log {
+            background: #0f172a;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #333;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            font-size: 14px;
+        }
+        .error { color: #f87171; }
+        .success { color: #4ade80; }
+        .info { color: #60a5fa; }
+        .warning { color: #fbbf24; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #059669;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Activity Dashboard Connection Test - Final</h1>
+
+    <div id="status" class="status disconnected">
+        Status: <span id="status-text">Initializing...</span>
+    </div>
+
+    <div>
+        <button onclick="testDirectConnection()">Test Direct Connection</button>
+        <button onclick="testWithSocketClient()">Test with SocketClient</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script type="module">
+        // Import SocketClient
+        import { SocketClient } from 'http://localhost:8765/static/built/socket-client.js';
+
+        const logEl = document.getElementById('log');
+        const statusEl = document.getElementById('status');
+        const statusTextEl = document.getElementById('status-text');
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(`[${type}] ${message}`);
+        }
+
+        function updateStatus(connected, text) {
+            statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            statusTextEl.textContent = text;
+        }
+
+        window.clearLog = function() {
+            logEl.innerHTML = '';
+            log('Log cleared', 'info');
+        }
+
+        // Test direct Socket.IO connection
+        window.testDirectConnection = function() {
+            log('=== Testing Direct Socket.IO Connection ===', 'info');
+
+            if (typeof io === 'undefined') {
+                log('ERROR: Socket.IO library not loaded!', 'error');
+                return;
+            }
+
+            log(`Socket.IO version: ${io.version || 'unknown'}`, 'info');
+
+            const url = 'http://localhost:8765';
+            log(`Connecting to ${url}...`, 'info');
+
+            const socket = io(url, {
+                autoConnect: true,
+                reconnection: true,
+                reconnectionAttempts: 3,
+                timeout: 5000,
+                forceNew: true,
+                transports: ['polling', 'websocket'],
+                path: '/socket.io/'
+            });
+
+            socket.on('connect', () => {
+                log(`✅ CONNECTED! Socket ID: ${socket.id}`, 'success');
+                updateStatus(true, `Connected (ID: ${socket.id})`);
+
+                // Request server status
+                socket.emit('request_status');
+                log('Requested server status', 'info');
+            });
+
+            socket.on('disconnect', (reason) => {
+                log(`❌ DISCONNECTED: ${reason}`, 'error');
+                updateStatus(false, `Disconnected: ${reason}`);
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`Connection error: ${error.message}`, 'error');
+                updateStatus(false, `Error: ${error.message}`);
+            });
+
+            socket.on('server_status', (status) => {
+                log(`Server status: ${JSON.stringify(status)}`, 'success');
+            });
+
+            socket.on('event', (data) => {
+                log(`Event received: ${data.type || 'unknown'}`, 'info');
+            });
+
+            window.directSocket = socket;
+            log('Socket stored as window.directSocket', 'info');
+        }
+
+        // Test with SocketClient class
+        window.testWithSocketClient = function() {
+            log('=== Testing with SocketClient Class ===', 'info');
+
+            try {
+                const socketClient = new SocketClient();
+                log('SocketClient instance created', 'success');
+
+                // Set up event handlers
+                socketClient.onConnection('connect', () => {
+                    log('✅ SocketClient CONNECTED!', 'success');
+                    updateStatus(true, 'Connected via SocketClient');
+                });
+
+                socketClient.onConnection('disconnect', (reason) => {
+                    log(`❌ SocketClient DISCONNECTED: ${reason}`, 'error');
+                    updateStatus(false, `Disconnected: ${reason}`);
+                });
+
+                socketClient.onConnection('error', (error) => {
+                    log(`SocketClient error: ${error}`, 'error');
+                });
+
+                socketClient.onEventUpdate((events, sessions) => {
+                    log(`Event update: ${events.length} events, ${sessions.size} sessions`, 'info');
+                });
+
+                // Connect
+                log('Calling socketClient.connect()...', 'info');
+                socketClient.connect();
+
+                // Check status after a moment
+                setTimeout(() => {
+                    if (socketClient.socket) {
+                        log(`Socket status: connected=${socketClient.socket.connected}, id=${socketClient.socket.id}`,
+                            socketClient.socket.connected ? 'success' : 'warning');
+                    } else {
+                        log('Socket object not created!', 'error');
+                    }
+                }, 1500);
+
+                window.socketClient = socketClient;
+                log('SocketClient stored as window.socketClient', 'info');
+
+            } catch (error) {
+                log(`Exception creating SocketClient: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Auto-test direct connection on load
+        setTimeout(() => {
+            log('Auto-testing direct connection...', 'info');
+            testDirectConnection();
+        }, 500);
+    </script>
+</body>
+</html>

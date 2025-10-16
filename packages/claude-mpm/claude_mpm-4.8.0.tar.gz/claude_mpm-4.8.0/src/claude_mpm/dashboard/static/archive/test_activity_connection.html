@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Dashboard Connection Test</title>
+
+    <!-- Load Socket.IO from CDN directly -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e293b;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            border: 1px solid #333;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected { background: #065f46; }
+        .disconnected { background: #7f1d1d; }
+        .log {
+            background: #0f172a;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px;
+        }
+        .error { color: #f87171; }
+        .success { color: #4ade80; }
+        .info { color: #60a5fa; }
+    </style>
+</head>
+<body>
+    <h1>Activity Dashboard Connection Test</h1>
+
+    <div id="status" class="status disconnected">
+        Status: <span id="status-text">Initializing...</span>
+    </div>
+
+    <div class="log" id="log">
+        <div class="log-entry info">Starting connection test...</div>
+    </div>
+
+    <button onclick="testConnection()">Test Connection</button>
+    <button onclick="clearLog()">Clear Log</button>
+
+    <script>
+        const logEl = document.getElementById('log');
+        const statusEl = document.getElementById('status');
+        const statusTextEl = document.getElementById('status-text');
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(`[${type}] ${message}`);
+        }
+
+        function updateStatus(connected, text) {
+            statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            statusTextEl.textContent = text;
+        }
+
+        function clearLog() {
+            logEl.innerHTML = '';
+            log('Log cleared', 'info');
+        }
+
+        function testConnection() {
+            log('Testing connection to Socket.IO server...', 'info');
+
+            // Check if Socket.IO is loaded
+            if (typeof io === 'undefined') {
+                log('ERROR: Socket.IO library not loaded!', 'error');
+                updateStatus(false, 'Socket.IO not loaded');
+                return;
+            }
+
+            log(`Socket.IO version: ${io.version || 'unknown'}`, 'info');
+
+            // Try to connect
+            const url = 'http://localhost:8765';
+            log(`Attempting to connect to ${url}`, 'info');
+            updateStatus(false, 'Connecting...');
+
+            try {
+                const socket = io(url, {
+                    autoConnect: true,
+                    reconnection: true,
+                    reconnectionDelay: 1000,
+                    reconnectionDelayMax: 10000,
+                    reconnectionAttempts: 3,
+                    timeout: 5000,
+                    forceNew: true,
+                    transports: ['polling', 'websocket'],
+                    withCredentials: false,
+                    path: '/socket.io/'
+                });
+
+                socket.on('connect', () => {
+                    log(`SUCCESS: Connected! Socket ID: ${socket.id}`, 'success');
+                    updateStatus(true, `Connected (ID: ${socket.id})`);
+
+                    // Request server status
+                    socket.emit('request_status');
+                });
+
+                socket.on('disconnect', (reason) => {
+                    log(`Disconnected: ${reason}`, 'error');
+                    updateStatus(false, `Disconnected: ${reason}`);
+                });
+
+                socket.on('connect_error', (error) => {
+                    log(`Connection error: ${error.message}`, 'error');
+                    updateStatus(false, `Error: ${error.message}`);
+                });
+
+                socket.on('server_status', (status) => {
+                    log(`Server status received: ${JSON.stringify(status)}`, 'success');
+                });
+
+                socket.on('event', (data) => {
+                    log(`Event received: ${data.type}`, 'info');
+                });
+
+                // Socket.IO manager events
+                socket.io.on('error', (error) => {
+                    log(`Manager error: ${error}`, 'error');
+                });
+
+                socket.io.on('reconnect', (attempt) => {
+                    log(`Reconnected after ${attempt} attempts`, 'success');
+                    updateStatus(true, 'Reconnected');
+                });
+
+                socket.io.on('reconnect_attempt', (attempt) => {
+                    log(`Reconnection attempt ${attempt}`, 'info');
+                    updateStatus(false, `Reconnecting... (attempt ${attempt})`);
+                });
+
+                socket.io.on('reconnect_error', (error) => {
+                    log(`Reconnection error: ${error.message}`, 'error');
+                });
+
+                socket.io.on('reconnect_failed', () => {
+                    log('Reconnection failed after all attempts', 'error');
+                    updateStatus(false, 'Reconnection failed');
+                });
+
+                // Store socket for debugging
+                window.debugSocket = socket;
+                log('Socket stored as window.debugSocket for debugging', 'info');
+
+            } catch (error) {
+                log(`Exception: ${error.message}`, 'error');
+                updateStatus(false, 'Connection failed');
+            }
+        }
+
+        // Auto-test on load
+        setTimeout(() => {
+            log('Auto-testing connection...', 'info');
+            testConnection();
+        }, 500);
+    </script>
+</body>
+</html>
