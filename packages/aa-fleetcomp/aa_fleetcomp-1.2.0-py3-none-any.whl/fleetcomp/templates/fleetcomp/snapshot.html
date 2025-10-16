@@ -1,0 +1,143 @@
+{% extends "fleetcomp/base.html" %}
+{% load i18n %}
+{% load evelinks %}
+{% load fleetcomp %}
+{% load humanize %}
+{% block content %}
+    <div class="grid p-3">
+        <div class="row">
+            <ul class="list-group col-lg-3 px-2">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {% translate "Fleet commander" %}:
+                    <span>{{ snapshot.commander }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {% translate "Main count" %}:
+                    <span class="badge bg-primary rounded-pill">{{ snapshot.count_mains }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {% translate "Character count" %}:
+                    <span class="badge bg-primary rounded-pill">{{ snapshot.count_members }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {% translate "Main ship" %}:
+                    <span>
+                        {{ main_ship_type }}
+                        <span class="badge bg-primary rounded-pill">{{ main_ship_type_count }}</span>
+                    </span>
+                </li>
+                {% if snapshot.count_orphans %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        {% translate "Orphan count" %}:
+                        <span class="badge bg-primary rounded-pill">{{ snapshot.count_orphans }}</span>
+                    </li>
+                {% endif %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {% translate "Total mass" %}
+                    <span class="badge bg-primary rounded-pill">{{ snapshot.get_total_mass|intcomma }} t</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {% translate "Subcap mass" %}
+                    <span class="badge bg-primary rounded-pill">{{ snapshot.get_subcap_mass|intcomma }} t</span>
+                </li>
+            </ul>
+            {% for column in columns %}
+                <ul class="list-group col-lg-3 px-2">
+                    {% for ship_grouping in column %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            {{ ship_grouping.display_name }}
+                            <span class="badge bg-primary rounded-pill">{% custom_grouping_counter_snapshot snapshot ship_grouping %}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endfor %}
+        </div>
+    </div>
+    <table class="table table-striped table-hover" id="memberTable">
+        <thead>
+            <tr>
+                <th>{% translate "Main character" %}</th>
+                <th></th>
+                <th>{% translate "Character count" %}</th>
+                <th></th>
+                <!-- Hidden column for all char names -->
+                <th>{% translate "Main line" %}</th>
+                {% for ship_grouping in ship_groupings %}<th>{{ ship_grouping.display_name }}</th>{% endfor %}
+                <th>{% translate "Other" %}</th>
+                <th>{% translate "Details" %}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user, user_members in snapshot.get_user_and_associated_members_list %}
+                <tr>
+                    <th>
+                        {% if user %}
+                            <span class="d-block" style="min-width: 120px;">
+                                <img src="{{ user.profile.main_character|character_portrait_url:32 }}" </span>
+                                {{ user.profile.main_character }}
+                            {% else %}
+                                {% translate "Orphan characters" %}
+                            {% endif %}
+                        </th>
+                        <th>{{ user.profile.main_character.corporation }}</th>
+                        <th>{{ user_members.count }}</th>
+                        <th>
+                            {% for user_member in user_members %}{{ user_member }}{% endfor %}
+                        </th>
+                        <th>{% count_ship_type_in_fleet_members main_ship_type user_members %}</th>
+                        {% for ship_grouping in ship_groupings %}
+                            <th>{% count_ships_in_grouping ship_grouping user_members %}</th>
+                        {% endfor %}
+                        <th>{% count_ships_not_in_groupings_or_mainline user_members main_ship_type %}</th>
+                        <th>
+                            <button type="button"
+                                    class="btn btn-primary btn-sm"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#member-details-modal"
+                                    {% if user %}
+                                    data-ajax_url="{% url "fleetcomp:user_details" snapshot.id user.id %}">
+                            {% else %}
+                                data-ajax_url="{% url "fleetcomp:user_details_orphans" snapshot.id %}">
+                            {% endif %}
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
+                    </th>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <!-- Modals -->
+    {% include "fleetcomp/modals/base.html" with modal_id="member-details-modal" modal_content_id="member-details-modal-content" %}
+{% endblock %}
+{% block extra_javascript %}
+    {% include "bundles/datatables-js-bs5.html" %}
+    {% include "bundles/datatables-css-bs5.html" %}
+    {% include "bundles/filterdropdown-js.html" %}
+    {% include "fleetcomp/partials/handle_modals.html" %}
+    {% get_datatables_language_static LANGUAGE_CODE as DT_LANG_PATH %}
+    <script>
+        $(document).ready(() => {
+            $('#memberTable').dataTable({
+                language: {
+                    url: '{{ DT_LANG_PATH }}'
+                },
+                order: [[ 0, "asc" ]],
+                columnDefs: [
+                    { visible: false, targets: [ 1, 3, ] },
+                ],
+                filterDropDown: {
+                    columns: [
+                        {
+                            idx: 1,
+                            title: "{% translate "Main corporation" %}",
+                            maxWidth: "15em",
+                        }
+                    ],
+                    bootstrap: true,
+                    bootstrap_version: 5,
+                },
+            })
+        })
+        handle_modal_events("member-details-modal", "member-details-modal-content");
+    </script>
+{% endblock %}
