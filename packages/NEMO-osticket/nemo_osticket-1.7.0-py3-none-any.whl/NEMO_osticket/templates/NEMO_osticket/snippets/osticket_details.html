@@ -1,0 +1,73 @@
+{% load custom_tags_and_filters %}
+{% if ticket %}
+    <table class="table table-bordered table-striped small" style="width: initial;margin-top: 15px">
+        <tr>
+            <th>Number</th>
+            <td>
+                {% if user.is_superuser and ticket.get_absolute_url %}
+                    <a target="_blank" href="{{ ticket.get_absolute_url }}">{{ ticket.number }}</a>
+                {% else %}
+                    {{ ticket.number }}
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Created on</th>
+            <td>{{ ticket.created }}</td>
+        </tr>
+        <tr>
+            <th>Created by</th>
+            <td>
+                {% if ticket.user.ostuseremail_set.all|length_is:1 %}
+                    {{ ticket.user.ostuseremail_set.all.first.address }}
+                {% else %}
+                    {% for email in ticket.user.ostuseremail_set.all %}
+                        {{ email.address }}
+                        {% if not forloop.last %}<br>{% endif %}
+                    {% endfor %}
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>{{ topic_label }}</th>
+            <td>{{ ticket.topic.topic }}</td>
+        </tr>
+        {% for form_entry in ticket.ostformentry_set %}
+            {% for form_entry_value in form_entry.ostformentryvalues_set.all %}
+                {% if form_entry_value.field_id != tool_matching_field_id %}
+                    <tr>
+                        <th>
+                            {% if form_entry_value.field.name == "subject" %}
+                                {{ issue_summary_label }}
+                            {% else %}
+                                {{ form_entry_value.field.label }}
+                            {% endif %}
+                        </th>
+                        <td>
+                            {% if form_entry_value.field.is_list_type %}
+                                {{ list_items|get_item:form_entry_value.get_list_item_id|default_if_none:"" }}
+                            {% else %}
+                                {{ form_entry_value.value|default_if_none:"" }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endif %}
+            {% endfor %}
+            {% if "osticket"|customization:"osticket_view_ticket_display_description" %}
+                {% for thread in ticket.ostthread_set %}
+                    <tr>
+                        <th>{{ message_label }}</th>
+                        <td>
+                            {% for thread_entry in thread.ostthreadentry_set.all %}
+                                <div class="small" style="color: #737373; {% if not forloop.first %}margin-top: 10px{% endif %}">
+                                    {{ thread_entry.created }}
+                                </div>
+                                {{ thread_entry.body|safe|linebreaksbr }}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% endif %}
+        {% endfor %}
+    </table>
+{% endif %}

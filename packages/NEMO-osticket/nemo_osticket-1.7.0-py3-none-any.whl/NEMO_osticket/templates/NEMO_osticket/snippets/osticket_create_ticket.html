@@ -1,0 +1,49 @@
+{% load custom_tags_and_filters %}
+<p>Use this form to create a ticket in the help desk ticketing system.</p>
+<form class="col-lg-9 well" style="float: none" action="{{ create_ticket_url }}" method="post">
+    {% csrf_token %}
+    {% for field_name, field in form.fields.items %}
+        <div class="form-group">
+            {% if field.widget|class_name == "Select" %}
+                <label class="control-label" for="osticket-{{ field_name }}">{{ field.label }}</label>
+                <select name="{{ field_name }}"
+                        id="osticket-{{ field_name }}"
+                        class="form-control"
+                        {% if field.required %}required{% endif %}>
+                    <option value="" selected {% if field.required %}disabled{% endif %}>Select an option</option>
+                    {% if field_name == "reservation" %}
+                        {% for option in reservations %}
+                            <option value="{{ option.id }}"
+                                    {% if form.data|get_item:field_name == option.id|stringformat:"s" %}selected{% endif %}>
+                                {{ option.start|date:"SHORT_DATETIME_FORMAT" }} to {{ option.end|date:"SHORT_DATETIME_FORMAT" }} by {{ option.user }}
+                            </option>
+                        {% endfor %}
+                    {% else %}
+                        {% for option in field.choices %}
+                            <option value="{{ option.0 }}"
+                                    {% if form.data|get_item:field_name == option.0|stringformat:"s" %}selected{% endif %}>
+                                {{ option.1 }}
+                            </option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            {% elif field.widget|class_name == "Textarea" %}
+                <label class="control-label" for="osticket-{{ field_name }}">{{ field.label }}</label>
+                <textarea name="{{ field_name }}"
+                          id="osticket-{{ field_name }}"
+                          class="form-control"
+                          rows="6"
+                          {% if field.required %}required{% endif %}>{{ form.data|get_item:field_name|default_if_none:"" }}</textarea>
+            {% elif field.widget|class_name == "TextInput" %}
+                <label class="control-label" for="osticket-{{ field_name }}">{{ field.label }}</label>
+                <input type="text"
+                       name="{{ field_name }}"
+                       id="osticket-{{ field_name }}"
+                       class="form-control"
+                       value="{{ form.data|get_item:field_name|default_if_none:"" }}"
+                       {% if field.required %}required{% endif %} />
+            {% endif %}
+        </div>
+    {% endfor %}
+    <div class="form-group">{% button type="save" value="Create ticket" icon="glyphicon-send" %}</div>
+</form>
