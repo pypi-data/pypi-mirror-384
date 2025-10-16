@@ -1,0 +1,128 @@
+/**************************************************************************
+ * Perpendicular Laplacian inversion in serial or parallel
+ * 
+ * Simplified version of serial_tri and spt algorithms. Uses FFTs and
+ * the cyclic reduction class to solve tridiagonal systems.
+ *
+ **************************************************************************
+ * Copyright 2013 B.D.Dudson
+ *
+ * Contact: Ben Dudson, bd512@york.ac.uk
+ * 
+ * This file is part of BOUT++.
+ *
+ * BOUT++ is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * BOUT++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with BOUT++.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ **************************************************************************/
+
+class LaplaceCyclic;
+
+#ifndef BOUT_LAP_CYCLIC_H
+#define BOUT_LAP_CYCLIC_H
+
+#include "bout/build_defines.hxx"
+#include "bout/invert_laplace.hxx"
+
+#if BOUT_USE_METRIC_3D
+
+namespace {
+RegisterUnavailableLaplace registerlaplacecycle(LAPLACE_CYCLIC,
+                                                "BOUT++ was configured with 3D metrics");
+}
+
+#else
+
+#include <bout/cyclic_reduction.hxx>
+#include <bout/dcomplex.hxx>
+#include <bout/options.hxx>
+
+#include "bout/utils.hxx"
+
+namespace {
+RegisterLaplace<LaplaceCyclic> registerlaplacecycle(LAPLACE_CYCLIC);
+}
+
+/// Solves the 2D Laplacian equation using the CyclicReduce class
+/*!
+ * 
+ */
+class LaplaceCyclic : public Laplacian {
+public:
+  LaplaceCyclic(Options* opt = nullptr, const CELL_LOC loc = CELL_CENTRE,
+                Mesh* mesh_in = nullptr, Solver* solver = nullptr);
+  ~LaplaceCyclic();
+
+  using Laplacian::setCoefA;
+  void setCoefA(const Field2D& val) override {
+    ASSERT1(val.getLocation() == location);
+    ASSERT1(localmesh == val.getMesh());
+    Acoef = val;
+  }
+  using Laplacian::setCoefC;
+  void setCoefC(const Field2D& val) override {
+    setCoefC1(val);
+    setCoefC2(val);
+  }
+  using Laplacian::setCoefC1;
+  void setCoefC1(const Field2D& val) override {
+    ASSERT1(val.getLocation() == location);
+    ASSERT1(localmesh == val.getMesh());
+    C1coef = val;
+  }
+  using Laplacian::setCoefC2;
+  void setCoefC2(const Field2D& val) override {
+    ASSERT1(val.getLocation() == location);
+    ASSERT1(localmesh == val.getMesh());
+    C2coef = val;
+  }
+  using Laplacian::setCoefD;
+  void setCoefD(const Field2D& val) override {
+    ASSERT1(val.getLocation() == location);
+    ASSERT1(localmesh == val.getMesh());
+    Dcoef = val;
+  }
+  using Laplacian::setCoefEx;
+  void setCoefEx(const Field2D& UNUSED(val)) override {
+    throw BoutException("LaplaceCyclic does not have Ex coefficient");
+  }
+  using Laplacian::setCoefEz;
+  void setCoefEz(const Field2D& UNUSED(val)) override {
+    throw BoutException("LaplaceCyclic does not have Ez coefficient");
+  }
+
+  using Laplacian::solve;
+  FieldPerp solve(const FieldPerp& b) override { return solve(b, b); }
+  FieldPerp solve(const FieldPerp& b, const FieldPerp& x0) override;
+
+  Field3D solve(const Field3D& b) override { return solve(b, b); }
+  Field3D solve(const Field3D& b, const Field3D& x0) override;
+  void verify_solution(const Matrix<dcomplex>& a_ver, const Matrix<dcomplex>& b_ver,
+                       const Matrix<dcomplex>& c_ver, const Matrix<dcomplex>& r_ver,
+                       const Matrix<dcomplex>& x_sol, int nsys);
+
+private:
+  Field2D Acoef, C1coef, C2coef, Dcoef;
+
+  int nmode;  // Number of modes being solved
+  int xs, xe; // Start and end X indices
+  Matrix<dcomplex> a, b, c, bcmplx, xcmplx;
+
+  bool dst;
+
+  CyclicReduce<dcomplex>* cr; ///< Tridiagonal solver
+};
+
+#endif // BOUT_USE_METRIC_3D
+
+#endif // BOUT_LAP_CYCLIC_H
