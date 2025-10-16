@@ -1,0 +1,100 @@
+name: Python Unit Tests
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+    types: [opened, synchronize, reopened]
+  schedule:
+    - cron: '20 4 * * *' # 04:20 UTC
+
+concurrency:
+  group: ci-${{ github.event_name == 'schedule' && 'schedule' || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'push' && contains(github.event.head_commit.message, '[skip ci]')) }}
+
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install LFTP
+      run: sudo apt-get update && sudo apt-get install -y lftp
+
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install wrapt_timeout_decorator
+        pip install .
+
+    - name: Create temporary SSH key
+      run: |
+        ssh-keygen -t rsa -b 4096 -f /tmp/temp_sftp_key -q -N ""
+        eval $(ssh-agent -s)
+        mkdir -p /tmp
+        ssh-add /tmp/temp_sftp_key
+        echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+
+    - name: Start Docker SFTP Service
+      run: |
+        mkdir -p /tmp/upload
+        chmod ugo+rwx /tmp/upload
+        sudo docker run --name mock_sftp_server -p 0.0.0.0:2222:22 -d \
+          -v /tmp/temp_sftp_key.pub:/home/foo/.ssh/keys/temp_sftp_key.pub:ro \
+          -v /tmp/upload:/home/foo/upload \
+          atmoz/sftp foo::1001
+
+    - name: Verify Docker Container and Volume Mounts
+      run: |
+        sudo docker ps -a
+        sudo docker inspect mock_sftp_server
+
+    - name: Add SSH key
+      run: |
+        mkdir -p ~/.ssh
+        for i in {1..10}; do # tries up to 10 times
+          ssh-keyscan -p 2222 -H 0.0.0.0 >> ~/.ssh/known_hosts && break
+          echo "Waiting for SFTP server to be ready..."
+          sleep 1 # wait for 1 second before retrying
+        done
+
+    - name: Check SSH Directory and Key Permissions
+      run: |
+        sudo docker exec mock_sftp_server ls -la /home/foo/.ssh
+        sudo docker exec mock_sftp_server ls -la /home/foo/.ssh/keys
+
+    - name: List loaded SSH keys
+      run: ssh-add -l
+
+    - name: Test LFTP connection
+      run: |
+        lftp -e "open -u foo, -p 2222 sftp://0.0.0.0; ls; bye"
+
+    - name: Print Docker SFTP Server Logs
+      run: sudo docker logs mock_sftp_server
+
+    - name: Run tests
+      run: python3 -m unittest discover tests
+
+    - name: Cleanup
+      run: |
+        ssh-keygen -R 0.0.0.0
+        sudo docker stop mock_sftp_server
+        sudo docker rm mock_sftp_server
+        ssh-add -d /tmp/temp_sftp_key
+        rm /tmp/temp_sftp_key /tmp/temp_sftp_key.pub
+        eval "$(ssh-agent -k)"
+        rm -rf /tmp/upload
+        rm -fR tests/__pycache__
