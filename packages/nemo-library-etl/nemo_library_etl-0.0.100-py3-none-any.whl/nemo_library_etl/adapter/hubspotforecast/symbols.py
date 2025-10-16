@@ -1,0 +1,20 @@
+DEAL_PROPERTIES = [
+    "id",
+    "dealname",
+    "hubspot_owner_id",
+    "revenue_stream",
+    "verkauf_uber",
+    "belegnummer",
+    "budget_bekannt",
+    "entscheider_bekannt",
+    "entscheider_freigabe",
+    "entscheidungsdauer_bekannt",
+    "entscheidungsprozess_bekannt",
+    "amount",
+    "dealstage",
+    "pipeline",
+    "closedate",
+    "createdate",
+    "hs_lastmodifieddate",
+]
+DEAL_PROPERTIES_WITH_HISTORY = ["amount", "closedate", "dealstage"]
