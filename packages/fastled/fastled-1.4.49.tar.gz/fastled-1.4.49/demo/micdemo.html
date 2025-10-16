@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mic & System Audio Demo</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 2rem; }
+    #controls { margin-bottom: 1rem; }
+    #volume { font-size: 2rem; margin-bottom: 1rem; }
+    #bar {
+      width: 300px;
+      height: 30px;
+      background: #eee;
+      margin: 0 auto;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #fill {
+      height: 100%;
+      width: 0%;
+      background: #76ce60;
+      transition: width 0.1s ease;
+    }
+    #mic-select { margin-left: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Audio Volume Demo</h1>
+  <div id="controls">
+    <label><input type="radio" name="source" value="mic" checked> Microphone</label>
+    <label><input type="radio" name="source" value="tab"> Tab/Screen Audio</label>
+    <select id="mic-select"></select>
+  </div>
+  <div id="volume">-∞ dBFS</div>
+  <div id="bar"><div id="fill"></div></div>
+
+  <script>
+    let audioCtx, analyser, dataArray;
+    let currentStream;
+
+    async function listAudioInputs() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      const select = document.getElementById('mic-select');
+      select.innerHTML = '';
+      mics.forEach((mic, i) => {
+        const option = document.createElement('option');
+        option.value = mic.deviceId;
+        option.text = mic.label || `Microphone ${i+1}`;
+        select.appendChild(option);
+      });
+      select.onchange = () => startMic(select.value);
+      if (mics.length) startMic(mics[0].deviceId);
+    }
+
+    async function startMic(deviceId) {
+      stopStream();
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+        setupAudioGraph(currentStream);
+      } catch (err) {
+        alert('Error accessing microphone: ' + err.message);
+      }
+    }
+
+    async function startTabAudio() {
+      stopStream();
+      try {
+        currentStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false });
+        setupAudioGraph(currentStream);
+      } catch (err) {
+        alert('Error capturing tab/screen audio: ' + err.message);
+      }
+    }
+
+    function stopStream() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+    }
+
+    function setupAudioGraph(stream) {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      dataArray = new Float32Array(analyser.fftSize);
+      updateVolume();
+    }
+
+    function updateVolume() {
+      analyser.getFloatTimeDomainData(dataArray);
+      let max = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = Math.abs(dataArray[i]);
+        if (v > max) max = v;
+      }
+
+      const db = max > 0 ? 20 * Math.log10(max) : -Infinity;
+      const dbDisplay = db === -Infinity ? '-∞' : db.toFixed(1);
+      document.getElementById('volume').textContent = `${dbDisplay} dBFS`;
+
+      const percent = Math.min(max * 100, 100);
+      document.getElementById('fill').style.width = percent + '%';
+
+      requestAnimationFrame(updateVolume);
+    }
+
+    // Switcher
+    document.querySelectorAll('input[name="source"]').forEach(radio => {
+      radio.addEventListener('change', e => {
+        const mode = e.target.value;
+        if (mode === 'mic') {
+          document.getElementById('mic-select').style.display = '';
+          listAudioInputs();
+        } else {
+          document.getElementById('mic-select').style.display = 'none';
+          startTabAudio();
+        }
+      });
+    });
+
+    // Initialize
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      listAudioInputs();
+    } else {
+      alert('enumerateDevices() not supported.');
+    }
+  </script>
+</body>
+</html>
