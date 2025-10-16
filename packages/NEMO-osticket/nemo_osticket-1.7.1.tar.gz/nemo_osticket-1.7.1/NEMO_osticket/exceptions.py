@@ -1,0 +1,2 @@
+class OsTicketException(Exception):
+    pass
