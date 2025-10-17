@@ -1,0 +1,182 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
+
+[project]
+name = "ehrdata"
+version = "0.0.9"
+description = "A Python package for EHR data"
+readme = "README.md"
+license = "Apache-2.0"
+maintainers = [
+  { name = "Eljas Roellin", email = "eljas.roellin@helmholtz-munich.de" },
+  { name = "Lukas Heumos", email = "lukas.heumos@posteo.net" },
+]
+authors = [
+  { name = "Eljas Roellin, Lukas Heumos, Xinyue Zhang" },
+]
+requires-python = ">=3.12,<3.14"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "anndata>=0.11",
+  "duckdb",
+  "fast-array-utils[sparse]",
+  "filelock",
+  # for debug logging (referenced from the issue template)
+  "requests",
+  "rich",
+  "xarray",
+  "zarr<3",
+]
+optional-dependencies.dev = [
+  "pre-commit",
+  "twine",
+]
+optional-dependencies.doc = [
+  "docutils>=0.8,!=0.18.*,!=0.19.*",
+  "ehrdata[lamin,torch,vitessce]",
+  "ipykernel",
+  "ipython",
+  "myst-nb>=1.1",
+  "pandas",
+  "scanpydoc",
+  "sphinx>=4",
+  "sphinx-autodoc-typehints",
+  "sphinx-book-theme>=1",
+  "sphinx-copybutton",
+  "sphinx-tabs",
+  "sphinxcontrib-bibtex>=1",
+  "sphinxext-opengraph",
+]
+optional-dependencies.ehrapy = [
+  "ehrapy",
+]
+optional-dependencies.lamin = [
+  "lamindb",
+  #"omop", # Not needed and causing an issue in the readthedocs build https://github.com/laminlabs/lamindb/issues/3081
+]
+optional-dependencies.test = [
+  "coverage",
+  "ehrdata[lamin,torch,vitessce]",
+  "pytest",
+  "pytest-cov",
+]
+optional-dependencies.torch = [
+  "torch",
+]
+
+optional-dependencies.vitessce = [
+  "vitessce[all]>=3.4", # the actual dependency
+  "zarr>=2.18.7,<3",    # vitessce does not support zarr>=3
+]
+# https://docs.pypi.org/project_metadata/#project-urls
+urls.Documentation = "https://ehrdata.readthedocs.io/"
+urls.Homepage = "https://github.com/theislab/ehrdata"
+urls.Source = "https://github.com/theislab/ehrdata"
+
+[tool.hatch.envs.default]
+installer = "uv"
+features = [ "dev" ]
+
+[tool.hatch.envs.docs]
+features = [ "doc" ]
+scripts.build = "sphinx-build -M html docs docs/_build {args}"
+scripts.open = "python -m webbrowser -t docs/_build/html/index.html"
+scripts.clean = "git clean -fdX -- {args:docs}"
+
+[tool.hatch.envs.hatch-test]
+features = [ "test" ]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = [ "3.12", "3.13" ]
+
+[tool.ruff]
+line-length = 120
+src = [ "src" ]
+extend-include = [ "*.ipynb" ]
+
+format.docstring-code-format = true
+
+lint.select = [
+  "B",      # Likely bugs and design issues
+  "BLE",    # Blind exception raised
+  "C4",     # Comprehensions
+  "D",      # Documentation style
+  "E",      # Error detected by Pycodestyle
+  "EM",     # Traceback-friendly error messages
+  "F",      # Errors detected by Pyflakes
+  "FBT",    # No positional boolean parameters
+  "I",      # Import sorting
+  "ICN",    # Follow import conventions
+  "ISC",    # Implicit string concatenation
+  "PERF",   # Performance
+  "PIE",    # Syntax simplifications
+  "PL",     # Pylint
+  "PT",     # Pytest style
+  "PTH",    # Pathlib instead of os.path
+  "PYI",    # Typing
+  "RUF",    # Miscellaneous Ruff-only lints
+  "SIM",    # Simplify control flow
+  "TC",     # Manage type checking blocks
+  "TID251", # Banned imports
+  "UP",     # Update legacy syntax
+  "W",      # Warning detected by Pycodestyle
+]
+lint.ignore = [
+  "B008", # Errors from function calls in argument defaults. These are fine when the result is immutable.
+  "D100", # Missing docstring in public module
+  "D104", # Missing docstring in public package
+  "D105", # __magic__ methods are often self-explanatory, allow missing docstrings
+  "D107", # Missing docstring in __init__
+  # Disable one in each pair of mutually incompatible rules
+  "D203",    # We don’t want a blank line before a class docstring
+  "D213",    # <> We want docstrings to start immediately after the opening triple quote
+  "D400",    # first line should end with a period [Bug: doesn’t work with single-line docstrings]
+  "D401",    # First line should be in imperative mood; try rephrasing
+  "E501",    # line too long -> we accept long comment lines; formatter gets rid of long code lines
+  "E731",    # Do not assign a lambda expression, use a def -> lambda expression assignments are convenient
+  "E741",    # allow I, O, l as variable names -> I is the identity matrix
+  "PLC0415", # `import` should be at the top-level of a file
+  "PLR0912", # Too many branches
+  "PLR0913", # Too many arguments in function def
+  "PLR0915", # Too many statements
+  "PLR2004", # magic value used in comparison
+  "PLW2901", # overwritten by target
+  "PT011",   # too broad pytest raises
+  "RUF001",  # docstring contains ambiguous sign
+  "RUF002",  # ambiguous multiplcation sign
+]
+lint.per-file-ignores."*/__init__.py" = [ "F401" ]
+lint.per-file-ignores."docs/*" = [ "I" ]
+lint.per-file-ignores."tests/*" = [ "D" ]
+lint.pydocstyle.convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = [ "tests" ]
+xfail_strict = true
+addopts = [
+  "--import-mode=importlib", # allow using test files with same name
+]
+
+[tool.coverage.run]
+source = [ "ehrdata" ]
+patch = [ "subprocess" ]
+omit = [
+  "**/test_*.py",
+]
+
+[tool.cruft]
+skip = [
+  "tests",
+  "src/**/__init__.py",
+  "src/**/basic.py",
+  "docs/api.md",
+  "docs/changelog.md",
+  "docs/references.bib",
+  "docs/references.md",
+  "docs/notebooks/example.ipynb",
+]
