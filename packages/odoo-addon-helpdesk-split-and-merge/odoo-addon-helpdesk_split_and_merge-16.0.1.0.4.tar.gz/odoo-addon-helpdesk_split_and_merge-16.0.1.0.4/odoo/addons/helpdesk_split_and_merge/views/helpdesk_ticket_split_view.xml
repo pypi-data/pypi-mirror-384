@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Creating a server action -->
+    <data noupdate="1">
+        <record id="helpdesk_ticket_split_action_server" model="ir.actions.server">
+            <field name="name">Split</field>
+            <field name="model_id" ref="helpdesk_mgmt.model_helpdesk_ticket"/>
+            <field name="binding_model_id" ref="helpdesk_mgmt.model_helpdesk_ticket"/>
+            <field name="state">code</field>
+            <field name="code">action = records.split_ticket()</field>
+        </record>
+    </data>
+
+    <data>
+        <record id="helpdesk_ticket_tree_splitted" model="ir.ui.view">
+            <field name="name">helpdesk.ticket.tree.view.splitted</field>
+            <field name="model">helpdesk.ticket</field>
+            <field name="inherit_id" ref="helpdesk_mgmt.ticket_view_tree"/>
+            <field name="mode">primary</field>
+            <field name="priority" eval="99" />
+            <field name="arch" type="xml">
+                <xpath expr="//tree" position="attributes">
+                    <attribute name="string">Sub-Tickets</attribute>
+                    <attribute name="create">0</attribute>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="helpdesk_ticket_view_splitted" model="ir.actions.act_window">
+            <field name="name">Sub-Tickets</field>
+            <field name="res_model">helpdesk.ticket</field>
+            <field name="view_mode">tree,form,kanban,pivot</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="context">{'default_split_ticket_id': active_id}</field>
+            <field name="domain">[('split_ticket_id','=', active_id)]</field>
+            <field name="view_id" ref="helpdesk_ticket_tree_splitted"/>
+        </record>
+
+        <!-- Extend the form view of helpdesk.ticket -->
+        <record id="helpdesk_ticket_form_view_split_inherit" model="ir.ui.view">
+            <field name="name">helpdesk.ticket.split.button</field>
+            <field name="model">helpdesk.ticket</field>
+            <field name="inherit_id" ref="helpdesk_mgmt.ticket_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//header" position="inside">
+                    <field name="split_ticket_id" invisible="True"/>
+
+                    <!-- Button for initial Splitting wizard -->
+                    <button
+                        name="split_ticket"
+                        title="Split"
+                        string="Split"
+                        icon="fa-chain-broken"
+                        type="object"
+                        class="btn-default"
+                        attrs="{'invisible': ['!', '&amp;', ('split_ticket_id', '=', False), ('id', '!=', False)]}"
+                    />
+                </xpath>
+                <xpath expr="//div[@name='button_box']" position="inside">   
+                    <!-- Button for splitted tickets with counter -->
+                    <button
+                        name="%(helpdesk_ticket_view_splitted)d"
+                        title="View Sub-Tickets"
+                        type="action"
+                        class="oe_stat_button"
+                        attrs="{'invisible': ['!', '&amp;', '&amp;', ('split_ticket_id', '=', False), ('id', '!=', False), ('split_ticket_ids_count', '&gt;', 0)]}"
+                        context="{'search_default_split_ticket_id': active_id}">
+                            <i class="fa fa-fw o_button_icon fa-chain-broken" style="width: auto;"/>
+                            <i class="fa fa-fw o_button_icon fa-level-down" style="
+                                width: auto;
+                                padding-right: 0.5rem;
+                                padding-left: 0.1rem;"/>
+                            <field string="Splitted" name="split_ticket_ids_count" widget="statinfo"/>
+                    </button>
+
+                    <!-- Button for going to the Main Ticket (as a Sub-ticket) -->
+                    <button
+                        name="get_view_helpdesk_main_ticket"
+                        title="Main Ticket"
+                        type="object"
+                        class="btn btn-primary oe_stat_button oe_highlight"
+                        context="{'ticket_id': split_ticket_id}"
+                        attrs="{'invisible': ['!', '&amp;', ('split_ticket_id', '!=', False), ('id', '!=', False)]}">
+                            <i class="fa fa-fw o_button_icon fa-chain-broken" style="width: auto;"/>
+                            <i class="fa fa-fw o_button_icon fa-level-up" style="
+                                width: auto;
+                                padding-right: 0.5rem;
+                                padding-left: 0.1rem;"/>
+                            <span>Main Ticket</span>
+                    </button>
+                </xpath>
+                <xpath expr="//notebook" position="inside">
+                    <page string="Sub-tickets" name="ticket_ids" attrs="{'invisible': ['!', '&amp;', '&amp;', ('split_ticket_id', '=', False), ('id', '!=', False), ('split_ticket_ids_count', '&gt;', 0)]}">
+                        <field name="split_ticket_ids" readonly="True"/>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>

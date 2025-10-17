@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Creating a server action -->
+    <data noupdate="1">
+        <record id="helpdesk_ticket_merge_action_server" model="ir.actions.server">
+            <field name="name">Merge</field>
+            <field name="model_id" ref="helpdesk_mgmt.model_helpdesk_ticket" />
+            <field name="binding_model_id" ref="helpdesk_mgmt.model_helpdesk_ticket" />
+            <field name="state">code</field>
+            <field name="code">action = records.merge_ticket()</field>
+        </record>
+    </data>
+
+    <data>
+        <record id="helpdesk_ticket_view_merged" model="ir.actions.act_window">
+            <field name="name">Merged Tickets</field>
+            <field name="res_model">helpdesk.ticket</field>
+            <field name="view_mode">tree,form,kanban,pivot</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="context">{'default_merge_ticket_id': active_id}</field>
+            <field name="domain">[('merge_ticket_id','=', active_id)]</field>
+        </record>
+
+        <!-- Extend the form view of helpdesk.ticket -->
+        <record id="helpdesk_ticket_form_view_merge_inherit" model="ir.ui.view">
+            <field name="name">helpdesk.ticket.merge.button</field>
+            <field name="model">helpdesk.ticket</field>
+            <field name="inherit_id" ref="helpdesk_mgmt.ticket_view_form" />
+            <field name="arch" type="xml">
+                <xpath expr="//header" position="inside">
+                    <field name="merge_ticket_id" invisible="True" />
+
+                    <!-- Button for initial Merging wizard -->
+                    <button
+                        name="merge_ticket"
+                        string=" Merge"
+                        icon="fa-object-ungroup"
+                        type="object"
+                        class="btn-default"
+                        context="{
+                            'default_message': 'This Ticket has been merged into ##',
+                            'default_message_main_ticket': 'The Ticket ## was closed and has been merged into this Ticket'
+                        }"
+                        attrs="{'invisible': ['!', '&amp;', ('merge_ticket_id', '=', False), ('id', '!=', False)]}"
+                    />
+                </xpath>
+                <xpath expr="//div[@name='button_box']" position="inside">
+                    <!-- Button for merged tickets with counter -->
+                    <button
+                        name="%(helpdesk_ticket_view_merged)d"
+                        icon="fa-object-ungroup"
+                        type="action"
+                        class="oe_stat_button"
+                        attrs="{'invisible': ['!', '&amp;', '&amp;', ('merge_ticket_id', '=', False), ('id', '!=', False), ('merge_ticket_ids_count', '&gt;', 0)]}"
+                        context="{'search_default_merge_ticket_id': active_id}">
+
+                        <field string="Merged Tickets" name="merge_ticket_ids_count"
+                            widget="statinfo" />
+                    </button>
+
+                    <!-- Button for going to the Main Ticket -->
+                    <button
+                        name="get_view_helpdesk_main_ticket"
+                        string="Merged"
+                        icon="fa-object-ungroup"
+                        type="object"
+                        class="btn btn-primary oe_stat_button oe_highlight"
+                        context="{'ticket_id': merge_ticket_id}"
+                        attrs="{'invisible': ['!', '&amp;', ('merge_ticket_id', '!=', False), ('id', '!=', False)]}"
+                    />
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
