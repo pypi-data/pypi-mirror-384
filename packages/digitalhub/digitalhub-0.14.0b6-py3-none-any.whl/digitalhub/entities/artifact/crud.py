@@ -1,0 +1,394 @@
+# SPDX-FileCopyrightText: © 2025 DSLab - Fondazione Bruno Kessler
+#
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import typing
+
+from digitalhub.entities._commons.enums import EntityTypes
+from digitalhub.entities._processors.processors import context_processor
+from digitalhub.entities.artifact._base.entity import Artifact
+from digitalhub.entities.artifact.utils import eval_source, process_kwargs
+from digitalhub.utils.types import SourcesOrListOfSources
+
+if typing.TYPE_CHECKING:
+    from digitalhub.entities.artifact._base.entity import Artifact
+
+
+ENTITY_TYPE = EntityTypes.ARTIFACT.value
+
+
+def new_artifact(
+    project: str,
+    name: str,
+    kind: str,
+    uuid: str | None = None,
+    description: str | None = None,
+    labels: list[str] | None = None,
+    embedded: bool = False,
+    path: str | None = None,
+    **kwargs,
+) -> Artifact:
+    """
+    Create a new object.
+
+    Parameters
+    ----------
+    project : str
+        Project name.
+    name : str
+        Object name.
+    kind : str
+        Kind the object.
+    uuid : str
+        ID of the object.
+    description : str
+        Description of the object (human readable).
+    labels : list[str]
+        List of labels.
+    embedded : bool
+        Flag to determine if object spec must be embedded in project spec.
+    path : str
+        Object path on local file system or remote storage. It is also the destination path of upload() method.
+    **kwargs : dict
+        Spec keyword arguments.
+
+    Returns
+    -------
+    Artifact
+        Object instance.
+
+    Examples
+    --------
+    >>> obj = new_artifact(project="my-project",
+    >>>                    name="my-artifact",
+    >>>                    kind="artifact",
+    >>>                    path="s3://my-bucket/my-key")
+    """
+    return context_processor.create_context_entity(
+        project=project,
+        name=name,
+        kind=kind,
+        uuid=uuid,
+        description=description,
+        labels=labels,
+        embedded=embedded,
+        path=path,
+        **kwargs,
+    )
+
+
+def log_artifact(
+    project: str,
+    name: str,
+    kind: str,
+    source: SourcesOrListOfSources,
+    path: str | None = None,
+    **kwargs,
+) -> Artifact:
+    """
+    Create and upload an object.
+
+    Parameters
+    ----------
+    project : str
+        Project name.
+    name : str
+        Object name.
+    kind : str
+        Kind the object.
+    source : SourcesOrListOfSources
+        Artifact location on local path.
+    path : str
+        Destination path of the artifact. If not provided, it's generated.
+    **kwargs : dict
+        New artifact spec parameters.
+
+    Returns
+    -------
+    Artifact
+        Object instance.
+
+    Examples
+    --------
+    >>> obj = log_artifact(project="my-project",
+    >>>                    name="my-artifact",
+    >>>                    kind="artifact",
+    >>>                    source="./local-path")
+    """
+    eval_source(source)
+    kwargs = process_kwargs(project, name, source=source, path=path, **kwargs)
+    return context_processor.log_material_entity(
+        source=source,
+        project=project,
+        name=name,
+        kind=kind,
+        **kwargs,
+    )
+
+
+def get_artifact(
+    identifier: str,
+    project: str | None = None,
+    entity_id: str | None = None,
+) -> Artifact:
+    """
+    Get object from backend.
+
+    Parameters
+    ----------
+    identifier : str
+        Entity key (store://...) or entity name.
+    project : str
+        Project name.
+    entity_id : str
+        Entity ID.
+
+    Returns
+    -------
+    Artifact
+        Object instance.
+
+    Examples
+    --------
+    Using entity key:
+    >>> obj = get_artifact("store://my-artifact-key")
+
+    Using entity name:
+    >>> obj = get_artifact("my-artifact-name"
+    >>>                    project="my-project",
+    >>>                    entity_id="my-artifact-id")
+    """
+    return context_processor.read_context_entity(
+        identifier=identifier,
+        entity_type=ENTITY_TYPE,
+        project=project,
+        entity_id=entity_id,
+    )
+
+
+def get_artifact_versions(
+    identifier: str,
+    project: str | None = None,
+) -> list[Artifact]:
+    """
+    Get object versions from backend.
+
+    Parameters
+    ----------
+    identifier : str
+        Entity key (store://...) or entity name.
+    project : str
+        Project name.
+
+    Returns
+    -------
+    list[Artifact]
+        List of object instances.
+
+    Examples
+    --------
+    Using entity key:
+    >>> obj = get_artifact_versions("store://my-artifact-key")
+
+    Using entity name:
+    >>> obj = get_artifact_versions("my-artifact-name"
+    >>>                             project="my-project")
+    """
+    return context_processor.read_context_entity_versions(
+        identifier=identifier,
+        entity_type=ENTITY_TYPE,
+        project=project,
+    )
+
+
+def list_artifacts(
+    project: str,
+    q: str | None = None,
+    name: str | None = None,
+    kind: str | None = None,
+    user: str | None = None,
+    state: str | None = None,
+    created: str | None = None,
+    updated: str | None = None,
+    version: str | None = None,
+) -> list[Artifact]:
+    """
+    List all latest version objects from backend.
+
+    Parameters
+    ----------
+    project : str
+        Project name.
+    q : str
+        Query string to filter objects.
+    name : str
+        Object name.
+    kind : str
+        Kind of the object.
+    user : str
+        User that created the object.
+    state : str
+        Object state.
+    created : str
+        Creation date filter.
+    updated : str
+        Update date filter.
+    version : str
+        Object version, default is latest.
+
+    Returns
+    -------
+    list[Artifact]
+        List of object instances.
+
+    Examples
+    --------
+    >>> objs = list_artifacts(project="my-project")
+    """
+    return context_processor.list_context_entities(
+        project=project,
+        entity_type=ENTITY_TYPE,
+        q=q,
+        name=name,
+        kind=kind,
+        user=user,
+        state=state,
+        created=created,
+        updated=updated,
+        version=version,
+    )
+
+
+def import_artifact(
+    file: str | None = None,
+    key: str | None = None,
+    reset_id: bool = False,
+    context: str | None = None,
+) -> Artifact:
+    """
+    Import an object from a YAML file or from a storage key.
+
+    Parameters
+    ----------
+    file : str
+        Path to the YAML file.
+    key : str
+        Entity key (store://...).
+    reset_id : bool
+        Flag to determine if the ID of executable entities should be reset.
+    context : str
+        Project name to use for context resolution.
+
+    Returns
+    -------
+    Artifact
+        Object instance.
+
+    Examples
+    --------
+    >>> obj = import_artifact("my-artifact.yaml")
+    """
+    return context_processor.import_context_entity(
+        file,
+        key,
+        reset_id,
+        context,
+    )
+
+
+def load_artifact(file: str) -> Artifact:
+    """
+    Load object from a YAML file and update an existing object into the backend.
+
+    Parameters
+    ----------
+    file : str
+        Path to YAML file.
+
+    Returns
+    -------
+    Artifact
+        Object instance.
+
+    Examples
+    --------
+    >>> obj = load_artifact("my-artifact.yaml")
+    """
+    return context_processor.load_context_entity(file)
+
+
+def update_artifact(entity: Artifact) -> Artifact:
+    """
+    Update object. Note that object spec are immutable.
+
+    Parameters
+    ----------
+    entity : Artifact
+        Object to update.
+
+    Returns
+    -------
+    Artifact
+        Entity updated.
+
+    Examples
+    --------
+    >>> obj = update_artifact(obj)
+    """
+    return context_processor.update_context_entity(
+        project=entity.project,
+        entity_type=entity.ENTITY_TYPE,
+        entity_id=entity.id,
+        entity_dict=entity.to_dict(),
+    )
+
+
+def delete_artifact(
+    identifier: str,
+    project: str | None = None,
+    entity_id: str | None = None,
+    delete_all_versions: bool = False,
+    cascade: bool = True,
+) -> dict:
+    """
+    Delete object from backend.
+
+    Parameters
+    ----------
+    identifier : str
+        Entity key (store://...) or entity name.
+    project : str
+        Project name.
+    entity_id : str
+        Entity ID.
+    delete_all_versions : bool
+        Delete all versions of the named entity.
+        If True, use entity name instead of entity key as identifier.
+    cascade : bool
+        Cascade delete.
+
+    Returns
+    -------
+    dict
+        Response from backend.
+
+    Examples
+    --------
+    If delete_all_versions is False:
+    >>> delete_artifact("store://my-artifact-key")
+
+    Otherwise:
+    >>> delete_artifact("my-artifact-name",
+    >>>                  project="my-project",
+    >>>                  delete_all_versions=True)
+    """
+    return context_processor.delete_context_entity(
+        identifier=identifier,
+        entity_type=ENTITY_TYPE,
+        project=project,
+        entity_id=entity_id,
+        delete_all_versions=delete_all_versions,
+        cascade=cascade,
+    )
