@@ -1,0 +1,449 @@
+Metadata-Version: 2.4
+Name: ayz-auth
+Version: 2.0.1
+Summary: FastAPI middleware for Stytch B2B authentication with Redis caching, MongoDB entitlements, and team context
+Project-URL: Homepage, https://github.com/ayzenberg/ayz-auth
+Project-URL: Repository, https://github.com/ayzenberg/ayz-auth
+Project-URL: Issues, https://github.com/ayzenberg/ayz-auth/issues
+Author-email: Ayzenberg <dev@ayzenberg.com>
+License: MIT
+Keywords: authentication,authorization,b2b,entitlements,fastapi,middleware,stytch
+Classifier: Development Status :: 4 - Beta
+Classifier: Framework :: FastAPI
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP :: HTTP Servers
+Classifier: Topic :: Security
+Requires-Python: >=3.8
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: httpx>=0.24.0
+Requires-Dist: pydantic-settings>=2.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: redis>=4.5.0
+Requires-Dist: stytch>=5.0.0
+Requires-Dist: typing-extensions>=4.0.0
+Provides-Extra: dev
+Requires-Dist: black>=23.0.0; extra == 'dev'
+Requires-Dist: fakeredis>=2.10.0; extra == 'dev'
+Requires-Dist: httpx>=0.24.0; extra == 'dev'
+Requires-Dist: isort>=5.12.0; extra == 'dev'
+Requires-Dist: mongomock-motor>=0.0.21; extra == 'dev'
+Requires-Dist: mypy>=1.0.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.21.0; extra == 'dev'
+Requires-Dist: pytest-mock>=3.10.0; extra == 'dev'
+Requires-Dist: pytest>=7.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Provides-Extra: mongodb
+Requires-Dist: motor>=3.0.0; extra == 'mongodb'
+Requires-Dist: pymongo>=4.0.0; extra == 'mongodb'
+Description-Content-Type: text/markdown
+
+# ayz-auth
+
+FastAPI middleware for Stytch B2B authentication with Redis caching, MongoDB entitlements, and team context.
+
+## Overview
+
+`ayz-auth` is a lightweight, production-ready authentication middleware for FastAPI applications using Stytch B2B authentication services. It provides session token verification with Redis caching for optimal performance, optional MongoDB integration for organization entitlements and team context, and includes comprehensive error handling and logging.
+
+**Version 2.0.0** adds support for feature-based authorization using organization entitlements and user team context, while maintaining 100% backwards compatibility with v1.x.
+
+## Features
+
+### Core Features
+- 🔐 **Stytch B2B Integration**: Seamless integration with Stytch B2B authentication
+- ⚡ **Redis Caching**: Intelligent caching to reduce API calls and improve performance
+- 🚀 **FastAPI Native**: Built specifically for FastAPI with proper dependency injection
+- 📝 **Type Safe**: Full Pydantic models with type hints throughout
+- 🛡️ **Security First**: Secure token handling with configurable logging levels
+- 🔧 **Configurable**: Environment-based configuration with sensible defaults
+- 📊 **Comprehensive Logging**: Structured logging with sensitive data protection
+- 🧪 **Well Tested**: Comprehensive test suite with mocking support
+
+### New in v2.0.0
+- 🎫 **Entitlements System**: Feature-based authorization using subscription tiers and entitlements
+- 👥 **Team Context**: User team membership for data filtering and multi-tenancy
+- 🗄️ **MongoDB Integration**: Optional read-only access to organization and user data
+- 🎯 **Authorization Decorators**: `require_entitlement`, `require_any_entitlement`, `require_all_entitlements`
+- ♻️ **100% Backwards Compatible**: Works with or without MongoDB, no breaking changes
+
+## Installation
+
+### Basic Installation (Authentication Only)
+
+```bash
+pip install ayz-auth
+```
+
+Or with UV:
+
+```bash
+uv add ayz-auth
+```
+
+### Installation with MongoDB Support (v2.0.0+)
+
+For entitlements and team context features:
+
+```bash
+pip install 'ayz-auth[mongodb]'
+```
+
+Or with UV:
+
+```bash
+uv add 'ayz-auth[mongodb]'
+```
+
+## Quick Start
+
+### 1. Environment Configuration
+
+Create a `.env` file or set environment variables:
+
+```bash
+# Required
+STYTCH_PROJECT_ID=your_project_id
+STYTCH_SECRET=your_secret_key
+STYTCH_ENV=test  # or "live" for production
+REDIS_URL=redis://localhost:6379
+
+# Optional (v2.0.0+ - for entitlements and team context)
+STYTCH_MONGODB_URI=mongodb://localhost:27017/soulmates
+```
+
+### 2. Basic Usage
+
+```python
+from fastapi import FastAPI, Depends
+from ayz_auth import verify_auth, StytchContext
+
+app = FastAPI()
+
+@app.get("/protected")
+async def protected_route(user: StytchContext = Depends(verify_auth)):
+    return {
+        "message": f"Hello {user.member_email}",
+        "member_id": user.member_id,
+        "organization_id": user.organization_id
+    }
+
+@app.get("/user-info")
+async def get_user_info(user: StytchContext = Depends(verify_auth)):
+    return {
+        "member_id": user.member_id,
+        "email": user.member_email,
+        "name": user.member_name,
+        "organization_id": user.organization_id,
+        "session_expires_at": user.session_expires_at,
+        "authentication_factors": user.authentication_factors
+    }
+```
+
+### 3. Optional Authentication
+
+For endpoints that work with or without authentication:
+
+```python
+from typing import Optional
+from ayz_auth import verify_auth_optional
+
+@app.get("/optional-auth")
+async def optional_route(user: Optional[StytchContext] = Depends(verify_auth_optional)):
+    if user:
+        return {"message": f"Hello {user.member_email}"}
+    else:
+        return {"message": "Hello anonymous user"}
+```
+
+### 4. Custom Authentication Requirements
+
+Create custom dependencies with additional requirements:
+
+```python
+from ayz_auth import create_auth_dependency
+
+# Require specific custom claims
+admin_auth = create_auth_dependency(required_claims=["admin"])
+moderator_auth = create_auth_dependency(required_claims=["moderator", "verified"])
+
+# Require specific authentication factors
+mfa_auth = create_auth_dependency(required_factors=["mfa"])
+
+@app.get("/admin")
+async def admin_route(user: StytchContext = Depends(admin_auth)):
+    return {"message": "Admin access granted"}
+
+@app.get("/sensitive")
+async def sensitive_route(user: StytchContext = Depends(mfa_auth)):
+    return {"message": "MFA verified access"}
+```
+
+### 5. Entitlement-Based Authorization (v2.0.0+)
+
+**Requires MongoDB configuration** - see [Entitlements Guide](docs/entitlements.md)
+
+```python
+from ayz_auth import require_entitlement, require_any_entitlement, require_all_entitlements
+
+# Require a single entitlement
+@app.get("/foresight/analyze")
+async def foresight_route(user: StytchContext = Depends(require_entitlement("foresight"))):
+    return {
+        "message": "Foresight analysis",
+        "team": user.current_team_name,
+        "tier": user.subscription_tier
+    }
+
+# Require ANY of the specified entitlements
+@app.get("/analytics")
+async def analytics_route(user: StytchContext = Depends(require_any_entitlement("foresight", "analytics_basic"))):
+    return {"message": "Analytics dashboard"}
+
+# Require ALL of the specified entitlements
+@app.get("/premium")
+async def premium_route(user: StytchContext = Depends(require_all_entitlements("foresight", "advanced_analytics"))):
+    return {"message": "Premium features"}
+```
+
+### 6. Team Context and Data Filtering (v2.0.0+)
+
+Use team context for multi-tenant data isolation:
+
+```python
+@app.get("/projects")
+async def list_projects(user: StytchContext = Depends(verify_auth)):
+    # Filter by team if available
+    if user.current_team_id:
+        query = {"team_id": user.current_team_id}
+    else:
+        query = {"user_id": user.mongo_user_id}
+
+    projects = await db.projects.find(query).to_list()
+    return {"projects": projects}
+```
+
+## Configuration
+
+All configuration is handled through environment variables with the `STYTCH_` prefix:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STYTCH_PROJECT_ID` | *required* | Your Stytch project ID |
+| `STYTCH_SECRET` | *required* | Your Stytch secret key |
+| `STYTCH_ENV` | `test` | Stytch environment (`test` or `live`) |
+| `STYTCH_REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
+| `STYTCH_REDIS_PASSWORD` | `None` | Redis password (if required) |
+| `STYTCH_REDIS_DB` | `0` | Redis database number |
+| `STYTCH_CACHE_TTL` | `300` | Cache TTL in seconds (5 minutes) |
+| `STYTCH_CACHE_PREFIX` | `ayz_auth` | Redis key prefix |
+| `STYTCH_LOG_LEVEL` | `INFO` | Logging level |
+| `STYTCH_LOG_SENSITIVE_DATA` | `False` | Log sensitive data (never in production) |
+| `STYTCH_REQUEST_TIMEOUT` | `10` | Request timeout in seconds |
+| `STYTCH_MAX_RETRIES` | `3` | Maximum retry attempts |
+| `STYTCH_MONGODB_URI` | `None` | **v2.0.0+** MongoDB connection URI for entitlements (optional) |
+
+## StytchContext Model
+
+The `StytchContext` model contains all the essential session data from Stytch:
+
+```python
+class StytchContext(BaseModel):
+    # Core identifiers
+    member_id: str
+    session_id: str
+    organization_id: str
+
+    # Session timing
+    session_started_at: datetime
+    session_expires_at: datetime
+    session_last_accessed_at: datetime
+    authenticated_at: datetime
+
+    # Member information
+    member_email: Optional[str]
+    member_name: Optional[str]
+
+    # Session metadata
+    session_custom_claims: Dict[str, Any]
+    authentication_factors: List[str]
+    raw_session_data: Dict[str, Any]
+
+    # v2.0.0+ Entitlements (None if MongoDB not configured)
+    entitlements: Optional[List[str]] = None
+    subscription_tier: Optional[str] = None
+    subscription_limits: Optional[Dict[str, int]] = None
+
+    # v2.0.0+ Team context (None if MongoDB not configured)
+    current_team_id: Optional[str] = None
+    current_team_name: Optional[str] = None
+
+    # v2.0.0+ MongoDB identifiers (None if MongoDB not configured)
+    mongo_user_id: Optional[str] = None
+    mongo_organization_id: Optional[str] = None
+
+    # Utility properties
+    @property
+    def is_expired(self) -> bool: ...
+
+    @property
+    def time_until_expiry(self) -> Optional[float]: ...
+```
+
+## Error Handling
+
+The middleware provides structured error responses:
+
+```python
+# 401 Unauthorized - Missing or invalid token
+{
+    "error": "authentication_failed",
+    "message": "Authorization header is required",
+    "type": "token_extraction"
+}
+
+# 401 Unauthorized - Token verification failed
+{
+    "error": "authentication_failed", 
+    "message": "Invalid or expired session token",
+    "type": "token_verification"
+}
+
+# 503 Service Unavailable - Stytch API issues
+{
+    "error": "service_unavailable",
+    "message": "Authentication service temporarily unavailable", 
+    "type": "stytch_api"
+}
+
+# 403 Forbidden - Insufficient permissions (custom auth)
+{
+    "error": "insufficient_permissions",
+    "message": "Missing required claims: ['admin']",
+    "type": "authorization"
+}
+
+# 403 Forbidden - Insufficient authentication factors (custom auth)
+{
+    "error": "insufficient_authentication",
+    "message": "Missing required authentication factors: ['mfa']",
+    "type": "authorization"
+}
+
+# 403 Forbidden - Missing entitlement (v2.0.0+)
+{
+    "error": "forbidden",
+    "message": "This feature requires the 'foresight' entitlement",
+    "required_entitlement": "foresight",
+    "current_tier": "standard",
+    "upgrade_required": true
+}
+```
+
+## Caching Strategy
+
+The middleware implements intelligent multi-tier caching:
+
+### Token Verification Cache
+1. **Redis Cache Check**: Fast lookup of previously verified tokens
+2. **Stytch API Fallback**: Fresh verification when cache misses
+3. Cache entries automatically expire based on session expiration time
+
+### Entitlements Cache (v2.0.0+)
+- **Organization entitlements**: 1-hour TTL (changes infrequently)
+- **User context**: 5-minute TTL (team changes may occur)
+- **Performance**: Cached requests <10ms, uncached <100ms
+
+## Integration with Your User System
+
+Since the middleware only returns Stytch session data, you can easily integrate it with your existing user system:
+
+```python
+from your_app.models import User
+from your_app.database import get_user_by_stytch_member_id
+
+@app.get("/profile")
+async def get_profile(stytch: StytchContext = Depends(verify_auth)):
+    # Use the member_id to fetch your user data
+    user = await get_user_by_stytch_member_id(stytch.member_id)
+    
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Check permissions using your user model
+    if "read_profile" not in user.permissions:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    return {
+        "stytch_data": stytch.to_dict(),
+        "user_data": user.to_dict()
+    }
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# Install development dependencies
+uv sync --dev
+
+# Run tests
+pytest
+
+# Run tests with coverage
+pytest --cov=ayz_auth
+```
+
+### Code Quality
+
+```bash
+# Format code
+black src/ tests/
+isort src/ tests/
+
+# Lint code
+ruff check src/ tests/
+
+# Type checking
+mypy src/
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Migrating from v1.x to v2.0.0
+
+v2.0.0 is **100% backwards compatible** with v1.x. Simply upgrade and optionally enable MongoDB features when ready.
+
+See the [Migration Guide](docs/migration-v2.md) for detailed upgrade instructions and best practices.
+
+## Additional Documentation
+
+- [Entitlements Guide](docs/entitlements.md) - Detailed guide on entitlements and team context features
+- [Migration Guide](docs/migration-v2.md) - Upgrade instructions from v1.x to v2.0.0
+- [Example Usage](example_usage.py) - Complete example application with all features
+
+## Support
+
+For issues and questions:
+
+- GitHub Issues: [https://github.com/brandsoulmates/ayz-auth/issues](https://github.com/brandsoulmates/ayz-auth/issues)
+- Documentation: [https://github.com/brandsoulmates/ayz-auth](https://github.com/brandsoulmates/ayz-auth)
