@@ -1,0 +1,364 @@
+Metadata-Version: 2.3
+Name: solving-auth-middleware
+Version: 0.2.0
+Summary: Reusable middleware for jwt checking with modular validators and role hierarchy
+License: MIT
+Author: Sahmok
+Author-email: mokrane@solving-company.fr
+Requires-Python: >=3.10,<4
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Dist: flask (>=3.1.0,<4.0.0)
+Requires-Dist: flask-jwt-extended (>=4.7.1,<5.0.0)
+Requires-Dist: flask-restx (>=1.3.0,<2.0.0)
+Requires-Dist: python-dotenv (>=1.0.0,<2.0.0)
+Description-Content-Type: text/markdown
+
+# 🔐 Auth Middleware - Sécurisation de Microservices Flask
+
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/yourusername/auth-middleware)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Flask](https://img.shields.io/badge/flask-2.0+-green.svg)](https://flask.palletsprojects.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+Middleware Flask **modulaire et flexible** pour sécuriser vos microservices avec JWT, gestion de rôles hiérarchiques, permissions et audit (RGPD/HDS).
+
+## ✨ Nouveautés v3 (0.2.0)
+
+🎉 **Système de validators modulaires** - Composez vos règles de validation de manière flexible  
+🎉 **Nouveau rôle SOFTWARE_ADMIN** - Hiérarchie de rôles étendue  
+🎉 **Validators combinables** - Logique AND/OR pour des règles complexes  
+🎉 **Helpers rapides** - Fonctions utilitaires pour les cas courants  
+🎉 **100% rétrocompatible** - Toutes les versions précédentes restent fonctionnelles  
+
+➡️ [Guide complet v3](GUIDE_V3.md) | [Migration depuis v1/v2](MIGRATION_V3.md)
+
+---
+
+## 📦 Installation
+
+```bash
+pip install solving-auth-middleware
+```
+
+Ou depuis les sources :
+
+```bash
+git clone https://github.com/yourusername/auth-middleware.git
+cd auth-middleware
+pip install -e .
+```
+
+---
+
+## 🚀 Démarrage Rapide
+
+### Configuration de base
+
+```python
+from flask import Flask
+from flask_jwt_extended import JWTManager
+from solving_auth_middleware import requires_access, quick_user_type_check, UserTypeEnum
+
+app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = 'votre-clé-secrète'
+jwt = JWTManager(app)
+
+@app.route('/api/admin')
+@requires_access(quick_user_type_check(UserTypeEnum.SOFTWARE_ADMIN))
+def admin_route():
+    return {"message": "Zone administrateur"}
+
+if __name__ == '__main__':
+    app.run()
+```
+
+### Exemple avec permissions
+
+```python
+from solving_auth_middleware import (
+    requires_access,
+    UserTypeValidator,
+    PermissionsValidator,
+    UserTypeEnum
+)
+
+@app.route('/api/documents', methods=['POST'])
+@requires_access([
+    UserTypeValidator([UserTypeEnum.PRO, UserTypeEnum.SOFTWARE_ADMIN]),
+    PermissionsValidator(['create_documents'], mode='all')
+])
+def create_document():
+    return {"message": "Document créé"}
+```
+
+---
+
+## 🎯 Fonctionnalités Principales
+
+### 🔑 Authentification JWT
+- Support de **flask-jwt-extended**
+- Validation automatique des tokens
+- Gestion des tokens frais (`fresh=True`)
+- Multiples locations : headers, cookies, query string, JSON
+
+### 👥 Hiérarchie de Rôles
+
+```
+SYSTEM (niveau 4)          → Accès système complet
+    ↓
+SOFTWARE_ADMIN (niveau 3)  → Administration logiciel
+    ↓
+USER_ADMIN (niveau 2)      → Gestion des utilisateurs
+    ↓
+PRO (niveau 1)             → Utilisateur professionnel
+    ↓
+PUBLIC (niveau 0)          → Utilisateur public
+```
+
+### 🛡️ Validators Modulaires (v3)
+
+| Validator | Description |
+|-----------|-------------|
+| `UserTypeValidator` | Valide le type d'utilisateur |
+| `PermissionsValidator` | Vérifie les permissions (AND/OR) |
+| `RoleHierarchyValidator` | Validation basée sur la hiérarchie |
+| `CustomFunctionValidator` | Logique personnalisée |
+| `ClaimValidator` | Validation de claims JWT |
+| `ResourceOwnerValidator` | Vérification de propriété |
+| `RemoteAPIValidator` | Validation via API externe |
+| `CompositeValidator` | Combine plusieurs validators |
+
+### 📊 Exemples d'Utilisation
+
+#### Validation simple
+
+```python
+@requires_access(quick_user_type_check(UserTypeEnum.PRO))
+def pro_route():
+    return {"status": "ok"}
+```
+
+#### Validation avec hiérarchie
+
+```python
+# Accepte USER_ADMIN, SOFTWARE_ADMIN et SYSTEM
+@requires_access(quick_role_hierarchy_check(UserTypeEnum.USER_ADMIN))
+def admin_and_above():
+    return {"status": "ok"}
+```
+
+#### Validation complexe (OR logique)
+
+```python
+from solving_auth_middleware import CompositeValidator
+
+@requires_access(
+    CompositeValidator([
+        # Admin OU
+        UserTypeValidator([UserTypeEnum.SOFTWARE_ADMIN]),
+        # PRO avec permission spéciale
+        CompositeValidator([
+            UserTypeValidator([UserTypeEnum.PRO]),
+            PermissionsValidator(['special_access'])
+        ], mode='all')
+    ], mode='any')
+)
+def flexible_route():
+    return {"status": "ok"}
+```
+
+#### Validation de propriété
+
+```python
+def load_document(doc_id):
+    return Document.query.get(doc_id)
+
+@requires_access(
+    ResourceOwnerValidator(load_document, owner_field='owner_id')
+)
+def delete_document(doc_id):
+    return {"status": "deleted"}
+```
+
+---
+
+## ⚙️ Configuration
+
+### Variables d'environnement
+
+Créez un fichier `.env` :
+
+```bash
+# Configuration JWT
+JWT_SECRET_KEY=votre-clé-secrète-super-sécurisée
+
+# Endpoints API de validation par type d'utilisateur
+PUBLIC_USER_API_ENDPOINT=http://api.example.com/v1/public/verify
+PRO_USER_API_ENDPOINT=http://api.example.com/v1/pro/verify
+USER_ADMIN_API_ENDPOINT=http://api.example.com/v1/user-admin/verify
+SOFTWARE_ADMIN_API_ENDPOINT=http://api.example.com/v1/software-admin/verify
+SYSTEM_API_ENDPOINT=http://api.example.com/v1/system/verify
+
+# Configuration
+PERMISSIONS_API_TIMEOUT=10
+AUDIT_ENABLED=True
+AUDIT_LOG_PATH=/var/log/audit.log
+```
+
+### Configuration Flask
+
+```python
+from solving_auth_middleware import Config
+
+class CustomConfig(Config):
+    JWT_SECRET_KEY = 'votre-clé'
+    SOFTWARE_ADMIN_API_ENDPOINT = 'http://api.example.com/v1/software-admin/verify'
+    PERMISSIONS_API_TIMEOUT = 10
+
+app.config.from_object(CustomConfig)
+```
+
+---
+
+## 📚 Documentation
+
+- **[Guide v3 Complet](GUIDE_V3.md)** - Documentation détaillée de la v3
+- **[Guide de Migration](MIGRATION_V3.md)** - Migrer depuis v1/v2
+- **[Changelog](CHANGELOG.md)** - Historique des versions
+- **[Exemples](examples/)** - Exemples d'utilisation pratiques
+
+---
+
+## 🧪 Tests et Développement
+
+### Lancer les exemples
+
+```bash
+# Exemple v3 avec tous les validators
+python examples/example_v3.py
+
+# Exemple original (v1)
+python examples/example.py
+```
+
+### Structure du Projet
+
+```
+auth-middleware/
+├── solving_auth_middleware/
+│   ├── __init__.py           # Exports publics
+│   ├── config.py             # Configuration
+│   ├── enums.py              # Énumérations (UserTypeEnum)
+│   ├── middleware.py         # Middleware v1 (original)
+│   ├── middleware_v2.py      # Middleware v2
+│   ├── middleware_v3.py      # Middleware v3 (nouveau)
+│   └── validators.py         # Système de validators modulaires
+├── examples/
+│   ├── example.py            # Exemples v1
+│   └── example_v3.py         # Exemples v3 complets
+├── GUIDE_V3.md              # Documentation v3
+├── MIGRATION_V3.md          # Guide de migration
+├── CHANGELOG.md             # Historique des versions
+└── README.md                # Ce fichier
+```
+
+---
+
+## 🔄 Versions du Middleware
+
+| Version | Décorateur | Description | Status |
+|---------|-----------|-------------|--------|
+| v1 | `@requires_permissions()` | Version originale | ✅ Stable |
+| v2 | `@requires_permissions_v2()` | Version intermédiaire | ✅ Stable |
+| v3 | `@requires_access()` | Validators modulaires | ✅ **Recommandé** |
+
+Toutes les versions sont **100% compatibles** et peuvent coexister dans le même projet.
+
+---
+
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! 
+
+1. Fork le projet
+2. Créez une branche (`git checkout -b feature/amélioration`)
+3. Commit vos changements (`git commit -m 'Ajout d'une fonctionnalité'`)
+4. Push vers la branche (`git push origin feature/amélioration`)
+5. Ouvrez une Pull Request
+
+### Créer votre propre Validator
+
+```python
+from solving_auth_middleware.validators import AccessValidator
+
+class MyCustomValidator(AccessValidator):
+    def __init__(self, my_param):
+        self.my_param = my_param
+    
+    def validate(self, jwt_data, identity, token, **context):
+        # Votre logique ici
+        if condition:
+            return True, None
+        return False, "Message d'erreur"
+```
+
+---
+
+## 📦 Publication d'une Mise à Jour
+
+### Option 1 : Script automatique
+
+```bash
+./publish.sh
+```
+
+### Option 2 : Manuelle
+
+```bash
+# 1. Mettre à jour la version dans pyproject.toml et __init__.py
+
+# 2. Commit et tag
+git add .
+git commit -m "Release version 0.2.0"
+git tag -a v0.2.0 -m "Release version 0.2.0"
+
+# 3. Push
+git push origin main
+git push origin v0.2.0
+
+# 4. Build et publish
+python -m build
+python -m twine upload dist/*
+```
+
+---
+
+## 📄 Licence
+
+Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+
+---
+
+## 🙏 Remerciements
+
+- [Flask](https://flask.palletsprojects.com/) - Framework web
+- [Flask-JWT-Extended](https://flask-jwt-extended.readthedocs.io/) - Gestion JWT
+- Tous les contributeurs du projet
+
+---
+
+## 📞 Support
+
+- 📖 [Documentation](GUIDE_V3.md)
+- 💬 [Issues GitHub](https://github.com/yourusername/auth-middleware/issues)
+- 📧 Email: support@example.com
+
+---
+
+**Fait avec ❤️ pour la communauté Flask**
+
