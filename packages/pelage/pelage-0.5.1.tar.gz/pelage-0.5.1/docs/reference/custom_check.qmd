@@ -1,0 +1,69 @@
+# custom_check { #pelage.custom_check }
+
+```python
+custom_check(data, expression)
+```
+
+Use custom Polars expression to check the DataFrame, based on `.filter()`.
+
+The expression when used through the dataframe method `.filter()` should return an
+empty dataframe.
+This expression should express the requierement for values that are not wanted
+in the dataframe. For instance, if a column should not contain the value `4`,
+use the expression `pl.col("column") != 4`.
+
+Analog to dbt-utils fonction: `expression_is_true`
+
+## Parameters {.doc-section .doc-section-parameters}
+
+<code><span class="parameter-name">data</span><span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">[PolarsLazyOrDataFrame](`pelage.types.PolarsLazyOrDataFrame`)</span></code>
+
+:   Polars DataFrame or LazyFrame containing data to check.
+
+<code><span class="parameter-name">expression</span><span class="parameter-annotation-sep">:</span> <span class="parameter-annotation">[pl](`polars`).[Expr](`polars.Expr`)</span></code>
+
+:   Polar Expression that can be passed to the `.filter()` method. As describe
+    above, use an expression that should keep forbidden values when passed to the
+    filter
+
+## Returns {.doc-section .doc-section-returns}
+
+| Name   | Type                                                          | Description                                                       |
+|--------|---------------------------------------------------------------|-------------------------------------------------------------------|
+|        | [PolarsLazyOrDataFrame](`pelage.types.PolarsLazyOrDataFrame`) | The original polars DataFrame or LazyFrame when the check passes. |
+
+## Examples {.doc-section .doc-section-examples}
+
+```python
+>>> import polars as pl
+>>> import pelage as plg
+>>> df = pl.DataFrame({"a": [1, 2, 3]})
+>>> df.pipe(plg.custom_check, pl.col("a") < 4)
+shape: (3, 1)
+┌─────┐
+│ a   │
+│ --- │
+│ i64 │
+╞═════╡
+│ 1   │
+│ 2   │
+│ 3   │
+└─────┘
+```
+
+```python
+>>> df.pipe(plg.custom_check, pl.col("a") != 3)
+Traceback (most recent call last):
+...
+pelage.types.PolarsAssertError: Details
+shape: (1, 1)
+┌─────┐
+│ a   │
+│ --- │
+│ i64 │
+╞═════╡
+│ 3   │
+└─────┘
+Error with the DataFrame passed to the check function:
+--> Unexpected data in `Custom Check`: [(col("a")) != (dyn int: 3)]
+```
