@@ -1,0 +1,102 @@
+repos:
+  - repo: https://github.com/tsvikas/sync-with-uv
+    rev: v0.4.0
+    hooks:
+      - id: sync-with-uv
+  - repo: local
+    hooks:
+      - id: uv-lock
+        name: uv-lock
+        entry: uv lock --offline
+        files: ^(uv\.lock|pyproject\.toml|uv\.toml)$
+        language: system
+        always_run: true
+        pass_filenames: false
+      - id: uv-sync
+        name: uv-sync
+        entry: uv sync --no-active --offline
+        args: [--locked]
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [manual, pre-commit, pre-push, post-checkout, post-merge, post-rewrite]
+      - id: uv-export
+        name: uv-export
+        files: ^uv\.lock$
+        entry: uv export --frozen --offline --quiet -o=requirements.txt
+        language: system
+        pass_filenames: false
+        require_serial: true
+      - id: uv-export-docs
+        name: uv-export-docs
+        files: ^uv\.lock$
+        entry: uv export --frozen --offline --quiet --only-group doc -o='docs/requirements.txt'
+        language: system
+        pass_filenames: false
+        require_serial: true
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-yaml
+      - id: debug-statements
+      - id: name-tests-test
+        args: [--pytest-test-first]
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.23
+    hooks:
+      - id: validate-pyproject
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: v2.5.0
+    hooks:
+      - id: pyproject-fmt
+        args: [--max-supported-python=3.14]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.5
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: deptry
+        name: deptry
+        entry: uv run --frozen --offline deptry src
+        language: system
+        always_run: true
+        pass_filenames: false
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        additional_dependencies:
+          - tomli
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter
+        entry: uv run --frozen --offline lint-imports
+        language: system
+        always_run: true
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: uv run --frozen --offline pyright
+        language: system
+        types_or: [python, pyi]
+        always_run: true
+        require_serial: true
+default_stages:
+  - pre-commit
+  - pre-push
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+  - post-checkout
+  - post-merge
+  - post-rewrite
