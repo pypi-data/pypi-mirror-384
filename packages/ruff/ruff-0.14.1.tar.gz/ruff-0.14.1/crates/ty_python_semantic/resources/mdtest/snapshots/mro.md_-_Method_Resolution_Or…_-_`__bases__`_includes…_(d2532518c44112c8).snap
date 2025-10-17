@@ -1,0 +1,50 @@
+---
+source: crates/ty_test/src/lib.rs
+expression: snapshot
+---
+---
+mdtest name: mro.md - Method Resolution Order tests - `__bases__` includes a `Union`
+mdtest path: crates/ty_python_semantic/resources/mdtest/mro.md
+---
+
+# Python source files
+
+## mdtest_snippet.py
+
+```
+ 1 | def returns_bool() -> bool:
+ 2 |     return True
+ 3 | 
+ 4 | class A: ...
+ 5 | class B: ...
+ 6 | 
+ 7 | if returns_bool():
+ 8 |     x = A
+ 9 | else:
+10 |     x = B
+11 | 
+12 | reveal_type(x)  # revealed: <class 'A'> | <class 'B'>
+13 | 
+14 | # error: 11 [unsupported-base] "Unsupported class base with type `<class 'A'> | <class 'B'>`"
+15 | class Foo(x): ...
+16 | 
+17 | reveal_type(Foo.__mro__)  # revealed: tuple[<class 'Foo'>, Unknown, <class 'object'>]
+```
+
+# Diagnostics
+
+```
+warning[unsupported-base]: Unsupported class base with type `<class 'A'> | <class 'B'>`
+  --> src/mdtest_snippet.py:15:11
+   |
+14 | # error: 11 [unsupported-base] "Unsupported class base with type `<class 'A'> | <class 'B'>`"
+15 | class Foo(x): ...
+   |           ^
+16 |
+17 | reveal_type(Foo.__mro__)  # revealed: tuple[<class 'Foo'>, Unknown, <class 'object'>]
+   |
+info: ty cannot resolve a consistent MRO for class `Foo` due to this base
+info: Only class objects or `Any` are supported as class bases
+info: rule `unsupported-base` is enabled by default
+
+```
