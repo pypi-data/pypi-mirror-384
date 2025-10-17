@@ -1,0 +1,293 @@
+templates:
+  probe_summary: |
+    <p>Summary statistics for {probe_type}.</p>
+    <p>The table shows key metrics for each probe, sorted by {sort_description}.</p>
+
+  probe_selection_criteria: |
+    <p><strong>Probe Selection:</strong></p>
+    <ul>
+        <li>This section displays the {num_probes} probes with {selection_description}{selection_criteria}
+            {cds_criteria}
+        </li>
+        {cds_filter}
+        <li>Among {filtered_probes}, the {num_probes} with {ranking_description} are selected.</li>
+        <li>If fewer than {num_probes} probes meet these criteria, all qualifying probes are shown.</li>
+    </ul>
+
+  # New template for probe descriptions under individual plots
+  probe_description: |
+    CDS = {cds:.3f}, Mean PoD = {mean_pod} {conc_units}
+
+  probe_description_with_fc: |
+    CDS = {cds:.3f}, Mean PoD = {mean_pod} {conc_units}, Log2 Fold Change = {log2_fc:.2f}
+
+  # New template for lowest means summary description
+  lowest_means_summary_description: |
+    <p>Summary statistics for the most sensitive probes with CDS > {cds_threshold}.</p>
+    <p>The table shows key metrics for each probe, sorted by their mean PoD (most sensitive first).</p>
+
+  # Template for table headers (can be used to generate common table headers)
+  table_headers_basic: |
+    {
+      "CDS": {
+        "title": "CDS",
+        "description": "Concentration-Dependency Score"
+      },
+      "Mean PoD": {
+        "title": "Mean PoD ({conc_units})",
+        "description": "Mean point of departure"
+      },
+      "Log2 Fold Change": {
+        "title": "Log2 Fold Change",
+        "description": "{fold_change_description}"
+      },
+      "Global PoD Weight": {
+        "title": "Global PoD Weight",
+        "description": "Weight in global PoD calculation"
+      },
+      "Response Range": {
+        "title": "Response Range",
+        "description": "Range of response thresholds"
+      }
+    }
+
+  plot_elements: |
+    <table style="border: none; border-spacing: 0; padding: 0;">
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong><span style="color: black;">✖️</span></strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>Black X markers</strong>: Normalised count for treated samples</td>
+        </tr>
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong><span style="color: grey;"> - - - </span></strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>Horizontal grey dashed lines</strong>: Normalised count for solvent control samples</td>
+        </tr>
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong><span style="background-color: rgba(255,0,0,0.3); padding: 4px 8px; border-radius: 2px;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>Red bands</strong>: 90% credible interval for expected counts (light red fill)</td>
+        </tr>
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong><span style="color: red;">━━━━━</span></strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>Red line</strong>: Median of the expected count distribution</td>
+        </tr>
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong><span style="background-color: rgba(128,0,128,0.3); padding: 4px 8px; border-radius: 2px;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>Purple bands</strong>: Histogram-like representation of PoD distribution (intensity indicates bin height)</td>
+        </tr>
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong><span style="color: purple;">┃</span></strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>Purple vertical line</strong>: Mean PoD estimate, conditional on there being a response</td>
+        </tr>
+        <tr>
+            <td style="border: none; padding: 5px 10px 5px 0; text-align: center; width: 60px;"><strong>🎯</strong></td>
+            <td style="border: none; padding: 5px 0;"><strong>CDS</strong>: Concentration-dependency-score (probability of response below max concentration){cds_info}</td>
+        </tr>
+    </table>
+
+  introduction: |
+    <p>This report contains analysis of high-throughput transcriptomics data (HTTr) obtained after
+    exposing {cell_type} cells for {timepoint} to {test_substance}. The BIFROST model
+    (Bayesian inference for region of signal threshold) is a statistical model for analysis of HTTr concentration-response data.
+    The model is designed to infer a point-of-departure (PoD) from a concentration-response dataset.
+    The PoD is an estimate of the minimum effect concentration of the test substance
+    for the experimental conditions under which the data were produced.
+    PoDs are estimated as probability distributions.</p>
+
+    <p>The implementation of the approach used here returns a single PoD for each probe analysed.
+    PoD distributions are summarised in terms of quantiles of the distribution. The concentration-dependency-score (CDS) is the
+    inferred probability that the test substance induces a change in expression below the maximum
+    concentration tested.</p>
+
+    <p>PoD distributions from individual probes are used to calculate a global PoD, defined as an estimate of a
+    minimum effect concentration to induce perturbation in expression of any gene. The global PoD is formally
+    an expectation with respect to the nominal concentration of the test substance.</p>
+
+    <p>The report contains:</p>
+    <ol>
+        <li>A summary section including the global PoD and other overall statistics. Included within this section
+        is a plot of the median PoD against the maximum log₂ fold-change in expression within the
+        concentration-range.</li>
+        <li>Concentration-response plots for probes with the 10 lowest expected PoDs. The entire probe set is
+        first filtered for probes with a CDS > 0.5.</li>
+        <li>A table summarising PoD statistics for the lowest 100 probes when ranked by the mean of the
+        distribution conditional on there being a response.</li>
+        <li>All PoDs are expressed with respect to the nominal concentration of the test substance.</li>
+    </ol>
+
+  summary_stats_description: |
+    <p>Summary statistics from BIFROST analysis.</p>
+
+    <p><strong>How to interpret:</strong></p>
+    <ul>
+        <li><strong>Global PoD</strong>: Estimate of the minimum nominal concentration of the test substance required to perturb expression of any gene.</li>
+        <li><strong>Maximum tested concentration</strong>: the highest concentration of the test substance.</li>
+        <li><strong>Number of probes analysed</strong>: the number of probes analysed using the BIFROST concentration-response model.</li>
+        <li><strong>Number of hits</strong>: the expected number of hits after averaging over the distribution of CDS filter cut-offs (rounded to the nearest integer).</li>
+        <li><strong>Number of CDS>{cds_threshold} / CDS=1.0</strong>: The number of probes with CDS>{cds_threshold} or maximum possible CDS.</li>
+        <li><strong>Minimum responding probe(s)</strong>: probes with non-zero weight in the global PoD calculation.</li>
+        <li><strong>Largest fold increase/decrease</strong>: probes with the largest increase and decrease in expression for any concentration less than the maximum tested.</li>
+    </ul>
+
+  pod_vs_fc_description: |
+    <p>Maximum fold-change in expression over the tested concentration-range plotted against the
+    probe-level PoD (mean given response){cds_info}. The red vertical line indicates the global PoD.
+    Vertical grey lines are placed at the experimental test substance concentrations.</p>
+
+    <p><strong>How to interpret:</strong></p>
+    <ul>
+        <li>Each point represents a probe{cds_info}.</li>
+        <li><strong>X-axis (Mean PoD | Response)</strong>: Lower values indicate probes that respond at lower concentrations (more sensitive).</li>
+        <li><strong>Y-axis (Max./min. log2 fold-change)</strong>: Higher absolute values indicate larger changes in expression.</li>
+        <li>The red vertical line is the weighted estimate of the minimum effect concentration (global PoD). </li>
+        {cds_threshold_note}
+    </ul>
+
+  pod_vs_fc_no_data: |
+    <div style="padding: 20px; margin: 15px 0; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;">
+        <h4 style="color: #6c757d; margin-bottom: 10px;">⚠️ No Probes to Display</h4>
+        <p>No probes were found{cds_filter_reason}.</p>
+
+        <p><strong>Possible reasons:</strong></p>
+        <ul>
+            <li>All probes have PoD estimates above the maximum tested concentration.</li>
+            <li>The tested concentration range may be too low to determine PoDs.</li>
+            <li>All probes have CDS ≤ {cds_threshold}, indicating insufficient evidence for concentration-dependent responses.</li>
+        </ul>
+
+        <p><strong>Recommendations:</strong></p>
+        <ul>
+            <li>Consider lowering the CDS threshold (currently {cds_threshold}) to include more probes.</li>
+            <li>Review the Summary Statistics table for overall analysis results.</li>
+            <li>Consider testing higher concentrations to better characterize PoDs.</li>
+        </ul>
+    </div>
+
+  no_data: |
+    <div style="padding: 20px; margin: 15px 0; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;">
+        <h4 style="color: #6c757d; margin-bottom: 10px;">⚠️ No {section_name}</h4>
+        <p>No probes were found with {section_name_lower}{cds_filter_reason}. Please see the explanation at the top of the report for possible reasons and recommendations.</p>
+    </div>
+
+  fc_no_data: |
+    <div style="padding: 20px; margin: 15px 0; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px;">
+        <h4 style="color: #6c757d; margin-bottom: 10px;">⚠️ No {direction} Probes</h4>
+        <p>No probes were found with {direction_adj} log2 fold changes (no probes showing {direction_desc} expression). Please see the explanation at the top of the report for possible reasons and recommendations.</p>
+    </div>
+
+  weighted_overview: |
+    <p>Concentration-response plots for probes that contribute to the global PoD calculation.</p>
+
+    <p><strong>Probe Selection:</strong></p>
+    <ul>
+    <li>These probes were selected based on their contribution to the global PoD calculation.</li>
+    <li>Each probe's weight in the global PoD calculation is determined by the frequency at which it is the minimum-responding probe for various CDS filters.</li>
+    <li>Probes are sorted by their weight in descending order.</li>
+    <li>These probes are candidates for the minimum responding probe.</li>
+    </ul>
+
+  fc_overview: |
+    <p>Concentration-response plots for probes with extreme expression changes{cds_info}.</p>
+
+    {selection_criteria}
+
+  lowest_means_overview: |
+    <p>Concentration-response plots for probes with the lowest mean PoD values (most sensitive probes).</p>
+
+    {selection_criteria}
+
+  pod_stats_table: |
+    <p>Summary statistics for probes{cds_info}, showing the distribution of PoD (Point of Departure) values.</p>
+    <p>The table includes:</p>
+    <ul>
+        <li><strong>CDS</strong>: Concentration-Dependency Score (probability of response below max concentration){cds_threshold}</li>
+        <li><strong>PoD percentiles</strong>: Different quantiles of the PoD distribution</li>
+        <li>Values are shown in {conc_units}</li>
+        <li>Probes are sorted by median PoD (50th percentile)</li>
+        <li>Only shows the top {n_pod_stats} probes{cds_info}</li>
+    </ul>
+
+    <p>Hover over column headers for more detailed descriptions.</p>
+
+  diagnostics_table: |
+    <p>Summary of diagnostic checks for each probe. The table is sorted to show the most biologically relevant probes first, based on:</p>
+    <ul>
+        <li><strong>CDS > {cds_threshold}</strong>: Probes with strong concentration-dependent responses are prioritized</li>
+        <li><strong>Lower Mean PoD</strong>: Among probes with CDS > {cds_threshold}, those with lower PoD (more sensitive) are shown first</li>
+    </ul>
+
+    <p><strong>Model Convergence Checks</strong> (✓ = pass, ✗ = fail):</p>
+    <ul>
+        <li><strong>Treedepth</strong>: Checks if sampler transitions reached maximum treedepth</li>
+        <li><strong>Divergences</strong>: Checks for divergent transitions in the sampler</li>
+        <li><strong>E-BFMI</strong>: Checks Hamiltonian Monte Carlo potential energy</li>
+        <li><strong>ESS</strong>: Checks effective sample size for all parameters</li>
+        <li><strong>R-hat</strong>: Checks if all parameters have satisfactory rank-normalized split R-hat values</li>
+    </ul>
+
+    <p><strong>Additional Information:</strong></p>
+    <ul>
+        <li><strong>High R-hat Parameters</strong>: Number of parameters with R-hat > 1.01 that may indicate incomplete mixing</li>
+        <li><strong>CDS</strong>: Concentration-Dependency Score (probability of response below max concentration)</li>
+        <li><strong>Mean PoD</strong>: Mean point of departure (effect concentration)</li>
+        <li><strong>Response Range</strong>: Range of response thresholds</li>
+    </ul>
+
+    <p>Probes with "No response" in the Mean PoD column did not show a significant response in the tested range.
+    Failed diagnostic checks (red ✗) indicate potential model issues for that probe. High R-hat values (>1.01) suggest
+    that the model may need additional regularization or reparameterization to improve mixing.</p>
+
+  upregulated_probes: |
+    <p>Concentration-response plots for the {n_fold_change_probes} probes with the largest positive fold changes (increased expression).</p>
+
+    <p><strong>Selection Details:</strong></p>
+    <ul>
+        <li>These probes show the strongest increase in expression across the concentration range.</li>
+        <li>Selected based on the maximum positive log2 fold change relative to control.</li>
+        <li>Sorted by fold change magnitude in descending order.</li>
+    </ul>
+
+  downregulated_probes: |
+    <p>Concentration-response plots for the {n_fold_change_probes} probes with the largest negative fold changes (decreased expression).</p>
+
+    <p><strong>Selection Details:</strong></p>
+    <ul>
+        <li>These probes show the strongest decrease in expression across the concentration range.</li>
+        <li>Selected based on the maximum negative log2 fold change relative to control.</li>
+        <li>Sorted by fold change magnitude in ascending order (most negative first).</li>
+    </ul>
+
+  weighted_summary_description: |
+    <p>Summary statistics for probes contributing to the global PoD calculation.</p>
+    <p>The table shows key metrics for each probe, sorted by their weight in the global PoD calculation.</p>
+
+  upregulated_summary_description: |
+    <p>Summary statistics for the most upregulated probes.</p>
+    <p>The table shows key metrics for each probe, sorted by their fold change magnitude.</p>
+
+  downregulated_summary_description: |
+    <p>Summary statistics for the most downregulated probes.</p>
+    <p>The table shows key metrics for each probe, sorted by their fold change magnitude.</p>
+
+  plot_elements_guide: |
+    <p>The following elements appear in the concentration-response plots:</p>
+    {plot_elements}
+    <p>Each plot shows the concentration-response relationship for a single probe, with confidence intervals and Point of Departure (PoD) estimates. The concentration axis is expressed in {conc_units}.</p>
+
+  # Template for module names with conditional CDS filtering
+  module_name_with_cds: |
+    {base_name}{cds_suffix}
+
+  # Template for module info with conditional CDS filtering
+  module_info_with_cds: |
+    {base_info}{cds_suffix}
+
+  # Template for CDS threshold note in PoD vs FC description
+  cds_threshold_note: |
+    <li>Only probes with CDS > {cds_threshold} are shown, ensuring reliable concentration-dependent responses.</li>
+
+  # Template for CDS criteria list
+  cds_criteria_list: |
+    <ul><li>CDS > {cds_threshold} (strong evidence for a concentration-dependent response)</li></ul>
+
+  # Template for CDS filter note
+  cds_filter_note: |
+    <li>Probes are first filtered to include only those with CDS > {cds_threshold}, ensuring reliable concentration-dependent responses.</li>
