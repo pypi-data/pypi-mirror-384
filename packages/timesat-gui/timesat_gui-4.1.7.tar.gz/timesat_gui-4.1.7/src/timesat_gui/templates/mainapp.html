@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>webTIMESAT</title>
+
+    <!-- Link to external CSS or additional styling -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='app_home.css') }}">
+
+    <!-- Include Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+
+    <!-- Include Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+
+    <!-- Include Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+    <!-- Include Leaflet Draw JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <!-- 引入 Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('main-content');
+            const toggleButton = document.getElementById('toggle-btn');
+            
+            sidebar.classList.toggle('minimized');
+            mainContent.classList.toggle('minimized');
+            toggleButton.classList.toggle('minimized');
+        }
+
+        function showContent(contentId) {
+            // Hide all contents
+            const contents = document.querySelectorAll('.content');
+            contents.forEach(content => content.classList.remove('active'));
+
+            const activeContent = document.getElementById(contentId);
+            activeContent.classList.add('active');
+            activeContent.style.visibility = 'visible';  // Make it visible explicitly
+
+            // Show the selected content
+            document.getElementById(contentId).classList.add('active');
+
+            // Highlight the corresponding button in the sidebar
+            const sidebarButtons = document.querySelectorAll('.sidebar button');
+            sidebarButtons.forEach(button => button.classList.remove('active-btn'));  // Remove active class from all buttons
+
+            // Add active class to the current button based on contentId
+            if (contentId === 'content1') {
+                document.querySelector("button[onclick=\"showContent('content1')\"]").classList.add('active-btn');
+            } else if (contentId === 'content2') {
+                document.querySelector("button[onclick=\"showContent('content2')\"]").classList.add('active-btn');
+            } else if (contentId === 'content3') {
+                document.querySelector("button[onclick=\"showContent('content3')\"]").classList.add('active-btn');
+            } else if (contentId === 'content4') {
+                document.querySelector("button[onclick=\"showContent('content4')\"]").classList.add('active-btn');
+            } else if (contentId === 'content5') {
+                document.querySelector("button[onclick=\"showContent('content5')\"]").classList.add('active-btn');
+            }
+
+            // If the content is 'Input' tab, invalidate the map size
+            if (contentId === 'content2') {
+                setTimeout(function() {
+                    map.invalidateSize(); // Ensure map is properly resized
+                }, 100); // Optional delay to allow content rendering before recalculating
+            }
+        }
+        
+    </script>
+</head>
+<body>
+
+    <!-- Sidebar with buttons that act like tabs -->
+    <div id="sidebar" class="sidebar">
+        <!-- Upper Section -->
+        <div class="sidebar-top">
+            <button id="home-button" onclick="showContent('content1')">Home</button>
+            <button id="input-button" onclick="showContent('content2')">Inputs</button>
+            <button id="parameter-settings-button" onclick="showContent('content3')" class="disabled-button" disabled>Settings</button>
+            <button id="output-settings-button" onclick="showContent('content4')" class="disabled-button" disabled>Outputs</button>
+
+            <button id="run-button" onclick="showContent('content5')" class="disabled-button" disabled>Run</button>
+            
+            
+            
+            <div class="sidebar-logo">
+                <a href="https://github.com/TIMESAT"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Open TIMESAT GitHub in a new tab"
+                    title="TIMESAT on GitHub">
+                <img
+                    src="{{ url_for('static', filename=logos.sidebar) }}"
+                    alt="TIMESAT – Sidebar Logo"
+                    class="logo-image">
+                </a>
+            </div>            
+        </div>
+
+        <!-- Bottom Section for Contect and Quit -->
+        <div class="sidebar-bottom">
+            <button onclick="showContent('content7')">Contect</button>
+            <form action="/quitapp" method="POST">
+                <button type="submit">Quit</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toggle button for minimizing the sidebar -->
+    <button id="toggle-btn" class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+
+    <!-- Main content -->
+    <div id="main-content" class="main-content">
+        <!-- Full-screen overlay for showing the message -->
+        <div id="overlay" style="display: none;">
+            <div class="spinner"></div>
+            <div id="overlay-message">
+                Please enter your JSON file name in the new window.
+            </div>
+        </div>
+
+        <div id="content1" class="content active">
+            <div class="home-tab-layout">
+                <!-- Logo Row -->
+                <div class="logo-row">
+                    <div class="logo-left">
+                        <img src="{{ url_for('static', filename=logos.lund) }}" alt="Lund University Logo">
+                    </div>
+                    <div class="logo-center">
+                        <img src="{{ url_for('static', filename=logos.timesat) }}" alt="TIMESAT Logo">
+                    </div>
+                    <div class="logo-right">
+                        <img src="{{ url_for('static', filename=logos.malmo) }}" alt="Malmo University Logo">
+                    </div>
+                </div>
+                <!-- Welcome Section -->
+                <h1>Welcome to WebTIMESAT!</h1>
+                <h2>Version {{ version }}</h2>
+                <p style="text-align: center;">{{ introduce_text }}</p>
+
+                <!-- Contacts Section -->
+                <p style="text-align: center;">&copy; {{ release_date }} Copyright</p>
+                
+                {% for person in contacts %}
+                    <p style="text-align: center;">{{ person.name }}</p>
+                {% endfor %}
+
+                <!-- TIMESAT Web Page Link -->
+                <p style="text-align: center;">
+                    Web page: <a href="{{ website_url }}" target="_blank" class="web-link">TIMESAT Web Page</a>
+                </p>
+            </div>
+        </div>
+
+        <div id="content2" class="content">
+            <h1>Inputs</h1>
+
+            <!-- Form for file inputs -->
+            <form id="file-upload-form" enctype="multipart/form-data">
+
+                <div class="file-input">
+                    <label for="data_list">Input file (txt/csv/tif):</label>
+                    <input type="file" name="data_list" id="data_list" accept=".txt, .csv, .xlsx, .xls, .tif" required>
+                </div>
+
+                <div class="file-input">
+                    <label for="quality_list" id="quality_label" class="disabled-button" disabled>Quality file (txt) (Optional):</label>
+                    <input type="file" name="quality_list" id="quality_list" accept=".txt, .csv, .xlsx, .xls, .tif" disabled>
+                </div>
+
+                <!-- <div class="file-input">
+                    <label for="land_cover_file" id="land_cover_label" class="disabled-button" disabled>Land Cover File (GeoTIFF) (Optional):</label>
+                    <input type="file" name="land_cover_file" id="land_cover_file" accept=".tif" disabled>
+                </div> -->
+
+                <!-- Hidden inputs to store lat, lng, row, col -->
+                <input type="hidden" id="lat" name="lat">
+                <input type="hidden" id="lng" name="lng">
+                <input type="hidden" id="row" name="row">
+                <input type="hidden" id="col" name="col">
+
+            </form>
+
+            <!-- Display image info -->
+            <div class="info-display">
+                <p>Num of Data: <span id="num_of_data">0</span></p>
+            </div>
+
+            <!-- Dropdown for GeoTIFF files -->
+            <div class="file-dropdown">
+                <label for="geotiff_select">Select image or layer to display:</label>
+                <select id="geotiff_select">
+                    <option value="">No files available</option>
+                </select>
+            </div>
+
+            <!-- Map container -->
+            <div id="map"></div>
+
+            <!-- Transparency slider -->
+            <div class="slider-container">
+                <label for="opacity-slider">Transparency:</label>
+                <input type="range" id="opacity-slider" min="0" max="100" value="100">
+            </div>
+
+            <div class="buttons">
+                <button type="button" class="modern-button" onclick="checkloadFiles()">Load</button>
+            </div>
+
+        </div>
+
+        <div id="content3" class="content">
+            <h1>Settings</h1>
+            <div class="settings-grid-container">
+                <div class="settings-parameters settings-stye">
+                    <div class="parameter-settings-container">
+                        <fieldset>
+                            <legend>Pre-process</legend>
+                            <div class="parameters-group">
+                                <label class="input-field" for="data-range-min">Data range:</label>
+                                <input type="number" id="data-range-min" placeholder="Min" value="-10000" required onchange="updateParam('data-range-min')">
+                                <label class="input-field" for="data-range-max">to</label>
+                                <input type="number" id="data-range-max" placeholder="Max" value="10000" required onchange="updateParam('data-range-max')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="p_davailwin">Max Gap Length:</label>
+                                <input type="number" id="p_davailwin" value="999" required onchange="updateParam('p_davailwin')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="outliers">Outliers detection: </label>
+                                <input type="checkbox" id="outliers" style="width: auto;" required onchange="updateParam('outliers')">
+                            </div>
+                            <fieldset>
+                              <legend style="font-weight: normal;">Set weights:</legend>
+                              <div class="parameters-group">
+                                <label for="a1">from</label>
+                                <input type="number" id="a1" value="-10000" required onchange="updateParam('a1')">
+                                <label for="a2">to</label>
+                                <input type="number" id="a2" value="10000" required onchange="updateParam('a2')">
+                                <label for="a3">→</label>
+                                <input type="number" id="a3" value="1" step="0.1" max="1" min="0" required onchange="updateParam('a3')">
+                              </div>
+                              <div class="parameters-group">
+                                <label for="a4">from</label>
+                                <input type="number" id="a4" value="-10000" required onchange="updateParam('a4')">
+                                <label for="a5">to</label>
+                                <input type="number" id="a5" value="10000" required onchange="updateParam('a5')">
+                                <label for="a6">→</label>
+                                <input type="number" id="a6" value="1" step="0.1" max="1" min="0" required onchange="updateParam('a6')">
+                              </div>
+                              <div class="parameters-group">
+                                <label for="a7">from</label>
+                                <input type="number" id="a7" value="-10000" required onchange="updateParam('a7')">
+                                <label for="a8">to</label>
+                                <input type="number" id="a8" value="10000" required onchange="updateParam('a8')">
+                                <label for="a9">→</label>
+                                <input type="number" id="a9" value="1" step="0.1" max="1" min="0" required onchange="updateParam('a9')">
+                              </div>
+                            </fieldset>
+                            <div class="parameters-group">
+                                <label class="input-field" for="base-level">Base Level:</label>
+                                <input type="number" id="base-level" value="0.05" step="0.01" min="0" max="1" required onchange="updateParam('base-level')">
+                            </div>
+
+                        </fieldset>
+                        <fieldset>
+                            <legend>Fitting</legend>
+                            <fieldset>
+                              <legend style="font-weight: normal;">Choose fitting method(s):</legend>
+                              <div>
+                                <input type="checkbox" id="fit-dl" name="fit-dl" required onchange="updateParam('fit-dl')"/>
+                                <label for="fit-dl">Double Logistic</label>
+                              </div>
+                              <!-- <div>
+                                <input type="checkbox" id="fit-dlsp" name="fit-dlsp" required onchange="updateParam('fit-dlsp')"/>
+                                <label for="fit-dlsp">DL-Spline</label>
+                              </div> -->
+                              <div>
+                                <input type="checkbox" id="fit-sp" name="fit-sp" required onchange="updateParam('fit-sp')"/>
+                                <label for="fit-sp">Spline</label>
+                              </div>
+                            </fieldset>
+                            <div class="parameters-group">
+                                <label class="input-field" for="smoothing-par">Smoothing par.:</label>
+                                <input type="number" id="smoothing-par" value="1000" required onchange="updateParam('smoothing-par')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="envelope-iterations">No. of envelope iter.:</label>
+                                <select id="envelope-iterations" required onchange="updateParam('envelope-iterations')">
+                                    <option value="1">No</option>
+                                    <option value="2">1</option>
+                                    <option value="3">2</option>
+                                </select>
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="adaptation-strength">Adaptation strength:</label>
+                                <input type="number" id="adaptation-strength" value="2" step="1" max="10" min="1" required onchange="updateParam('adaptation-strength')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="p_outststep">Output time step:</label>
+                                <input type="number" id="p_outststep" value="5" step="1" max="365" min="0" required onchange="updateParam('p_outststep')">
+                            </div>
+                        </fieldset>
+                        <fieldset>
+                            <legend>Seasonality</legend>
+                            <div class="parameters-group">
+                                <label class="input-field" for="coarseseason">Display coarse season:</label>
+                                <input type="checkbox" id="coarseseason" style="width: auto;" required onchange="updateParam('coarseseason')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="seasonStartStop">Display season start&stop:</label>
+                                <input type="checkbox" id="seasonStartStop" style="width: auto;" required onchange="updateParam('seasonStartStop')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="seasonal-method">Seasonal Method:</label>
+                                <select id="seasonal-method" required onchange="updateParam('seasonal-method')">
+                                    <option value="1">1:Irregular</option>
+                                    <option value="2">2:Regular</option>
+                                </select>
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="seasonal-par">Seasonal par.:</label>
+                                <input type="number" id="seasonal-par" value="0.5" step="0.1" min="0" max ="1" required onchange="updateParam('seasonal-par')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="season-start-method">Defind start/end:</label>
+                                <select id="season-start-method" required onchange="updateParam('season-start-method')">
+                                    <option value="1">1:Amplitude</option>
+                                    <option value="2">2:Absolute</option>
+                                    <option value="3">3:Fixed</option>
+                                </select>
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="season-start">Season start:</label>
+                                <input type="number" id="season-start" value="0.5" step="0.05" max="1" min="0" required onchange="updateParam('season-start')">
+                            </div>
+                            <div class="parameters-group">
+                                <label class="input-field" for="season-end">Season end:</label>
+                                <input type="number" id="season-end" value="0.5" step="0.05" max="1" min="0" required onchange="updateParam('season-end')">
+                            </div>
+                        </fieldset>
+                    </div>  
+                </div>
+
+                <div class="settings-moving-control settings-stye">
+                    <div class="parameter-settings-container">
+                        <fieldset>
+                            <legend>Moving pixel</legend>
+                            <div class="parameters-group" style="justify-content: center;">
+                                <div class="moving-button-container">
+                                    <button class="arrow-button up-button" id="upButton">↑</button>
+                                    <button class="arrow-button left-button" id="leftButton">←</button>
+                                    <button class="arrow-button right-button" id="rightButton">→</button>
+                                    <button class="arrow-button down-button" id="downButton">↓</button>
+                                </div>
+                            </div>
+                        </fieldset>
+                    </div>
+                </div>
+
+                <div class="settings-plot-control settings-stye">
+                    <div class="parameter-settings-container">
+                            <div class="parameters-group">
+                                <div>
+                                    <label for="xTick">x-tick at year:</label>
+                                    <input type="checkbox" id="xTick" name="xTick" style="width: auto;" required onchange="updateParam('xTick')">
+                                </div>
+                                <!-- <div>
+                                    <label for="gridlines">Gridlines:</label>
+                                    <input type="checkbox" id="gridlines" style="width: auto;">
+                                </div> -->
+                                <div>
+                                    <label for="xlim1">x-axes limits:</label>
+                                    <input type="date" id="xlim1" name="xlim1" style="width: 110px;" required onchange="updateParam('xlim1')">
+                                    <label for="xlim2">-</label>
+                                    <input type="date" id="xlim2" name="xlim2" style="width: 110px;" required onchange="updateParam('xlim2')">
+                                </div>
+                                <div>
+                                    <label for="ylim1">y-axes limits:</label>
+                                    <input type="number" id="ylim1" name="ylim1" value="-10000" required onchange="updateParam('ylim1')">
+                                    <label for="ylim2">-</label>
+                                    <input type="number" id="ylim2" name="ylim2" value="10000" required onchange="updateParam('ylim2')">
+                                </div>
+
+                            </div>
+                            <div class="parameters-group">
+                                <div>
+                                    <label for="nodata-out">nodata:</label>
+                                    <input type="number" id="nodata-out" value="-9999" required onchange="updateParam('nodata-out')">
+                                </div>
+                            </div>
+                            <div class="parameters-group">
+                                <div>
+                                    <label for="debug_mod">Debug:</label>
+                                    <select id="debug_mod" name="debug_mod" style="width: auto;" required onchange="updateParam('debug_mod')">
+                                        <option value="0" selected>Off</option>
+                                        <option value="1">Show all details</option>
+                                        <option value="2">Only show pixel row and column</option>
+                                        <option value="3">Only show row</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <input type="file" id="load-json" style="display:none" accept=".json" onchange="loadFromFile()">
+                                    <button id="save-options-button" onclick="saveToFile()">Save Options</button>
+                                    <button id="load-options-button" onclick="document.getElementById('load-json').click()">Load Options</button>
+                                </div>
+                            </div>
+                    </div>
+                </div>
+
+                <div class="settings-plot settings-stye ">
+                    <div id="plot"></div>
+                </div>
+                
+                <div class="settings-phenology settings-stye">
+                    <div class="parameter-settings-container">
+                        <fieldset>
+                            <legend>Seasonality Data</legend>
+                            <!-- Table with headers -->
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Fit. Method</th>
+                                        <th>Season</th>
+                                        <th>Start t.</th>
+                                        <th>Start val.</th>
+                                        <th>Start slope</th>
+                                        <th>End t.</th>
+                                        <th>End val.</th>
+                                        <th>End deriv.</th>
+                                        <th>Length</th>
+                                        <th>Base val.</th>
+                                        <th>Peak t.</th>
+                                        <th>Peak val.</th>
+                                        <th>Ampl.</th>
+                                        <th>L.integral</th>
+                                        <th>S.integral</th>
+                                        
+                                        
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Empty rows - you can dynamically add rows here -->
+                                    <tr>
+                                        <td colspan="15">Select fitting method to extract phenological parameters</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </fieldset>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="content4" class="content">
+            <h1>Outputs</h1>
+            
+            <form id="folderForm">
+                <!-- Input field for manual folder path entry -->
+                <div>
+                    <label for="output_folder">Select or Enter Output Folder Path:</label>
+                    <input type="text" id="output_folder" name="output_folder" placeholder="Enter the full path of the folder" style="width: 50%;" onchange="updateParam2('output_folder')">
+
+                    <!-- Browse button to trigger folder selection dialog -->
+                    <button type="button" onclick="browseFolder()">Browse</button>
+                </div>
+            </form>
+        </div>
+
+        <div id="content5" class="content">
+            <h1>Run</h1>
+            <div class="parameters-group" style="justify-content: space-evenly;">
+                <div>
+                    <label for="n_core">Use </label>
+                    <input type="number" id="n_core" name="n_core" value="1" min="1" max="{{ runcores }}" required onchange="updateParam2('n_core')">
+                    <label for="n_core">thread(s) </label>
+                    <p>Maximum <strong style="color: red;">{{ runcores }}</strong> threads available</p>
+                </div>
+                <div>
+                    <label for="n_memory">Use </label>
+                    <input type="number" id="n_memory" name="n_memory" value="1" min="1" max="{{ runmemory }}" required onchange="updateParam2('n_memory')">
+                    <label for="n_memory">GB of memory</label>
+                    <p>Maximum <strong style="color: red;">{{ runmemory }}</strong> GB of memory available</p>
+                </div>
+                <div>
+                    <label for="ray_dir">Temporal folder: </label>
+                    <input type="text" id="ray_dir" name="ray_dir" placeholder="{{ tempfolder }}" style="width: 50%;" onchange="updateParam2('ray_dir')">
+                </div>
+            </div>
+            <button id="runBtn" class="modern-button">Run Job</button>
+            <h3>Job Status</h3>
+            <div id="progress-box"></div>
+            <button id="stopBtn" class="modern-button">Stop Job</button>
+        </div>
+
+        <div id="content7" class="content">
+            
+            <!-- Contacts Section -->
+            <p>&copy; {{ release_date }} Copyright</p>
+            
+            {% for person in contacts %}
+                <p>{{ person.name }}<br>
+                <a href="mailto:{{ person.email }}">{{ person.email }}</a></p>
+            {% endfor %}
+        </div>
+
+    </div>
+
+    <script>
+
+        
+
+        /* Input section*/
+        let map, imageLayer, geotiffInfo, drawnItems, previousTabId = null; // Variable to store the ID of the previous tab
+        let currentInputType = null; // 'imagelist' | 'imagestack' | 'csv'
+
+        // Function to show the overlay with a custom message
+        function showOverlay(message) {
+            const overlay = document.getElementById('overlay');
+            const overlayMessage = document.getElementById('overlay-message');
+            
+            if (overlay && overlayMessage) {
+                overlayMessage.textContent = message;  // Set the custom message
+                overlay.style.display = 'flex';        // Show the overlay
+            }
+        }
+
+        // Function to hide the overlay when operation completes
+        function hideOverlay() {
+            const overlay = document.getElementById('overlay');
+            
+            if (overlay) {
+                overlay.style.display = 'none';        // Hide the overlay
+            }
+        }
+
+        // Add an event listener for beforeunload
+        window.addEventListener('beforeunload', function (event) {
+            // Set a custom message (may not be displayed in all browsers)
+            const message = "Are you sure you want to leave? Any unsaved changes will be lost.";
+            event.returnValue = message;  // Standard for most browsers
+            return message;               // Some browsers require this return
+        });
+
+        window.onload = async function() {
+            try {
+                // Send request to initialize session
+                const response = await fetch('/initialize_session', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error during session initialization:', error);
+            }
+
+            // Initialize the map after session initialization logic
+            initMap();
+        };
+
+
+        window.onunload = function() {
+            localStorage.removeItem('sessionStatus');
+        };
+
+
+        function initMap() {
+            // Initialize the map
+            map = L.map('map').setView([55.7, 13.4], 4);
+
+            // Add Esri satellite tiles
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri'
+            }).addTo(map);
+
+            // Initialize a layer group for drawn items (rectangle selection)
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+
+            // Add Leaflet Draw control for drawing rectangles
+            const drawControl = new L.Control.Draw({
+                draw: {
+                    polygon: false,
+                    polyline: false,
+                    circle: false,
+                    marker: true,
+                    rectangle: false,
+                    circlemarker: false
+                },
+                edit: {
+                    featureGroup: drawnItems,
+                    remove: true
+                }
+            });
+            map.addControl(drawControl);
+
+            // Event listener for drawing a marker (point)
+            map.on(L.Draw.Event.CREATED, function (event) {
+                const layer = event.layer;
+                drawnItems.clearLayers(); // Clear existing markers if needed
+                drawnItems.addLayer(layer);
+                
+                const latLng = layer.getLatLng();
+                const geotiffIndex = document.getElementById('geotiff_select').value;
+
+                // Guard rails
+                if (!currentInputType) {
+                    alert('Please upload data first.');
+                    return;
+                }
+
+                if (geotiffIndex === '' || geotiffIndex == null) {
+                    alert('Please choose a layer first.');
+                    return;
+                }
+
+                // Unified payload; backend switches logic based on input_type
+                const payload = {
+                    geotiff_index: geotiffIndex,
+                    lat: latLng.lat,
+                    lng: latLng.lng,
+                    input_type: currentInputType  // 'imagelist' | 'imagestack'
+                };
+
+                fetch('/calculate_row_col', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(async (response) => {
+                    if (!response.ok) {
+                      const err = await response.json().catch(() => ({}));
+                      throw new Error(err.error || response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                      alert(data.error);
+                      return;
+                    }
+                    alert(`Marker placed at:\n  Latitude: ${latLng.lat}\n  Longitude: ${latLng.lng}\n  Row: ${data.row}\n  Col: ${data.col}`);
+
+                    // Fill hidden form fields
+                    document.getElementById('lat').value  = latLng.lat;
+                    document.getElementById('lng').value  = latLng.lng;
+                    document.getElementById('row').value  = data.row;
+                    document.getElementById('col').value  = data.col;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Enter a GeoTIFF (or file list) and try again.');
+                });
+            });
+
+            // Add event listener to display coordinates on click
+            map.on('click', function (e) {
+                const lat = e.latlng.lat.toFixed(6);  // Round to 6 decimal places for precision
+                const lng = e.latlng.lng.toFixed(6);
+                
+                // Display coordinates in a popup
+                L.popup()
+                    .setLatLng(e.latlng)
+                    .setContent(`Coordinates: (${lat}, ${lng})`)
+                    .openOn(map);
+            });
+        }
+
+        // When a input data file is selected
+        document.getElementById('data_list').addEventListener('change', function(event) {
+            const file = event.target.files[0];  // Get the selected file
+            if (file) {
+                const formData = new FormData();
+                formData.append('data_list', file);  // Append the file to FormData
+
+                // Send the file to the Flask backend via POST
+                fetch('/upload_input_file', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json()) 
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+
+                    console.log("data: ", data);
+
+                    if (data.num_of_data !== undefined) {
+                        document.getElementById('num_of_data').innerText = data.num_of_data;
+                    }
+
+                    const qualityListInput = document.getElementById('quality_list');
+                    const landCoverInput = document.getElementById('land_cover_file');
+
+                    const qualityLabel = document.getElementById('quality_label');
+                    const landCoverLabel = document.getElementById('land_cover_label');
+
+                    console.log("input_type: ", data.input_type);
+                    currentInputType = data.input_type;
+
+                    // Run this block only if the input_type is 'imagelist'
+                    if (data.input_type === 'imagelist') {
+                        const geotiffSelect = document.getElementById('geotiff_select');
+                        geotiffSelect.innerHTML = '';
+
+                        if (data.geotiff_filenames && data.geotiff_filenames.length > 0) {
+                            data.geotiff_filenames.forEach((filename, index) => {
+                                const option = document.createElement('option');
+                                option.value = index;
+                                option.textContent = filename;
+                                geotiffSelect.appendChild(option);
+                            });
+                        } else {
+                            const option = document.createElement('option');
+                            option.value = '';
+                            option.textContent = 'No files available';
+                            geotiffSelect.appendChild(option);
+                        }
+
+                        loadGeotiffImage()
+
+                        qualityListInput.disabled = false;
+                        landCoverInput.disabled = false;
+
+                        // Update labels
+                        qualityLabel.classList.remove('disabled-button');
+                        landCoverLabel.classList.remove('disabled-button');
+                        
+                        qualityLabel.removeAttribute('disabled');
+                        landCoverLabel.removeAttribute('disabled');
+
+                    } else if (data.input_type === 'imagestack') {
+                        const geotiffSelect = document.getElementById('geotiff_select');
+                        geotiffSelect.innerHTML = '';
+
+                        if (data.geotiff_filenames && data.geotiff_filenames.length > 0) {
+                            data.geotiff_filenames.forEach((filename, index) => {
+                                const option = document.createElement('option');
+                                option.value = index;
+                                option.textContent = filename;
+                                geotiffSelect.appendChild(option);
+                            });
+                        } else {
+                            const option = document.createElement('option');
+                            option.value = '';
+                            option.textContent = 'No files available';
+                            geotiffSelect.appendChild(option);
+                        }
+
+                        loadGeotiffLayer()
+
+                        qualityListInput.disabled = false;
+                        landCoverInput.disabled = false;
+
+                        // Update labels
+                        qualityLabel.classList.remove('disabled-button');
+                        landCoverLabel.classList.remove('disabled-button');
+                        
+                        qualityLabel.removeAttribute('disabled');
+                        landCoverLabel.removeAttribute('disabled');
+
+                    } else if (data.input_type === 'csv') {
+                        // Disable fields
+                        qualityListInput.disabled = true;
+                        landCoverInput.disabled = true;
+
+                        // Update labels
+                        qualityLabel.classList.add('disabled-button');
+                        landCoverLabel.classList.add('disabled-button');
+                        
+                        qualityLabel.setAttribute('disabled', true);
+                        landCoverLabel.setAttribute('disabled', true);
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            }
+        });
+
+        // When a input qa file is selected
+        document.getElementById('quality_list').addEventListener('change', function(event) {
+            const file = event.target.files[0];  // Get the selected file
+            if (file) {
+                const formData = new FormData();
+                formData.append('quality_list', file);  // Append the file to FormData
+
+                // Send the file to the Flask backend via POST
+                fetch('/upload_qa_file', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => { throw new Error(data.error); });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error.message);
+                    alert(error.message);
+                });
+            }
+        });
+
+        function loadGeotiffImage() {
+
+            const geotiffIndex = document.getElementById('geotiff_select').value;
+
+            if (!geotiffIndex) {
+                return;
+            }
+            console.log(geotiffIndex);
+
+            // Fetch GeoTIFF information from the backend
+            fetch(`/get_geotiff_info/${geotiffIndex}`) //${geotiffIndex}
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch GeoTIFF info: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                geotiffInfo = data;
+                const bounds = [[data.bounds[1], data.bounds[0]], [data.bounds[3], data.bounds[2]]];
+
+                const geotiffUrl = data.geotiff_url;
+                console.log("geotiffUrl: ", geotiffUrl);
+                console.log("bounds: ", bounds);
+
+                // Remove any existing image layer
+                if (imageLayer) {
+                    map.removeLayer(imageLayer);
+                }
+                
+                // Load as a regular image if not tiled
+                imageLayer = L.imageOverlay(geotiffUrl, bounds, { opacity: 1 }).addTo(map);
+                
+
+                // Fit map to image bounds
+                map.fitBounds(bounds);
+                    
+            })
+            .catch(error => {
+                console.error('Error fetching GeoTIFF info:', error);
+                alert('Failed to retrieve GeoTIFF information.');
+            });
+        }
+
+        // Loads the in-memory (H, W, Z) stack and displays the first slice (t=1)
+        function loadGeotiffLayer() {
+          const geotiffIndex = document.getElementById('geotiff_select').value;
+          if (!geotiffIndex) {
+            return;
+          }
+          console.log(geotiffIndex);
+
+          // Expect: { bounds:[minX,minY,maxX,maxY], num_slices, render_base_url, has_dates?, dates? }
+          fetch(`/get_vi_stack_info/${geotiffIndex}`)
+            .then(r => { if (!r.ok) throw new Error(`Failed to fetch stack info: ${r.statusText}`); return r.json(); })
+            .then(info => {
+              geotiffInfo = info;
+
+              // Convert to Leaflet bounds [[south,west],[north,east]]
+              const leafletBounds = [[info.bounds[1], info.bounds[0]], [info.bounds[3], info.bounds[2]]];
+
+              // First slice (1-based). Cache-buster forces reload when switching.
+              const url = `${info.render_base_url}?i=${encodeURIComponent(geotiffIndex)}&t=1&_=${Date.now()}`;
+              console.log(url);
+
+              if (imageLayer) {
+                // If bounds are identical, you can just swap the URL (faster).
+                // imageLayer.setUrl(url);
+                // Otherwise, re-create the overlay:
+                map.removeLayer(imageLayer);
+              }
+              imageLayer = L.imageOverlay(url, leafletBounds, { opacity: 1 }).addTo(map);
+              map.fitBounds(leafletBounds);
+            })
+            .catch(err => {
+              console.error('Error loading first slice from ym3:', err);
+              alert('Failed to load the first image from the stack.');
+            });
+        }
+
+        document.getElementById('geotiff_select').addEventListener('change', () => {
+          if (currentInputType === 'imagestack') {
+            loadGeotiffLayer();      // stack path
+          } else if (currentInputType === 'imagelist') {
+            loadGeotiffImage();      // list path
+          }
+        });
+
+
+        // 根据滑块的值更新GeoTIFF图层的透明度
+        function updateOpacity(value) {
+            const opacity = value / 100;  // 将滑块的值转换为0到1之间的百分比
+            if (imageLayer) {
+                imageLayer.setOpacity(opacity);  // 更新图层的透明度
+            }
+        }
+
+        // 监听滑块的值变化
+        document.getElementById('opacity-slider').addEventListener('input', function(event) {
+            const sliderValue = event.target.value;
+            updateOpacity(sliderValue);  // 根据滑块值调整透明度
+        });
+
+        
+
+        // Function to update the plot size when the window is resized
+        function resizePlot() {
+            const plotDiv = document.getElementById('plot');
+
+            // Get the actual size of the container
+            const width = plotDiv.offsetWidth;
+            const height = plotDiv.offsetHeight;
+
+            // Use Plotly's relayout to adjust the plot size
+            Plotly.relayout(plotDiv, {
+                width: width,
+                height: height
+            });
+        }
+
+        function createPlot(graphData) {
+            const plotDiv = document.getElementById('plot');
+            
+
+            // Ensure the container has a size initially
+            plotDiv.style.width = '100%';
+            plotDiv.style.height = '100%';
+            
+            const layout = { 
+                paper_bgcolor: '#ccc',
+                plot_bgcolor: '#e0e0e0',
+                autosize: true,
+                margin: {l:0, t:0, r:0, b:0},
+                yaxis: {
+                    automargin: true
+                },
+                xaxis: {
+                    automargin: true
+                }
+            }
+
+            // Use Plotly to create the plot and make it responsive
+            // The first argument should be the DOM element (plotDiv)
+            Plotly.newPlot(plotDiv, graphData.data, graphData.layout || layout)
+                .then(() => {
+                    // Call resize function to ensure everything fits after the plot is rendered
+                    resizePlot();
+                });
+
+            // 添加 relayout 事件监听器，当图表被重新布局（例如拖动或缩放）时触发
+            plotDiv.on('plotly_relayout', function(eventData) {
+                // 检查是否包含 x 轴或 y 轴的范围
+                if (eventData['xaxis.range[0]'] && eventData['xaxis.range[1]']) {
+                    // 获取 x 轴的最小值和最大值
+                    const xlim1 = new Date(eventData['xaxis.range[0]']).toISOString().split('T')[0];  // 转换为 YYYY-MM-DD 格式
+                    const xlim2 = new Date(eventData['xaxis.range[1]']).toISOString().split('T')[0];
+
+                    // 更新 x 轴的输入框
+                    document.getElementById('xlim1').value = xlim1;
+                    document.getElementById('xlim2').value = xlim2;
+
+                    console.log(`Updated xlim: ${xlim1} - ${xlim2}`);
+                }
+
+                if (eventData['yaxis.range[0]'] && eventData['yaxis.range[1]']) {
+                    // 获取 y 轴的最小值和最大值
+                    const ylim1 = eventData['yaxis.range[0]'];
+                    const ylim2 = eventData['yaxis.range[1]'];
+
+                    // 更新 y 轴的输入框
+                    document.getElementById('ylim1').value = ylim1;
+                    document.getElementById('ylim2').value = ylim2;
+
+                    console.log(`Updated ylim: ${ylim1} - ${ylim2}`);
+                }
+
+                // 构建发送到后端的数据
+                const data = {
+                    xlim1: document.getElementById('xlim1').value,
+                    xlim2: document.getElementById('xlim2').value,
+                    ylim1: document.getElementById('ylim1').value,
+                    ylim2: document.getElementById('ylim2').value
+                };
+
+                // 打印 data 对象到控制台以便检查
+                console.log("Data being sent to the backend:", data);
+
+                // 通过 fetch API 发送 POST 请求到后端
+                fetch("/update_para", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(data)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to update plot limits.');
+                    }
+                    return response.json();
+                })
+                .then(result => {
+                    console.log("Limits updated on server:", result);
+                })
+                .catch(error => {
+                    console.error("Error updating plot limits:", error);
+                });
+            });
+
+            // Add an event listener to handle window resizing
+            window.addEventListener('resize', resizePlot);
+        }
+
+        function populateTable(vpptable) {
+            const tbody = document.querySelector('tbody');  // Select the <tbody> element
+
+            // Clear existing rows
+            tbody.innerHTML = '';
+
+            // Loop through each row of vpptable
+            vpptable.forEach(row => {
+                const tr = document.createElement('tr');  // Create a new <tr> element
+
+                // Loop through each cell in the row
+                row.forEach(cell => {
+                    const td = document.createElement('td');  // Create a new <td> element
+                    td.textContent = cell;  // Set the cell value
+                    tr.appendChild(td);  // Append the <td> to the <tr>
+                });
+
+                // Append the row to the table body
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function checkloadFiles() {
+            try {
+                // Show the overlay with a custom message
+                showOverlay("Loading data... Please wait a moment.");
+                // Send request to process the data
+                const response = await fetch('/load_input_Files', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json', // Expecting JSON response from the server
+                    }
+                });
+
+                // Check if the response is OK (status code 200-299)
+                if (!response.ok) {
+                    const errorData = await response.json(); // Parse error response
+                    throw new Error(errorData.error || 'Unknown error occurred');
+                }
+
+                // Parse successful response
+                const data = await response.json();
+                console.log('Data loaded successfully:', data);
+
+                // Show success message
+                alert('Data loaded successfully.');
+
+                // enable buttons
+                // Enable the buttons
+                document.getElementById('parameter-settings-button').disabled = false;
+                document.getElementById('output-settings-button').disabled = false;
+                document.getElementById('run-button').disabled = false;
+
+                // Remove the disabled-button class to revert the font color
+                document.getElementById('parameter-settings-button').classList.remove('disabled-button');
+                document.getElementById('output-settings-button').classList.remove('disabled-button');
+                document.getElementById('run-button').classList.remove('disabled-button');
+
+                // Show content3
+                showContent('content3');
+
+                // 获取 min_value 和 max_value
+                const min_t = data.min_t;
+                const max_t = data.max_t;
+                const min_y = data.min_y;
+                const max_y = data.max_y;
+
+                console.log('Min t:', min_t);
+                console.log('Max t:', max_t);
+                console.log('Min Value:', min_y);
+                console.log('Max Value:', max_y);
+
+                document.getElementById('xlim1').value = min_t;
+                document.getElementById('xlim2').value = max_t;
+                document.getElementById('ylim1').value = min_y;
+                document.getElementById('ylim2').value = max_y;
+
+                // Now call plot() after loading the files successfully
+                // Now make another request to update the plot
+                fetch("/update_plot", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({})  // Sending an empty object as the body
+                })
+                .then(response => response.json())
+                .then(data => {
+                    try {
+                        // Parse the JSON data
+
+                        const graphData = JSON.parse(data.graph);
+                        
+                        // Use a small delay to ensure the container dimensions are updated before plotting
+                        setTimeout(() => {
+                            // Create the plot after ensuring layout dimensions are ready
+                            createPlot(graphData);
+                            // Hide the overlay
+                            hideOverlay();
+                            
+                        }); // Delay of 100 milliseconds
+                    } catch (parseError) {
+                        console.error("Error parsing plot data:", parseError);
+                        alert("Error parsing plot data.");
+                        // Hide the overlay
+                        hideOverlay();
+                    }
+                })
+                .catch(error => console.error("Error updating plot:", error));
+
+            } catch (error) {
+                // Handle fetch-level or parsing errors
+                console.error('Error:', error);
+                alert('Error loading data: ' + error.message);  // Show a more descriptive error message
+                // Hide the overlay
+                hideOverlay();
+            }
+        }
+
+        
+
+
+        // 单独更新某个参数
+        function updateParam(param) {
+            // 获取当前的参数值
+            const element = document.getElementById(param);
+            console.log("Element type: ", element.type);
+            console.log("Element: ", element);
+
+            let value;
+
+            // Check if the element is a checkbox
+            if (element.type === "checkbox") {
+                value = element.checked ? 1 : 0;  // Convert checked status to 1 or 0
+                console.log("Value of if: ", value);
+            } 
+            // Check if the element is a select dropdown
+            else if (element.tagName === "SELECT") {
+                value = element.value;  // Get the selected value from the dropdown
+                console.log("Value of if (select): ", value);
+            }
+            else if (element.type === "date") {
+                // Get the date value as a string (in 'YYYY-MM-DD' format)
+                value = element.value;
+                console.log("Value of date: ", value);
+                // Optionally convert to a Date object
+                const dateValue = new Date(value);  // Converts to a Date object
+                console.log("Date object: ", dateValue);
+            }  
+            else {
+                value = parseFloat(element.value);  // For other input types (like text, number)
+            }
+
+            // Print the value to the console
+            console.log("Value of " + param + ": ", value);
+
+            // Construct the request data
+            const data = {};
+            data[param] = value;
+
+            // 使用 fetch API 发送 POST 请求到后端
+            fetch("/update_plot", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 使用 Plotly 更新图表
+                const graphData = JSON.parse(data.graph);
+                const vpptable = data.vpptable;  // Get the table data
+                Plotly.react('plot', graphData.data, graphData.layout);
+                populateTable(vpptable);  // Dynamically update the table using the vpptable data
+            })
+            .catch(error => console.error("Error updating plot:", error));
+        }
+
+
+        // 单独更新某个参数
+        function updateParam2(param) {
+            // 获取当前的参数值
+            const element = document.getElementById(param);
+            console.log("Element type: ", element.type);
+            console.log("Element: ", element);
+
+            let value;
+
+            // Check if the element is a checkbox
+            if (element.type === "checkbox") {
+                value = element.checked ? 1 : 0;  // Convert checked status to 1 or 0
+                console.log("Value of if: ", value);
+            } 
+            // Check if the element is a select dropdown
+            else if (element.tagName === "SELECT") {
+                value = element.value;  // Get the selected value from the dropdown
+                console.log("Value of select: ", value);
+            }
+            else if (element.type === "date") {
+                // Get the date value as a string (in 'YYYY-MM-DD' format)
+                value = element.value;
+                console.log("Value of date: ", value);
+                // Optionally convert to a Date object
+                const dateValue = new Date(value);  // Converts to a Date object
+                console.log("Date object: ", dateValue);
+            }  
+            else {
+                // For other input types (like text, number)
+                // Use parseFloat, but make sure to handle NaN cases
+                value = parseFloat(element.value);
+                if (isNaN(value)) {
+                    console.log("Warning: Invalid number input for param: " + param);
+                    value = 0;  // Or handle NaN appropriately, possibly alert the user
+                }
+            }
+
+            // Print the value to the console
+            console.log("Value of " + param + ": ", value);
+
+            // Construct the request data
+            const data = {};
+            data[param] = value;
+
+            // 使用 fetch API 发送 POST 请求到后端
+            fetch("/update_para", {  // Ensure the endpoint matches the Flask route
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Failed to update: " + response.statusText);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Update success:", data);
+            })
+            .catch(error => console.error("Error updating plot:", error));
+        }
+
+
+        function updatepixelposition(direction) {
+            fetch('/update_rowcol', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    action: direction  // Send the action to adjust row/col
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Check if there's a message and display it in an alert
+                if (data.message) {
+                    alert(data.message);  // Show a pop-up with the message
+                } else {
+                    fetch('/update_plot', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({})  // Send any data if needed
+                    })
+                    .then(response => response.json())
+                    .then(data1 => {
+                        const graphData = JSON.parse(data1.graph);
+                        const vpptable = data1.vpptable;  // Get the table data
+                        Plotly.react('plot', graphData.data, graphData.layout);
+                        populateTable(vpptable);  // Dynamically update the table using the vpptable data
+                    });
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        // Event listeners for the buttons
+        document.getElementById('upButton').addEventListener('click', function() {
+            updatepixelposition('up');  // Up -> current_row - 1
+        });
+
+        document.getElementById('downButton').addEventListener('click', function() {
+            updatepixelposition('down');  // Down -> current_row + 1
+        });
+
+        document.getElementById('leftButton').addEventListener('click', function() {
+            updatepixelposition('left');  // Left -> current_col - 1
+        });
+
+        document.getElementById('rightButton').addEventListener('click', function() {
+            updatepixelposition('right');  // Right -> current_col + 1
+        });
+
+        // Function to handle the folder selection via the /choose_output_folder route
+        function browseFolder() {
+            // Show the overlay with a custom message
+            showOverlay("Please select a folder...");
+
+            fetch('/choose_output_folder', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Failed to select folder, status: " + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Hide the overlay after the operation completes
+                hideOverlay();
+
+                if (data.message === "Folder selected successfully.") {
+                    // Fill the input field with the selected folder path
+                    document.getElementById('output_folder').value = data.path;
+                } else {
+                    alert("Error: " + data.message);
+                }
+            })
+            .catch(error => {
+                // Hide the overlay in case of error
+                hideOverlay();
+                alert("An error occurred: " + error);
+            });
+        }
+
+
+        function saveToFile() {
+            // Create a link element to fetch the JSON file from the backend
+            const link = document.createElement('a');
+            link.href = '/choose_folder_and_save';  // Flask route that returns the JSON file
+            link.download = 'settings.json';   // Use the user-defined file name
+
+            // Append the link to the document body and click it to initiate download
+            document.body.appendChild(link);
+            link.click();
+
+            // Remove the link element after the download
+            document.body.removeChild(link);
+        }
+
+
+        function loadFromFile() {
+            const fileInput = document.getElementById('load-json');
+            const file = fileInput.files[0];
+
+            if (file) {
+                // Ensure it's a .json file
+                if ((file.type === "application/json" || file.name.endsWith('.json') || file.name.endsWith('.geojson'))) {
+                    const formData = new FormData();
+                    formData.append("file", file);
+
+                    fetch('/load-geojson-data', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            const variables = data.variables;
+
+                            // Update fields dynamically based on the variables returned from the backend
+                            Object.keys(variables).forEach(key => {
+                                const field = document.getElementById(key);
+                                if (field) {
+                                    // Log the type, tagName, and value of each field
+                                    console.log(`Field ID: ${key}`);
+                                    console.log(`Type: ${field.type}`);
+                                    console.log(`Tag Name: ${field.tagName}`);
+                                    console.log(`Current Value: ${field.value}`);
+                                    if (field.type === "checkbox") {
+                                        field.checked = !!variables[key];
+                                    } else if (field.tagName === "SELECT") {
+                                        field.value = variables[key];
+                                    } else {
+                                        field.value = variables[key];
+                                    }
+                                }
+                            });
+
+                            // Update num_of_data if it is available in the response
+                            if (variables.num_of_data !== undefined) {
+                                document.getElementById('num_of_data').innerText = variables.num_of_data;
+                            }
+
+                            if (variables.num_of_data == 'image') {
+                                // Populate the geotiffSelect dropdown
+                                const geotiffSelect = document.getElementById('geotiff_select');
+                                geotiffSelect.innerHTML = '';
+
+                                if (variables.image_file_names && variables.image_file_names.length > 0) {
+                                    variables.image_file_names.forEach((filename, index) => {
+                                        const option = document.createElement('option');
+                                        option.value = index;
+                                        option.textContent = filename;
+                                        geotiffSelect.appendChild(option);
+                                    });
+                                } else {
+                                    const option = document.createElement('option');
+                                    option.value = '';
+                                    option.textContent = 'No files available';
+                                    geotiffSelect.appendChild(option);
+                                }
+
+                                showContent('content2')
+
+                                loadGeotiffImage()
+
+                                alert('File loaded successfully!');
+                                
+                                // enable buttons
+                                enableButtons();
+                            } else if (variables.num_of_data == 'table') {
+                                showContent('content2')
+                                alert('File loaded successfully!');
+                                
+                                // enable buttons
+                                enableButtons();
+                            }
+                        } else {
+                            alert(data.message || 'Failed to load data');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error loading data');
+                    });
+                } else {
+                    alert('Please select a valid .json or .geojson file.');
+                }
+            } else {
+                alert('No file selected.');
+            }
+        }
+
+        function enableButtons() {
+            document.getElementById('parameter-settings-button').disabled = false;
+            document.getElementById('output-settings-button').disabled = false;
+            document.getElementById('run-button').disabled = false;
+
+            document.getElementById('parameter-settings-button').classList.remove('disabled-button');
+            document.getElementById('output-settings-button').classList.remove('disabled-button');
+            document.getElementById('run-button').classList.remove('disabled-button');
+        }
+
+
+        let eventSource = null;
+
+        // Run button starts the job
+        document.getElementById('runBtn').addEventListener('click', function() {
+            if (eventSource) {
+                eventSource.close(); // Close any existing event source before starting a new one
+            }
+            eventSource = new EventSource("/start");  // EventSource sends a GET request to /start
+
+            eventSource.onmessage = function(event) {
+                const progressBox = document.getElementById('progress-box');
+                progressBox.innerHTML += event.data + "<br>";
+
+                // Auto-scroll to the bottom when new content is added
+                progressBox.scrollTop = progressBox.scrollHeight;
+
+                // Check if the job stopped, print a special message
+                if (event.data.includes("Job stopped") || event.data.includes("Job finished")) {
+                    eventSource.close(); // Stop listening for updates
+                }
+            };
+
+            eventSource.onerror = function(event) {
+                console.error("EventSource failed:", event);
+                eventSource.close();
+            };
+        });
+
+        // Stop button sends a request to stop the job
+        document.getElementById('stopBtn').addEventListener('click', function() {
+
+            // Send a POST request to the server to stop the background job
+            fetch('/stop', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.message);  // Log the stop confirmation from the server
+            })
+            .catch(error => console.error('Error stopping the job:', error));
+        });
+
+        
+        
+
+
+        
+    </script>
+
+
+</body>
+</html>
