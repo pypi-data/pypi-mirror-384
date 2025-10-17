@@ -1,0 +1,60 @@
+.. _spkg_r_jupyter:
+
+r_jupyter: Jupyter kernel for R
+===============================
+
+Description
+-----------
+
+This package installs IRkernel, the R Jupyter kernel.
+
+It gets installed via R's package installer on top of Jupyter.
+
+License
+-------
+
+MIT
+
+Upstream Contact
+----------------
+
+- https://github.com/IRkernel/IRkernel
+- https://irkernel.github.io/
+
+Dependencies
+------------
+
+- R
+- notebook
+
+
+Type
+----
+
+experimental
+
+
+Dependencies
+------------
+
+- :ref:`spkg_notebook`
+- :ref:`spkg_rpy2`
+
+Version Information
+-------------------
+
+See https://repology.org/project/r:irkernel/versions
+
+Installation commands
+---------------------
+
+.. tab:: Sage distribution:
+
+   .. CODE-BLOCK:: bash
+
+       $ sage -i r_jupyter
+
+
+However, these system packages will not be used for building Sage
+because ``spkg-configure.m4`` has not been written for this package;
+see :issue:`27330` for more information.
