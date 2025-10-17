@@ -1,0 +1,84 @@
+{% extends league_base %}
+{% load picker_tags %}
+{% block title %}Week {{ gameset.sequence }} - {{ gameset.season }}{% endblock %}
+{% block main_content %}
+    <h1>
+        Results for week {{ gameset.sequence }}
+        <small><a href="{% url 'picker-results-season' gameset.league.slug group.id gameset.season %}">{{ gameset.season }}</a></small>
+    </h1>
+    {% season_nav gameset "results" %}
+    {% with gameset.results as results %}
+    <p>
+        {% if gameset.points %}<strong>Final points total:</strong> {{ gameset.points }}<br>{% endif %}
+        <em class="autopick">Note: Italicized picker names indicate auto-picker selections</em>
+    </p>
+    {% include "picker/inclusions/byes.html" %}
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            {{ gameset.games.count }} games,
+            {{ results|length }} entries
+        </div>
+        <table class="table table-striped results">
+        {% if not gameset.has_started %}
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>Games picked</th>
+                <th>Points</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in results %}
+            <tr>
+                <td>
+                    <strong class="pickername {{ result.is_autopicked|yesno:"auto,picker" }}pick">{{ result.picker }}</strong>
+                </td>
+                <td>{{ result.progress }}</td>
+                <td>{{ result.points|yesno:"set,pending" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% else %}
+        {% with gameset.last_game.has_started as has_started  %}
+        {% with gameset.games.display_results as display_results %}
+        <thead>
+            <tr>
+                <th>Place</th>
+                <th>Picker</th>
+                <th>Score</th>
+                {% for res in display_results.values %}
+                <th data-game_id="{{ res.id }}">
+                    {{ res.away__abbr }} @<br>{{ res.home__abbr }}
+                </th>
+                {% endfor %}
+                {% if has_started %}
+                <th>Pts</th>
+                <th>Pts diff</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>{% for wp in results %}
+            <tr>
+                <td>{{ wp.place }}</td>
+                <td>
+                    <strong class="pickername {{ wp.is_autopicked|yesno:"auto,picker" }}pick">{{ wp.picker }}</strong>
+                </td>
+                <td>{{ wp.correct }}</td>
+                {% for pick in wp.gamepicks.games_started_display %}
+                <td class="{% picker_result pick display_results %}">
+                    {{ pick.1 }}
+                </td>
+                {% endfor %}
+                {% if has_started %}
+                <td>{{ wp.points }}</td>
+                <td>&plusmn;{{ wp.points_delta }}</td>
+                {% endif %}
+            </tr>{% endfor %}
+        </tbody>
+        {% endwith %}
+        {% endwith %}
+        {% endif %}
+        </table>
+        {% endwith %}
+    </div>
+{% endblock %}

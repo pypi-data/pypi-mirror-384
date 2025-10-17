@@ -1,0 +1,58 @@
+{% extends league_base %}
+{% load picker_tags %}
+{% block title %}Picks{% endblock %}
+{% block main_content %}
+    {% load django_bootstrap5 %}
+    <h1>
+        Week #{{ gameset.sequence }}
+        <small><a href="{% url 'picker-picks-season' gameset.league.slug gameset.season %}">{{ gameset.season }}</a></small>
+    </h1>
+    {% include "picker/inclusions/byes.html" %}
+    {% season_nav gameset "picks" %}
+    {% if form.errors %}
+    <p class="errorlist">Please fix the errors below:</p>
+    {% endif %}
+    {% with show_tv=league.config.SHOW_TV %}
+    <div class="panel panel-primary">
+        <div class="panel-heading">Your weekly picks</div>
+        <form method="post" action="">{% csrf_token %}
+        <table class="table table-sm table-responsive table-striped picks {% if not show_tv %}no-tv{% endif %}">
+            <tbody>
+            <tr>
+                <th class="start-time">Start Time</th>
+                <th class="teams w-50">Away vs. Home</th>
+                {% if show_tv %}
+                <th class="tv">TV</th>
+                {% endif %}
+            </tr> {% for field in form.game_fields %}{% with field.field.game as gm %}
+            <tr>
+                <td class="kickoff">
+                    <span class="date-day">{{ gm.start_time|date:"M jS, Y"}}</span><br>
+                    <span class="date-weekday">{{ gm.start_time|date:"P D" }}</span>
+                    {% if gm.location %}<br>
+                    <span class="location">{{ gm.location }}</span>{% endif %}
+                </td>
+                <td class="{% if field.field.disabled %}disabled-choice {% endif %}teams">
+                    {{ field }}
+                </td>
+                {% if show_tv %}
+                <td class="tv">{{ gm.tv|default:"" }}</td>
+                {% endif %}
+            </tr>{% endwith %}{% endfor %}
+            <tr>{% with form.points as field %}
+                <td><strong>Points Total</strong><br></td>
+                <td>
+                    {% if field.errors %}{{ field.errors }}<br>{% endif %}
+                    {% bootstrap_field field %}
+                    {% if gameset.is_open %}
+                    <button type="submit" class="btn btn-primary">Submit</button>
+                    {% endif %}
+                </td>
+                <td></td>
+            {% endwith %}</tr>
+            </tbody>
+        </table>
+        </form>
+    </div>
+    {% endwith %}
+{% endblock %}
