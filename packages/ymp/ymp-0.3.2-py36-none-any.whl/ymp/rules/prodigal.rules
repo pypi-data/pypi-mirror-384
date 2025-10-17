@@ -1,0 +1,33 @@
+Env(name="prodigal", base="bioconda", packages="prodigal")
+
+with Stage("annotate_prodigal") as S:
+    S.doc("""
+    Call genes using prodigal
+
+    >>> ymp make toy.ref_genome.annotate_prodigal
+    """)
+    S.add_param(key="", typ="choice", name="procedure",
+                value=["S","M"], default="M")
+    S.add_param(key="G", typ="int", name="translation_table",
+                default=11)
+    rule prodigal:
+        """Predict genes using prodigal"""
+        message:
+            "Gene prediction (Prodigal): {input}"
+        input:
+            "{:prev:}/{:target:}.fasta.gz"
+        output:
+            gtf = "{:this:}/{target}.gtf"
+        log:
+            "{:this:}/{target}.log"
+        threads: 1
+        conda:
+            "prodigal"
+        shell: """
+        gunzip -c {input} | \
+        prodigal -p meta \
+        -f gff -o {output.gtf} \
+        >{log} 2>&1
+        """
+        #-d >(gzip -c9 > {output.fna}) \
+        #-a >(gzip -c9 > {output.faa}) \

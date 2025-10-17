@@ -1,0 +1,95 @@
+# requires bowtie2
+
+Env(name="metaphlan2", base="bioconda", packages=[
+    "metaphlan2 =2.6*"  # newer versions clobber site-libraries
+])
+
+
+with Stage("metaphlan2") as S:
+    S.doc("""
+    Assess metagenome community composition using Metaphlan 2
+    """)
+    metaphlan_db = "{:ref.metaphlan2.dir:}/db_v20/mpa_v20_m200"
+    BT2IDX_SUFFIXES = "1.bt2 2.bt2 3.bt2 4.bt2 rev.1.bt2 rev.2.bt2".split()
+    rule metaphlan2_map:
+        """
+        Align reads to Metaphlan's custom reference database.
+        """
+        message:
+            "Metaphlan2: Mapping reads with Bowtie2"
+        input:
+            fq = "{:prev:}/{:target:}.{:pairnames:}.fq.gz",
+            index = [".".join((metaphlan_db, ext)) for ext in BT2IDX_SUFFIXES]
+        output:
+            "{:this:}/{sample}.bam"
+        log:
+            "{:this:}/{sample}.bam.log"
+        conda:
+            "bowtie2"
+        threads:
+            16
+        params:
+            bt2_base = metaphlan_db,
+        resources:
+            mem = "128g",
+        shell: """
+        bowtie2 \
+        --threads {threads} \
+        -x {params.bt2_base} \
+        --no-unal \
+        --very-sensitive \
+        -U {input.fq[0]} -U {input.fq[1]} \
+        2>{log} \
+        | samtools view -b -o {output} -
+        """
+
+    localrules: metaphlan2
+    rule metaphlan2:
+        """ 
+        Computes community profile from mapped reads and Metaphlan's
+        custom reference database.  
+        """
+        message:
+            "Metaphlan2: Computing community profile"
+        input:
+            bam = "{:this:}/{sample}.bam",
+            pkl = metaphlan_db + ".pkl"
+        output:
+            "{:this:}/{sample}_profile.txt"
+        log:
+            "{:this:}/{sample}_profile.log"
+        conda:
+            "metaphlan2"
+        threads:
+            1
+        shell: """
+        samtools view {input.bam} | \
+        metaphlan2.py \
+        --mpa_pkl {input.pkl} \
+        --input_type sam \
+        -o {output} \
+        --nproc {threads} \
+        --sample_id {wildcards.sample} \
+        >{log} 2>&1
+        """
+
+    localrules: metaphlan2_merge
+    rule metaphlan2_merge:
+        """
+        Merges Metaphlan community profiles.
+        """
+        message:
+            "Metaphlan2: Merging community profiles"
+        input:
+            "{:this:}/{:runs:}_profile.txt"
+        output:
+            "{:this:}/merged_abundance_table.txt"
+        log:
+            "{:this:}/merged_abundance_table.txt.log"
+        conda:
+            "metaphlan2"
+        threads:
+            1
+        shell: """
+        merge_metaphlan_tables.py {input} > {output} 2>{log}
+        """

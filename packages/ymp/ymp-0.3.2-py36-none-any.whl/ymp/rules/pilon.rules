@@ -1,0 +1,74 @@
+Env(name="pilon", base="bioconda", packages=["pilon", "pigz"])
+
+with Stage("polish_pilon") as S:
+    S.doc("""
+    Polish genomes with Pilon
+
+    Requires fasta.gz and sorted.bam files as input.
+    """)
+    S.add_param("S", typ="flag", name="fix_snps", value="snps")
+    S.add_param("I", typ="flag", name="fix_indels", value="indels")
+    S.add_param("G", typ="flag", name="fix_gaps", value="gaps")
+    S.add_param("L", typ="flag", name="fix_local", value="local")
+
+    rule pilon_polish:
+        message:
+            "{:name:}: {output.fasta}"
+        input:
+            bam = "{:prev:}/{:target:}.sorted.bam",
+            bai = "{:prev:}/{:target:}.sorted.bai",
+            fasta = "{:prev:}/{:target:}.fasta.gz",
+        output:
+            fasta = "{:this:}/{target}.fasta.gz",
+            vcf   = "{:this:}/{target}.vcf.gz",
+            changes = "{:this:}/{target}.pilon.changes.txt",
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads:
+            1  # multithreading is experimental
+        params:
+            thistarget = "{:this:}/{target}",
+            bamopts = lambda wc, input: " ".join("--bam {}".format(bam) for bam in ensure_list(input.bam)),
+            extraopts = "--iupac",
+            nonempty = check_input(['fasta'], minlines=2),
+        resources:
+            mem = "16g",
+        conda:
+            "pilon"
+        shell:
+            "exec >{log} 2>&1;"
+            "if [ '{params.nonempty}' = 'False' ]; then"
+            "  echo 'YMP: {input.fasta} empty - creating empty output';"
+            "  echo | gzip -c > {output.fasta};"
+            "  echo | gzip -c > {output.vcf};"
+            "  echo > {output.changes};"
+            "  exit 0;"
+            "fi;"
+            "FIX=$(echo {params.fix_snps} {params.fix_indels} {params.fix_gaps} {params.fix_local} | tr ' ' ,);"
+            "pilon"
+            " -Xmx{resources.mem_mb}m"
+            " -Xms{resources.mem_mb}m"
+            " --threads {threads}"
+            " --genome {input.fasta}"
+            " --output {params.thistarget}"
+            " --changes"
+            " --vcf"
+            " {params.bamopts}"
+            " --iupac"
+            " --fix ${{FIX:-all}}"
+            ";"
+
+            "pigz "
+            " --processes {threads} "
+            " {params.thistarget}.fasta"
+            ";"
+
+            "pigz "
+            " --processes {threads} "
+            " {params.thistarget}.vcf"
+            ";"
+
+            "mv {params.thistarget}.changes {output.changes}"
+            ";"
