@@ -1,0 +1,213 @@
+# Fitting Network Scale-up Models
+
+## Overview
+
+This package fits several different network scale-up models (NSUM) to Aggregated Relational Data (ARD). ARD represents survey responses about how many people each respondent knows in different subpopulations through "How many X's do you know?" questions. Specifically, if <img src="https://latex.codecogs.com/svg.latex?N_i" alt="N_i"> respondents are asked how many people they know in <img src="https://latex.codecogs.com/svg.latex?N_k" alt="N_k"> subpopulations, then ARD is an <img src="https://latex.codecogs.com/svg.latex?N_i" alt="N_i"> by <img src="https://latex.codecogs.com/svg.latex?N_k" alt="N_k"> matrix, where the <img src="https://latex.codecogs.com/svg.latex?(i,j)" alt="(i,j)"> element represents how many people respondent <img src="https://latex.codecogs.com/svg.latex?i" alt="i"> reports knowing in subpopulation <img src="https://latex.codecogs.com/svg.latex?j" alt="j">. NSUM leverages these responses to estimate the unknown size of hard-to-reach populations. See Laga, et al. (2021) for more details.
+
+In this package, we provide functions to estimate the size and accompanying parameters (e.g. degrees) from 4 papers:
+
+- Killworth, P. D., Johnsen, E. C., McCarty, C., Shelley, G. A., and Bernard, H. R. (1998) plug-in MLE
+- Killworth, P. D., McCarty, C., Bernard, H. R., Shelley, G. A., and Johnsen, E. C. (1998) MLE
+- Zheng, T., Salganik, M. J., and Gelman, A. (2006) overdispersed model
+- Laga, I., Bao, L., and Niu, X (2021) uncorrelated, correlated, and covariate models
+
+## Requirements
+
+This package requires the following Python libraries:
+- `numpy >= 1.24`
+- `pandas >= 2.1`
+- `scipy >= 1.11`
+- `cmdstanpy >= 1.1`
+
+### PIMLE
+
+The plug-in MLE estimator from Killworth, P. D., Johnsen, E. C., McCarty, C., Shelley, G. A., and Bernard, H. R. (1998) is a two-stage estimator that first estimates the degrees for each respondent <img src="https://latex.codecogs.com/svg.latex?d_i" alt="d_i">
+by maximizing the following likelihood for each respondent:
+
+$$L(d_i;y,\{N_k\}) = \prod_{k=1}^{L} {d_i \choose y_{ik}} \left(\frac{N_k}{N}\right)^{y_{ik}}\left(1-\frac{N_k}{N}\right)^{d_i-y_{ik}}$$
+
+where <img src="https://latex.codecogs.com/svg.latex?L" alt="L"> is the number of subpopulations with known <img src="https://latex.codecogs.com/svg.latex?N_k" alt="N_k">. For the second stage, the model plugs in the estimated <img src="https://latex.codecogs.com/svg.latex?d_i" alt="d_i"> into the equation
+
+$$\frac{y_{ik}}{d_i} = \frac{N_k}{N}$$
+
+and solves for the unknown <img src="https://latex.codecogs.com/svg.latex?N_k" alt="N_k"> for each respondent. These values are then averaged to obtain a single estimated of <img src="https://latex.codecogs.com/svg.latex?N_k" alt="N_k">.
+
+To summarize, stage 1 estimate <img src="https://latex.codecogs.com/svg.latex?\smash{\hat{d}_i}" alt="\hat{d}_i"> by
+
+<div align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\hat{d}_i%20=%20N%20\cdot%20\frac{\sum_{k=1}^{L}y_{ik}}{\sum_{k=1}^{L}N_{k}}" alt="\hat{d}_i formula">
+</div>
+
+and then these estimates are used in stage 2 to estimate the unknown <img src="https://latex.codecogs.com/svg.latex?\hat{N}_k" alt="\hat{N}_k"> by
+
+<div align="center">
+  <img src="https://latex.codecogs.com/svg.latex?%5Chat%7BN%7D_k%5E%7B%5Cmathrm%7BPIMLE%7D%7D%20%3D%20%5Cfrac%7BN%7D%7Bn%7D%5Csum_%7Bi%3D1%7D%5E%7Bn%7D%5Cfrac%7By_%7Bik%7D%7D%7B%5Chat%7Bd%7D_i%7D" alt="\hat{N}_{k}^{PIMLE} formula">
+</div>
+
+The following demonstrates how to use the `killworth` function to compute PIMLE estimates of unknown subpopulation sizes:
+
+
+```python
+pimle_est = killworth(ard,
+                      known_sizes = sizes[[0, 1, 3]],
+                      known_ind = [0,1,3],
+                      N = N,
+                      model = "PIMLE")
+```
+
+Note that the function may provide a warning saying that at least one <img src="https://latex.codecogs.com/svg.latex?\hat{d}_i" alt="\hat{d}_i"> was 0. This occurs when a respondent does not report knowing anyone in the known subpopulations. This is an issue for the PIMLE since a 0 value is in the denominator for <img src="https://latex.codecogs.com/svg.latex?\hat{N}_u^{PIMLE}" alt="\hat{N}_u^{PIMLE}">. Thus, we ignore the responses from respondents that correspond to <img src="https://latex.codecogs.com/svg.latex?\hat{d}_i" alt="\hat{d}_i"> = 0.
+
+### MLE
+
+The MLE estimator from Killworth, P. D., McCarty, C., Bernard, H. R., Shelley, G. A., and Johnsen, E. C. (1998) is also a two-stage model with an identical first stage, i.e
+
+<div align="center">
+  <img src="https://latex.codecogs.com/svg.latex?%5Chat%7Bd%7D_i%20%3D%20N%20%5Ccdot%20%5Cfrac%7B%5Csum_%7Bk%3D1%7D%5E%7BL%7Dy_%7Bik%7D%7D%7B%5Csum_%7Bk%3D1%7D%5E%7BL%7DN_%7Bk%7D%7D" alt="\hat{d}_i formula">
+</div>
+
+However, the second stage estimates <img src="https://latex.codecogs.com/svg.latex?\hat{N}_k" alt="\hat{N}_k"> by maximizing the Binomial likelihood with respect to <img src="https://latex.codecogs.com/svg.latex?\hat{N}_k" alt="\hat{N}_k">, fixing <img src="https://latex.codecogs.com/svg.latex?d_i" alt="d_i"> at the estimated <img src="https://latex.codecogs.com/svg.latex?\hat{d}_i" alt="\hat{d}_i">. Thus, the estimate for the unknown subpopulation size is given by
+
+<div align="center">
+  <img src="https://latex.codecogs.com/svg.latex?%5Chat%7BN%7D_k%5E%7B%5Cmathrm%7BMLE%7D%7D%20%3D%20N%20%5Ccdot%20%5Cfrac%7B%5Csum_%7Bi%3D1%7D%5E%7Bn%7D%20y_%7Bik%7D%7D%7B%5Csum_%7Bi%3D1%7D%5E%7Bn%7D%20%5Chat%7Bd%7D_i%7D" alt="\hat{N}_k^{MLE} formula">
+</div>
+
+The following demonstrates how to use the `killworth` function to compute MLE estimates of unknown subpopulation sizes:
+
+
+```python
+mle_est = killworth(ard,
+                      known_sizes = np.ravel(sizes)[[0,1,3]],
+                      known_ind = [0,1,3],
+                      N = N,
+                      model = "MLE")
+```
+
+Note that there is no warning here since the denominator depends on the summation of <img src="https://latex.codecogs.com/svg.latex?\hat{d}_i" alt="\hat{d}_i">.
+
+## Bayesian Models
+
+Now we introduce the two Bayesian estimators implemented in this package.
+
+### Overdispersed Model
+
+The overdispersed model proposed in Zheng et al. (2006) assumes the following likelihood:
+
+$$y_{ik} \sim \text{Negative-Binomial}(\text{mean}=e^{a_i+b_k},\text{overdispersion}=\omega_k)$$
+
+Please see the original manuscript for more details on the model structure and priors.
+
+This package fits this overdispersed model either via the Gibbs-Metropolis algorithm provided in the original manuscript (`overdispersed`) or via Stan (`overdispersedStan`). We suggest using the Stan version since convergence and effective sample sizes are more satisfactory in the Stan implementation, and does not require tuning jumping scales for Metropolis updates.
+
+In order to identity the <img src="https://latex.codecogs.com/svg.latex?\alpha_i" alt="\alpha_i"> and <img src="https://latex.codecogs.com/svg.latex?\beta_k" alt="\beta_k"> as log-degrees and log-prevalences, respectively, the overdispersed model requires scaling the parameters. In order to scale the parameters, the user must supply at least one subpopulation with known size and the column index corresponding to that known size. Additionally, a two secondary groups may be supplied which can adjust for differences in gender or other binary group classifications. More details of the scaling procedure can be found in the original manuscript.
+
+The following demonstrates how to use the `overdispersed` and `overdispersedStan` functions to compute estimates of unknown subpopulation sizes using the Gibbs-Metropolis and Stan implementations of the overdispersed model. Note that in practice, both `warmup` and `iter` should be set to higher values:
+
+
+```python
+overdisp_gibbs_metrop_est = overdispersed(
+                         ard, 
+                         known_sizes = sizes[[0,1,3]], 
+                         known_ind = [0,1,3], 
+                         G1_ind = 0,
+                         G2_ind = 1,
+                         B2_ind = 3,
+                         N=N,
+                         warmup = 500,
+                         iter = 1000,
+                         verbose = True,
+                         init = "MLE")
+
+overdisp_stan = overdispersedStan(
+                         ard, 
+                         known_sizes = sizes[[0,1,3]], 
+                         known_ind = [0,1,3],
+                         G1_ind = 0,
+                         G2_ind = 1,
+                         B2_ind = 3,
+                         N = N,
+                         chains = 2,
+                         cores = 2,
+                         warmup = 250,
+                         iter = 500)
+```
+
+### Correlated Models
+
+The correlated model proposed in Laga et al. (2023) assumes the following likelihood
+
+<div align="center">
+<img src="https://latex.codecogs.com/svg.latex?y_%7Bik%7D%20%5Csim%20%5Ctext%7BPoisson%7D%5CBig%28%5Cexp%28%5Cdelta_i%20%2B%20%5Crho_k%20%2B%20%5Cbeta_%7B%5Ctext%7Bglobal%7D%7D%20z_%7Bi%2C%5Ctext%7Bglobal%7D%7D%20%2B%20%5Cbeta_%7Bk%2C%5Ctext%7Bsubpop%7D%7D%20z_%7Bi%2C%5Ctext%7Bsubpop%7D%7D%20%2B%20%5Calpha_k%20x_%7Bik%7D%20%2B%20b_%7Bik%7D%29%5CBig%29" alt="overdispersed_poisson">
+</div>
+
+where critically,
+
+$$\textbf{b}_i \sim \mathcal{N}_k(\mu, \Sigma)$$
+
+so that the responses for each respondent are correlated across subpopulations. Again, <img src="https://latex.codecogs.com/svg.latex?\delta_i" alt="\delta_i"> and <img src="https://latex.codecogs.com/svg.latex?\rho_k" alt="\rho_k"> need to be scaled, and they can either be scaled using the same procedure as for the overdispersed model (providing indices corresponding to different groups), by using all known subpopulation sizes, or by weighting groups according to their correlation with other groups. More details about these scaling procedures are provided in Laga et al. (2023).
+
+In this package, model parameters are estimated via Stan. Note that while the full model likelihood depends on <img src="https://latex.codecogs.com/svg.latex?X%2C%20Z_%7B%5Ctext%7Bglobal%7D%7D" alt="X, Z_{global}">
+, and <img src="https://latex.codecogs.com/svg.latex?Z_{subpop}" alt="Z_{subpop}">, any combination of these covariates can be provided. Additionally, we can assume that <img src="https://latex.codecogs.com/svg.latex?\Sigma" alt="\Sigma"> is a diagonal matrix (i.e. no correlation) by setting the argument `model = uncorrelated` in the `correlatedStan` function. 
+
+The following demonstrates how to use the `correlatedStan` function to compute estimates of unknown subpopulation sizes using the Stan implementations of the correlated model. Note that in practice, both `warmup` and `iter` should be set to higher values:
+
+
+```python
+correlated_cov_stan = correlatedStan(
+    ard,
+    known_sizes = sizes[[0,1,3]],
+    known_ind = [0,1,3],
+    model = "correlated",
+    scaling = "weighted",
+    x = x,
+    z_subpop = z_subpop,
+    z_global = z_global,
+    N = N,
+    chains = 2,
+    cores = 2,
+    warmup = 250,
+    iter = 500,
+)
+
+correlated_nocov_stan = correlatedStan(
+    ard,
+    known_sizes = sizes[[0,1,3]],
+    known_ind = [0,1,3],
+    model = "correlated",
+    scaling = "all",
+    N = N,
+    chains = 2,
+    cores = 2,
+    warmup = 250,
+    iter = 500,
+)
+
+uncorrelated_cov_stan = correlatedStan(
+    ard,
+    known_sizes = sizes[[0,1,3]],
+    known_ind = [0,1,3],
+    model = "uncorrelated",
+    scaling = "all",
+    x = x,
+    z_subpop = z_subpop,
+    z_global = z_global,
+    N = N,
+    chains = 2,
+    cores = 2,
+    warmup = 250,
+    iter = 500,
+)
+
+uncorrelated_x_stan = correlatedStan(
+    ard,
+    known_sizes = sizes[[0,1,3]],
+    known_ind = [0,1,3],
+    model = "uncorrelated",
+    scaling = "all",
+    x = x,
+    N = N,
+    chains = 2,
+    cores = 2,
+    warmup = 250,
+    iter = 500,
+)
+```
