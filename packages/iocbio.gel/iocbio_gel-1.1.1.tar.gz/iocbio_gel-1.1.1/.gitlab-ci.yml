@@ -1,0 +1,97 @@
+stages:
+  - style
+  - test
+  - docs
+  - build
+
+style:
+  stage: style
+  image: python:3.10
+  script:
+    - python -m pip install --upgrade pip
+    - pip install flake8==7.1.1
+    - pip install flake8-class-attributes-order==0.1.3
+    - flake8
+    - pip install black==23.9.1
+    - black iocbio --check
+
+test:
+  stage: test
+  image: python:3.10
+  only:
+    - main
+  when: manual    
+  script:
+    - pip install -r requirements.txt .
+    - pip install pytest
+    - pip install unittest-data-provider
+    - python -m pytest test/unit
+
+pages:
+  stage: docs
+  image: python:buster
+  script:
+  - pip3 install --upgrade pip
+  - pip3 install mkdocs
+  - pip3 install sphinx sphinx-glpi-theme recommonmark
+  - mkdocs build
+  - ln -s ../img site/install/img
+  - ln -s ../img site/users/img
+  - mv site public
+  artifacts:
+    paths:
+    - public
+  only:
+  - main
+  
+.windows_build_task:
+  stage: build
+  variables:
+    QT_QPA_PLATFORM: offscreen
+    QT_AUTO_SCREEN_SCALE_FACTOR: 0
+    QT_SCALE_FACTOR: 1
+    QT_DEVICE_PIXEL_RATIO: 1
+  tags:
+    - saas-windows-medium-amd64
+  script:
+    - choco install --force -y python3 --version=3.12.10
+    - $env:ChocolateyInstall = Convert-Path "$((Get-Command choco).Path)\..\.."
+    - Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+    - refreshenv
+    - python.exe -m pip install --upgrade pip
+    - pip.exe install virtualenv
+    - python.exe -m virtualenv .venv
+    - .venv\Scripts\activate
+    - pip.exe install msvc-runtime
+    - pip.exe install pywin32
+    - pip.exe install https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl
+    - pip.exe install -r requirements.txt .
+    - pip.exe install PyOpenGL
+    - pip.exe install pyinstaller
+    - copy .\packaging\pyinstaller\app.spec .
+    - pyinstaller app.spec
+    - copy .\packaging\pyinstaller\gel.bat .\dist\gel.bat
+    - ren dist Gel
+    - $env:TEST_APP_STARTUP_INTEGRITY = 'True'; & Gel\gel.bat
+    - 7z a Gel.zip .\Gel
+    - If ($CI_COMMIT_TAG -like '') {$NAME = 'gel-windows-dev.zip'}
+    - If ($CI_COMMIT_TAG -notlike '') {$NAME = -join('gel-windows-', $CI_COMMIT_TAG, '.zip')}
+    - ren gel.zip $NAME
+    - wget.exe --no-check-certificate https://dl.min.io/client/mc/release/windows-amd64/mc.exe
+    - .\mc.exe cp --insecure $NAME sysbio/iocbio-gel/
+    - .\mc.exe ls --insecure sysbio/iocbio-gel/
+
+build_windows_on_tags:
+  extends: .windows_build_task
+  only:
+    - tags
+
+build_windows_manually:
+  extends: .windows_build_task
+  when: manual
+  only:
+    - main
+    - /^issue*/
+    - /^bugfix*/
+    - /^feature.*/
+    - /^release.*/
