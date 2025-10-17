@@ -1,0 +1,465 @@
+name: Question Evaluator CI/CD
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+  evaluate-algebra-english:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Install essential dependencies for evaluation and API
+          pip install pydantic openai python-dotenv httpx uvicorn fastapi pyyaml requests
+
+      - name: Run evaluator - Algebra English (Grade 8, OpenAI)
+        id: evaluate-algebra
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          INCEPT_API_KEY: ${{ secrets.INCEPT_API_KEY }}
+        run: |
+          python -m src.evaluator.run_evaluation --config-name algebra_english --api-url https://uae-poc.inceptapi.com
+
+      - name: Upload Algebra evaluation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: algebra-evaluation-results-${{ github.run_number }}
+          path: |
+            baseline_evaluation_algebra_english.json
+            evaluation_report_algebra_english_*.md
+          retention-days: 30
+
+  evaluate-geometry-arabic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Install essential dependencies for evaluation and API
+          pip install pydantic openai python-dotenv httpx uvicorn fastapi pyyaml requests
+
+      - name: Run evaluator - Geometry Arabic (Grade 9, DSPy)
+        id: evaluate-geometry
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          INCEPT_API_KEY: ${{ secrets.INCEPT_API_KEY }}
+          LLM_PROVIDER: dspy
+        run: |
+          python -m src.evaluator.run_evaluation --config-name geometry_arabic --api-url https://uae-poc.inceptapi.com
+
+      - name: Upload Geometry evaluation results
+        uses: actions/upload-artifact@v4
+        with:
+          name: geometry-evaluation-results-${{ github.run_number }}
+          path: |
+            baseline_evaluation_geometry_arabic.json
+            evaluation_report_geometry_arabic_*.md
+          retention-days: 30
+
+  consolidate-results:
+    runs-on: ubuntu-latest
+    needs: [evaluate-algebra-english, evaluate-geometry-arabic]
+    if: ${{ always() && (needs.evaluate-algebra-english.result == 'success' || needs.evaluate-geometry-arabic.result == 'success') }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Download algebra results
+        uses: actions/download-artifact@v4
+        with:
+          name: algebra-evaluation-results-${{ github.run_number }}
+          path: ./algebra-results
+        continue-on-error: true
+
+      - name: Download geometry results
+        uses: actions/download-artifact@v4
+        with:
+          name: geometry-evaluation-results-${{ github.run_number }}
+          path: ./geometry-results
+        continue-on-error: true
+
+      - name: Parse and consolidate results
+        id: parse-results
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          results = {'algebra': {}, 'geometry': {}}
+
+          def parse(path):
+            p = Path(path)
+            if not p.exists():
+              return None
+            data = json.loads(p.read_text())
+            evs = data.get('evaluations') or []
+            if not evs:
+              return None
+            latest = evs[-1]
+            return {
+              'overall_score': latest.get('overall_score', 0),
+              'quality_distribution': latest.get('quality_distribution', {'accept':0,'revise':0,'reject':0})
+            }
+
+          a = parse('./algebra-results/baseline_evaluation_algebra_english.json')
+          g = parse('./geometry-results/baseline_evaluation_geometry_arabic.json')
+
+          if a: results['algebra'] = a
+          if g: results['geometry'] = g
+
+          if a and g:
+            avg_score = (a['overall_score'] + g['overall_score']) / 2
+            total_accepted = a['quality_distribution']['accept'] + g['quality_distribution']['accept']
+            total_revised = a['quality_distribution']['revise'] + g['quality_distribution']['revise']
+            total_rejected = a['quality_distribution']['reject'] + g['quality_distribution']['reject']
+          elif a:
+            avg_score = a['overall_score']
+            total_accepted = a['quality_distribution']['accept']
+            total_revised = a['quality_distribution']['revise']
+            total_rejected = a['quality_distribution']['reject']
+          elif g:
+            avg_score = g['overall_score']
+            total_accepted = g['quality_distribution']['accept']
+            total_revised = g['quality_distribution']['revise']
+            total_rejected = g['quality_distribution']['reject']
+          else:
+            avg_score = 0
+            total_accepted = 0; total_revised = 0; total_rejected = 0
+
+          def pct(x): return f"{x:.2%}" if isinstance(x,(int,float)) else "N/A"
+          import os
+          output = os.environ.get('GITHUB_OUTPUT', 'github_output.txt')
+          with open(output, 'a') as out:
+            out.write(f"ALGEBRA_SCORE={pct(results.get('algebra',{}).get('overall_score',0) if results.get('algebra') else 'N/A')}\n")
+            out.write(f"GEOMETRY_SCORE={pct(results.get('geometry',{}).get('overall_score',0) if results.get('geometry') else 'N/A')}\n")
+            out.write(f"AVERAGE_SCORE={pct(avg_score)}\n")
+            out.write(f"TOTAL_ACCEPTED={total_accepted}\n")
+            out.write(f"TOTAL_REVISED={total_revised}\n")
+            out.write(f"TOTAL_REJECTED={total_rejected}\n")
+          PY
+
+      - name: Comment on PR
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const algebraScore = '${{ steps.parse-results.outputs.ALGEBRA_SCORE }}';
+            const geometryScore = '${{ steps.parse-results.outputs.GEOMETRY_SCORE }}';
+            const averageScore = '${{ steps.parse-results.outputs.AVERAGE_SCORE }}';
+            const totalAccepted = '${{ steps.parse-results.outputs.TOTAL_ACCEPTED }}';
+            const totalRevised = '${{ steps.parse-results.outputs.TOTAL_REVISED }}';
+            const totalRejected = '${{ steps.parse-results.outputs.TOTAL_REJECTED }}';
+
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: consolidate-results
+    if: always() && needs.consolidate-results.result == 'success'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Fix git submodule issue
+        run: |
+          if [ -f .gitmodules ]; then
+            echo "Removing .gitmodules to prevent git cleanup issues"
+            rm .gitmodules
+          fi
+          if [ -d .git/modules ]; then
+            rm -rf .git/modules
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pydantic openai python-dotenv matplotlib requests
+
+      - name: Download current evaluation results (algebra)
+        uses: actions/download-artifact@v4
+        with:
+          name: algebra-evaluation-results-${{ github.run_number }}
+          path: ./current-results
+        continue-on-error: true
+
+      - name: Download current evaluation results (geometry)
+        uses: actions/download-artifact@v4
+        with:
+          name: geometry-evaluation-results-${{ github.run_number }}
+          path: ./current-results
+        continue-on-error: true
+
+      - name: Compare with baseline and generate report
+        id: benchmark-comparison
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def calculate_baseline_average(file_path):
+              p = Path(file_path)
+              if not p.exists(): return None
+              data = json.loads(p.read_text())
+              evaluations = data.get('evaluations') or []
+              if not evaluations: return None
+              scores = [e.get('overall_score',0) for e in evaluations]
+              return sum(scores)/len(scores)
+
+          def get_current_score(file_path):
+              p = Path(file_path)
+              if not p.exists(): return None
+              data = json.loads(p.read_text())
+              evaluations = data.get('evaluations') or []
+              if not evaluations: return None
+              return evaluations[-1].get('overall_score',0)
+
+          # NOTE: using the same baseline file for both series as per original script
+          baseline_algebra = calculate_baseline_average('baseline_evaluation.json')
+          baseline_geometry = calculate_baseline_average('baseline_evaluation.json')
+
+          current_algebra = get_current_score('./current-results/baseline_evaluation_algebra_english.json')
+          current_geometry = get_current_score('./current-results/baseline_evaluation_geometry_arabic.json')
+
+          print('📊 BENCHMARK COMPARISON')
+          print('=' * 60)
+
+          if baseline_algebra and current_algebra:
+              algebra_diff = current_algebra - baseline_algebra
+              algebra_status = '✅ IMPROVED' if algebra_diff >= 0 else '❌ DECLINED'
+              print(f'📐 Algebra English:')
+              print(f'   Current: {current_algebra:.1%} | Baseline Avg: {baseline_algebra:.1%}')
+              print(f'   Change: {algebra_diff:+.1%} {algebra_status}')
+          else:
+              algebra_status = '⚠️ NO DATA'
+              print(f'📐 Algebra English: {algebra_status}')
+
+          if baseline_geometry and current_geometry:
+              geometry_diff = current_geometry - baseline_geometry
+              geometry_status = '✅ IMPROVED' if geometry_diff >= 0 else '❌ DECLINED'
+              print(f'📊 Geometry Arabic:')
+              print(f'   Current: {current_geometry:.1%} | Baseline Avg: {baseline_geometry:.1%}')
+              print(f'   Change: {geometry_diff:+.1%} {geometry_status}')
+          else:
+              geometry_status = '⚠️ NO DATA'
+              print(f'📊 Geometry Arabic: {geometry_status}')
+
+          if baseline_algebra and current_algebra and baseline_geometry and current_geometry:
+              avg_current = (current_algebra + current_geometry) / 2
+              avg_baseline = (baseline_algebra + baseline_geometry) / 2
+              overall_diff = avg_current - avg_baseline
+              overall_pass = overall_diff >= -0.05
+              overall_status = '✅ PASS' if overall_pass else '❌ FAIL'
+              print('\n📈 Overall Performance:')
+              print(f'   Current Avg: {avg_current:.1%} | Baseline Avg: {avg_baseline:.1%}')
+              print(f'   Change: {overall_diff:+.1%} {overall_status}')
+              if not overall_pass:
+                  print('⚠️ Performance degraded beyond threshold (-5%)')
+              else:
+                  print('✅ Benchmark comparison passed')
+          else:
+              print('⚠️ Insufficient data for comparison')
+          print('=' * 60)
+          PY
+
+      - name: Save benchmark outputs for PR comment
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def calculate_baseline_average(file_path):
+              p = Path(file_path)
+              if not p.exists(): return None
+              data = json.loads(p.read_text())
+              evaluations = data.get('evaluations') or []
+              if not evaluations: return None
+              scores = [e.get('overall_score',0) for e in evaluations]
+              return sum(scores)/len(scores)
+
+          def get_current_score(file_path):
+              p = Path(file_path)
+              if not p.exists(): return None
+              data = json.loads(p.read_text())
+              evaluations = data.get('evaluations') or []
+              if not evaluations: return None
+              return evaluations[-1].get('overall_score',0)
+
+          baseline_algebra = calculate_baseline_average('baseline_evaluation.json')
+          baseline_geometry = calculate_baseline_average('baseline_evaluation.json')
+          current_algebra = get_current_score('./current-results/baseline_evaluation_algebra_english.json')
+          current_geometry = get_current_score('./current-results/baseline_evaluation_geometry_arabic.json')
+
+          with open('benchmark_outputs.txt', 'w') as f:
+              if baseline_algebra and current_algebra:
+                  diff = current_algebra - baseline_algebra
+                  status = '✅ IMPROVED' if diff >= 0 else '❌ DECLINED'
+                  f.write(f'CURRENT_ALGEBRA={current_algebra:.1%}\n')
+                  f.write(f'BASELINE_ALGEBRA={baseline_algebra:.1%}\n')
+                  f.write(f'ALGEBRA_CHANGE={diff:+.1%}\n')
+                  f.write(f'ALGEBRA_STATUS={status}\n')
+              if baseline_geometry and current_geometry:
+                  diff = current_geometry - baseline_geometry
+                  status = '✅ IMPROVED' if diff >= 0 else '❌ DECLINED'
+                  f.write(f'CURRENT_GEOMETRY={current_geometry:.1%}\n')
+                  f.write(f'BASELINE_GEOMETRY={baseline_geometry:.1%}\n')
+                  f.write(f'GEOMETRY_CHANGE={diff:+.1%}\n')
+                  f.write(f'GEOMETRY_STATUS={status}\n')
+              if baseline_algebra and current_algebra and baseline_geometry and current_geometry:
+                  avg_current = (current_algebra + current_geometry) / 2
+                  avg_baseline = (baseline_algebra + baseline_geometry) / 2
+                  overall_diff = avg_current - avg_baseline
+                  overall_pass = overall_diff >= -0.05
+                  overall_status = '✅ PASS' if overall_pass else '❌ FAIL'
+                  f.write(f'OVERALL_STATUS={overall_status}\n')
+                  f.write(f'OVERALL_PASS={str(overall_pass).lower()}\n')
+              else:
+                  f.write('OVERALL_STATUS=⚠️ NO DATA\n')
+                  f.write('OVERALL_PASS=true\n')
+          PY
+
+      - name: Generate performance report
+        run: |
+          python - <<'PY'
+          import json, matplotlib
+          matplotlib.use('Agg')
+          import matplotlib.pyplot as plt
+
+          with open('baseline_evaluation.json','r') as f:
+              data = json.load(f)
+
+          scores = [e['overall_score'] for e in data.get('evaluations', [])]
+          if scores:
+              plt.figure(figsize=(10,6))
+              plt.plot(range(1, len(scores)+1), scores, marker='o')
+              plt.xlabel('Evaluation Run')
+              plt.ylabel('Overall Score')
+              plt.title('Question Generation Quality Trend')
+              plt.ylim(0,1)
+              plt.grid(True, alpha=0.3)
+              plt.savefig('quality_trend.png')
+          else:
+              open('quality_trend.png','wb').close()
+          print('Performance report generated')
+          PY
+        continue-on-error: true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-history
+          path: |
+            baseline_evaluation.json
+            quality_trend.png
+          retention-days: 90
+
+      - name: Comment benchmark results on PR
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = './benchmark_outputs.txt';
+
+            let comment = '';
+            if (fs.existsSync(path)) {
+              const outputs = fs.readFileSync(path, 'utf8');
+              const lines = outputs.split('\n');
+
+              const currentAlgebra = lines.find(l => l.startsWith('CURRENT_ALGEBRA='))?.split('=')[1] || 'N/A';
+              const baselineAlgebra = lines.find(l => l.startsWith('BASELINE_ALGEBRA='))?.split('=')[1] || 'N/A';
+              const algebraChange = lines.find(l => l.startsWith('ALGEBRA_CHANGE='))?.split('=')[1] || 'N/A';
+              const algebraStatus = lines.find(l => l.startsWith('ALGEBRA_STATUS='))?.split('=')[1] || 'N/A';
+
+              const currentGeometry = lines.find(l => l.startsWith('CURRENT_GEOMETRY='))?.split('=')[1] || 'N/A';
+              const baselineGeometry = lines.find(l => l.startsWith('BASELINE_GEOMETRY='))?.split('=')[1] || 'N/A';
+              const geometryChange = lines.find(l => l.startsWith('GEOMETRY_CHANGE='))?.split('=')[1] || 'N/A';
+              const geometryStatus = lines.find(l => l.startsWith('GEOMETRY_STATUS='))?.split('=')[1] || 'N/A';
+
+              const overallStatus = lines.find(l => l.startsWith('OVERALL_STATUS='))?.split('=')[1] || 'N/A';
+              const overallPass = lines.find(l => l.startsWith('OVERALL_PASS='))?.split('=')[1] === 'true';
+
+              comment = `## 📊 Benchmark Comparison Results
+
+            ### Performance vs Baseline Average
+
+            | Configuration | Current Score | Baseline Avg | Change | Status |
+            |---------------|---------------|--------------|--------|--------|
+            | 🔢 Algebra English | ${currentAlgebra} | ${baselineAlgebra} | ${algebraChange} | ${algebraStatus} |
+            | 📐 Geometry Arabic | ${currentGeometry} | ${baselineGeometry} | ${geometryChange} | ${geometryStatus} |
+
+            ${overallPass ?
+              '✅ **BENCHMARK PASSED** - Performance meets or exceeds baseline standards' :
+              '❌ **BENCHMARK FAILED** - Performance has degraded beyond acceptable threshold (-5%)'
+            }
+
+            *Benchmark compares current evaluation scores against the historical average from baseline_evaluation.json*`;
+                        } else {
+                          comment = `## 📊 Benchmark Comparison Results
+
+            ⚠️ **No benchmark data available** - This may be the first evaluation run.
+
+            The benchmark comparison will be available once baseline evaluation data exists.`;
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  deploy-evaluator:
+    runs-on: ubuntu-latest
+    needs: [consolidate-results, benchmark]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Deploy evaluator metrics to dashboard
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          INCEPT_API_KEY: ${{ secrets.INCEPT_API_KEY }}
+        run: |
+          echo "Deploying evaluation metrics to monitoring dashboard..."
+          # Add deployment logic here (e.g., to CloudWatch, DataDog, etc.)
