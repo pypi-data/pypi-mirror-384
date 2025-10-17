@@ -1,0 +1,27 @@
+# Spreadsheet Column Splitter
+Takes in a column data file and will split the data in the input file into separate files based on a categorical data column. 
+
+For example, if you have sales data for fruit, and one of the columns is 'fruit name' and the options are "apple, orange, peach", then Spreadsheet Column Splitter will output three files, one with the apple data, one with the orange data, and one with the peach data. 
+
+If there are multiple worksheets, Spreadsheet Column Splitter will split the data in each worksheet into the corresponding output file. Using the fruit example, if the first worksheet was fruit sales, and the second worksheet was fruit inventories, and the third sheet was fruit deliveries, each of those worksheets would be split and put into a corresponding sheet for the particular fruit. 
+
+## How to use:
+
+```from spreadsheet_column_splitter import splitter
+
+splitter(
+    input_file=input_file,
+    output_folder=output_folder,
+    splitter_column=splitter_column,
+    naming_suffix=naming_suffix,
+    template_name=template_name
+)```
+
+The first 4 parameters are required. Template_name and timezone are optional. 
+
+## Parameters:
+- input_file: the column data file that holds the data that will be split. Takes csv and excel formats. 
+- output_folder: subfolder director name that will be created in the current working directory to hold the output files.
+- splitter_column: the column that will be used to group and split the data into filtered separate files. 
+- naming_suffix: a suffix that will be added to the output files. 
+- template_name: (optional) If you want the data to be added to a formated Excel template file, include that filename/path here.
