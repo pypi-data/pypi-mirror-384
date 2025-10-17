@@ -1,0 +1,67 @@
+# Simple Encryptor
+
+A secure and easy-to-use AES-GCM encryption/decryption package for Python.
+
+## Why Use Simple Encryptor?
+
+- **No Key Management Hassle**: Just provide any key of your choice - no strict length requirements
+- **Military-Grade Security**: Uses AES-GCM encryption (same standard used by banks and governments)
+- **Zero Configuration**: Works out of the box with minimal setup
+- **Cross-Platform**: Works on Windows, Mac, and Linux
+
+## Quick Start
+
+### Installation
+```bash
+pip install simple-encryptor
+```
+
+### Basic Usage
+
+```python
+from encryptor import Encryptor
+
+# Create an encryptor with your chosen key
+encryptor = Encryptor("my-secret-key-123")
+
+# Encrypt your data
+data = "Hello, World!"
+encrypted = encryptor.encrypt(data)
+print(f"Encrypted: {encrypted}")
+
+# Decrypt your data
+decrypted = encryptor.decrypt(encrypted)
+print(f"Decrypted: {decrypted}")
+```
+
+### File Encryption
+
+```python
+# Encrypt a file
+encryptor.encrypt_file("document.txt", "document.txt.encrypted")
+
+# Decrypt a file
+encryptor.decrypt_file("document.txt.encrypted", "document_restored.txt")
+```
+
+## Key Features
+
+- **Any Key Length**: Use any key you want - short or long, it doesn't matter
+- **Automatic Key Derivation**: Your key is securely processed to meet encryption standards
+- **Tamper Detection**: Built-in integrity checking prevents data tampering
+- **Memory Safe**: Automatically clears sensitive data from memory
+
+## Perfect For
+
+- Protecting sensitive configuration files
+- Encrypting user data in applications
+- Securing local file storage
+- Adding encryption to existing projects
+
+## Requirements
+
+- Python 3.8 or higher
+
+## License
+
+MIT License - Use it freely in your projects!
