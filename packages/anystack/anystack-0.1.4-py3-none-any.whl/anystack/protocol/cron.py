@@ -1,0 +1,19 @@
+from collections.abc import AsyncIterable
+from typing import Protocol, TypeVar, Literal
+
+
+T = TypeVar("T")
+
+
+class Cron(Protocol[T]):
+    async def get(self, key: str) -> T | None: ...
+
+    async def set(self, key: str, value: T) -> None: ...
+
+    async def delete(self, key: str) -> None: ...
+
+    async def exists(self, key: str) -> bool: ...
+
+    async def list(self) -> AsyncIterable[str]: ...
+
+    async def close(self) -> None: ...
