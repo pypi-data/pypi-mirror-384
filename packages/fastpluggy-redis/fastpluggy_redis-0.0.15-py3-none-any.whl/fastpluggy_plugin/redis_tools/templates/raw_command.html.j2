@@ -1,0 +1,255 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Redis Raw Command</h3>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex gap-2 mb-3">
+                            <div class="flex-grow-1">
+                                <label for="databaseSelect" class="form-label">Database</label>
+                                <select class="form-select" id="databaseSelect" disabled>
+                                    <!-- Databases will be loaded here -->
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="commandInput" class="form-label">Redis Command</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="commandInput" 
+                                   placeholder="Enter Redis command (e.g., GET mykey, HGETALL myhash)">
+                            <button class="btn btn-primary" id="executeBtn">Execute</button>
+                        </div>
+                        <small class="form-text text-muted">
+                            Enter a Redis command to execute. Examples: GET mykey, HGETALL myhash, KEYS *, INFO
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="resultOutput" class="form-label">Result</label>
+                        <div id="resultContainer" class="border rounded p-3" style="min-height: 200px; max-height: 500px; overflow: auto;">
+                            <pre id="resultOutput" class="mb-0">Execute a command to see the result here.</pre>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h4>Command History</h4>
+                        <div id="commandHistory" class="list-group">
+                            <!-- Command history will be displayed here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Check if the URL has a ?db=<n> parameter
+        const params = new URLSearchParams(window.location.search);
+        const initialDb = params.get('db');
+        loadDatabases(initialDb);
+        
+        // Load command history from localStorage
+        loadCommandHistory();
+    });
+    
+    // When database selection changes
+    document.getElementById('databaseSelect').addEventListener('change', async function () {
+        const dbIndex = this.value;
+        try {
+            const resp = await fetch(`{{ widget.base_plugin_url }}/databases/${dbIndex}`, {method: 'POST'});
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                const detailMsg = err.detail || 'Unknown error switching database';
+                alert(`Failed to switch database: ${detailMsg}`);
+                return;
+            }
+            const data = await resp.json();
+            if (!data.success) {
+                alert('Failed to switch database');
+            }
+            // Reload DB list and preserve this selection
+            loadDatabases(dbIndex);
+        } catch (e) {
+            alert('Network error switching database');
+        }
+    });
+    
+    // Execute button
+    document.getElementById('executeBtn').addEventListener('click', () => {
+        executeCommand();
+    });
+    
+    // Enter key in command input
+    document.getElementById('commandInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            executeCommand();
+        }
+    });
+    
+    // Fetch and render the list of databases
+    async function loadDatabases(selectedDb = null) {
+        const select = document.getElementById('databaseSelect');
+        select.disabled = true;
+        select.innerHTML = `<option>Loading databases…</option>`;
+        try {
+            const resp = await fetch(`{{ widget.base_plugin_url }}/databases`);
+            if (!resp.ok) {
+                // Attempt to read error JSON
+                const err = await resp.json().catch(() => ({}));
+                const detailMsg = err.detail || 'Unknown error fetching databases';
+                select.innerHTML = `<option disabled>Error: ${detailMsg}</option>`;
+                return;
+            }
+            
+            const dbs = await resp.json();
+            // Build <option> list normally
+            select.innerHTML = dbs
+                .map(db => `<option value="${db.index}">DB ${db.index} (${db.keys} keys)</option>`)
+                .join('');
+                
+            if (selectedDb !== null) {
+                select.value = selectedDb;
+            } else {
+                const curr = dbs.find(db => db.current);
+                if (curr) select.value = curr.index;
+            }
+            
+            select.disabled = false;
+        } catch (e) {
+            // Network‐level failure
+            select.innerHTML = `<option disabled>Network error loading databases</option>`;
+        }
+    }
+    
+    // Execute the command
+    async function executeCommand() {
+        const commandInput = document.getElementById('commandInput');
+        const command = commandInput.value.trim();
+        if (!command) {
+            alert('Please enter a command');
+            return;
+        }
+        
+        const dbIndex = getSelectedDatabase();
+        const resultOutput = document.getElementById('resultOutput');
+        resultOutput.textContent = 'Executing command...';
+        
+        try {
+            const resp = await fetch(`{{ widget.base_plugin_url }}/raw-command`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    command: command,
+                    db: dbIndex
+                })
+            });
+            
+            const data = await resp.json();
+            
+            if (data.error) {
+                resultOutput.textContent = `Error: ${data.error}`;
+                resultOutput.classList.add('text-danger');
+            } else {
+                resultOutput.textContent = formatResult(data.result);
+                resultOutput.classList.remove('text-danger');
+                
+                // Add to command history
+                addToCommandHistory(command, data.result);
+            }
+        } catch (e) {
+            resultOutput.textContent = `Network error: ${e.message}`;
+            resultOutput.classList.add('text-danger');
+        }
+    }
+    
+    // Format the result for display
+    function formatResult(result) {
+        if (result === null) {
+            return 'null';
+        }
+        
+        if (typeof result === 'object') {
+            try {
+                return JSON.stringify(result, null, 2);
+            } catch (e) {
+                return String(result);
+            }
+        }
+        
+        return String(result);
+    }
+    
+    // Add a command to the history
+    function addToCommandHistory(command, result) {
+        const history = getCommandHistory();
+        
+        // Add the new command to the beginning of the history
+        history.unshift({
+            command: command,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Keep only the last 10 commands
+        if (history.length > 10) {
+            history.pop();
+        }
+        
+        // Save to localStorage
+        localStorage.setItem('redisCommandHistory', JSON.stringify(history));
+        
+        // Update the UI
+        loadCommandHistory();
+    }
+    
+    // Get the command history from localStorage
+    function getCommandHistory() {
+        const history = localStorage.getItem('redisCommandHistory');
+        return history ? JSON.parse(history) : [];
+    }
+    
+    // Load the command history into the UI
+    function loadCommandHistory() {
+        const history = getCommandHistory();
+        const historyContainer = document.getElementById('commandHistory');
+        
+        if (history.length === 0) {
+            historyContainer.innerHTML = '<div class="list-group-item text-muted">No command history</div>';
+            return;
+        }
+        
+        historyContainer.innerHTML = '';
+        
+        history.forEach(item => {
+            const date = new Date(item.timestamp);
+            const formattedDate = date.toLocaleString();
+            
+            const historyItem = document.createElement('button');
+            historyItem.className = 'list-group-item list-group-item-action';
+            historyItem.innerHTML = `
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">${item.command}</h5>
+                    <small>${formattedDate}</small>
+                </div>
+            `;
+            
+            historyItem.addEventListener('click', () => {
+                document.getElementById('commandInput').value = item.command;
+            });
+            
+            historyContainer.appendChild(historyItem);
+        });
+    }
+    
+    function getSelectedDatabase() {
+        return document.getElementById('databaseSelect').value;
+    }
+</script>
