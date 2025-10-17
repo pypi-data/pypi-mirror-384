@@ -1,0 +1,127 @@
+from typing import Any, TypeVar, Union, cast
+
+from attrs import define as _attrs_define
+
+from ..models.update_incident_retrospective_step_data_attributes_status import (
+    UpdateIncidentRetrospectiveStepDataAttributesStatus,
+)
+from ..types import UNSET, Unset
+
+T = TypeVar("T", bound="UpdateIncidentRetrospectiveStepDataAttributes")
+
+
+@_attrs_define
+class UpdateIncidentRetrospectiveStepDataAttributes:
+    """
+    Attributes:
+        title (Union[Unset, str]): The name of the incident retrospective step
+        description (Union[None, Unset, str]): The description of the incident retrospective step
+        due_date (Union[None, Unset, str]): Due date
+        position (Union[None, Unset, int]): Position of the step
+        skippable (Union[Unset, bool]): Is the step skippable?
+        status (Union[Unset, UpdateIncidentRetrospectiveStepDataAttributesStatus]): Status of the incident retrospective
+            step
+    """
+
+    title: Union[Unset, str] = UNSET
+    description: Union[None, Unset, str] = UNSET
+    due_date: Union[None, Unset, str] = UNSET
+    position: Union[None, Unset, int] = UNSET
+    skippable: Union[Unset, bool] = UNSET
+    status: Union[Unset, UpdateIncidentRetrospectiveStepDataAttributesStatus] = UNSET
+
+    def to_dict(self) -> dict[str, Any]:
+        title = self.title
+
+        description: Union[None, Unset, str]
+        if isinstance(self.description, Unset):
+            description = UNSET
+        else:
+            description = self.description
+
+        due_date: Union[None, Unset, str]
+        if isinstance(self.due_date, Unset):
+            due_date = UNSET
+        else:
+            due_date = self.due_date
+
+        position: Union[None, Unset, int]
+        if isinstance(self.position, Unset):
+            position = UNSET
+        else:
+            position = self.position
+
+        skippable = self.skippable
+
+        status: Union[Unset, str] = UNSET
+        if not isinstance(self.status, Unset):
+            status = self.status.value
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update({})
+        if title is not UNSET:
+            field_dict["title"] = title
+        if description is not UNSET:
+            field_dict["description"] = description
+        if due_date is not UNSET:
+            field_dict["due_date"] = due_date
+        if position is not UNSET:
+            field_dict["position"] = position
+        if skippable is not UNSET:
+            field_dict["skippable"] = skippable
+        if status is not UNSET:
+            field_dict["status"] = status
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: dict[str, Any]) -> T:
+        d = src_dict.copy()
+        title = d.pop("title", UNSET)
+
+        def _parse_description(data: object) -> Union[None, Unset, str]:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(Union[None, Unset, str], data)
+
+        description = _parse_description(d.pop("description", UNSET))
+
+        def _parse_due_date(data: object) -> Union[None, Unset, str]:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(Union[None, Unset, str], data)
+
+        due_date = _parse_due_date(d.pop("due_date", UNSET))
+
+        def _parse_position(data: object) -> Union[None, Unset, int]:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(Union[None, Unset, int], data)
+
+        position = _parse_position(d.pop("position", UNSET))
+
+        skippable = d.pop("skippable", UNSET)
+
+        _status = d.pop("status", UNSET)
+        status: Union[Unset, UpdateIncidentRetrospectiveStepDataAttributesStatus]
+        if isinstance(_status, Unset):
+            status = UNSET
+        else:
+            status = UpdateIncidentRetrospectiveStepDataAttributesStatus(_status)
+
+        update_incident_retrospective_step_data_attributes = cls(
+            title=title,
+            description=description,
+            due_date=due_date,
+            position=position,
+            skippable=skippable,
+            status=status,
+        )
+
+        return update_incident_retrospective_step_data_attributes
