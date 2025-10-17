@@ -1,0 +1,1 @@
+import{_ as e,c as o,r as n,o as c}from"./index-B5gNOk1p.js";const s={};function r(_,a){const t=n("v-empty-state");return c(),o(t,{title:"Page not found"})}const f=e(s,[["render",r]]);export{f as default};
