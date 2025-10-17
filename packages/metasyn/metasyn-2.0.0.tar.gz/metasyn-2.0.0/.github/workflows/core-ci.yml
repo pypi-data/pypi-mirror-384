@@ -1,0 +1,97 @@
+name: Continuous integration
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+  schedule:
+    - cron: "0 0 1 * *"  # monthly
+  
+
+jobs:
+  check:
+    name: Lint and check types
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[check,extra]"
+      - name: Lint with Ruff
+        run: ruff check metasyn
+      - name: Check types with MyPy
+        run: mypy metasyn  
+
+  test:
+    name: Run test suite
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        include:
+            - os: macos-latest
+              python-version: "3.13"
+            - os: windows-latest
+              python-version: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e ".[test,extra]"
+    - name: Test with pytest
+      if: ${{ matrix.python-version != '3.12' }}  # Either do coverage testing or pytest only
+      run: pytest tests
+    - name: Test coverage >= 95%
+      if: ${{ matrix.python-version == '3.12' }}
+      run: pytest --cov=metasyn tests/ --cov-report=term-missing --cov-fail-under=95
+    - name: Check notebook output
+      if: ${{ matrix.os != 'macos-latest' }}
+      run: pytest --nbval-lax examples
+    - name: Test basic example
+      run: python examples/basic_example.py
+    - name: Test CLI configuration example
+      run: |
+        pip install git+https://github.com/sodascience/metasyn-disclosure-control
+        pip install .
+        metasyn create-meta metasyn/demo/demo_titanic.csv --config examples/config_files/example_config.toml
+    - name: Test GMF file
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        metasyn schema -o current_schema.json
+        MD5_DATA=(`md5sum current_schema.json`)
+        [[ ${MD5_DATA[0]} == "8e9351c9b1513a6586ad94fa8b82d94e" ]]
+
+
+
+  build-docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install ".[docs]"
+    - name: Build docs
+      run: sphinx-build -M html docs/source docs/build 
