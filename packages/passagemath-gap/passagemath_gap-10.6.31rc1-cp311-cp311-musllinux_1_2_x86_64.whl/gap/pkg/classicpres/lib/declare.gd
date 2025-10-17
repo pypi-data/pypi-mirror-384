@@ -1,0 +1,17 @@
+DeclareGlobalFunction("Internal_PresentationGenerators@");
+DeclareGlobalFunction("PresentationForSL2@");
+DeclareGlobalFunction("Internal_StandardPresentationForSL@");
+DeclareGlobalFunction("Internal_StandardPresentationForSp@");
+DeclareGlobalFunction("Internal_StandardPresentationForSU@");
+DeclareGlobalFunction("Internal_StandardPresentationForOmega@");
+DeclareGlobalFunction("SLGenerators@");
+DeclareGlobalFunction("SpGenerators@");
+DeclareGlobalFunction("SUGenerators@");
+DeclareGlobalFunction("OmegaGenerators@");
+DeclareGlobalFunction("OmegaPresentation@");
+DeclareGlobalFunction("PlusPresentation@");
+DeclareGlobalFunction("PlusGenerators@");
+DeclareGlobalFunction("MinusGenerators@");
+DeclareGlobalFunction("ClassicalStandardPresentation");
+DeclareGlobalFunction("ClassicalStandardGenerators");
+DeclareGlobalFunction("OmegaStandardToPresentation@");
