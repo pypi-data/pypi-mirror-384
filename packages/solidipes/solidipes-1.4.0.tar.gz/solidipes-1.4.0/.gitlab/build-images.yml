@@ -1,0 +1,70 @@
+.build_renku_image:
+  needs:
+    - job: package
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  before_script:
+    - AUTH=$(echo -n anciaux:${DOCKER_HUB_PASSWORD} | base64)
+    - cp -f "${CI_PROJECT_DIR}/docker/config.json" /kaniko/.docker/config.json
+    - sed -i "s/PLACE_HOLDER/$AUTH/" /kaniko/.docker/config.json
+  script:
+    - echo "${DOCKER_TAG}"
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}/docker"
+      --dockerfile "${CI_PROJECT_DIR}/docker/Dockerfile"
+      --build-arg SOLIDIPES_VERSION=${CI_COMMIT_SHORT_SHA}
+      --destination "anciaux/solidipes:${DOCKER_TAG}"
+
+.build_test_image:
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12"]
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --build-arg PYTHON_VERSION=$PYTHON_VERSION
+      --dockerfile "${CI_PROJECT_DIR}/tests/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/python-tests:${PYTHON_VERSION}-${CI_COMMIT_REF_SLUG}"
+
+build_test_image:
+  extends: .build_test_image
+  stage: build
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE != "merge_request_event"'
+      changes:
+        - .gitlab/build-images.yml
+        - uv.lock
+        - tests/Dockerfile
+
+manual_build_test_image:
+  stage: build
+  extends: .build_test_image
+  allow_failure: true
+  rules:
+    - when: manual
+
+publish_dev-docker_image:
+  stage: deploy
+  variables:
+    DOCKER_TAG: "${CI_COMMIT_SHORT_SHA}-dev"
+  extends: .build_renku_image
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: '$CI_PIPELINE_SOURCE != "merge_request_event"'
+      when: manual
+      allow_failure: true # To show pipeline as "passed" even if step is not triggered. However, the pipeline won't show if this step fails. https://gitlab.com/gitlab-org/gitlab/-/issues/27990
+
+publish_revision-docker_image:
+  stage: deploy
+  variables:
+    DOCKER_TAG: "${CI_COMMIT_TAG}-${CI_COMMIT_SHORT_SHA}"
+  extends: .build_renku_image
+  only:
+    - tags

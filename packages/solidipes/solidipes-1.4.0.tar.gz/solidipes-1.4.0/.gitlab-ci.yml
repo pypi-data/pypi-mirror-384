@@ -1,0 +1,191 @@
+stages:
+  - code_check
+  - build
+  - test
+  - deploy
+
+include:
+  - local: ".gitlab/*.yml"
+  - component: $CI_SERVER_FQDN/components/code-quality-oss/codequality-os-scanners-integration/pmd@1.1.2
+    inputs:
+      stage: code_check
+      pmd_args: "--minimum-tokens 100 --language python"
+
+lint:
+  stage: code_check
+  image: python:latest
+  script:
+    - pip install pre-commit
+    - pre-commit run ruff --all-files
+  rules:
+   - when: always
+
+check-annotations:
+  stage: code_check
+  image: python:latest
+  script:
+    - pip install ruff
+    - ruff check --select "D,ANN0,ANN2" --fix --unsafe-fixes --output-format=gitlab > code_quality_report_ruff.json
+  allow_failure: true
+  rules:
+   - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "dev" || $CI_MERGE_REQUEST_ID
+  artifacts:
+    reports:
+      codequality: $CI_PROJECT_DIR/code_quality_report_ruff.json
+
+package:
+  stage: build
+  image: python:latest
+  script:
+    - pip install build
+    - python3 -m build
+  artifacts:
+    when: on_success
+    paths:
+      - dist/
+    expire_in: 6 hours
+
+# Test with plugins installed as submodules
+test:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12"]
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      variables:
+        IMAGE_TAG_SUFFIX: $CI_COMMIT_REF_SLUG
+    - if: $CI_COMMIT_BRANCH == "" || $CI_COMMIT_BRANCH == null
+      variables:
+        IMAGE_TAG_SUFFIX: "main"
+  image: registry.gitlab.com/solidipes/solidipes/python-tests:${PYTHON_VERSION}-${IMAGE_TAG_SUFFIX}
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_FORCE_HTTPS: "true"
+  script:
+    - pip install .[test] # Install dependencies
+    - for dir in plugins/*; do pip install "$dir[dev]"; done # Install plugins dependencies
+    - for dir in plugins/*; do pip install --no-deps "$dir"; done # Ensure local plugin versions are installed
+    - pip install --no-deps . # Ensure local solidipes version is installed
+    - echo "Installed solidipes package and plugins:"
+    - pip list | grep solidipes
+    - DTOOL_S3_SECRET_ACCESS_KEY=${DTOOL_S3_SECRET_ACCESS_KEY} python3 -m pytest --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+# Test with plugins versions specified in pyproject.toml
+test_tagged_plugins:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12"]
+  image: registry.gitlab.com/solidipes/solidipes/python-tests:${PYTHON_VERSION}-main
+  rules:
+    - if: $CI_COMMIT_TAG
+    - when: manual
+      allow_failure: true # To show pipeline as "passed" even if step is not triggered. However, the pipeline won't show if this step fails. https://gitlab.com/gitlab-org/gitlab/-/issues/27990
+  script:
+    - pip install .[test]
+    - echo "Installed solidipes package and plugins:"
+    - pip list | grep solidipes
+    - python3 -m pytest --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+test-windows:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12"]
+        RUNNER: ["windows"]
+  tags:
+    - $RUNNER
+  rules:
+    - if: $CI_COMMIT_TAG
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_FORCE_HTTPS: "true"
+  script:
+    - echo "Running on $RUNNER"
+    - pwd
+    - ls
+    - powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"  # install uv
+    - $env:Path = "C:\WINDOWS\system32\config\systemprofile\.local\bin;$env:Path"
+    - uv python install ${env:PYTHON_VERSION}
+    - uv venv --python ${env:PYTHON_VERSION}
+    - uv pip install pip
+    - .venv/Scripts/activate
+    - Get-Command python
+    - Get-Command pip
+    - python --version
+    - uv pip install ".[test]" # Install dependencies
+    - Get-ChildItem -Path plugins/* | ForEach-Object { uv pip install "$($_.FullName)[dev]" } # Install plugins dependencies
+    - Get-ChildItem -Path plugins/* | ForEach-Object { uv pip install --no-deps "$($_.FullName)" } # Ensure local plugin versions are installed
+    - uv pip install --no-deps . # Ensure local solidipes version is installed
+    - echo "Installed solidipes package and plugins:"
+    - pip list | Select-String -Pattern "solidipes"
+    - python -m pytest --ignore=tests/test_cloud.py --ignore=tests/test_web_report.py --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+test-macos:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12"]
+        RUNNER: ["macos-arm"] # , "macos-intel"]
+  tags:
+    - $RUNNER
+  rules:
+    - if: $CI_COMMIT_TAG
+    - when: manual
+      allow_failure: true
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_FORCE_HTTPS: "true"
+  script:
+    - echo "Running on $RUNNER"
+    - pwd
+    - ls -la
+    - curl -LsSf https://astral.sh/uv/install.sh | sh  # install uv
+    - source $HOME/.local/bin/env
+    - uv python install ${PYTHON_VERSION}
+    - uv venv --python ${PYTHON_VERSION}
+    - uv pip install pip
+    - source .venv/bin/activate
+    - which python
+    - which pip
+    - python --version
+    - 'uv pip install --only-binary=:all: pyarrow netcdf4'
+    - uv pip install ".[test]" # Install dependencies
+    - for dir in plugins/*; do uv pip install "$dir[dev]"; done # Install plugins dependencies
+    - for dir in plugins/*; do uv pip install --no-deps "$dir"; done # Ensure local plugin versions are installed
+    - uv pip install --no-deps . # Ensure local solidipes version is installed
+    - echo "Installed solidipes package and plugins:"
+    - pip list | grep solidipes
+    - DTOOL_S3_SECRET_ACCESS_KEY=${DTOOL_S3_SECRET_ACCESS_KEY} python3 -m pytest --ignore=tests/test_web_report.py --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+publish_pypi:
+  stage: deploy
+  image: python:latest
+  needs:
+    - job: package
+    - job: test
+  script:
+    - pip install twine
+    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__
+          python3 -m twine upload dist/*
+  only:
+    - tags
