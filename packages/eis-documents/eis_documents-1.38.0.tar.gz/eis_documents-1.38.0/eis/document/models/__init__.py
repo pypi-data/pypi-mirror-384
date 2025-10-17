@@ -1,0 +1,72 @@
+# flake8: noqa
+
+# import all models into this package
+# if you have many models here with many references from one model to another this may
+# raise a RecursionError
+# to avoid this, import only the models that you directly need like:
+# from from eis.document.model.pet import Pet
+# or import this package, but before doing it, use:
+# import sys
+# sys.setrecursionlimit(n)
+
+from eis.document.model.create_doc_template_request_dto import CreateDocTemplateRequestDto
+from eis.document.model.create_doc_template_response_class import CreateDocTemplateResponseClass
+from eis.document.model.create_document_request_dto import CreateDocumentRequestDto
+from eis.document.model.create_document_sync_response_class import CreateDocumentSyncResponseClass
+from eis.document.model.create_html_template_dto import CreateHtmlTemplateDto
+from eis.document.model.create_layout_request_dto import CreateLayoutRequestDto
+from eis.document.model.create_layout_response_class import CreateLayoutResponseClass
+from eis.document.model.create_presigned_post_request_dto import CreatePresignedPostRequestDto
+from eis.document.model.create_presigned_post_response_class import CreatePresignedPostResponseClass
+from eis.document.model.delete_layout_request_dto import DeleteLayoutRequestDto
+from eis.document.model.delete_product_document_request_dto import DeleteProductDocumentRequestDto
+from eis.document.model.delete_request_dto import DeleteRequestDto
+from eis.document.model.delete_response_class import DeleteResponseClass
+from eis.document.model.doc_template_class import DocTemplateClass
+from eis.document.model.document_class import DocumentClass
+from eis.document.model.docx_template_class import DocxTemplateClass
+from eis.document.model.download_document_request_dto import DownloadDocumentRequestDto
+from eis.document.model.get_doc_template_request_dto import GetDocTemplateRequestDto
+from eis.document.model.get_doc_template_response_class import GetDocTemplateResponseClass
+from eis.document.model.get_document_download_url_response_class import GetDocumentDownloadUrlResponseClass
+from eis.document.model.get_docx_template_download_url_response_class import GetDocxTemplateDownloadUrlResponseClass
+from eis.document.model.get_docx_template_response_class import GetDocxTemplateResponseClass
+from eis.document.model.get_layout_request_dto import GetLayoutRequestDto
+from eis.document.model.get_layout_response_class import GetLayoutResponseClass
+from eis.document.model.get_product_document_download_url_response_class import GetProductDocumentDownloadUrlResponseClass
+from eis.document.model.get_product_document_response_class import GetProductDocumentResponseClass
+from eis.document.model.get_signed_s3_key_url_response_class import GetSignedS3KeyUrlResponseClass
+from eis.document.model.grpc_create_doc_template_request_dto import GrpcCreateDocTemplateRequestDto
+from eis.document.model.grpc_update_doc_template_request_dto import GrpcUpdateDocTemplateRequestDto
+from eis.document.model.html_template_class import HtmlTemplateClass
+from eis.document.model.inline_response200 import InlineResponse200
+from eis.document.model.inline_response503 import InlineResponse503
+from eis.document.model.layout_class import LayoutClass
+from eis.document.model.list_doc_template_request_dto import ListDocTemplateRequestDto
+from eis.document.model.list_doc_templates_response_class import ListDocTemplatesResponseClass
+from eis.document.model.list_documents_response_class import ListDocumentsResponseClass
+from eis.document.model.list_docx_templates_response_class import ListDocxTemplatesResponseClass
+from eis.document.model.list_layouts_response_class import ListLayoutsResponseClass
+from eis.document.model.list_product_documents_response_class import ListProductDocumentsResponseClass
+from eis.document.model.list_request_dto import ListRequestDto
+from eis.document.model.list_search_keywords_request_dto import ListSearchKeywordsRequestDto
+from eis.document.model.list_search_keywords_response_class import ListSearchKeywordsResponseClass
+from eis.document.model.list_searchable_document_owners_request_dto import ListSearchableDocumentOwnersRequestDto
+from eis.document.model.list_searchable_document_owners_response_class import ListSearchableDocumentOwnersResponseClass
+from eis.document.model.list_searchable_documents_request_dto import ListSearchableDocumentsRequestDto
+from eis.document.model.list_searchable_documents_response_class import ListSearchableDocumentsResponseClass
+from eis.document.model.product_document_class import ProductDocumentClass
+from eis.document.model.save_external_document_request_dto import SaveExternalDocumentRequestDto
+from eis.document.model.searchable_document_class import SearchableDocumentClass
+from eis.document.model.searchable_document_owner_class import SearchableDocumentOwnerClass
+from eis.document.model.shared_update_docx_template_request_dto import SharedUpdateDocxTemplateRequestDto
+from eis.document.model.update_doc_template_request_dto import UpdateDocTemplateRequestDto
+from eis.document.model.update_doc_template_response_class import UpdateDocTemplateResponseClass
+from eis.document.model.update_document_request_dto import UpdateDocumentRequestDto
+from eis.document.model.update_document_response_class import UpdateDocumentResponseClass
+from eis.document.model.update_docx_template_response_class import UpdateDocxTemplateResponseClass
+from eis.document.model.update_html_template_dto import UpdateHtmlTemplateDto
+from eis.document.model.update_layout_request_dto import UpdateLayoutRequestDto
+from eis.document.model.update_layout_response_class import UpdateLayoutResponseClass
+from eis.document.model.upload_docx_template_request_dto import UploadDocxTemplateRequestDto
+from eis.document.model.upload_product_document_request_dto import UploadProductDocumentRequestDto
