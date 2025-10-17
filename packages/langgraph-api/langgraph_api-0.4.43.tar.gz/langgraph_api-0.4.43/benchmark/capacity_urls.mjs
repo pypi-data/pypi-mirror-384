@@ -1,0 +1,18 @@
+export const baseUrlToBaseUrlName = {
+  'https://ifh-core-api-dr-benchmark-048d364b548f5d9790082d8ba4fb44d8.us.langgraph.app': 'DRC,API S,OPS S',
+  'https://ifh-benchmarks-ba3f7d811fb6564ebe5248bcd7a0a662.us.langgraph.app': 'API S, OPS S',
+  'https://wfh-benchmark-distributed-r-1603f73b1a175234b9b0fb1f9beea4f1.us.langgraph.app': 'DR,API S,OPS S',
+  'https://benchmark-api-m-ops-s-81bb8ca883ce54438fcb9027877be8e7.us.langgraph.app': 'API M, OPS S',
+  'https://benchmark-api-s-ops-m-32baf0b195b7589eb77ce06c373f0886.us.langgraph.app': 'API S, OPS M',
+  'https://benchmark-api-m-ops-m-2c4ecc0e7f6a526fac98db7068092d5a.us.langgraph.app': 'API M, OPS M',
+  'https://benchmark-dr-api-m-ops-s-d3bfd55b7b065af5a89d3b15edd99500.us.langgraph.app': 'DR, API M, OPS S',
+  'https://benchmark-dr-api-s-ops-m-7f98f893140257b7869cbe00a93ecb71.us.langgraph.app': 'DR, API S, OPS M',
+  'https://benchmark-dr-api-m-ops-m-22b1c77d9f175160b226090601add28a.us.langgraph.app': 'DR, API M, OPS M',
+  'https://benchmark-drc-api-m-ops-s-9a7d59e246d95b5bad994c7ea269c460.us.langgraph.app': 'DRC, API M, OPS S',
+  'https://benchmark-drc-api-s-ops-m-d54e214bd0fd5c9db1f44b80065f7b9a.us.langgraph.app': 'DRC, API S, OPS M',
+  'https://benchmark-drc-api-m-ops-m-caa32d5c7e945a15a3818aa7a941b1bd.us.langgraph.app': 'DRC, API M, OPS M',
+  'https://benchmark-dr-api-s-ops-s-db-b8ba0253c7a65ace836c0662f22c530d.us.langgraph.app': 'DR, API S, OPS S, DB M',
+  'https://benchmark-api-s-ops-s-db-m-4e3d4e6f27d35555b7f3955c3a4c301a.us.langgraph.app': 'API S, OPS S, DB M',
+  'https://benchmark-dr-api-s-ops-s-re-423b90208677556e86eced49b27a73a0.us.langgraph.app': 'DR, API S, OPS S, Redis M',
+  'https://benchmark-api-s-ops-s-redis-91911734773c51e292ecb2b15fa015e5.us.langgraph.app': 'API S, OPS S, Redis M',
+};
