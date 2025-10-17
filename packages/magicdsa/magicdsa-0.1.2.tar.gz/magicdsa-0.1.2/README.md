@@ -1,0 +1,72 @@
+# 🪄 Magic - The Ultimate DSA Algorithm Library
+
+[![PyPI version](https://badge.fury.io/py/magicdsa.svg)](https://pypi.org/project/magicdsa/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+
+🚀 **Magic** is a beginner-friendly Python package that contains **hundreds of Data Structures and Algorithms (DSA)** implementations — all organized, categorized, and ready to use or learn from.
+
+Whether you’re preparing for coding interviews, learning DSA from scratch, or building algorithmic projects, `magic` is your one-stop toolkit.
+
+---
+
+## ✨ Features
+
+- 📚 14+ Categories of algorithms (Arrays, Linked Lists, Trees, Graphs, DP, and more)
+- 🔍 Easy access: `magic.show("<algorithm_name>")` to see any implementation
+- 🧠 Educational: Every algorithm is beginner-friendly and well-commented
+- 📦 Lightweight: Just one pip install and you’re ready to go!
+
+---
+
+## 📦 Installation
+
+Install from PyPI (example name `magicdsa` — replace with your actual published name):
+
+```bash
+pip install --upgrade magicdsa
+⚡️ Quick Start
+import magic
+
+# 📁 Show all categories
+print(magic.show("category"))
+
+# 📚 Show all algorithms in a specific category
+print(magic.show("linked lists"))
+
+# 🧠 Show full source code of a specific algorithm
+print(magic.show("linearsearch"))
+
+📚 Available Categories
+
+-Arrays & Strings
+
+-Linked Lists
+
+-Stack & Queue
+
+-Recursion & Backtracking
+
+-Binary Trees
+
+-Binary Search Trees (BST)
+
+-Heap / Priority Queue
+
+-Graphs
+
+-Dynamic Programming
+
+-Trie
+
+-Segment Tree & BIT
+
+-Bit Manipulation
+
+-Math & Number Theory
+
+-Miscellaneous
+
+🤝 Contributing
+
+Contributions are welcome! Feel free to open issues or submit PRs to add new algorithms, fix bugs, or improve documentation.
