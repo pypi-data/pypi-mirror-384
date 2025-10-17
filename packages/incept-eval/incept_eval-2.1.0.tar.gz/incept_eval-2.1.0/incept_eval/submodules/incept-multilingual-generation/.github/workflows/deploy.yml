@@ -1,0 +1,207 @@
+name: Build and Deploy to AWS ECS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      job_to_run:
+        description: 'Which job to run'
+        required: true
+        default: 'both'
+        type: choice
+        options: [ both, build, deploy ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: incept-multilingual-generation
+  ECS_SERVICE: incept-multilingual-service
+  ECS_CLUSTER: incept-cluster
+  CONTAINER_NAME: incept-multilingual-api
+  ECS_TASK_FAMILY: incept-ml-gen   # <- from your task definition
+
+jobs:
+  build:
+    name: Build and Push to ECR
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_to_run == 'both' || github.event.inputs.job_to_run == 'build'))
+
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+      image-tag: ${{ steps.build-image.outputs.image-tag }}
+
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # this might remove tools that are actually needed,
+          # if set to "true" but frees about 6 GB
+          tool-cache: false
+          
+          # all of these default to true, but feel free to set to
+          # "false" if necessary for your workflow
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          docker build -t "$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" .
+          docker tag  "$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" "$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
+          docker push "$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          docker push "$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
+          echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image-tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      always() &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_to_run == 'both' || github.event.inputs.job_to_run == 'deploy')))
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update ECS service with new image
+        run: |
+          set -euo pipefail
+
+          # Ensure jq exists
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+          echo "==> Resolving image to deploy"
+          if [ -n "${{ needs.build.outputs.image }}" ]; then
+            IMAGE_URI="${{ needs.build.outputs.image }}"
+          else
+            # fallback: latest pushed image; prefer a tag, else use digest
+            DETAIL_JSON=$(aws ecr describe-images \
+              --repository-name "${{ env.ECR_REPOSITORY }}" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'reverse(sort_by(imageDetails,&imagePushedAt))[0]' \
+              --output json)
+
+            if [ -z "${DETAIL_JSON}" ] || [ "${DETAIL_JSON}" = "null" ]; then
+              echo "Error: Could not find any images in ECR repo ${{ env.ECR_REPOSITORY }}"; exit 1
+            fi
+
+            LATEST_TAG=$(echo "${DETAIL_JSON}" | jq -r '.imageTags[0] // empty')
+            DIGEST=$(echo "${DETAIL_JSON}" | jq -r '.imageDigest')
+
+            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+            if [ -n "${LATEST_TAG}" ]; then
+              IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${LATEST_TAG}"
+            else
+              IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}@${DIGEST}"
+            fi
+          fi
+
+          echo "Deploying image: $IMAGE_URI"
+
+          echo "==> Resolving current service task definition"
+          CURRENT_TASK_DEF=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'services[0].taskDefinition' \
+            --output text 2>/dev/null) || true
+
+          TASK_DEF_ID=""
+          if [ -n "${CURRENT_TASK_DEF:-}" ] && [ "${CURRENT_TASK_DEF}" != "None" ]; then
+            TASK_DEF_ID="${CURRENT_TASK_DEF}"
+            echo "Using task definition from service: ${TASK_DEF_ID}"
+          else
+            echo "Service did not return a task definition; using family '${{ env.ECS_TASK_FAMILY }}'"
+            TASK_DEF_ID=$(aws ecs list-task-definitions \
+              --family-prefix "${{ env.ECS_TASK_FAMILY }}" \
+              --status ACTIVE \
+              --sort DESC \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'taskDefinitionArns[0]' \
+              --output text)
+            if [ -z "${TASK_DEF_ID}" ] || [ "${TASK_DEF_ID}" = "None" ]; then
+              echo "Error: No ACTIVE task definition found for family ${{ env.ECS_TASK_FAMILY }}"; exit 1
+            fi
+          fi
+
+          echo "==> Downloading task definition JSON"
+          TASK_DEFINITION=$(aws ecs describe-task-definition \
+            --task-definition "${TASK_DEF_ID}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'taskDefinition')
+
+          echo "==> Validating container name"
+          CONTAINER_FOUND=$(echo "${TASK_DEFINITION}" | jq -r \
+            --arg NAME "${{ env.CONTAINER_NAME }}" \
+            '.containerDefinitions[] | select(.name==$NAME) | .name' | head -n1 || true)
+          if [ -z "${CONTAINER_FOUND:-}" ]; then
+            echo "Error: Container '${{ env.CONTAINER_NAME }}' not found in ${TASK_DEF_ID}."
+            echo "Available containers:"; echo "${TASK_DEFINITION}" | jq -r '.containerDefinitions[].name'
+            exit 1
+          fi
+
+          echo "==> Rewriting image for container '${{ env.CONTAINER_NAME }}'"
+          NEW_TASK_DEFINITION=$(echo "${TASK_DEFINITION}" | \
+            jq --arg IMAGE "${IMAGE_URI}" --arg NAME "${{ env.CONTAINER_NAME }}" '
+              .containerDefinitions |= map(if .name == $NAME then .image = $IMAGE else . end)
+            ' | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+
+          echo "==> Registering new task definition revision"
+          NEW_TASK_INFO=$(aws ecs register-task-definition \
+            --cli-input-json "${NEW_TASK_DEFINITION}" \
+            --region "${{ env.AWS_REGION }}")
+
+          NEW_REVISION=$(echo "${NEW_TASK_INFO}" | jq -r '.taskDefinition.revision')
+          FAMILY=$(echo "${NEW_TASK_INFO}" | jq -r '.taskDefinition.family')
+          echo "Registered: ${FAMILY}:${NEW_REVISION}"
+
+          echo "==> Updating ECS service"
+          aws ecs update-service \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "${FAMILY}:${NEW_REVISION}" \
+            --force-new-deployment \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "==> Waiting for service stability"
+          aws ecs wait services-stable \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "Deployment successful! 🎉"
+          echo "Service: ${{ env.ECS_SERVICE }}"
+          echo "Cluster: ${{ env.ECS_CLUSTER }}"
