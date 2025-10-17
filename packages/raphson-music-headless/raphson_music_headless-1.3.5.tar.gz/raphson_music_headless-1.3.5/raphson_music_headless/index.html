@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Raphson Headless Player</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+            }
+
+            @media screen and (min-width: 1300px) {
+                body {
+                    display: grid;
+                    grid-template-columns: max-content max-content auto;
+                }
+            }
+
+            section {
+                padding: 1rem;
+            }
+
+            #lyrics {
+                white-space: pre-line;
+            }
+
+            #album-cover {
+                max-width: min(800px, 100%);
+            }
+        </style>
+    </head>
+
+    <body>
+        <section>
+            <h3>Controls</h3>
+            <button id="button-play">Play</button>
+            <button id="button-pause">Pause</button>
+            <button id="button-next">Next</button>
+            <button id="button-stop">Stop</button>
+            <button id="button-news">News</button>
+            <button id="button-seek">Seek +30s</button>
+
+            <h3>Volume</h3>
+            <input type="range" min="0" max="100" id="volume">
+
+            <h3>Info</h3>
+            <table>
+                <tr>
+                    <th colspan="2">Player</th>
+                </tr>
+                <tr>
+                    <td>Has media</td>
+                    <td id="has-media"></td>
+                </tr>
+                <tr>
+                    <td>Is playing</td>
+                    <td id="is-playing"></td>
+                </tr>
+                <tr>
+                    <td>Position</td>
+                    <td id="position"></td>
+                </tr>
+                <tr>
+                    <td>Duration</td>
+                    <td id="duration"></td>
+                </tr>
+                <tr>
+                    <th colspan="2">Track</th>
+                </tr>
+                <tr>
+                    <td>Path</td>
+                    <td id="track-path"></td>
+                </tr>
+                <tr>
+                    <td>Title</td>
+                    <td id="track-title"></td>
+                </tr>
+                <tr>
+                    <td>Artists</td>
+                    <td id="track-artists"></td>
+                </tr>
+                <tr>
+                    <td>Album</td>
+                    <td id="track-album"></td>
+                </tr>
+                <tr>
+                    <td>Album artist</td>
+                    <td id="track-album-artist"></td>
+                </tr>
+                <tr>
+                    <td>Year</td>
+                    <td id="track-year"></td>
+                </tr>
+            </table>
+
+            <h3>Playlists</h3>
+            <button id="get-playlists">Modify enabled playlists</button>
+            <button id="save-playlists" hidden>Save</button>
+            <div id="playlist-checkboxes"></div>
+        </section>
+
+        <section>
+            <h3>Lyrics</h3>
+            <div id="lyrics"></div>
+        </section>
+
+        <section>
+            <h3>Album cover</h3>
+            <img src="" id="album-cover">
+        </section>
+
+        <script>
+            const buttonPlay = document.getElementById('button-play');
+            const buttonPause = document.getElementById('button-pause');
+            const buttonNext = document.getElementById('button-next');
+            const buttonStop = document.getElementById('button-stop');
+            const buttonNews = document.getElementById('button-news');
+            const buttonSeek = document.getElementById('button-seek');
+            const hasMedia = document.getElementById('has-media');
+            const isPlaying = document.getElementById('is-playing');
+            const position = document.getElementById('position');
+            const duration = document.getElementById('duration');
+            const volume = document.getElementById('volume');
+            const trackPath = document.getElementById('track-path');
+            const trackTitle = document.getElementById('track-title');
+            const trackArtists = document.getElementById('track-artists');
+            const trackAlbum = document.getElementById('track-album');
+            const trackAlbumArtist = document.getElementById('track-album-artist');
+            const trackYear = document.getElementById('track-year');
+            const albumCover = document.getElementById('album-cover');
+            const lyrics = document.getElementById('lyrics');
+            const buttonPlaylistsGet = document.getElementById('get-playlists');
+            const buttonPlaylistsSave = document.getElementById('save-playlists');
+            const playlistCheckboxes = document.getElementById('playlist-checkboxes');
+
+            buttonPlay.addEventListener('click', async () => {
+                await fetch('/play', {method: 'POST'});
+                await updateState();
+            });
+            buttonPause.addEventListener('click', async () => {
+                await fetch('/pause', {method: 'POST'});
+                await updateState();
+            });
+            buttonNext.addEventListener('click', async () => {
+                await fetch('/next', {method: 'POST'});
+                await updateState();
+            });
+            buttonStop.addEventListener('click', async () => {
+                await fetch('/stop', {method: 'POST'});
+                await updateState();
+            });
+            buttonNews.addEventListener('click', async () => {
+                await fetch('/play_news', {method: 'POST'});
+                await updateState();
+            });
+            buttonSeek.addEventListener('click', async () => {
+                await fetch('/seek', {method: 'POST', body: parseInt(position.textContent) + 30});
+                await updateState();
+            });
+
+            async function updateState() {
+                const response = await fetch('/state');
+                const state = await response.json();
+                const player = state.player;
+                const trackChanged = state.currently_playing ? state.currently_playing.path != trackPath.textContent : trackPath.textContent != '';
+
+                hasMedia.textContent = player.has_media;
+                isPlaying.textContent = player.is_playing;
+                position.textContent = player.position;
+                duration.textContent = player.duration;
+                volume.value = player.volume;
+                trackPath.textContent = state.currently_playing ? state.currently_playing.path : '';
+                trackTitle.textContent = state.currently_playing ? state.currently_playing.title : '';
+                trackArtists.textContent = state.currently_playing && state.currently_playing.artists ? state.currently_playing.artists.join(', ') : '';
+                trackAlbum.textContent = state.currently_playing ? state.currently_playing.album : '';
+                trackAlbumArtist.textContent = state.currently_playing ? state.currently_playing.album_artist : '';
+                trackYear.textContent = state.currently_playing ? state.currently_playing.year: '';
+
+                if (trackChanged) {
+                    if (state.currently_playing) {
+                        albumCover.src = `/image#cache_bust` + encodeURIComponent(state.currently_playing.path);
+                    } else {
+                        albumCover.src = "";
+                    }
+
+                    const response = await fetch('/lyrics');
+                    lyrics.textContent = await response.text();;
+                }
+            };
+
+            setInterval(updateState, 1000);
+            updateState();
+
+            buttonPlaylistsGet.addEventListener('click', async () => {
+                const response = await fetch('/state');
+                const state = await response.json();
+                const playlists = state.playlists;
+
+                for (playlist of playlists.all) {
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.name = playlist
+                    input.id = 'checkbox-' + playlist.replaceAll(' ', '-');
+                    input.checked = playlists.enabled.indexOf(playlist) !== -1;
+                    input.classList.add('playlist-checkbox');
+
+                    const label = document.createElement('label');
+                    label.htmlFor = 'checkbox-' + playlist.replaceAll(' ', '-');;
+                    label.textContent = playlist;
+
+                    const br = document.createElement('br');
+
+                    playlistCheckboxes.append(input, label, br);
+                }
+
+                buttonPlaylistsSave.hidden = false;
+                buttonPlaylistsGet.hidden = true;
+            });
+
+            document.getElementById('save-playlists').addEventListener('click', async () => {
+                const playlists = []
+                for (checkbox of playlistCheckboxes.getElementsByClassName('playlist-checkbox')) {
+                    if (checkbox.checked) {
+                        playlists.push(checkbox.name);
+                    }
+                }
+                await fetch('/playlists', {method: 'POST', body: JSON.stringify(playlists)});
+                buttonPlaylistsSave.hidden = true;
+                buttonPlaylistsGet.hidden = false;
+                playlistCheckboxes.replaceChildren();
+            });
+
+            volume.addEventListener('input', () => {
+                fetch("/volume", {method: "POST", body: volume.value});
+            });
+        </script>
+    </body>
+
+</html>
