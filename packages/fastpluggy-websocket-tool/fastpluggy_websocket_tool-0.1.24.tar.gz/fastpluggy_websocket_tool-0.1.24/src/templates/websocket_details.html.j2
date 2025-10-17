@@ -1,0 +1,190 @@
+<div class="card">
+    <div class="card-header">
+        <h4>WebSocket Details</h4>
+    </div>
+    <div class="card-body">
+        <div id="ws-details-{{ widget.widget_id }}" class="small">
+            <p>Connection: <span id="ws-connection-status-{{ widget.widget_id }}">Not connected</span></p>
+            <p>Connection Name: <span id="ws-connection-name-{{ widget.widget_id }}">N/A</span></p>
+            <p>Health Score: <span id="ws-connection-health-{{ widget.widget_id }}">N/A</span> (<span id="ws-connection-health-percent-{{ widget.widget_id }}">0</span>%)</p>
+            <p>Messages Sent: <span id="ws-messages-{{ widget.widget_id }}">0</span></p>
+            <p>Connection Duration: <span id="ws-duration-{{ widget.widget_id }}">0s</span></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        const widgetId = "{{ widget.widget_id }}";
+        const connectionStatusEl = document.getElementById(`ws-connection-status-${widgetId}`);
+        const connectionNameEl = document.getElementById(`ws-connection-name-${widgetId}`);
+        const connectionHealthEl = document.getElementById(`ws-connection-health-${widgetId}`);
+        const connectionHealthPercentEl = document.getElementById(`ws-connection-health-percent-${widgetId}`);
+        const messagesEl = document.getElementById(`ws-messages-${widgetId}`);
+        const durationEl = document.getElementById(`ws-duration-${widgetId}`);
+
+        let connectionStartTime = null;
+        let isConnected = false;
+
+        // Function to update WebSocket details from service worker
+        async function updateWebSocketDetails() {
+            if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+                connectionStatusEl.textContent = 'Service Worker not available';
+                connectionStatusEl.style.color = 'red';
+                return;
+            }
+
+            try {
+                // Get ping/pong stats from service worker
+                const stats = await getPingPongStats();
+
+                if (stats) {
+                    // Update messages sent (pongs sent is equivalent to messages sent)
+                    messagesEl.textContent = stats.pongCount;
+
+                    // Calculate health score based on ping/pong stats
+                    const healthResult = calculateHealthScore(stats);
+                    updateHealthDisplay(healthResult.status, healthResult.score);
+                }
+
+                // Update connection duration if connected
+                if (isConnected) {
+                    if (!connectionStartTime) {
+                        connectionStartTime = Date.now();
+                    }
+                    const durationSeconds = Math.round((Date.now() - connectionStartTime) / 1000);
+                    durationEl.textContent = durationSeconds + 's';
+                }
+
+            } catch (error) {
+                console.error('Error getting WebSocket stats from service worker:', error);
+            }
+        }
+
+        // Function to get ping/pong stats from service worker
+        function getPingPongStats() {
+            return new Promise((resolve) => {
+                const messageChannel = new MessageChannel();
+
+                messageChannel.port1.onmessage = (event) => {
+                    if (event.data.type === 'PING_STATS_RESPONSE') {
+                        resolve(event.data.stats);
+                    }
+                };
+
+                navigator.serviceWorker.controller.postMessage(
+                    { type: 'GET_PING_STATS' },
+                    [messageChannel.port2]
+                );
+
+                // Timeout after 1 second
+                setTimeout(() => resolve(null), 1000);
+            });
+        }
+
+        // Function to calculate health score based on ping/pong stats
+        function calculateHealthScore(stats) {
+            if (!stats || stats.pingCount === 0) {
+                return { status: 'unknown', score: 0 };
+            }
+
+            // Simple health calculation based on ping/pong ratio and response time
+            const pingPongRatio = stats.pongCount / stats.pingCount;
+            let score = pingPongRatio;
+
+            // Reduce score if response time is high
+            if (stats.averageResponseTime > 500) {
+                score = score * (1 - (stats.averageResponseTime - 500) / 1000);
+            }
+
+            // Ensure score is between 0 and 1
+            score = Math.max(0, Math.min(1, score));
+
+            // Determine status based on score
+            let status;
+            if (score < 0.5) {
+                status = 'critical';
+            } else if (score < 0.8) {
+                status = 'warning';
+            } else {
+                status = 'healthy';
+            }
+
+            return { status, score };
+        }
+
+        // Function to update health display
+        function updateHealthDisplay(healthStatus, healthScore) {
+            let healthColor = 'green';
+            let healthPercent = 0;
+
+            if (healthStatus === 'warning') {
+                healthColor = 'orange';
+                connectionHealthEl.textContent = 'Warning';
+                healthPercent = 50;
+            } else if (healthStatus === 'critical') {
+                healthColor = 'red';
+                connectionHealthEl.textContent = 'Critical';
+                healthPercent = 25;
+            } else if (healthStatus === 'healthy') {
+                connectionHealthEl.textContent = 'Healthy';
+                healthPercent = 90;
+            } else {
+                connectionHealthEl.textContent = 'Unknown';
+                healthColor = 'gray';
+                healthPercent = 0;
+            }
+
+            // If we have a numeric health score, use it for the percentage
+            if (typeof healthScore === 'number') {
+                healthPercent = Math.round(healthScore * 100);
+            }
+
+            connectionHealthPercentEl.textContent = healthPercent;
+            connectionHealthEl.style.color = healthColor;
+        }
+
+        // Listen for messages from service worker
+        navigator.serviceWorker.addEventListener('message', event => {
+            const eventData = event.data;
+
+            if (eventData.type === 'WEBSOCKET_STATUS') {
+                // Update connection status
+                if (eventData.status === 'connected') {
+                    connectionStatusEl.textContent = 'Connected';
+                    connectionStatusEl.style.color = 'green';
+                    isConnected = true;
+                    connectionStartTime = Date.now(); // Reset connection start time
+
+                    connectionNameEl.textContent = getClientId();
+
+                } else if (eventData.status === 'disconnected') {
+                    connectionStatusEl.textContent = 'Disconnected';
+                    connectionStatusEl.style.color = 'red';
+                    isConnected = false;
+
+                    // Show final ping stats on disconnect
+                    if (eventData.pingStats) {
+                        messagesEl.textContent = eventData.pingStats.pongCount;
+                    }
+                } else if (eventData.status === 'error') {
+                    connectionStatusEl.textContent = 'Error';
+                    connectionStatusEl.style.color = 'red';
+                    isConnected = false;
+                }
+            } else if (eventData.type === 'WEBSOCKET_HEALTH') {
+                // Update health status
+                updateHealthDisplay(eventData.status, eventData.score);
+            } else if (eventData.type === 'WEBSOCKET_CLIENT_INFO') {
+                // Update client information
+                if (eventData.clientId) {
+                    connectionNameEl.textContent = eventData.clientId;
+                }
+            }
+        });
+
+        // Update immediately and then every 2.5 seconds
+        updateWebSocketDetails();
+        setInterval(updateWebSocketDetails, 2500);
+    })();
+</script>
