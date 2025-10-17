@@ -1,0 +1,275 @@
+Metadata-Version: 2.4
+Name: cheap-settings
+Version: 1.2.1
+Summary: A lightweight, low footprint settings system
+Project-URL: homepage, https://github.com/evanjpw/cheap-settings
+Project-URL: repository, https://github.com/evanjpw/cheap-settings
+Project-URL: documentation, https://evanjpw.github.io/cheap-settings/
+Project-URL: issues, https://github.com/evanjpw/cheap-settings/issues
+Author-email: Evan Williams <evanjpw@gmail.com>
+License-Expression: MIT
+License-File: LICENSE
+Keywords: application,config,configuration,configurations,env,environment,environments,python,python-config,settings
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries
+Requires-Python: >=3.8
+Provides-Extra: dev
+Requires-Dist: isort>=5.13.2; extra == 'dev'
+Requires-Dist: mkdocs-material>=9.6.21; extra == 'dev'
+Requires-Dist: mkdocs>=1.6.1; extra == 'dev'
+Requires-Dist: mkdocstrings[python]>=0.11.4; extra == 'dev'
+Requires-Dist: pre-commit>=3.5.0; extra == 'dev'
+Requires-Dist: pytest-cov>=5.0.0; extra == 'dev'
+Requires-Dist: pytest>=7.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.13.3; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# Cheap Settings
+
+_A lightweight, low footprint settings system_
+
+  [![PyPI version](https://img.shields.io/pypi/v/cheap-settings.svg)](https://pypi.org/project/cheap-settings/)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+  [![Python Versions](https://img.shields.io/pypi/pyversions/cheap-settings.svg)](https://pypi.org/project/cheap-settings/)
+  [![Downloads](https://pepy.tech/badge/cheap-settings)](https://pepy.tech/project/cheap-settings)
+  [![GitHub Pages - Documentation](https://img.shields.io/badge/GitHub_Pages-Documentation-2ea44f?logo=GitHub)](https://evanjpw.github.io/cheap-settings/)
+
+`cheap-settings` is a Python package for providing a very simple, very low impact, configuration. The Python
+configuration & settings landscape is virtually overflowing with clever, advanced, flexible solutions that cover
+many needs. However, what _I_ needed was a bit different from any config/settings package that I was aware of.
+
+The main thing that distinguishes `cheap_settings` from any alternative solutions is simplicity: it is _extremely_
+simple (& ergonomic) to use, & it intentionally limits its scope & feature set to be simple to understand.
+
+Additionally, it supports circumstances where it is difficult to bring your config file with you. All of your config
+is defined in the code or in the environment.
+
+## OK, How Does it Actually Work?
+
+Define your settings class as a subclass of `CheapSettings`. Add your settings values to your class as class attributes.
+Add type hints so `cheap_settings` knows how to convert values. Add initializers for your default values of the
+settings.
+
+At runtime, `cheap_settings` will read any environment variable with the same name as your attributes, *and override
+the attribute value, automatically converting to the correct type (even for Optional types)*.
+
+Then, from anywhere in your code, you can use `MySettings.MY_VALUE`.
+
+It intentionally doesn't allow you to access environment variables that don't have a corresponding attribute assigned in
+your settings class, because you want to know if you are not using the correct setting name.
+
+It also provides the option of overriding the config settings with command line arguments. If you like, it can add
+arguments that correspond to your settings, & parse them. If you do that, the command line values override the
+initializer values _and_ the environment variables.
+
+That's it. That's what it does (& nothing else).
+
+```python
+from os import environ
+from typing import Optional
+from cheap_settings import CheapSettings
+
+class MySettings(CheapSettings):
+    # With explicit type annotations
+    MAX_ANNOYANCE: int = 0
+    ANNOYANCE_FACTOR: float = 0.0
+    ANNOYANCE_NAME: str = ""
+    ANNOYANCE_ATTRIBUTES: list = []
+    AM_I_ANNOYED: bool = False
+    HOW_ANNOYED_EACH_DAY: dict = {}
+    # Python 3.10+ union syntax also works: `OPTIONAL_ANNOYANCE: float | None = None`
+    OPTIONAL_ANNOYANCE: Optional[float] = None
+
+    # Or let cheap-settings infer types from the defaults (These work exactly the same as above):
+    max_annoyance_inferred = 0  # Infers int
+    annoyance_factor_inferred = 0.0  # Infers float
+    annoyance_name_inferred = ""  # Infers str
+
+# As you would expect:
+assert MySettings.MAX_ANNOYANCE == 0
+assert MySettings.ANNOYANCE_FACTOR == 0.0
+assert MySettings.ANNOYANCE_NAME == ""
+assert MySettings.ANNOYANCE_ATTRIBUTES == []
+assert MySettings.AM_I_ANNOYED is False
+assert MySettings.HOW_ANNOYED_EACH_DAY ==  {}
+assert MySettings.OPTIONAL_ANNOYANCE is None
+
+# But what if we now set some environment variables?
+
+environ["MAX_ANNOYANCE"] = "100"
+environ["ANNOYANCE_FACTOR"] = "2.71828"
+environ["ANNOYANCE_NAME"] = "leaf blowers"
+environ["ANNOYANCE_ATTRIBUTES"] = '["noise!", "exhaust"]'  # Any valid JSON array
+environ["AM_I_ANNOYED"] = "true"  # "true"/"false", "1"/"0", "yes"/"no", "on"/"off" (case-insensitive)
+environ["HOW_ANNOYED_EACH_DAY"] = '{"Monday": "10%", "Tuesday": "90%"}'  # Any valid JSON object
+environ["OPTIONAL_ANNOYANCE"] = "32.767"  # or "none" to set to None for Optional types
+
+# Now
+
+assert MySettings.MAX_ANNOYANCE == 100  # It's known to be an int from the type hint
+assert MySettings.ANNOYANCE_FACTOR == 2.71828  # Float works the same way
+assert MySettings.ANNOYANCE_NAME == "leaf blowers"
+assert MySettings.ANNOYANCE_ATTRIBUTES == ["noise!", "exhaust"]  # Converts to list
+assert MySettings.AM_I_ANNOYED is True  # Case-insensitive conversion of "true" or "false"
+assert MySettings.HOW_ANNOYED_EACH_DAY ==  {"Monday": "10%", "Tuesday": "90%"}  # Converts to a dict
+assert MySettings.OPTIONAL_ANNOYANCE == 32.767  # Correctly converts with Optional types (or type unions!)
+```
+
+You can also use inheritance:
+
+```python
+from cheap_settings import CheapSettings
+
+class BaseSettings(CheapSettings):
+    host: str = "localhost"
+    port: int = 8080
+
+class TestSettings(BaseSettings):
+    debug: bool = True  # Inherits host and port from BaseSettings
+```
+
+To use command line arguments:
+
+```python
+# After defining MySettings...
+TestSettings.set_config_from_command_line()
+
+# You can also pass an instance of `argparse.ArgumentParser` to define your own command line arguments.
+# `set_config_from_command_line` will return the result from `parse_args`.
+
+# Now you can run: python myapp.py --host example.com --port 3000 --debug
+assert TestSettings.host == "example.com"  # CLI overrides env vars and defaults
+```
+
+**Settings Without Initializers**
+
+You can define settings with type annotations but no default values - see [the documentation](https://evanjpw.github.io/cheap-settings/api/#settings-without-initializers) for details.
+
+**User Request**: Pickling
+
+A user asked for `cheap-settings` to support pickling (because [ray](https://github.com/ray-project/ray)). Done! You can
+now pickle & unpickle classes derived from `CheapSettings`.
+
+```python
+import pickle
+
+# Pickle and unpickle the class
+pickled = pickle.dumps(TestSettings)
+unpickled_class = pickle.loads(pickled)
+
+# Verify the class works after unpickling by comparing to the original
+assert unpickled_class.host == TestSettings.host
+assert unpickled_class.port == TestSettings.port
+assert unpickled_class.debug == TestSettings.debug
+```
+
+## Why would I want this?
+
+> _You keep using the word "simple". What do you mean by that, & why should I care about it?_
+
+Maybe you don't. Maybe you will not want this & don't really care about simplicity.
+
+However, I'll explain what I mean, & why _I_ cared sufficiently to write this.
+
+When I'm writing a new library/package/application/service, I'll quite often eventually need some kind of setting for
+something. Maybe it's a retry timeout. Maybe it's a buffer size, or a number of threads. Maybe it's a connection string.
+
+What do you do with it? You could code it inline, but that tends to be a source of regret. You could make it a constant
+at the top of the file, but that becomes a slightly later source of regret.
+
+So, you need some kind of configuration or settings. Historically, people made a `settings.py` file that was just a
+python module & wrote them in there, which works, but has its own set of issues. Also, if you want to override these
+settings, now you have to manually code it, which can become very unpleasant & lead to a messy pile of code.
+
+Now what? You could put your config in a config file! What format? Whatever. However, now you are dragging the config
+file around, & maybe you need to `.gitignore` your config file(s), & now you will need a `config.whatever.example` file
+that you need to keep in sync with your settings (& you also need to keep your various config files in sync).
+
+What if the code can't find your config file? Does it stop? Does it have reasonable default values? Where do you keep
+those?
+
+How do you deploy the config file? How do you keep it & your code together?
+
+What do you do about those environment variables, & command line options?
+
+Maybe you have decided to use a package. That's excellent. There are many options. This one, for example.
+
+Typically, you have to setup the config. Maybe it's manual, or maybe it just works. But now you have a config object.
+How do you get it to the place that you need it? Do you pass it through function arguments? Make it an attribute on your
+object(s)? Make a global instance? Why am I managing this thing? Why am I doing all of this plumbing? Why do I now
+have `config.get("setting_name", "default-value-that-I-was-trying-to-avoid")` or
+`getattr(config, "thing_that_should_always_be_there", "but-what-if-it-isn't")`?
+
+Why is this difficult? It shouldn't be difficult. I'm trying to do a thing, not configure something.
+
+That happened to me a lot. In response, I wrote this.
+
+You make a class, which is a subclass of `CheapSettings`. You add the annoying values as attributes, right on the class
+definition. Put it in some file called `config.py` or something. You need to use the setting somewhere in your code?
+`from .config import MyConfig` (or whatever import path makes sense in your project). Then you can say
+`MyConfig.some_setting`. Done. You need to set it with an environment variable or a command line option? Already done.
+For the command line parsing, add `MySettings.set_config_from_command_line()` (you can ignore the return value). How do
+you deploy? However you want, your settings will follow you.
+
+You are trying to do a thing. Do the thing. Don't spend any time configuring the thing.
+
+That is why, maybe, you want this.
+
+## Installation
+
+Really? Really? You're looking for a settings/config manager for your Python code, & you want me to tell you how to
+use `pip`. OK, cool. I'm happy to help, really:
+
+```shell
+pip install cheap-settings
+```
+
+## Examples
+
+Those would be in the [examples](https://github.com/evanjpw/cheap-settings/tree/main/examples) directory.
+
+## Documentation
+
+Visit [the documentation site](https://evanjpw.github.io/cheap-settings/) on GitHub Pages.
+
+## TBD - Features to be Added
+
+* Selectable different configurations for different environments (for example, DEV, STAGING, PROD)
+* Expanded type support: `datetime`, `date`, `time`, `Decimal`, `UUID`, custom types with
+ `from_string()` methods
+* Custom validators & converters for field-level validation and custom conversion functions
+
+## Alternatives
+
+You probably don't actually want to use this. There are probably superior alternatives for what you are trying to do.
+For example:
+
+* [betterconf](https://github.com/prostomarkeloff/betterconf) - This is remarkably similar to `cheap_settings`, but,
+ better (it's right in the name). It has more features & does more stuff, at the cost of some complexity.
+* [conftier](https://github.com/Undertone0809/conftier) - Also similar in some ways, & also very cool. Also, quite a
+ bit more complexity.
+* [python-config2](https://github.com/grimen/python-config2) - Also kind of similar. More features, more complexity.
+* Python's own, built-in [configparser](https://docs.python.org/3/library/configparser.html) - This does things a
+ different way, but it's built into Python, so you do not need any dependencies.
+* Roll your own - The simplest is to be old school & write a `settings.py` & be done with it.
+
+# Contributing
+
+If you _do_ decide to use this, I welcome your suggestions, comments, or pull requests.
+
+> Imagine a clever, relevant quote here.
+
+# License
+
+This project is licensed under MIT License.
+
+See [LICENSE](./LICENSE) for details.
