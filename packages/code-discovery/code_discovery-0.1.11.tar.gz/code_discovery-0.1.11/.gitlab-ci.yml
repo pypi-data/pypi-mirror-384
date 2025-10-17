@@ -1,0 +1,43 @@
+stages:
+  - discover
+
+api-discovery:
+  stage: discover
+  image: python:3.11
+  
+  before_script:
+    # Install Python dependencies
+    - pip install -r requirements.txt
+    
+    # Install Java if needed (for Java projects)
+    - apt-get update && apt-get install -y default-jdk || true
+    
+    # Install .NET if needed (for .NET projects)
+    - wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh || true
+    - chmod +x dotnet-install.sh || true
+    - ./dotnet-install.sh --channel 8.0 || true
+    - export PATH="$PATH:$HOME/.dotnet" || true
+  
+  script:
+    - echo "Running API Discovery..."
+    - python -m src.main
+  
+  artifacts:
+    paths:
+      - openapi-spec.*
+    expire_in: 30 days
+    when: always
+  
+  rules:
+    # Run on main/develop branches
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"
+      when: always
+    # Run on merge requests
+    - if: $CI_MERGE_REQUEST_ID
+      when: always
+    # Allow manual trigger
+    - when: manual
+  
+  variables:
+    API_DISCOVERY_TOKEN: $API_DISCOVERY_TOKEN
+

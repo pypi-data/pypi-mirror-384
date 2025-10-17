@@ -1,0 +1,98 @@
+pipeline {
+    agent any
+    
+    environment {
+        API_DISCOVERY_TOKEN = credentials('api-discovery-token')
+    }
+    
+    stages {
+        stage('Setup') {
+            steps {
+                echo 'Setting up environment...'
+                
+                // Install Python dependencies
+                sh '''
+                    python3 -m pip install --user -r requirements.txt
+                '''
+            }
+        }
+        
+        stage('Install Language Runtimes') {
+            parallel {
+                stage('Java Setup') {
+                    when {
+                        expression {
+                            fileExists('pom.xml') || fileExists('build.gradle')
+                        }
+                    }
+                    steps {
+                        echo 'Java detected - ensuring JDK is available'
+                        // Java is typically already installed in Jenkins
+                        sh 'java -version || true'
+                    }
+                }
+                
+                stage('.NET Setup') {
+                    when {
+                        expression {
+                            sh(script: 'find . -name "*.csproj" | head -1', returnStatus: true) == 0
+                        }
+                    }
+                    steps {
+                        echo '.NET project detected'
+                        sh '''
+                            wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh || true
+                            chmod +x dotnet-install.sh || true
+                            ./dotnet-install.sh --channel 8.0 || true
+                            export PATH="$PATH:$HOME/.dotnet"
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('API Discovery') {
+            steps {
+                echo 'Running API Discovery...'
+                sh '''
+                    python3 -m src.main
+                '''
+            }
+        }
+        
+        stage('Archive Results') {
+            steps {
+                echo 'Archiving OpenAPI specification...'
+                archiveArtifacts artifacts: 'openapi-spec.*', allowEmptyArchive: true
+            }
+        }
+        
+        stage('Publish Results') {
+            when {
+                branch 'main'
+            }
+            steps {
+                echo 'Publishing OpenAPI specification...'
+                // Results are automatically committed by the tool if configured
+                // Additional publishing steps can be added here
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'API Discovery completed successfully!'
+        }
+        failure {
+            echo 'API Discovery failed. Check the logs for details.'
+        }
+        always {
+            // Clean up
+            cleanWs(deleteDirs: true, patterns: [
+                [pattern: '__pycache__', type: 'INCLUDE'],
+                [pattern: '*.pyc', type: 'INCLUDE']
+            ])
+        }
+    }
+}
+

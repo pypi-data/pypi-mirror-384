@@ -1,0 +1,60 @@
+version: 2.1
+
+orbs:
+  python: circleci/python@2.1.1
+
+jobs:
+  api-discovery:
+    docker:
+      - image: cimg/python:3.11
+    
+    steps:
+      - checkout
+      
+      - run:
+          name: Install Python dependencies
+          command: |
+            pip install -r requirements.txt
+      
+      - run:
+          name: Install Java (for Java projects)
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y default-jdk || true
+      
+      - run:
+          name: Install .NET (for .NET projects)
+          command: |
+            wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh || true
+            chmod +x dotnet-install.sh || true
+            ./dotnet-install.sh --channel 8.0 || true
+            echo 'export PATH="$PATH:$HOME/.dotnet"' >> $BASH_ENV
+      
+      - run:
+          name: Run API Discovery
+          command: |
+            python -m src.main
+          environment:
+            API_DISCOVERY_TOKEN: ${API_DISCOVERY_TOKEN}
+      
+      - store_artifacts:
+          path: openapi-spec.yaml
+          destination: openapi-spec.yaml
+      
+      - store_artifacts:
+          path: openapi-spec.json
+          destination: openapi-spec.json
+
+workflows:
+  version: 2
+  api-discovery-workflow:
+    jobs:
+      - api-discovery:
+          filters:
+            branches:
+              only:
+                - main
+                - develop
+          context:
+            - api-discovery-secrets
+
