@@ -1,0 +1,51 @@
+name: tests
+
+permissions:
+  contents: read
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Cache pip downloads
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml', '**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install deps (pinned scientific stack)
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip uninstall -y comet comet-ml || true
+          # Force-reinstall to avoid mixing preinstalled wheels
+          pip install --upgrade --force-reinstall "numpy==2.0.*" "scipy==1.14.*"
+          pip install --upgrade --force-reinstall "matplotlib==3.9.*" "seaborn==0.13.*"
+          pip install teneto coverage
+          pip install -e .
+
+      - name: Run tests with coverage
+        env:
+          MPLBACKEND: Agg
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          coverage run -m pytest -q tests
+          coverage report -m
+          coverage xml
+
+      - name: Upload to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage.xml
