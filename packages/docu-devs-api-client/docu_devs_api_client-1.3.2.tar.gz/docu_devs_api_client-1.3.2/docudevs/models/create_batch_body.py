@@ -1,0 +1,81 @@
+from collections.abc import Mapping
+from typing import Any, TypeVar, Union, cast
+
+from attrs import define as _attrs_define
+from attrs import field as _attrs_field
+
+from ..types import UNSET, Unset
+
+T = TypeVar("T", bound="CreateBatchBody")
+
+
+@_attrs_define
+class CreateBatchBody:
+    """
+    Attributes:
+        org_id (str):
+        max_concurrency (Union[None, Unset, int]):
+    """
+
+    org_id: str
+    max_concurrency: Union[None, Unset, int] = UNSET
+    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        org_id = self.org_id
+
+        max_concurrency: Union[None, Unset, int]
+        if isinstance(self.max_concurrency, Unset):
+            max_concurrency = UNSET
+        else:
+            max_concurrency = self.max_concurrency
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update(self.additional_properties)
+        field_dict.update(
+            {
+                "orgId": org_id,
+            }
+        )
+        if max_concurrency is not UNSET:
+            field_dict["maxConcurrency"] = max_concurrency
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        d = dict(src_dict)
+        org_id = d.pop("orgId")
+
+        def _parse_max_concurrency(data: object) -> Union[None, Unset, int]:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(Union[None, Unset, int], data)
+
+        max_concurrency = _parse_max_concurrency(d.pop("maxConcurrency", UNSET))
+
+        create_batch_body = cls(
+            org_id=org_id,
+            max_concurrency=max_concurrency,
+        )
+
+        create_batch_body.additional_properties = d
+        return create_batch_body
+
+    @property
+    def additional_keys(self) -> list[str]:
+        return list(self.additional_properties.keys())
+
+    def __getitem__(self, key: str) -> Any:
+        return self.additional_properties[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.additional_properties[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.additional_properties[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.additional_properties
