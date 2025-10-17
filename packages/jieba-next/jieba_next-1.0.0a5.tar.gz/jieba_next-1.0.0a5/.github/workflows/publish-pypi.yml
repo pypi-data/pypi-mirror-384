@@ -1,0 +1,211 @@
+name: Build and publish to PyPI on tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-wheels-linux:
+    name: Build Linux wheels (${{ matrix.target }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: manylinux_x86_64
+            arch: x86_64
+          - target: manylinux_aarch64
+            arch: aarch64
+          - target: musllinux_x86_64
+            arch: x86_64
+          - target: musllinux_aarch64
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up QEMU (for aarch64 on Linux)
+        if: contains(matrix.target, 'aarch64')
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel==2.21.3
+
+      - name: Build wheels
+        env:
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_SKIP: cp36-* cp37-*
+          # Build specific Linux target variants in parallel by matrix
+          CIBW_BUILD: "cp39-${{ matrix.target }} cp310-${{ matrix.target }} cp311-${{ matrix.target }} cp312-${{ matrix.target }} cp313-${{ matrix.target }}"
+          # Install Rust in the build environment
+          CIBW_BEFORE_ALL_LINUX: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env"
+          CIBW_ENVIRONMENT: "PATH=$HOME/.cargo/bin:$PATH"
+          # Use POSIX quoting for Linux
+          CIBW_TEST_COMMAND: "python -c 'import jieba_next;  from jieba_next import analyse;print(jieba_next.__version__)'"
+        run: |
+          python -m cibuildwheel --output-dir wheelhouse
+
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: wheelhouse/*.whl
+
+  build-wheels-nonlinux:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15-intel, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ensure tags and full history for setuptools_scm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install cibuildwheel==2.21.3
+
+      - name: Build wheels
+        env:
+          CIBW_BUILD_VERBOSITY: 1
+          # On macOS, cibuildwheel auto-detects: x86_64 on macos-15-intel, arm64 on macos-15
+          CIBW_SKIP: cp36-* cp37-* cp38-*
+          CIBW_BUILD: cp39-* cp310-* cp311-* cp312-* cp313-*
+          # Set macOS deployment target
+          MACOSX_DEPLOYMENT_TARGET: "10.12"
+          # Install Rust for each platform
+          CIBW_BEFORE_ALL_MACOS: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+          CIBW_BEFORE_ALL_WINDOWS: "curl --proto =https --tlsv1.2 -sSf https://win.rustup.rs/x86_64 -o rustup-init.exe && rustup-init.exe -y"
+          # Ensure Rust is available for building
+          CIBW_BEFORE_BUILD: "pip install setuptools-rust"
+          CIBW_BEFORE_BUILD_MACOS: "source ~/.cargo/env && pip install setuptools-rust"
+          CIBW_BEFORE_BUILD_WINDOWS: "pip install setuptools-rust"
+          # Use POSIX quoting on macOS, and Windows-specific quoting on Windows
+          CIBW_TEST_COMMAND: "python -c 'import jieba_next; from jieba_next import analyse; print(jieba_next.__version__)'"
+          CIBW_TEST_COMMAND_WINDOWS: 'python -c "import jieba_next; from jieba_next import analyse; print(jieba_next.__version__)"'
+        run: |
+          python -m cibuildwheel --output-dir wheelhouse
+
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ensure tags and full history for setuptools_scm
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build sdist
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build --sdist --outdir dist
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-wheels-linux, build-wheels-nonlinux, build-sdist]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write  # for future OIDC trusted publishing if enabled
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifact directory
+        shell: bash
+        run: |
+          shopt -s globstar
+          mkdir -p upload
+          mv dist/**/**/*.whl upload/ || true
+          mv dist/**/*.whl upload/ || true
+          mv dist/**/**/*.tar.gz upload/ || true
+          mv dist/**/*.tar.gz upload/ || true
+          ls -al upload
+
+      - name: Verify tag matches scm version
+        shell: bash
+        run: |
+          # Only verify on tag refs
+          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            echo "Not a tag ref (${GITHUB_REF}), skipping version verification."
+            exit 0
+          fi
+          pip install setuptools-scm
+          TAG_RAW="${GITHUB_REF##*/}"         # e.g. v1.0.0-alpha.3
+          # Normalize tag to PEP 440 prerelease: -alpha.N/-beta.N/-rc.N -> aN/bN/rcN; also strip leading v
+          TAG_NORMALIZED=$(echo "$TAG_RAW" | sed -E 's/^[vV]//; s/-alpha[-.]?([0-9]+)$/a\1/; s/-beta[-.]?([0-9]+)$/b\1/; s/-rc[-.]?([0-9]+)$/rc\1/')
+          VERSION=$(python -m setuptools_scm)
+          if [[ "$TAG_NORMALIZED" != "$VERSION" ]]; then
+            echo "Tag $TAG_RAW (normalized: $TAG_NORMALIZED) does not match scm version $VERSION" >&2
+            exit 1
+          fi
+          echo "Tag and scm version match: $TAG_RAW ~ $VERSION"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          packages-dir: upload
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
