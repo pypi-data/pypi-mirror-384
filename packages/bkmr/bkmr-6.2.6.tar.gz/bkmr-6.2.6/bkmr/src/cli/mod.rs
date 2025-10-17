@@ -1,0 +1,78 @@
+// bkmr/src/cli/mod.rs
+use crate::cli::args::{Cli, Commands};
+use crate::cli::error::CliResult;
+use crate::infrastructure::di::ServiceContainer;
+use crate::config::Settings;
+use termcolor::StandardStream;
+
+pub mod args;
+pub mod bookmark_commands;
+pub mod command_handler;
+pub mod completion;
+pub mod display;
+pub mod error;
+pub mod fzf;
+pub mod process;
+pub mod tag_commands;
+
+// Old execute_command removed - use execute_command_with_services with dependency injection
+
+pub fn execute_command_with_services(
+    stderr: StandardStream, 
+    cli: Cli, 
+    services: ServiceContainer,
+    settings: &Settings,
+) -> CliResult<()> {
+    match cli.command {
+        Some(Commands::Search { .. }) => {
+            let handler = command_handler::SearchCommandHandler::with_services(services, settings.clone());
+            handler.execute(cli)
+        }
+        Some(Commands::SemSearch { .. }) => bookmark_commands::semantic_search(stderr, cli, &services),
+        Some(Commands::Open { .. }) => bookmark_commands::open(cli, services.bookmark_service.clone(), services.action_service.clone()),
+        Some(Commands::Add { .. }) => bookmark_commands::add(cli, services.bookmark_service.clone(), services.template_service.clone()),
+        Some(Commands::Delete { .. }) => bookmark_commands::delete(cli, services.bookmark_service.clone()),
+        Some(Commands::Update { .. }) => bookmark_commands::update(cli, services.bookmark_service.clone(), services.tag_service.clone()),
+        Some(Commands::Edit { .. }) => bookmark_commands::edit(cli, services.bookmark_service.clone(), services.template_service.clone(), settings),
+        Some(Commands::Show { .. }) => bookmark_commands::show(cli, &services),
+        Some(Commands::Tags { .. }) => tag_commands::show_tags(cli, &services),
+        Some(Commands::Surprise { .. }) => bookmark_commands::surprise(cli, &services),
+        Some(Commands::SetEmbeddable { .. }) => bookmark_commands::set_embeddable(cli, &services),
+        Some(Commands::Backfill { .. }) => bookmark_commands::backfill(cli, &services),
+        Some(Commands::LoadTexts { .. }) => bookmark_commands::load_texts(cli, &services),
+        Some(Commands::LoadJson { .. }) => bookmark_commands::load_json(cli, &services),
+        Some(Commands::ImportFiles { .. }) => bookmark_commands::import_files(cli, &services),
+        Some(Commands::Info { .. }) => bookmark_commands::info(cli, &services, settings),
+        Some(Commands::Lsp { no_interpolation }) => handle_lsp(settings, no_interpolation),
+        Some(Commands::CreateDb { .. }) => {
+            // This should never be reached as CreateDb is handled specially in main.rs
+            Err(error::CliError::CommandFailed("CreateDb command should be handled in main.rs".to_string()))
+        }
+        Some(Commands::Completion { .. }) => {
+            // This should never be reached as Completion is handled specially in main.rs
+            Err(error::CliError::CommandFailed("Completion command should be handled in main.rs".to_string()))
+        }
+        Some(Commands::Xxx { ids, tags }) => {
+            eprintln!("ids: {:?}, tags: {:?}", ids, tags);
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
+
+fn handle_lsp(settings: &Settings, no_interpolation: bool) -> CliResult<()> {
+    use tokio::runtime::Runtime;
+
+    // Create a tokio runtime for the LSP server
+    let rt = Runtime::new().map_err(|e| {
+        error::CliError::CommandFailed(format!("Failed to create async runtime: {}", e))
+    })?;
+
+    // Run the LSP server
+    rt.block_on(async {
+        crate::lsp::run_lsp_server(settings, no_interpolation).await;
+    });
+
+    Ok(())
+}
