@@ -1,0 +1,59 @@
+{% extends "territories_dashboard_lib/website/layout/base.html" %}
+
+{% load static %}
+
+{% block page_title %}{{dashboard.label}}{% endblock %}
+
+{% block css %}
+    {% include "territories_dashboard_lib/website/pages/superset/page.css" %}
+{% endblock %}
+
+{% block extra_head%}
+    <script src="{% static 'territories_dashboard_lib/website/js/supersetEmbed.js' %}"></script>
+    <script>
+      const dashboardID = "{{ dashboard.superset_id }}";
+      async function fetchGuestToken() {
+        const response = await fetch(
+          `/api/superset/guest-token/?dashboard=${dashboardID}`,
+        );
+        if (response.ok) {
+          const guestToken = await response.text();
+          return guestToken;
+        } else {
+          throw Error("could not fetch guest token");
+        }
+      }
+
+      const dashboardUiConfig = {
+        hideTitle: false,
+        filters: {
+          expanded: true,
+        }
+      };
+
+      {% if dashboard_filter %}
+        {% autoescape off %}
+          dashboardUiConfig["urlParams"] = { native_filters: `{{dashboard_filter}}` };
+        {% endautoescape %}
+      {% endif %}
+
+
+      document.addEventListener("DOMContentLoaded", () => {
+          supersetEmbeddedSdk.embedDashboard({
+          id: dashboardID,
+          supersetDomain:
+            "https://mobilite-durable-tdb.dataviz.din.developpement-durable.gouv.fr",
+          mountPoint: document.getElementById("superset-container"),
+          fetchGuestToken,
+          dashboardUiConfig,
+          iframeSandboxExtras: ['allow-top-navigation', 'allow-popups-to-escape-sandbox']
+        });
+      })
+  </script>
+{% endblock %}
+
+{% block main %}
+<main role="main" id="contenu" tabindex="-1">
+  <div id="superset-container"></div>
+</main>
+{% endblock %}
