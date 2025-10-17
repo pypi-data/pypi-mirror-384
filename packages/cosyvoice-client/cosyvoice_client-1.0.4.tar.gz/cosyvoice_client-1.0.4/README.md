@@ -1,0 +1,621 @@
+# CosyVoice Python SDK
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+**Production-Ready Async TTS Client for CosyVoice Services**
+
+Enterprise-grade asynchronous text-to-speech SDK designed for high-concurrency, low-latency real-time voice synthesis scenarios. The optimal choice for building intelligent voice interaction applications.
+
+## Overview
+
+CosyVoice Python SDK is an async-first TTS client library that provides:
+
+- **🚀 Real-time Streaming Synthesis**: Text stream input, audio stream output with minimized time-to-first-byte
+- **🎭 Custom Voice Management**: Create unique voices from audio samples with zero-shot voice cloning
+- **⚡ High-Performance Async Architecture**: Support thousands of concurrent requests with auto-reconnection
+- **🔧 Production-Ready**: Complete error handling, monitoring metrics, and load balancing support
+- **📡 Multi-Protocol Support**: WebSocket streaming synthesis + HTTP RESTful voice management
+- **🎵 Multi-Format Output**: Support WAV, MP3, PCM and other audio formats
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install cosyvoice-client
+# or using uv
+uv add cosyvoice-client
+```
+
+### Authentication & Configuration
+
+The SDK supports multiple authentication and configuration methods:
+
+#### Environment Variables (Recommended)
+
+```bash
+export COSYVOICE_BASE_URL="https://api.cosyvoice.com"
+export COSYVOICE_API_KEY="your_api_key_here"
+```
+
+#### Configuration in Code
+
+```python
+import cosyvoice
+
+# Method 1: Using connection string
+client = await cosyvoice.create_client(
+    server_url="wss://api.cosyvoice.com",
+    api_key="your_api_key"
+)
+
+# Method 2: Using connection string with parameters
+client = await cosyvoice.create_client(
+    server_url="wss://api.cosyvoice.com",
+    api_key="your_api_key",
+    connect_timeout=30.0,
+    request_timeout=60.0,
+    ping_interval=20.0
+)
+
+# Method 3: Using context manager (recommended)
+async with cosyvoice.connect_client(
+    server_url="wss://api.cosyvoice.com",
+    api_key="your_api_key"
+) as client:
+    # Use client
+    pass
+```
+
+### Basic Usage Example
+
+```python
+import asyncio
+import cosyvoice
+
+async def basic_tts_example():
+    # Connect to CosyVoice service
+    async with cosyvoice.create_client() as client:
+
+        # 1. Create custom speaker
+        speaker = await client.speaker.create(
+            prompt_text="Hello, this is my voice sample.",
+            prompt_audio_path="https://example.com/voice_sample.wav"
+        )
+
+        # 2. Configure synthesis parameters
+        config = cosyvoice.SynthesisConfig(
+            speaker_id=speaker.zero_shot_spk_id,
+            mode=cosyvoice.SynthesisMode.ZERO_SHOT,
+            speed=1.2,
+            output_format=cosyvoice.AudioFormat.WAV
+        )
+
+        # 3. Synthesize speech
+        audio_data = await client.collect_audio(
+            "Welcome to CosyVoice TTS service!",
+            config
+        )
+
+        # 4. Save audio file
+        with open("output.wav", "wb") as f:
+            f.write(audio_data)
+
+asyncio.run(basic_tts_example())
+```
+
+## API Reference
+
+### Authentication
+
+The SDK uses **Bearer Token** authentication for HTTP APIs and **query parameter token** for WebSocket connections.
+
+| Method | HTTP Header | WebSocket URL Parameter |
+|--------|-------------|------------------------|
+| Bearer Token | `Authorization: Bearer {token}` | `?token={token}` |
+
+### Core Interfaces
+
+#### 1. Client Management
+
+##### Create Client Connection
+
+```python
+# Create client with auto-configuration from environment
+client = await cosyvoice.create_client()
+
+# Create client with explicit configuration
+client = await cosyvoice.create_client(
+    endpoint_url="wss://api.cosyvoice.com",
+    api_key="your_api_key",
+    timeout=30.0
+)
+
+# Using context manager (recommended)
+async with cosyvoice.create_client() as client:
+    # Use client
+    pass
+```
+
+#### 2. Speaker Management API
+
+##### Create Speaker
+
+Creates a new custom voice from reference audio.
+
+**Request:**
+```python
+speaker = await client.speaker.create(
+    prompt_text: str,              # Reference text (1-500 chars)
+    prompt_audio_path: str,        # HTTP/HTTPS URL to audio file
+    zero_shot_spk_id: str = None   # Optional custom ID (auto-generated if not provided)
+)
+```
+
+**Response:**
+```python
+class SpeakerInfo:
+    zero_shot_spk_id: str     # Speaker unique identifier
+    prompt_text: str          # Reference text
+    created_at: str           # Creation timestamp (ISO format)
+    audio_url: str            # Reference audio URL
+```
+
+##### Get Speaker Information
+
+```python
+speaker_info = await client.speaker.get_info(speaker_id: str)
+```
+
+##### Update Speaker
+
+```python
+await client.speaker.update(
+    speaker_id: str,
+    prompt_text: str = None,        # Optional new reference text
+    prompt_audio_path: str = None   # Optional new reference audio
+)
+```
+
+##### Delete Speaker
+
+```python
+await client.speaker.delete(speaker_id: str)
+```
+
+##### Check Speaker Existence
+
+```python
+exists = await client.speaker.exists(speaker_id: str)
+```
+
+#### 3. Speech Synthesis API
+
+##### Synthesis Configuration
+
+```python
+config = cosyvoice.SynthesisConfig(
+    speaker_id: str,                                    # Required: Speaker ID
+    mode: SynthesisMode = SynthesisMode.ZERO_SHOT,     # Synthesis mode
+    speed: float = 1.0,                                # Speed multiplier (0.5-3.0)
+    output_format: AudioFormat = AudioFormat.WAV,      # Audio format
+    sample_rate: int = 22050,                          # Sample rate (Hz)
+    instruct_text: str = None,                         # Instruction text (instruct mode only)
+    bit_rate: int = 192000,                            # Bit rate for MP3 (bps)
+    compression_level: int = 2                         # Compression level (0-9)
+)
+```
+
+**Supported Synthesis Modes:**
+- `ZERO_SHOT`: Custom voice cloning mode
+- `SFT`: Pre-trained voice mode
+- `CROSS_LINGUAL`: Cross-lingual synthesis
+- `INSTRUCT`: Natural language instruction mode
+
+**Supported Audio Formats:**
+- `WAV`: Uncompressed audio
+- `MP3`: Compressed audio with configurable bit rate
+- `PCM`: Raw audio data
+
+##### Batch Synthesis
+
+Synthesize entire text at once.
+
+```python
+audio_data: bytes = await client.collect_audio(
+    text: str,
+    config: SynthesisConfig
+)
+```
+
+##### Streaming Synthesis
+
+Process audio chunks as they arrive for low-latency playback.
+
+```python
+async for result in client.synthesize_text(text: str, config: SynthesisConfig):
+    # result.audio_data: bytes - Audio chunk data
+    # result.text_index: int - Text segment index
+    # result.chunk_index: int - Audio chunk index within text segment
+
+
+    # Process audio chunk immediately for real-time playback
+    await audio_player.play(result.audio_data)
+```
+
+##### Text Stream Synthesis
+
+Synthesize text as it arrives (ideal for LLM integration).
+
+```python
+async def text_generator():
+    # Simulate streaming text from LLM
+    sentences = ["Hello", "How are you?", "Welcome to our service!"]
+    for sentence in sentences:
+        yield sentence
+        await asyncio.sleep(0.1)
+
+async for result in client.synthesize_stream(text_generator(), config):
+    await audio_player.play(result.audio_data)
+```
+
+##### Quick Synthesis
+
+One-shot synthesis with automatic speaker creation.
+
+```python
+audio_data = await client.quick_synthesize(
+    text: str,
+    speaker_prompt_text: str,
+    speaker_audio_file: str,
+    speed: float = 1.0,
+    output_file: str = None
+)
+```
+
+### Data Models
+
+#### SynthesisResult
+
+```python
+class SynthesisResult:
+    audio_data: bytes      # Audio chunk data
+    text_index: int        # Text segment index
+    chunk_index: int       # Audio chunk index
+    session_id: str        # Synthesis session ID
+    metadata: dict         # Additional metadata
+```
+
+#### Error Handling
+
+```python
+# Exception hierarchy
+CosyVoiceError                 # Base exception
+├── ConnectionError            # Network connection issues
+├── AuthenticationError        # Authentication failures
+├── SpeakerError              # Speaker management errors
+├── SynthesisError            # Speech synthesis errors
+├── InvalidStateError         # Client state errors
+└── ValidationError           # Input validation errors
+
+# Error handling example
+try:
+    async with cosyvoice.create_client() as client:
+        audio = await client.collect_audio("Hello world", config)
+
+except cosyvoice.ConnectionError as e:
+    print(f"Connection failed: {e}")
+except cosyvoice.SpeakerError as e:
+    print(f"Speaker error: {e}")
+except cosyvoice.SynthesisError as e:
+    print(f"Synthesis error: {e}")
+```
+
+## Advanced Usage
+
+### Production Integration Patterns
+
+#### 1. High-Concurrency Server Integration
+
+```python
+import asyncio
+import cosyvoice
+from typing import Dict
+import uuid
+
+class ProductionTTSService:
+    def __init__(self, endpoint: str, api_key: str):
+        self.endpoint = endpoint
+        self.api_key = api_key
+        self.active_sessions: Dict[str, asyncio.Task] = {}
+        self.session_semaphore = asyncio.Semaphore(1000)  # Max concurrent sessions
+
+    async def create_session_client(self) -> cosyvoice.StreamClient:
+        """Create dedicated client for each session"""
+        return await cosyvoice.create_client(server_url=self.endpoint, api_key=self.api_key)
+
+    async def handle_user_request(self, user_id: str, text: str, config: cosyvoice.SynthesisConfig):
+        """Handle individual user TTS request"""
+        async with self.session_semaphore:
+            session_id = f"{user_id}_{uuid.uuid4().hex[:8]}"
+
+            try:
+                async with self.create_session_client() as client:
+                    # Stream synthesis results
+                    async for result in client.synthesize_text(text, config):
+                        # Send to user immediately (WebSocket/SSE/etc.)
+                        await self.send_to_user(user_id, result.audio_data)
+
+            except Exception as e:
+                await self.handle_error(user_id, e)
+            finally:
+                # Cleanup
+                if session_id in self.active_sessions:
+                    del self.active_sessions[session_id]
+
+# FastAPI integration example
+from fastapi import FastAPI, WebSocket
+
+app = FastAPI()
+tts_service = ProductionTTSService("wss://api.cosyvoice.com", "your_key")
+
+@app.websocket("/tts/{user_id}")
+async def tts_websocket(websocket: WebSocket, user_id: str):
+    await websocket.accept()
+
+    try:
+        while True:
+            # Receive TTS request
+            data = await websocket.receive_json()
+
+            config = cosyvoice.SynthesisConfig(
+                speaker_id=data["speaker_id"],
+                speed=data.get("speed", 1.0)
+            )
+
+            # Process in background
+            task = asyncio.create_task(
+                tts_service.handle_user_request(user_id, data["text"], config)
+            )
+            tts_service.active_sessions[f"{user_id}_current"] = task
+
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+```
+
+#### 2. LLM + TTS Integration
+
+```python
+async def llm_with_voice_response(user_question: str, voice_config: cosyvoice.SynthesisConfig):
+    """Stream LLM response directly to voice synthesis"""
+
+    async def llm_text_stream():
+        # Replace with your LLM client (OpenAI, Anthropic, etc.)
+        async for text_chunk in your_llm_client.stream(user_question):
+            yield text_chunk
+
+    async with cosyvoice.create_client() as tts_client:
+        # Stream voice synthesis from LLM output
+        async for audio_result in tts_client.synthesize_stream(llm_text_stream(), voice_config):
+            # Send audio to user in real-time
+            await send_audio_to_user(audio_result.audio_data)
+```
+
+
+### Performance Monitoring
+
+```python
+import time
+from prometheus_client import Counter, Histogram
+
+# Metrics
+tts_requests_total = Counter('cosyvoice_requests_total', 'Total TTS requests')
+tts_duration_seconds = Histogram('cosyvoice_duration_seconds', 'TTS request duration')
+tts_errors_total = Counter('cosyvoice_errors_total', 'Total TTS errors', ['error_type'])
+
+async def monitored_synthesis(client: cosyvoice.StreamClient, text: str, config: cosyvoice.SynthesisConfig):
+    """TTS with monitoring metrics"""
+    tts_requests_total.inc()
+    start_time = time.time()
+
+    try:
+        with tts_duration_seconds.time():
+            audio_data = await client.collect_audio(text, config)
+            return audio_data
+
+    except cosyvoice.ConnectionError:
+        tts_errors_total.labels(error_type='connection').inc()
+        raise
+    except cosyvoice.SynthesisError:
+        tts_errors_total.labels(error_type='synthesis').inc()
+        raise
+```
+
+### Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COSYVOICE_BASE_URL` | `http://localhost:8080` | Service endpoint URL |
+| `COSYVOICE_API_KEY` | None | API authentication key |
+| `COSYVOICE_CONNECTION_TIMEOUT` | `30.0` | Connection timeout (seconds) |
+| `COSYVOICE_READ_TIMEOUT` | `60.0` | Read timeout (seconds) |
+| `COSYVOICE_MAX_RECONNECT_ATTEMPTS` | `3` | Maximum reconnection attempts |
+| `COSYVOICE_PING_INTERVAL` | `20.0` | WebSocket ping interval (seconds) |
+| `COSYVOICE_PING_TIMEOUT` | `10.0` | WebSocket ping timeout (seconds) |
+
+### Protocol Specifications
+
+#### WebSocket Protocol
+
+The SDK communicates with CosyVoice servers using a structured WebSocket protocol:
+
+**Message Format:**
+```json
+{
+  "header": {
+    "version": "1.0",
+    "message_type": "TEXT_REQUEST",
+    "timestamp": "2024-01-01T12:00:00Z",
+    "sequence": 1
+  },
+  "payload": {
+    "session_id": "session_123",
+    "params": {
+      "text": "Hello world",
+      "mode": "zero_shot",
+      "speed": 1.0,
+      "output_format": "wav"
+    }
+  }
+}
+```
+
+**Message Types:**
+- Client → Server: `CONNECT_REQUEST`, `SESSION_REQUEST`, `TEXT_REQUEST`, `SYNTHESIS_END`
+- Server → Client: `AUDIO_RESPONSE`, `AUDIO_COMPLETE`, `ERROR_RESPONSE`
+
+#### HTTP API Endpoints
+
+**Speaker Management:**
+```
+POST   /v1/speakers              # Create speaker
+GET    /v1/speakers/{id}         # Get speaker info
+PUT    /v1/speakers/{id}         # Update speaker
+DELETE /v1/speakers/{id}         # Delete speaker
+```
+
+## Development
+
+### Environment Setup
+
+```bash
+# Clone repository
+git clone https://github.com/cosyvoice/cosyvoice-python.git
+cd cosyvoice-python
+
+# Install uv package manager
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies
+uv sync --dev
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with coverage
+uv run pytest --cov=cosyvoice --cov-report=html
+
+# Run specific test types
+uv run pytest -m unit           # Unit tests only
+uv run pytest -m integration   # Integration tests only
+uv run pytest -m slow          # Network-dependent tests
+```
+
+### Code Quality
+
+```bash
+# Format code
+uv run black cosyvoice tests examples
+uv run isort cosyvoice tests examples
+
+# Lint code
+uv run ruff check cosyvoice tests examples
+uv run ruff check --fix cosyvoice tests examples
+
+# Type checking
+uv run mypy cosyvoice
+```
+
+### Running Examples
+
+```bash
+# Basic synthesis example
+uv run python examples/basic_synthesis.py
+
+# Real-time streaming example
+uv run python examples/realtime_streaming.py
+
+# Speaker management example
+uv run python examples/speaker_management.py
+```
+
+## Performance Guidelines
+
+### Latency Optimization
+
+- **TTFB Target**: < 300ms for optimal user experience
+- **RTF Target**: < 0.3 for real-time performance
+- **Connection Reuse**: Maintain persistent WebSocket connections
+- **Streaming**: Use `synthesize_stream()` for lowest latency
+
+### Throughput Optimization
+
+- **Connection Pooling**: Pre-create client connections
+- **Concurrent Sessions**: Support multiple parallel synthesis requests
+- **Batch Processing**: Group small text segments when possible
+- **Format Selection**: Use PCM for lowest processing overhead
+
+### Resource Management
+
+- **Memory**: Process audio chunks immediately, avoid accumulation
+- **Connections**: Use context managers for automatic cleanup
+- **Error Recovery**: Implement exponential backoff for reconnections
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Connection Timeout**
+   ```python
+   # Increase timeout values
+   client = await cosyvoice.create_client(
+       server_url="wss://api.cosyvoice.com",
+       connect_timeout=60.0,
+       request_timeout=120.0
+   )
+   ```
+
+2. **Speaker Not Found**
+   ```python
+   # Always check speaker existence
+   if not await client.speaker.exists(speaker_id):
+       speaker = await client.speaker.create(prompt_text, audio_url)
+       speaker_id = speaker.zero_shot_spk_id
+   ```
+
+3. **Audio Format Issues**
+   ```python
+   # PCM format requires explicit WAV conversion for playback
+   from cosyvoice.utils.audio import write_wav_file
+   write_wav_file(pcm_data, "output.wav", sample_rate=22050)
+   ```
+
+### Debug Logging
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Enable detailed WebSocket and HTTP logging
+logger = logging.getLogger("cosyvoice")
+logger.setLevel(logging.DEBUG)
+```
+
+## Support & Community
+
+- **Examples**: Complete integration samples in `/examples` directory
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and suggest improvements.
+
+
