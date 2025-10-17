@@ -1,0 +1,100 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-uv-python
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(uv run bump-my-version show current_version)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Check if release needed
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          FORCE="${{ github.event.inputs.force_release }}"
+          
+          # Check if tag exists using GitHub API
+          if curl -s "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/v$VERSION" | grep -q '"ref"'; then
+            echo "Tag v$VERSION already exists"
+            SHOULD_RELEASE="false"
+          else
+            echo "Tag v$VERSION does not exist"
+            SHOULD_RELEASE="true"
+          fi
+          
+          # Override if forced
+          if [[ "$FORCE" == "true" ]]; then
+            echo "Release forced"
+            SHOULD_RELEASE="true"
+          fi
+          
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+
+  run-tests:
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    uses: ./.github/workflows/checks.yml
+
+  release:
+    needs: [check-release, run-tests]
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-uv-python
+
+      - name: Build package
+        run: uv build
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-release.outputs.version }}
+          name: Release v${{ needs.check-release.outputs.version }}
+          files: dist/*.whl
+          generate_release_notes: true
+          append_body: true
+          body: |
+            ## Installation
+
+            ```bash
+            $ pipx upgrade --install better-timetagger-cli
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
