@@ -1,0 +1,125 @@
+[package]
+name = "shlesha"
+version = "0.5.3"
+edition = "2021"
+authors = ["udapaana"]
+description = "High-performance extensible transliteration library with hub-and-spoke architecture"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/udapaana/shlesha"
+exclude = [
+    "test_py311_env/",
+    "wheels-*/",
+    ".github/",
+    "scripts/",
+]
+readme = "README.md"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)'] }
+
+[dependencies]
+# Core dependencies - keeping minimal for now
+thiserror = "2.0"
+unicode-normalization = "0.1"
+once_cell = "1.19"
+rustc-hash = "2.1"  # Fast HashMap implementation for performance optimization
+aho-corasick = "1.1"  # Aho-Corasick automaton for fast multiple pattern matching
+
+# Schema loading dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Runtime compilation dependencies
+handlebars = "6.0"
+tempfile = "3.8"
+blake3 = "1.5"
+hex = "0.4"
+
+# Optional features
+clap = { version = "4.0", features = ["derive"], optional = true }
+
+# Python bindings
+pyo3 = { version = "0.25", features = ["extension-module"], optional = true }
+
+# WASM bindings
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+# Required for WASM builds - getrandom v0.2 uses "js" feature, v0.3+ uses "wasm_js"
+getrandom = { version = "0.2", features = ["js"], optional = true }
+
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+toml = "0.8"
+handlebars = "6.0"
+rustc-hash = "2.1"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+tempfile = "3.8"
+quickcheck = "1.0"
+quickcheck_macros = "1.0"
+
+# Target-specific dependencies for non-WASM builds
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { version = "0.6", features = ["html_reports"] }
+vidyut-lipi = "0.2.0"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+criterion = { version = "0.6", default-features = false, features = ["html_reports"] }
+
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
+python = ["dep:pyo3"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:console_error_panic_hook", "dep:getrandom"]
+native-examples = []
+
+[[bin]]
+name = "shlesha"
+path = "src/main.rs"
+required-features = ["cli"]
+
+
+[lib]
+name = "shlesha"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+# Python module configuration - PyO3 will use the lib automatically when python feature is enabled
+
+[[bench]]
+name = "comprehensive_benchmark"
+harness = false
+
+[[bench]]
+name = "profiling_benchmark"
+harness = false
+
+# Examples that require vidyut-lipi (not available for WASM)
+[[example]]
+name = "hub_vs_direct_benchmark"
+required-features = ["native-examples"]
+
+[[example]]
+name = "shlesha_vs_vidyut_benchmark"
+required-features = ["native-examples"]
+
+# Examples that require profiler module (not available for WASM)
+[[example]]
+name = "profiler_cli"
+required-features = ["native-examples"]
+
+[[example]]
+name = "profile_guided_optimization_demo"
+required-features = ["native-examples"]
+
+[[example]]
+name = "profile_simple"
+required-features = ["native-examples"]
