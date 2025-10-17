@@ -1,0 +1,822 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<link rel="stylesheet" href="{{ url_for('static', filename='typeahead.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.2.1/css/bootstrap.min.css" integrity="sha256-azvvU9xKluwHFJ0Cpgtf0CYzK7zgtOznnzxV4924X1w=" crossorigin="anonymous">
+<title>GWCelery Tools</title>
+
+<div class=container>
+    <div class=jumbotron>
+        <h1>
+            {% set sha = versions.split('+') %}
+            {% if versions.startswith("0.1.dev") %}
+                {% set sha_link = '-/commits/main' %}
+            {% elif "+" in versions %}
+                {% set sha_link = 'commit/' + versions.split('+g')[1] %}
+            {% else %}
+                {% set sha_link = '-/tags/v' + versions %}
+            {% endif %}
+            GWCelery
+            <small><a href="https://git.ligo.org/emfollow/gwcelery/{{sha_link}}">{{versions}}</a></small>
+        </h1>
+        {% if request.remote_user %}
+        Welcome, {{request.remote_user}}
+        {% endif %}
+    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    <div class="card text-white bg-danger mb-3">
+        <div class=card-header>
+            DANGER ZONE
+        </div>
+        <div class=card-body>
+            <p>
+                This page is a dashboard for sending LIGO/Virgo public alerts.
+                You can view it because you have authenticated with LIGO.ORG credentials.
+                However, submission of any of the forms on this page is protected and can only be done by authorized follow-up advocates.
+                <a class="btn btn-sm btn-light" target=_blank href="https://group-registry.ligo.org/grouper/grouperUi/app/UiV2Main.index?operation=UiV2Group.viewGroup&groupId=e5dc87b156284015960508d4f2dd0b6a">Am I authorized?</a>
+            </p>
+            <p>
+                This page is <em>live</em> and your actions here have consequences.
+                Please be careful.
+                You have been warned!
+            </p>
+        </div>
+        <div class=card-footer>
+            <div class=form-row>
+                <div class="form-group col-md">
+                    <label for=gracedb-host>GraceDB Host</label>
+                    <div class="input-group">
+                        <input id=gracedb-host class=form-control readonly value="{{ conf.gracedb_host }}">
+                    </div>
+                </div>
+                <div class="form-group col-md">
+                    <label for=gracedb-host>igwn-alert [options]</label>
+                    <div class="input-group">
+                      <input id=gracedb-host class=form-control readonly
+			     value="-s {{ conf.igwn_alert_server }} -g {{ conf.igwn_alert_group }}">
+                    </div>
+                </div>
+                <div class="form-group col-md">
+                    <label for=gracedb-host>GWCelery Host</label>
+                    <div class="input-group">
+                        <input id=gracedb-host class=form-control readonly value="{{ hostname }}">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Issue Preliminary GCN Notice
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('send_preliminary_gcn') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Update the preferred event of a superevent and send a preliminary GCN Notice if it passes thresholds.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=superevent_id>Superevent ID</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=event_id>Preferred event ID</label>
+                        <input required name=event_id pattern="(G|M|T)\d+" class="form-control typeahead" data-typeahead-url-template="{{ url_for('typeahead_event_id', superevent_id='SUPEREVENT_ID') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=send-preliminary-gcn-confirm-label>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=send-preliminary-gcn-confirm-label>
+                                    Really Issue Preliminary GCN Notice?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to issue a Preliminary GCN Notice?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Issue Update GCN Notice
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('send_update_gcn') }}">
+                <div class="form-row">
+                    <div class=form-group>
+                        <div class=form-text>Send an update GCN notice using the chosen fields.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class=form-group>
+                        <p class="text-danger">Note: the filenames must end with the comma version and not contain spaces, e.g. bayestar.multiorder.fits,0.</p>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=superevent_id>Superevent ID (required)</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=skymap_filename>Sky Map File (required)</label>
+                        <input required name=skymap_filename pattern="\S+,\d+$" class="form-control superevent-dependent typeahead" data-typeahead-url-template="{{ url_for('typeahead_skymap_filename', superevent_id='SUPEREVENT_ID', filename='TERM') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=em_bright_filename>Classification File</label>
+                        <input name=em_bright_filename pattern="(^$|\S+,\d+$)" class="form-control superevent-dependent typeahead" data-typeahead-url-template="{{ url_for('typeahead_em_bright_filename', superevent_id='SUPEREVENT_ID', filename='TERM') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=p_astro_filename>P_Astro File</label>
+                        <input name=p_astro_filename pattern="(^$|\S+,\d+$)" class="form-control superevent-dependent typeahead" data-typeahead-url-template="{{ url_for('typeahead_p_astro_filename', superevent_id='SUPEREVENT_ID', filename='TERM') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=cgmi_filename>Chirp Mass File</label>
+                        <input name=cgmi_filename pattern="(^$|\S+,\d+$)" class="form-control superevent-dependent typeahead" data-typeahead-url-template="{{ url_for('typeahead_mchirp_filename', superevent_id='SUPEREVENT_ID', filename='TERM') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=send-update-gcn-confirm-label>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=send-update-gcn-confirm-label>
+                                    Really Issue Update GCN Notice?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to issue an Update GCN Notice?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Create Update GCN Circular
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('create_update_gcn_circular') }}">
+                <div class="form-row">
+                    <div class=form-group>
+                        <div class=form-text>Print out an update GCN circular containing sections updating the chosen fields.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class=form-group>
+                        <p class="text-danger">Warning: this will only work properly once an update notice has been issued using the above form.</p>
+                    </div>
+                </div>
+                <div class="form-row align-items-center">
+                    <div class="col-auto my-1">
+                        <label class="sr-only" for=superevent_id>Superevent ID</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead" placeholder="Superevent ID">
+                    </div>
+                    <div class="col-auto mb-2">
+                        <input type="checkbox" value=False name=sky_localization>
+                        <label class="form-check-label" for=sky_localization>Sky Localization</label>
+                    </div>
+                    <div class="col-auto mb-2">
+                        <input type="checkbox" value=False name=em_bright>
+                        <label class="form-check-label" for=em_bright>EM_Bright</label>
+                    </div>
+                    <div class="col-auto mb-2">
+                        <input type="checkbox" value=False name=p_astro>
+                        <label class="form-check-label" for=p_astro>P_Astro</label>
+                    </div>
+                    <div class="col-auto mb-2">
+                        <input type="checkbox" value=False name=raven>
+                        <label class="form-check-label" for=raven>RAVEN Coincidence</label>
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=cgmi_filename>Chirp Mass File</label>
+                        <input name=cgmi_filename pattern="(^$|\S+,\d+$)" class="form-control superevent-dependent typeahead" data-typeahead-url-template="{{ url_for('typeahead_mchirp_filename', superevent_id='SUPEREVENT_ID', filename='TERM') }}">
+                    </div>
+                    <div class="col-auto my-1">
+                        <label for=submit-button>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Create Medium Latency GRB GCN Circular
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('create_medium_latency_gcn_circular') }}">
+                <div class="form-row">
+                    <div class=form-group>
+                        <div class=form-text>Print out a medium latency GRB GCN circular, either a detection or distance exclusion based on the false alarm probability.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class=form-group>
+                        <p class="text-danger">Warning: this will only work properly if either PyGRB or X-pipeline has uploaded files to the external event.</p>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="cform-group">
+                        <label class="sr-only" for=ext_event_id>External event ID</label>
+                        <input required name=ext_event_id pattern="(E|M|T)\d+" class="form-control typeahead" placeholder="External event ID">
+                    </div>
+                    <div class="form-group">
+                        <label for=submit-button>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Change Preferred Event in Superevent
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('change_preferred_event') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Change the preferred event of a superevent. Do not send any preliminary or update GCN Notice.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=superevent_id>Superevent ID</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=event_id>Preferred event ID</label>
+                        <input required name=event_id pattern="(G|M|T)\d+" class="form-control typeahead" data-typeahead-url-template="{{ url_for('typeahead_event_id', superevent_id='SUPEREVENT_ID') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=change-preferred-event-confirm-label>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=change-preferred-event-confirm-label>
+                                    Really Change Preferred Event?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to change the preferred event?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Change Pipeline-Preferred Event in Superevent
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('change_pipeline_preferred_event') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Change the pipeline preferred event of a superevent. Do not send any preliminary or update GCN Notice.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=superevent_id>Superevent ID</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=pipeline>Pipeline</label>
+                        <input required name=pipeline class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=event_id>Preferred event ID</label>
+                        <input required name=event_id pattern="(G|M|T)\d+" class="form-control typeahead" data-typeahead-url-template="{{ url_for('typeahead_event_id', superevent_id='SUPEREVENT_ID') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=change-preferred-event-confirm-label>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=change-preferred-event-confirm-label>
+                                    Really Change Pipeline-Preferred Event?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to change the pipeline-preferred event?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Designate External Coincidence
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('apply_raven_labels') }}">
+                <div class=form-row>
+                     <div class=form-group>
+                        <div class=form-text>Apply RAVEN alert labels. These will launch a public alert if none have been issued for the superevent.</div>
+                     </div>
+                </div>
+                <div class="form-row">
+                    <div class=form-group>
+                        <p class="text-danger">Warning: this assumes a coincidence has been found, denoted by the presence of a EM_COINC label.</p>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=superevent_id>Superevent ID</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=ext_id>External event ID</label>
+                        <input required name=ext_id pattern="(E|M|T)\d+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=event_id>Preferred event ID</label>
+                        <input required name=event_id pattern="(G|M|T)\d+" class="form-control typeahead" data-typeahead-url-template="{{ url_for('typeahead_event_id', superevent_id='SUPEREVENT_ID') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=apply_raven_labels>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=apply_raven_labels>
+                                    Really apply RAVEN alert label?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to apply RAVEN alert label?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Download/Upload External Sky Map
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('download_upload_external_skymap') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Download a sky map from the provided URL and upload to the external event.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=ext_id>External event ID</label>
+                        <input required name=ext_id pattern="(E|M|T)\d+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=skymap_url>Skymap URL</label>
+                        <input required name=skymap_url class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=download-upload-external-skymap>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=download-upload-external-skymap>
+                                    Really Download External Sky Map from URL?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to download external sky map?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Issue Mock Event
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('send_mock_event') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Issue a mock event selected at random from <a href="https://www.ligo.org/scientists/first2years/">First Two Years</a>.</div>
+                        <small class="form-text text-muted">Mock events are created at fixed times of day by finding the event with the most recent sidereal time. If another mock event has recently been sent, then a manually issued mock event may be grouped with an existing superevent and not trigger any new GCNs. Note: one of every {{joint_mdc_freq}} GW events will be coincident with one or more external events.</small>
+                    </div>
+                </div>
+                <div class=form-row>
+                    <div class=form-group>
+                        <button type=submit class="btn btn-primary">Submit GW</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=send-mock-event-confirm-label>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=send-mock-event-confirm-label>
+                                    Really Issue Mock Event?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to issue a mock event?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+            <form method=post action="{{ url_for('send_mock_joint_event') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Issue a mock coincidence including a simulated GRB and a superevent selected at random from <a href="https://www.ligo.org/scientists/first2years/">First Two Years</a>.</div>
+                        <small class="form-text text-muted">Note: this is identical to submitting a GW event, except an external event is also submitted to guarantee a coincidence.</small>
+                    </div>
+                </div>
+                <div class=form-row>
+                    <div class=form-group>
+                        <button type=submit class="btn btn-primary">Submit GW + GRB</button>
+                    </div>
+                </div>
+                <div class="modal fade" tabindex=-1 role=dialog aria-labelledby=send-mock-joint-event-confirm-label>
+                    <div class=modal-dialog role=document>
+                        <div class=modal-content>
+                            <div class=modal-header>
+                                <h5 class=modal-title id=send-mock-joint-event-confirm-label>
+                                    Really Issue Mock Joint Event?
+                                </h5>
+                                <button type=button class=close data-dismiss=modal aria-label=Close>
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class=modal-body>
+                                Are you sure that you want to issue a mock joint event?
+                            </div>
+                            <div class=modal-footer>
+                                <button type=button class="btn btn-secondary" data-dismiss=modal>Cancel</button>
+                                <button type=submit class="btn btn-danger">Submit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Create Sky Map with Disabled Detectors
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('create_skymap_with_disabled_detectors') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Create a BAYESTAR sky map for an event with selected detectors disabled.</div>
+                    </div>
+                </div>
+                <label for=disabled_detectors>Disabled detectors</label>
+                <div class=form-row>
+                    <div class="form-group checkboxes-at-least-one" id=disabled_detectors>
+                        <div class=row>
+                            {% for detector in detectors %}
+                                <div class=col-1>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="{{ detector }}" name="{{ detector }}">
+                                        <label class="form-check-label" for="{{ detector }}">{{ detector }}</label>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=event_id>Event ID</label>
+                        <input required name=event_id pattern="(G|M|T)\d+" class="form-control">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Copy Event Sky Map To Superevent
+        </div>
+        <div class=card-body>
+            <form method=post action="{{ url_for('copy_sky_map_between_events') }}">
+                <div class=form-row>
+                    <div class=form-group>
+                        <div class=form-text>Copy a sky map from an event to its superevent.</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md">
+                        <label for=superevent_id>Superevent ID</label>
+                        <input required name=superevent_id pattern="(S|MS)\d+[A-Za-z]+" class="form-control typeahead">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=event_id>Event ID</label>
+                        <input required name=event_id pattern="(G|E|M|T)\d+" class="form-control typeahead" data-typeahead-url-template="{{ url_for('typeahead_event_id', superevent_id='SUPEREVENT_ID') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=skymap_filename>Sky Map File</label>
+                        <input required name=skymap_filename pattern="\S+,\d+$" class="form-control event-dependent typeahead" data-typeahead-url-template="{{ url_for('typeahead_skymap_filename', superevent_id='EVENT_ID', filename='TERM') }}">
+                    </div>
+                    <div class="form-group col-md">
+                        <label for=submit-button class=w-100>&nbsp;</label>
+                        <button type=submit id=submit-button name=submit-button class="btn btn-primary">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class=card-header>
+            Platform Information
+        </div>
+        <div class=card-body>
+            <dl class=row>
+                <dt class=col-sm-3>Platform</dt>
+                <dd class=col-sm-9>{{platform}}</dd>
+                <dt class=col-sm-3>Python Version</dt>
+                <dd class=col-sm-9 style="white-space: pre-line">{{python_version}}</dd>
+                <dt class=col-sm-3>Python Packages</dt>
+                <dd class=col-sm-9>
+                    <ul class=list-unstyled>
+                        {% for distribution in distributions|sort(attribute='name') %}
+                        <li><a href="https://pypi.org/project/{{distribution.metadata['Name']}}/">{{distribution.metadata['Name']}}</a> {{distribution.version}}</li>
+                        {% endfor %}
+                    </ul>
+                </dd>
+            </dl>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.2.1/js/bootstrap.min.js" integrity="sha256-63ld7aiYP6UxBifJWEzz87ldJyVnETUABZAYs5Qcsmc=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/typeahead.js/0.11.1/typeahead.bundle.min.js" integrity="sha256-RWiU4omUU7tQ2M3wmRQNW9UL50MB4CucbRPCbsQv+X0=" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/anchor-js/4.2.0/anchor.min.js" integrity="sha256-m1eTvwEHwmsw4+XKF7BshClVJEPwTVycveNl0CS0Mkk=" crossorigin="anonymous"></script>
+<script>
+    /* Add hover anchor links for individual forms. */
+    anchors.add('.card-header');
+
+    /* Show a spinner whenever a typeahead completion is loading. */
+    $('.typeahead')
+        .wrap('<div class=text-nowrap></div>')
+        .after('<div style="position: relative; left: -32px" class="invisible position-relative spinner-border spinner-border-sm text-primary" role="status"></div>')
+        .on('typeahead:asyncrequest', ev => {
+            $(ev.target).parent().next('.spinner-border').removeClass('invisible');
+        }).on('typeahead:asynccancel typeahead:asyncreceive', ev => {
+            $(ev.target).parent().next('.spinner-border').addClass('invisible');
+        });
+
+    /* Enable typeahead completion for superevent ID fields. */
+    $("[name='superevent_id']").typeahead({
+        highlight: true,
+        minLength: 1
+    }, {
+        source: new Bloodhound({
+            queryTokenizer: Bloodhound.tokenizers.whitespace,
+            datumTokenizer: Bloodhound.tokenizers.whitespace,
+            remote: {
+                url: '{{ url_for('typeahead_superevent_id', superevent_id='TERM') }}',
+                wildcard: 'TERM'
+            }
+        })
+    });
+
+    /* Enable typeahead completion for event ID fields. */
+    $("[name='event_id']").each(function() {
+        const url = $(this).data('typeahead-url-template');
+
+        const bloodhound = new Bloodhound({
+            queryTokenizer: Bloodhound.tokenizers.whitespace,
+            datumTokenizer: Bloodhound.tokenizers.obj.whitespace('graceid'),
+            prefetch: url,
+            remote: url
+        });
+
+        const stringify = bloodhound.identify;
+
+        $(this).typeahead({
+            highlight: true,
+            minLength: 1
+        }, {
+            source: bloodhound,
+            display: 'graceid',
+            templates: {
+                suggestion: function(datum) {
+                    let graceid = datum.graceid;
+                    let group = datum.group;
+                    let pipeline = datum.pipeline;
+                    let far = Number.parseFloat(datum.far).toExponential(3);
+                    let snr = Number.parseFloat(datum.snr).toFixed(3);
+                    return `<div>${graceid} <small>${group}, ${pipeline}, SNR=${snr}, FAR=${far}</small></div>`;
+                }
+            }
+        });
+
+        $(this).closest('form').find("input[name='superevent_id']").on('typeahead:change typeahead:select', ev => {
+            const superevent_id = $(ev.target).val();
+            bloodhound.prefetch.url = url.replace('SUPEREVENT_ID', superevent_id);
+            bloodhound.remote.url = url.replace('SUPEREVENT_ID', superevent_id);
+            bloodhound.identify = (datum => stringify({superevent_id: superevent_id, datum: datum}));
+            bloodhound.initialize();
+        });
+
+        $(this).closest('form').find("input[name='event_id']").on('typeahead:change typeahead:select', ev => {
+            const event_id = $(ev.target).val();
+            bloodhound.prefetch.url = url.replace('EVENT_ID', event_id);
+            bloodhound.remote.url = url.replace('EVENT_ID', event_id);
+            bloodhound.identify = (datum => stringify({event_id: event_id, datum: datum}));
+            bloodhound.initialize();
+        });
+    });
+
+    /* Enable typeahead completion for fields whose options depend on the
+     * superevent ID. */
+    $('.typeahead.superevent-dependent').each(function() {
+        const url = $(this).data('typeahead-url-template');
+
+        const bloodhound = new Bloodhound({
+            queryTokenizer: Bloodhound.tokenizers.whitespace,
+            datumTokenizer: Bloodhound.tokenizers.whitespace,
+            prefetch: url.replace('TERM', ''),
+            remote: {
+                url: url,
+                wildcard: 'TERM'
+            }
+        });
+
+        const stringify = bloodhound.identify;
+
+        $(this).typeahead({
+            highlight: true,
+            minLength: 1
+        }, {
+            source: bloodhound
+        });
+
+        $(this).closest('form').find("input[name='superevent_id']").on('typeahead:change typeahead:select', ev => {
+            const superevent_id = $(ev.target).val();
+            bloodhound.prefetch.url = url.replace('SUPEREVENT_ID', superevent_id);
+            bloodhound.remote.url = url.replace('SUPEREVENT_ID', superevent_id);
+            bloodhound.identify = (datum => stringify({superevent_id: superevent_id, datum: datum}));
+            bloodhound.initialize();
+        });
+    });
+
+    /* Enable typeahead completion for fields whose options depend on the
+     * superevent ID. */
+    $('.typeahead.event-dependent').each(function() {
+        const url = $(this).data('typeahead-url-template');
+
+        const bloodhound = new Bloodhound({
+            queryTokenizer: Bloodhound.tokenizers.whitespace,
+            datumTokenizer: Bloodhound.tokenizers.whitespace,
+            prefetch: url.replace('TERM', ''),
+            remote: {
+                url: url,
+                wildcard: 'TERM'
+            }
+        });
+
+        const stringify = bloodhound.identify;
+
+        $(this).typeahead({
+            highlight: true,
+            minLength: 1
+        }, {
+            source: bloodhound
+        });
+
+        $(this).closest('form').find("input[name='event_id']").on('typeahead:change typeahead:select', ev => {
+            const event_id = $(ev.target).val();
+            bloodhound.prefetch.url = url.replace('EVENT_ID', event_id);
+            bloodhound.remote.url = url.replace('EVENT_ID', event_id);
+            bloodhound.identify = (datum => stringify({event_id: event_id, datum: datum}));
+            bloodhound.initialize();
+        });
+    });
+
+    /* For forms that contain a <div class=modal> element to provide a
+     * confirmation dialog box, capture any form submission event and
+     * display the dialog box instead.*/
+    $('form:has(.modal)').on('submit', function(event) {
+        $(this).find('.modal').modal();
+        return false;
+    });
+
+    /* Capture clicks of the submit button inside the dialog box and
+     * REALLY submit the form this time. */
+    $("form .modal button[type='submit']").on('click', function(event) {
+        $(this).closest('form')[0].submit();
+    });
+
+    $(".checkboxes-at-least-one").each(function () {
+        let div = this;
+        let checkboxes = $(":checkbox", div);
+        let first = checkboxes.first()[0];
+
+        function validate() {
+            first.setCustomValidity(
+                $(":checkbox:checked", div).length > 0
+                ? '' : 'Choose at least one detector'
+            );
+        }
+
+        checkboxes.on('change', validate);
+        validate();
+    })
+</script>
