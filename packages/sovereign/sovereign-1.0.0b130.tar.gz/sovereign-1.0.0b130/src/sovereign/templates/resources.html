@@ -1,0 +1,260 @@
+{%- extends 'base.html' %}
+{% block title %}{{ resource_type|capitalize }}{% endblock %}
+
+{% block head %}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/resources.css">
+    <script src="/static/resources.js"></script>
+    <script src="/static/panel.js"></script>
+{% endblock %}
+
+
+{%- block body %}
+    <div class="content">
+        {% if error %}
+        <span class="panel-icon">
+            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </span>
+        <div class="notification is-danger">
+            {{ error }}
+        </div>
+        {% endif %}
+        <p class="content">
+        <div class="columns">
+            <div class="column is-narrow">
+                <div class="dropdown is-hoverable">
+                    <div class="dropdown-trigger">
+                        <button class="button is-primary" aria-haspopup="true" aria-controls="dropdown-menu">
+                            <span>Template Version</span>
+                            <span class="icon is-small">
+                                <i class="fas fa-angle-down" aria-hidden="false"></i>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="dropdown-menu" id="dropdown-menu" role="menu">
+                        <div class="dropdown-content">
+                            <div class="dropdown-item">
+                                <p>All resources will be formatted for the selected version</p>
+                            </div>
+                            {% for v in available_versions %}
+                                <a class="dropdown-item{% if v == version %} is-active{% endif %}"
+                                   href="#" onclick="setEnvoyVersion('{{ v }}'); return false;">
+                                    {{ v.replace('_', '') }}
+                                </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- node expression box --> 
+            <div class="column">
+                <form id="filterForm">
+                    <input id="filterInput" class="input" type="text" placeholder="Node filter expression"/>
+                </form>
+                <p id="filterMessage" class="help"></p>
+            </div>
+            <div class="column is-narrow">
+                <div class="tooltip">
+                  <span class="button is-primary">?</span>
+                  <div class="tooltip-text">
+                      <p>Space-delimited Node filter.<p>
+                      Examples:<br>
+                      <code>id=envoy-1234</code><br>
+                      <code>cluster=a_service_cluster</code><br>
+                      <code>locality.zone=us-east-1</code><br>
+                      <code>locality.sub_zone=a</code><br>
+                      <code>metadata.field_name=abcdef</code>
+                  </div>
+                </div>
+            </div>
+            </p>
+        </div>
+    </div>
+
+
+    {% set count = resources|length %}
+    {% if count > 0 %}
+    <nav class="panel is-primary" id="resources">
+        <p class="panel-heading">
+            {{ resource_type|capitalize }}
+        </p>
+        <div class="panel-block">
+            <p class="control has-icons-left">
+                <label for="search_filter">
+                    <input
+                            class="input"
+                            type="text"
+                            id="search_filter"
+                            onkeyup="filter_results('search_filter')"
+                            placeholder="Filter {{ resource_type }} by any string"
+                    >
+                </label>
+                <span class="icon is-left">
+                <i class="fas fa-search" aria-hidden="true"></i>
+            </span>
+            </p>
+        </div>
+
+        {% set res = resources|selectattr('get')|list %}
+        {% set plural = {
+            0: 'resources',
+            1: 'resource'
+        } %}
+        {# begin pagination #}
+        <div id="resource-container">
+            {# Will be filled in #}
+        </div>
+        {# pagination control bar #}
+        <div class="panel-block">
+            <p class="content is-small" id="resource-count">
+                {{ count }} {{ plural.get(count, 'resources') }}
+            </p>
+        </div>
+    </nav>
+        {% if count < 10 %}
+            {% set hidden = "display: none;" %}
+        {% endif %}
+        <div style="{{ hidden }}">
+        <nav class="pagination is-right is-small" role="navigation" aria-label="pagination">
+          <a id="prev-btn" class="pagination-previous">Previous</a>
+          <a id="next-btn" class="pagination-next">Next</a>
+          <ul id="page-numbers" class="pagination-list"></ul>
+        </nav>
+        </div>
+
+        {% if resource_type == 'routes' %}
+            <nav class="panel is-primary">
+              <p class="panel-heading">Virtual Hosts</p>
+              <div class="panel-block">
+                <p class="control has-icons-left">
+                  <input id="searchInput" class="input" type="text" placeholder="Filter virtual-hosts by any string" />
+                  <span class="icon is-left">
+                    <i class="fas fa-search" aria-hidden="true"></i>
+                  </span>
+                </p>
+              </div>
+              <p class="panel-tabs">
+                <a class="is-active" onclick="filterTabs(this, 'all')">All</a>
+                {% for resource in res %}
+                    <a onclick="filterTabs(this, '{{ resource["name"] }}')">
+                        {{ resource['name'] }}
+                    </a>
+                {% endfor %}
+              </p>
+              {% for resource in res %}
+                  {% if resource["virtual_hosts"] %}
+                  {% for virtualhost in resource['virtual_hosts'] %}
+                      <a class="panel-block virtualhost"
+                         data-category="{{ resource['name'] }}"
+                         href="#"
+                         onclick="loadVirtualHostInSidePanel('{{ resource['name'] }}', '{{ virtualhost['name'] }}'); return false;">
+                      <p class="tag is-small is-primary">
+                          {{ resource['name'] }}
+                      </p>
+                      <span class="panel-icon">
+                          <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                      </span>
+                          {{ virtualhost['name'] }}
+                      </a>
+                  {% endfor %}
+                  {% else %}
+                    <span class="panel-icon">
+                        <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                    </span>
+                    <div class="notification is-danger">
+                        No resources found
+                        <script>
+                          setTimeout(() => location.reload(), 6000);
+                        </script>
+                    </div>
+                  {% endif %}
+              {% endfor %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <span class="panel-icon">
+            <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </span>
+        <div class="notification is-danger">
+            No resources found
+            <script>
+              setTimeout(() => location.reload(), 2000);
+            </script>
+        </div>
+    {% endif %}
+    {% if show_debuginfo %}
+    <pre>
+    {%- if discovery_request != None %}
+    ---
+    DiscoveryRequest:
+      Node:
+        Id: {{ discovery_request.node.id }}
+        Cluster: {{ discovery_request.node.cluster }}
+        Metadata: {{ discovery_request.node.metadata }}
+        Locality: {{ discovery_request.node.locality }}
+        Build Version: {{ discovery_request.node.build_version }}
+      Version Info: {{ discovery_request.version_info }}
+      Resource Names: {{ discovery_request.resources or "*" }}
+      # Sovereign-generated fields
+      Envoy Version: {{ discovery_request.envoy_version }}
+      Host Header: {{ discovery_request.desired_controlplane }}
+    {%- endif %}
+    {%- if discovery_response != None %}
+    ---
+    DiscoveryResponse:
+      Config version: {{ discovery_response.version }}
+    {%- endif %}
+    </pre>
+    {% endif %}
+    
+    <!-- Side Panel Backdrop -->
+    <div id="sidePanelBackdrop" class="side-panel-backdrop"></div>
+    
+    <!-- Side Panel -->
+    <div id="sidePanel" class="side-panel has-background-dark has-text-white">
+        <div class="hero is-primary is-small">
+            <div class="hero-body p-4">
+                <div class="level">
+                    <div class="level-left">
+                        <h4 class="title is-4 has-text-white mb-0">
+                            <span id="sidePanelTitle">Resource Details</span>
+                        </h4>
+                    </div>
+                    <div class="level-right">
+                        <button class="delete is-large" onclick="closeSidePanel()"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="side-panel-content">
+            <div id="sidePanelContent">
+                <div class="content has-text-centered p-6">
+                    <p>Select a resource to view its details.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock -%}
+{% block footer %}
+<div class="content has-text-centered is-small">
+    <script src="/static/node_expression.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const resourceNames = [
+          {% for resource in resources %}
+            "{{ resource.name or resource.cluster_name or 'Unknown' }}"{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ];
+        if (typeof initializeResources === 'function') {
+          initializeResources(resourceNames, '{{ resource_type }}');
+        }
+      });
+      function setEnvoyVersion(version) {
+        document.cookie = `envoy_version=${version}; path=/ui/resources/; max-age=31536000`;
+        window.location.reload();
+      }
+    </script>
+</div>
+{% endblock %}
