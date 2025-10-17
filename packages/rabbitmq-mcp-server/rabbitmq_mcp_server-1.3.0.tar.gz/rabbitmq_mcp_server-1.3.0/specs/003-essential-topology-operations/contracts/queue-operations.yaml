@@ -1,0 +1,488 @@
+openapi: 3.1.0
+info:
+  title: RabbitMQ Queue Operations
+  description: |
+    OpenAPI specification for essential queue operations in RabbitMQ MCP Server.
+    These operations are exposed through the semantic discovery pattern (search-ids, get-id, call-id).
+  version: 1.0.0
+  contact:
+    name: RabbitMQ MCP Server
+  license:
+    name: LGPL v3.0
+    url: https://www.gnu.org/licenses/lgpl-3.0.html
+
+servers:
+  - url: http://localhost:15672/api
+    description: Local RabbitMQ Management API
+
+tags:
+  - name: queues
+    description: Queue management operations
+
+paths:
+  /queues:
+    get:
+      operationId: queues.list
+      summary: List all queues
+      description: |
+        List all queues across all virtual hosts with statistics.
+        Supports filtering by virtual host.
+        Mandatory pagination for performance (Constitution requirement).
+        Performance target: < 2 seconds per page (SC-001, SC-006).
+      tags:
+        - queues
+      parameters:
+        - name: vhost
+          in: query
+          description: Filter queues by virtual host (optional)
+          required: false
+          schema:
+            type: string
+            default: "/"
+            example: "/production"
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: pageSize
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+            example: 50
+      responses:
+        '200':
+          description: Paginated list of queues with statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedQueueResponse'
+              example:
+                items:
+                  - name: "orders.processing.queue"
+                    vhost: "/production"
+                    durable: true
+                    auto_delete: false
+                    exclusive: false
+                    arguments: {}
+                    messages: 1523
+                    messages_ready: 1200
+                    messages_unacknowledged: 323
+                    consumers: 5
+                    memory: 2048576
+                    state: "running"
+                pagination:
+                  page: 1
+                  pageSize: 50
+                  totalItems: 150
+                  totalPages: 3
+                  hasNextPage: true
+                  hasPreviousPage: false
+        '404':
+          $ref: '#/components/responses/VirtualHostNotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /queues/{vhost}/{name}:
+    put:
+      operationId: queues.create
+      summary: Create a new queue
+      description: |
+        Create a new queue with specified configuration.
+        Name validation: alphanumeric, hyphen, underscore, dot; max 255 chars (FR-004).
+        Prevents duplicate queue names within the same vhost (FR-005).
+        Performance target: < 1 second (SC-002).
+      tags:
+        - queues
+      parameters:
+        - name: vhost
+          in: path
+          description: Virtual host name
+          required: true
+          schema:
+            type: string
+            example: "/production"
+        - name: name
+          in: path
+          description: Queue name (alphanumeric, hyphen, underscore, dot; max 255 chars)
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._-]{1,255}$'
+            example: "orders.processing.queue"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueCreateRequest'
+            example:
+              durable: true
+              auto_delete: false
+              exclusive: false
+              arguments:
+                x-message-ttl: 60000
+                x-max-length: 1000
+      responses:
+        '201':
+          description: Queue created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/DuplicateEntity'
+        '404':
+          $ref: '#/components/responses/VirtualHostNotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      operationId: queues.get
+      summary: Get queue details
+      description: |
+        Get detailed information about a specific queue including statistics.
+      tags:
+        - queues
+      parameters:
+        - name: vhost
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Queue details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Queue'
+        '404':
+          description: Queue not found
+
+    delete:
+      operationId: queues.delete
+      summary: Delete a queue
+      description: |
+        Delete an existing queue.
+        Safety check: blocks deletion if queue contains messages unless --force flag is used (FR-007, FR-008).
+        Performance target: < 1 second (SC-003).
+        Safety target: 100% prevention without force flag (SC-004).
+      tags:
+        - queues
+      parameters:
+        - name: vhost
+          in: path
+          description: Virtual host name
+          required: true
+          schema:
+            type: string
+            example: "/production"
+        - name: name
+          in: path
+          description: Queue name to delete
+          required: true
+          schema:
+            type: string
+            example: "orders.processing.queue"
+        - name: force
+          in: query
+          description: Force deletion even if queue contains messages (FR-008)
+          required: false
+          schema:
+            type: boolean
+            default: false
+            example: false
+      responses:
+        '204':
+          description: Queue deleted successfully
+        '400':
+          $ref: '#/components/responses/QueueNotEmpty'
+        '404':
+          description: Queue not found
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  schemas:
+    PaginatedQueueResponse:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Queue'
+          description: Array of queues in current page
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    PaginationMetadata:
+      type: object
+      required:
+        - page
+        - pageSize
+        - totalItems
+        - totalPages
+        - hasNextPage
+        - hasPreviousPage
+      properties:
+        page:
+          type: integer
+          description: Current page number (1-based)
+          example: 1
+        pageSize:
+          type: integer
+          description: Items per page
+          example: 50
+        totalItems:
+          type: integer
+          description: Total number of items across all pages
+          example: 150
+        totalPages:
+          type: integer
+          description: Total number of pages
+          example: 3
+        hasNextPage:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+
+    Queue:
+      type: object
+      required:
+        - name
+        - vhost
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]{1,255}$'
+          description: Queue name (alphanumeric, hyphen, underscore, dot; max 255 chars)
+          example: "orders.processing.queue"
+        vhost:
+          type: string
+          description: Virtual host name
+          example: "/production"
+        durable:
+          type: boolean
+          description: Queue survives broker restart
+          default: false
+          example: true
+        auto_delete:
+          type: boolean
+          description: Queue auto-deleted when last consumer disconnects
+          default: false
+          example: false
+        exclusive:
+          type: boolean
+          description: Queue exclusive to one connection
+          default: false
+          example: false
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Additional queue arguments (x-message-ttl, x-max-length, etc.)
+          default: {}
+          example:
+            x-message-ttl: 60000
+            x-max-length: 1000
+        # Statistics (read-only)
+        messages:
+          type: integer
+          description: Total message count (FR-002)
+          readOnly: true
+          example: 1523
+        messages_ready:
+          type: integer
+          description: Messages ready for delivery
+          readOnly: true
+          example: 1200
+        messages_unacknowledged:
+          type: integer
+          description: Unacknowledged messages
+          readOnly: true
+          example: 323
+        consumers:
+          type: integer
+          description: Number of active consumers (FR-002)
+          readOnly: true
+          example: 5
+        memory:
+          type: integer
+          description: Memory usage in bytes (FR-002)
+          readOnly: true
+          example: 2048576
+        state:
+          type: string
+          description: Current queue state
+          enum: [running, idle, deleting]
+          readOnly: true
+          example: "running"
+
+    QueueCreateRequest:
+      type: object
+      properties:
+        durable:
+          type: boolean
+          description: Queue survives broker restart
+          default: false
+          example: true
+        auto_delete:
+          type: boolean
+          description: Queue auto-deleted when last consumer disconnects
+          default: false
+          example: false
+        exclusive:
+          type: boolean
+          description: Queue exclusive to one connection
+          default: false
+          example: false
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Additional queue arguments
+          default: {}
+          example:
+            x-message-ttl: 60000
+            x-max-length: 1000
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        message:
+          type: string
+          example: "Queue created successfully"
+
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum: [INVALID_NAME, INVALID_VHOST, INVALID_ARGUMENT]
+          example: "INVALID_NAME"
+        message:
+          type: string
+          description: Human-readable error message (FR-025)
+          example: "Queue name 'my queue!' contains invalid characters. Only alphanumeric, hyphen, underscore, and dot allowed (max 255 chars)."
+        field:
+          type: string
+          example: "name"
+        expected:
+          type: string
+          example: "^[a-zA-Z0-9._-]{1,255}$"
+        actual:
+          type: string
+          example: "my queue!"
+
+    OperationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "QUEUE_NOT_EMPTY"
+        message:
+          type: string
+          description: Clear, actionable error message (FR-025, SC-007)
+          example: "Cannot delete queue 'orders.queue' containing 523 messages. Use --force flag to force deletion."
+        suggestion:
+          type: string
+          example: "Use --force flag or drain the queue before deletion"
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            messages_count: 523
+            consumers_count: 2
+
+  responses:
+    VirtualHostNotFound:
+      description: Virtual host does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            code: "INVALID_VHOST"
+            message: "Virtual host '/invalid' does not exist."
+            field: "vhost"
+            expected: "existing virtual host name"
+            actual: "/invalid"
+
+    ValidationError:
+      description: Invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+    DuplicateEntity:
+      description: Entity already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            code: "DUPLICATE_ENTITY"
+            message: "Queue 'orders.queue' already exists in vhost '/production'."
+            field: "name"
+            expected: "unique queue name"
+            actual: "orders.queue"
+
+    QueueNotEmpty:
+      description: Queue contains messages and cannot be deleted without force flag
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperationError'
+          example:
+            code: "QUEUE_NOT_EMPTY"
+            message: "Cannot delete queue 'orders.queue' containing 523 messages. Use --force flag to force deletion."
+            suggestion: "Use --force flag or drain the queue before deletion"
+            details:
+              messages_count: 523
+              consumers_count: 2
+
+    Unauthorized:
+      description: Authentication failed or insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "Unauthorized"
+              message:
+                type: string
+                example: "Authentication failed. Check credentials."

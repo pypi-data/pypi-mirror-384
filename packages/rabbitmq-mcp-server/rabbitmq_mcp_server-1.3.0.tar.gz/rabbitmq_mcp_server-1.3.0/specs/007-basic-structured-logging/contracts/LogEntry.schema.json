@@ -1,0 +1,162 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rabbitmq-mcp.dev/schemas/LogEntry.json",
+  "title": "LogEntry",
+  "description": "Structured log entry for RabbitMQ MCP Server with automatic sensitive data redaction and correlation tracking",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "timestamp",
+    "level",
+    "category",
+    "message"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semantic version of log entry schema for backward compatibility",
+      "default": "1.0.0",
+      "examples": [
+        "1.0.0"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "description": "ISO 8601 UTC timestamp with microsecond precision and Z suffix",
+      "examples": [
+        "2025-10-09T14:32:15.123456Z"
+      ]
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "ERROR",
+        "WARN",
+        "INFO",
+        "DEBUG"
+      ],
+      "description": "Log severity level"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "CONNECTION",
+        "OPERATION",
+        "ERROR",
+        "SECURITY",
+        "PERFORMANCE"
+      ],
+      "description": "Functional category for filtering and analysis"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "UUID v4 or timestamp-based unique identifier for tracing complete operation lifecycle",
+      "examples": [
+        "550e8400-e29b-41d4-a716-446655440000",
+        "1696860735123456-789012"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 100000,
+      "description": "Human-readable event description, truncated at 100KB with '...[truncated]' suffix if exceeded"
+    },
+    "tool_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "MCP tool name if log relates to tool execution",
+      "examples": [
+        "call-id",
+        "search-ids",
+        "get-id"
+      ]
+    },
+    "operation_id": {
+      "type": "string",
+      "description": "Internal RabbitMQ operation identifier",
+      "examples": [
+        "queues.list",
+        "exchanges.create",
+        "bindings.delete"
+      ]
+    },
+    "duration_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Operation duration in milliseconds"
+    },
+    "operation_result": {
+      "type": "string",
+      "enum": [
+        "success",
+        "error",
+        "timeout"
+      ],
+      "description": "Operation execution result"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Human-readable error message when level is ERROR"
+    },
+    "error_type": {
+      "type": "string",
+      "description": "Python exception class name if error occurred",
+      "examples": [
+        "ConnectionError",
+        "TimeoutError",
+        "ValidationError"
+      ]
+    },
+    "stack_trace": {
+      "type": "string",
+      "description": "Complete stack trace as single string with escaped newline characters (\\n)"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Additional contextual data specific to the operation"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "timestamp": "2025-10-09T14:32:15.123456Z",
+      "level": "INFO",
+      "category": "OPERATION",
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+      "message": "MCP tool executed successfully",
+      "tool_name": "call-id",
+      "operation_id": "queues.list",
+      "duration_ms": 42.5,
+      "operation_result": "success",
+      "context": {
+        "vhost": "/",
+        "queue_count": 15,
+        "pagination": {
+          "page": 1,
+          "page_size": 50
+        }
+      }
+    },
+    {
+      "timestamp": "2025-10-09T14:33:20.456789Z",
+      "level": "ERROR",
+      "category": "ERROR",
+      "correlation_id": "550e8400-e29b-41d4-a716-446655440001",
+      "message": "Failed to connect to RabbitMQ broker",
+      "error_type": "ConnectionError",
+      "error_message": "Failed to connect to RabbitMQ broker",
+      "stack_trace": "Traceback (most recent call last):\\n  File \"connection.py\", line 45, in connect\\n    raise ConnectionError(\"Connection refused\")\\nConnectionError: Connection refused",
+      "context": {
+        "host": "localhost",
+        "port": 5672,
+        "vhost": "/",
+        "retry_count": 3
+      }
+    }
+  ]
+}

@@ -1,0 +1,493 @@
+openapi: 3.1.0
+info:
+  title: RabbitMQ Exchange Operations
+  description: |
+    OpenAPI specification for essential exchange operations in RabbitMQ MCP Server.
+    These operations are exposed through the semantic discovery pattern (search-ids, get-id, call-id).
+  version: 1.0.0
+  contact:
+    name: RabbitMQ MCP Server
+  license:
+    name: LGPL v3.0
+    url: https://www.gnu.org/licenses/lgpl-3.0.html
+
+servers:
+  - url: http://localhost:15672/api
+    description: Local RabbitMQ Management API
+
+tags:
+  - name: exchanges
+    description: Exchange management operations
+
+paths:
+  /exchanges:
+    get:
+      operationId: exchanges.list
+      summary: List all exchanges
+      description: |
+        List all exchanges across all virtual hosts with statistics.
+        Supports filtering by virtual host.
+        Mandatory pagination for performance (Constitution requirement).
+        Performance target: < 2 seconds per page (SC-001, SC-006).
+      tags:
+        - exchanges
+      parameters:
+        - name: vhost
+          in: query
+          description: Filter exchanges by virtual host (optional)
+          required: false
+          schema:
+            type: string
+            default: "/"
+            example: "/production"
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: pageSize
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+            example: 50
+      responses:
+        '200':
+          description: Paginated list of exchanges with statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExchangeResponse'
+              example:
+                items:
+                  - name: "orders.exchange"
+                    vhost: "/production"
+                    type: "topic"
+                    durable: true
+                    auto_delete: false
+                    internal: false
+                    arguments: {}
+                    message_stats:
+                      publish_in: 1523
+                      publish_out: 1523
+                pagination:
+                  page: 1
+                  pageSize: 50
+                  totalItems: 120
+                  totalPages: 3
+                  hasNextPage: true
+                  hasPreviousPage: false
+        '404':
+          $ref: '#/components/responses/VirtualHostNotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /exchanges/{vhost}/{name}:
+    put:
+      operationId: exchanges.create
+      summary: Create a new exchange
+      description: |
+        Create a new exchange with specified configuration.
+        Name validation: alphanumeric, hyphen, underscore, dot; max 255 chars (FR-013).
+        Type validation: must be direct, topic, fanout, or headers (FR-012, FR-013).
+        Prevents duplicate exchange names within the same vhost (FR-014).
+        Performance target: < 1 second (SC-002).
+      tags:
+        - exchanges
+      parameters:
+        - name: vhost
+          in: path
+          description: Virtual host name
+          required: true
+          schema:
+            type: string
+            example: "/production"
+        - name: name
+          in: path
+          description: Exchange name (alphanumeric, hyphen, underscore, dot; max 255 chars)
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._-]{1,255}$'
+            example: "orders.exchange"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeCreateRequest'
+            example:
+              type: "topic"
+              durable: true
+              auto_delete: false
+              internal: false
+              arguments:
+                alternate-exchange: "dead.letters"
+      responses:
+        '201':
+          description: Exchange created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/DuplicateEntity'
+        '404':
+          $ref: '#/components/responses/VirtualHostNotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      operationId: exchanges.get
+      summary: Get exchange details
+      description: |
+        Get detailed information about a specific exchange including statistics.
+      tags:
+        - exchanges
+      parameters:
+        - name: vhost
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exchange details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Exchange'
+        '404':
+          description: Exchange not found
+
+    delete:
+      operationId: exchanges.delete
+      summary: Delete an exchange
+      description: |
+        Delete an existing exchange.
+        Safety check: blocks deletion if exchange has active bindings (FR-016).
+        System exchange protection: prevents deletion of amq.* and default exchange (FR-017).
+        Performance target: < 1 second (SC-003).
+        Safety target: 100% block if bindings exist (SC-005).
+      tags:
+        - exchanges
+      parameters:
+        - name: vhost
+          in: path
+          description: Virtual host name
+          required: true
+          schema:
+            type: string
+            example: "/production"
+        - name: name
+          in: path
+          description: Exchange name to delete
+          required: true
+          schema:
+            type: string
+            example: "orders.exchange"
+      responses:
+        '204':
+          description: Exchange deleted successfully
+        '400':
+          $ref: '#/components/responses/ExchangeHasBindings'
+        '403':
+          $ref: '#/components/responses/SystemExchangeProtected'
+        '404':
+          description: Exchange not found
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  schemas:
+    PaginatedExchangeResponse:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Exchange'
+          description: Array of exchanges in current page
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    PaginationMetadata:
+      type: object
+      required:
+        - page
+        - pageSize
+        - totalItems
+        - totalPages
+        - hasNextPage
+        - hasPreviousPage
+      properties:
+        page:
+          type: integer
+          description: Current page number (1-based)
+          example: 1
+        pageSize:
+          type: integer
+          description: Items per page
+          example: 50
+        totalItems:
+          type: integer
+          description: Total number of items across all pages
+          example: 120
+        totalPages:
+          type: integer
+          description: Total number of pages
+          example: 3
+        hasNextPage:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+
+    Exchange:
+      type: object
+      required:
+        - name
+        - vhost
+        - type
+      properties:
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9._-]{1,255}$'
+          description: Exchange name (alphanumeric, hyphen, underscore, dot; max 255 chars)
+          example: "orders.exchange"
+        vhost:
+          type: string
+          description: Virtual host name
+          example: "/production"
+        type:
+          type: string
+          enum: [direct, topic, fanout, headers]
+          description: Exchange type defines routing algorithm (FR-012)
+          example: "topic"
+        durable:
+          type: boolean
+          description: Exchange survives broker restart
+          default: false
+          example: true
+        auto_delete:
+          type: boolean
+          description: Exchange auto-deleted when last binding is removed
+          default: false
+          example: false
+        internal:
+          type: boolean
+          description: Exchange doesn't accept messages directly from publishers
+          default: false
+          example: false
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Additional exchange arguments (alternate-exchange, etc.)
+          default: {}
+          example:
+            alternate-exchange: "dead.letters"
+        # Statistics (read-only)
+        message_stats:
+          type: object
+          description: Message throughput statistics (FR-010)
+          readOnly: true
+          properties:
+            publish_in:
+              type: integer
+              description: Messages published to exchange
+              example: 1523
+            publish_out:
+              type: integer
+              description: Messages routed from exchange
+              example: 1523
+          example:
+            publish_in: 1523
+            publish_out: 1523
+
+    ExchangeCreateRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [direct, topic, fanout, headers]
+          description: Exchange type (FR-012)
+          example: "topic"
+        durable:
+          type: boolean
+          description: Exchange survives broker restart
+          default: false
+          example: true
+        auto_delete:
+          type: boolean
+          description: Exchange auto-deleted when last binding is removed
+          default: false
+          example: false
+        internal:
+          type: boolean
+          description: Exchange doesn't accept messages directly
+          default: false
+          example: false
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Additional exchange arguments
+          default: {}
+          example:
+            alternate-exchange: "dead.letters"
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        message:
+          type: string
+          example: "Exchange created successfully"
+
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum: [INVALID_NAME, INVALID_TYPE, INVALID_VHOST, INVALID_ARGUMENT]
+          example: "INVALID_TYPE"
+        message:
+          type: string
+          description: Human-readable error message (FR-025)
+          example: "Exchange type 'invalid' is not supported. Allowed types: direct, topic, fanout, headers."
+        field:
+          type: string
+          example: "type"
+        expected:
+          type: string
+          example: "direct, topic, fanout, or headers"
+        actual:
+          type: string
+          example: "invalid"
+
+    OperationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "EXCHANGE_HAS_BINDINGS"
+        message:
+          type: string
+          description: Clear, actionable error message (FR-025, SC-007)
+          example: "Cannot delete exchange 'orders.exchange' with 5 active bindings. Remove bindings first using 'binding delete' command."
+        suggestion:
+          type: string
+          example: "Remove all bindings before deleting exchange"
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            bindings_count: 5
+            bindings:
+              - queue: "orders.processing.queue"
+                routing_key: "orders.*.created"
+
+  responses:
+    VirtualHostNotFound:
+      description: Virtual host does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            code: "INVALID_VHOST"
+            message: "Virtual host '/invalid' does not exist."
+            field: "vhost"
+            expected: "existing virtual host name"
+            actual: "/invalid"
+
+    ValidationError:
+      description: Invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+    DuplicateEntity:
+      description: Entity already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            code: "DUPLICATE_ENTITY"
+            message: "Exchange 'orders.exchange' already exists in vhost '/production'."
+            field: "name"
+            expected: "unique exchange name"
+            actual: "orders.exchange"
+
+    ExchangeHasBindings:
+      description: Exchange has active bindings and cannot be deleted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperationError'
+          example:
+            code: "EXCHANGE_HAS_BINDINGS"
+            message: "Cannot delete exchange 'orders.exchange' with 5 active bindings. Remove bindings first using 'binding delete' command."
+            suggestion: "Remove all bindings before deleting exchange"
+            details:
+              bindings_count: 5
+
+    SystemExchangeProtected:
+      description: System exchange cannot be deleted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperationError'
+          example:
+            code: "SYSTEM_EXCHANGE_PROTECTED"
+            message: "Cannot delete system exchange 'amq.direct'. System exchanges (amq.*) are protected."
+            suggestion: "System exchanges cannot be deleted"
+            details:
+              exchange_name: "amq.direct"
+              is_system: true
+
+    Unauthorized:
+      description: Authentication failed or insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "Unauthorized"
+              message:
+                type: string
+                example: "Authentication failed. Check credentials."

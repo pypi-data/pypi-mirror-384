@@ -1,0 +1,420 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pydantic Schemas for Connection Feature",
+  "description": "Schemas Python Pydantic para validação de dados de conexão",
+  "version": "1.0.0",
+  "schemas": {
+    "ConnectionConfig": {
+      "description": "Configuração de conexão AMQP",
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "default": "localhost",
+          "description": "Hostname ou IP do RabbitMQ"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 5672,
+          "description": "Porta AMQP"
+        },
+        "user": {
+          "type": "string",
+          "minLength": 1,
+          "default": "guest",
+          "description": "Usuário para autenticação"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "default": "guest",
+          "description": "Senha (sanitizada em logs)",
+          "format": "password"
+        },
+        "vhost": {
+          "type": "string",
+          "minLength": 1,
+          "default": "/",
+          "description": "Virtual host"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 30,
+          "description": "Timeout de conexão em segundos"
+        },
+        "heartbeat": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "default": 60,
+          "description": "Intervalo de heartbeat AMQP (0=disabled)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ConnectionState": {
+      "description": "Estados possíveis de uma conexão AMQP",
+      "type": "string",
+      "enum": [
+        "disconnected",
+        "connecting",
+        "connected",
+        "reconnecting",
+        "failed"
+      ]
+    },
+    "HealthStatus": {
+      "description": "Status de saúde de conexão",
+      "type": "object",
+      "properties": {
+        "is_connected": {
+          "type": "boolean",
+          "description": "Se há conexão AMQP ativa"
+        },
+        "broker_available": {
+          "type": "boolean",
+          "description": "Se o broker RabbitMQ está respondendo"
+        },
+        "latency_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Latência da verificação em ms"
+        },
+        "last_check": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp da última verificação"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Mensagem de erro se unhealthy"
+        }
+      },
+      "required": [
+        "is_connected",
+        "broker_available",
+        "latency_ms",
+        "last_check"
+      ],
+      "additionalProperties": false
+    },
+    "RetryPolicy": {
+      "description": "Política de retry com backoff exponencial",
+      "type": "object",
+      "properties": {
+        "initial_delay": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "default": 1.0,
+          "description": "Delay inicial em segundos"
+        },
+        "backoff_factor": {
+          "type": "number",
+          "exclusiveMinimum": 1.0,
+          "maximum": 10.0,
+          "default": 2.0,
+          "description": "Fator multiplicador do backoff"
+        },
+        "max_delay": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "default": 60.0,
+          "description": "Delay máximo em segundos"
+        },
+        "current_delay": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1.0,
+          "description": "Delay atual (state interno)"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Número de tentativas realizadas"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "PoolStats": {
+      "description": "Estatísticas do pool de conexões",
+      "type": "object",
+      "properties": {
+        "max_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Tamanho máximo do pool"
+        },
+        "total_connections": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Conexões criadas"
+        },
+        "in_use": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Conexões em uso"
+        },
+        "available": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Conexões disponíveis"
+        },
+        "waiting_for_connection": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Operações aguardando"
+        },
+        "acquire_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Timeout de aquisição"
+        }
+      },
+      "required": [
+        "max_size",
+        "total_connections",
+        "in_use",
+        "available",
+        "waiting_for_connection",
+        "acquire_timeout_seconds"
+      ],
+      "additionalProperties": false
+    },
+    "ConnectionStatus": {
+      "description": "Status completo da conexão",
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/schemas/ConnectionState"
+        },
+        "connection_url": {
+          "type": "string",
+          "description": "URL de conexão (senha sanitizada)"
+        },
+        "connected_since": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp da conexão"
+        },
+        "retry_attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tentativas de reconexão"
+        },
+        "next_retry_in_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Segundos até próxima tentativa"
+        }
+      },
+      "required": [
+        "state",
+        "connection_url",
+        "retry_attempts"
+      ],
+      "additionalProperties": false
+    },
+    "ConnectResult": {
+      "description": "Resultado da operação de conexão",
+      "type": "object",
+      "properties": {
+        "connected": {
+          "type": "boolean",
+          "description": "Se conexão foi estabelecida"
+        },
+        "connection_url": {
+          "type": "string",
+          "description": "URL de conexão (senha sanitizada)"
+        },
+        "latency_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Latência da conexão em ms"
+        },
+        "server_properties": {
+          "type": "object",
+          "description": "Propriedades do servidor RabbitMQ",
+          "properties": {
+            "product": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "connected",
+        "connection_url",
+        "latency_ms"
+      ],
+      "additionalProperties": false
+    },
+    "DisconnectResult": {
+      "description": "Resultado da operação de desconexão",
+      "type": "object",
+      "properties": {
+        "disconnected": {
+          "type": "boolean",
+          "description": "Se desconexão foi bem-sucedida"
+        },
+        "graceful": {
+          "type": "boolean",
+          "description": "Se foi desconexão limpa"
+        },
+        "duration_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Tempo gasto na desconexão em ms"
+        }
+      },
+      "required": [
+        "disconnected",
+        "graceful",
+        "duration_ms"
+      ],
+      "additionalProperties": false
+    },
+    "MCPToolResult": {
+      "description": "Resultado genérico de execução de MCP tool",
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "description": "Se a operação foi bem-sucedida"
+        },
+        "result": {
+          "type": "object",
+          "description": "Resultado da operação",
+          "additionalProperties": true
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "operation_id": {
+              "type": "string"
+            },
+            "duration_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "operation_id",
+            "duration_ms",
+            "timestamp"
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "success",
+        "metadata"
+      ],
+      "additionalProperties": false
+    },
+    "PaginationParams": {
+      "description": "Parâmetros de paginação",
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Número da página (base 1)"
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25,
+          "default": 10,
+          "description": "Itens por página"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PaginationMetadata": {
+      "description": "Metadados de paginação na resposta",
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total_items": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_pages": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "has_next": {
+          "type": "boolean"
+        },
+        "has_previous": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "page",
+        "page_size",
+        "total_items",
+        "total_pages",
+        "has_next",
+        "has_previous"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "metadata": {
+    "feature": "002-basic-rabbitmq-connection",
+    "version": "1.0.0",
+    "pydantic_version": "2.x",
+    "python_version": "3.9+",
+    "created": "2025-10-09",
+    "validation_library": "pydantic"
+  }
+}
+

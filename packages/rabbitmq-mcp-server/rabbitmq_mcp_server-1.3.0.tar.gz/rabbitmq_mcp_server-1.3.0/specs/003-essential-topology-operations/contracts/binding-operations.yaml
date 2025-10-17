@@ -1,0 +1,485 @@
+openapi: 3.1.0
+info:
+  title: RabbitMQ Binding Operations
+  description: |
+    OpenAPI specification for essential binding operations in RabbitMQ MCP Server.
+    These operations are exposed through the semantic discovery pattern (search-ids, get-id, call-id).
+  version: 1.0.0
+  contact:
+    name: RabbitMQ MCP Server
+  license:
+    name: LGPL v3.0
+    url: https://www.gnu.org/licenses/lgpl-3.0.html
+
+servers:
+  - url: http://localhost:15672/api
+    description: Local RabbitMQ Management API
+
+tags:
+  - name: bindings
+    description: Binding management operations
+
+paths:
+  /bindings:
+    get:
+      operationId: bindings.list
+      summary: List all bindings
+      description: |
+        List all bindings across all virtual hosts.
+        Shows exchange source, queue destination, and routing key for each binding.
+        Supports filtering by virtual host.
+        Mandatory pagination for performance (Constitution requirement).
+        Performance target: < 2 seconds per page (SC-001).
+      tags:
+        - bindings
+      parameters:
+        - name: vhost
+          in: query
+          description: Filter bindings by virtual host (optional)
+          required: false
+          schema:
+            type: string
+            default: "/"
+            example: "/production"
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: pageSize
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+            example: 50
+      responses:
+        '200':
+          description: Paginated list of bindings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBindingResponse'
+              example:
+                items:
+                  - source: "orders.exchange"
+                    destination: "orders.processing.queue"
+                    destination_type: "queue"
+                    vhost: "/production"
+                    routing_key: "orders.*.created"
+                    arguments: {}
+                    properties_key: "orders.*.created"
+                pagination:
+                  page: 1
+                  pageSize: 50
+                  totalItems: 85
+                  totalPages: 2
+                  hasNextPage: true
+                  hasPreviousPage: false
+        '404':
+          $ref: '#/components/responses/VirtualHostNotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /bindings/{vhost}/e/{exchange}/q/{queue}:
+    post:
+      operationId: bindings.create
+      summary: Create a binding between exchange and queue
+      description: |
+        Create a new binding connecting an exchange to a queue with a routing key.
+        Validation: exchange and queue must exist before creating binding (FR-020).
+        Wildcard support: routing keys support * and # patterns for topic exchanges (FR-021).
+        Duplicate prevention: blocks creation of duplicate bindings (FR-023).
+        Performance target: < 1 second (SC-002).
+      tags:
+        - bindings
+      parameters:
+        - name: vhost
+          in: path
+          description: Virtual host name
+          required: true
+          schema:
+            type: string
+            example: "/production"
+        - name: exchange
+          in: path
+          description: Exchange name (source)
+          required: true
+          schema:
+            type: string
+            example: "orders.exchange"
+        - name: queue
+          in: path
+          description: Queue name (destination)
+          required: true
+          schema:
+            type: string
+            example: "orders.processing.queue"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingCreateRequest'
+            examples:
+              direct:
+                summary: Direct exchange binding
+                value:
+                  routing_key: "orders.created"
+                  arguments: {}
+              topic:
+                summary: Topic exchange with wildcards
+                value:
+                  routing_key: "orders.*.created"
+                  arguments: {}
+              topic_multi:
+                summary: Topic exchange with multi-level wildcard
+                value:
+                  routing_key: "orders.#"
+                  arguments: {}
+      responses:
+        '201':
+          description: Binding created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/ExchangeOrQueueNotFound'
+        '409':
+          $ref: '#/components/responses/DuplicateBinding'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /bindings/{vhost}/e/{exchange}/q/{queue}/{properties_key}:
+    delete:
+      operationId: bindings.delete
+      summary: Delete a specific binding
+      description: |
+        Delete an existing binding between exchange and queue.
+        Stops message flow immediately when binding is removed (FR-022).
+        Performance target: < 1 second (SC-003).
+      tags:
+        - bindings
+      parameters:
+        - name: vhost
+          in: path
+          description: Virtual host name
+          required: true
+          schema:
+            type: string
+            example: "/production"
+        - name: exchange
+          in: path
+          description: Exchange name (source)
+          required: true
+          schema:
+            type: string
+            example: "orders.exchange"
+        - name: queue
+          in: path
+          description: Queue name (destination)
+          required: true
+          schema:
+            type: string
+            example: "orders.processing.queue"
+        - name: properties_key
+          in: path
+          description: |
+            Unique properties key identifying the binding (typically the routing key or hash).
+            Use the value from the 'properties_key' field returned by bindings.list.
+          required: true
+          schema:
+            type: string
+            example: "orders.*.created"
+      responses:
+        '204':
+          description: Binding deleted successfully
+        '404':
+          description: Binding not found
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  schemas:
+    PaginatedBindingResponse:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Binding'
+          description: Array of bindings in current page
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+
+    PaginationMetadata:
+      type: object
+      required:
+        - page
+        - pageSize
+        - totalItems
+        - totalPages
+        - hasNextPage
+        - hasPreviousPage
+      properties:
+        page:
+          type: integer
+          description: Current page number (1-based)
+          example: 1
+        pageSize:
+          type: integer
+          description: Items per page
+          example: 50
+        totalItems:
+          type: integer
+          description: Total number of items across all pages
+          example: 85
+        totalPages:
+          type: integer
+          description: Total number of pages
+          example: 2
+        hasNextPage:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+
+    Binding:
+      type: object
+      required:
+        - source
+        - destination
+        - destination_type
+        - vhost
+        - routing_key
+      properties:
+        source:
+          type: string
+          description: Exchange name (source)
+          example: "orders.exchange"
+        destination:
+          type: string
+          description: Queue or exchange name (destination)
+          example: "orders.processing.queue"
+        destination_type:
+          type: string
+          enum: [queue, exchange]
+          description: Type of destination
+          default: "queue"
+          example: "queue"
+        vhost:
+          type: string
+          description: Virtual host name
+          example: "/production"
+        routing_key:
+          type: string
+          description: |
+            Routing key for message matching.
+            For topic exchanges, supports wildcards (FR-021):
+            - * (asterisk): matches exactly one word
+            - # (hash): matches zero or more words
+          example: "orders.*.created"
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Additional binding arguments
+          default: {}
+          example:
+            x-match: "all"
+        properties_key:
+          type: string
+          description: Unique hash identifying this binding (used for deletion)
+          readOnly: true
+          example: "orders.*.created"
+
+    BindingCreateRequest:
+      type: object
+      properties:
+        routing_key:
+          type: string
+          description: |
+            Routing key for message matching (FR-021).
+            Wildcards for topic exchanges:
+            - * matches exactly one word (e.g., "orders.*.created")
+            - # matches zero or more words (e.g., "orders.#")
+          default: ""
+          example: "orders.*.created"
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Additional binding arguments
+          default: {}
+          example:
+            x-match: "all"
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        message:
+          type: string
+          example: "Binding created successfully"
+
+    ValidationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum: [INVALID_ROUTING_KEY, INVALID_VHOST, EXCHANGE_NOT_FOUND, QUEUE_NOT_FOUND]
+          example: "EXCHANGE_NOT_FOUND"
+        message:
+          type: string
+          description: Human-readable error message (FR-025)
+          example: "Exchange 'orders.exchange' does not exist in vhost '/production'."
+        field:
+          type: string
+          example: "exchange"
+        expected:
+          type: string
+          example: "existing exchange name"
+        actual:
+          type: string
+          example: "orders.exchange"
+
+    OperationError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "DUPLICATE_BINDING"
+        message:
+          type: string
+          description: Clear, actionable error message (FR-025, SC-007)
+          example: "Binding already exists between exchange 'orders.exchange' and queue 'orders.processing.queue' with routing key 'orders.*.created'."
+        suggestion:
+          type: string
+          example: "Use a different routing key or delete the existing binding first"
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            exchange: "orders.exchange"
+            queue: "orders.processing.queue"
+            routing_key: "orders.*.created"
+
+  responses:
+    VirtualHostNotFound:
+      description: Virtual host does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            code: "INVALID_VHOST"
+            message: "Virtual host '/invalid' does not exist."
+            field: "vhost"
+            expected: "existing virtual host name"
+            actual: "/invalid"
+
+    ValidationError:
+      description: Invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+    ExchangeOrQueueNotFound:
+      description: Exchange or queue does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          examples:
+            exchange_not_found:
+              summary: Exchange does not exist
+              value:
+                code: "EXCHANGE_NOT_FOUND"
+                message: "Exchange 'orders.exchange' does not exist in vhost '/production'."
+                field: "exchange"
+                expected: "existing exchange name"
+                actual: "orders.exchange"
+            queue_not_found:
+              summary: Queue does not exist
+              value:
+                code: "QUEUE_NOT_FOUND"
+                message: "Queue 'orders.processing.queue' does not exist in vhost '/production'."
+                field: "queue"
+                expected: "existing queue name"
+                actual: "orders.processing.queue"
+
+    DuplicateBinding:
+      description: Binding already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperationError'
+          example:
+            code: "DUPLICATE_BINDING"
+            message: "Binding already exists between exchange 'orders.exchange' and queue 'orders.processing.queue' with routing key 'orders.*.created'."
+            suggestion: "Use a different routing key or delete the existing binding first"
+            details:
+              exchange: "orders.exchange"
+              queue: "orders.processing.queue"
+              routing_key: "orders.*.created"
+
+    Unauthorized:
+      description: Authentication failed or insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "Unauthorized"
+              message:
+                type: string
+                example: "Authentication failed. Check credentials."
+
+# Additional documentation for routing key patterns
+x-routing-key-examples:
+  direct_exchange:
+    - routing_key: "orders.created"
+      description: "Exact match - messages with this routing key are routed to bound queues"
+
+  topic_exchange_single_wildcard:
+    - routing_key: "orders.*.created"
+      description: "Single wildcard - matches orders.eu.created, orders.us.created, etc."
+    - routing_key: "*.processing.queue"
+      description: "Single wildcard - matches orders.processing.queue, payments.processing.queue, etc."
+
+  topic_exchange_multi_wildcard:
+    - routing_key: "orders.#"
+      description: "Multi wildcard - matches orders.created, orders.eu.created, orders.eu.us.created, etc."
+    - routing_key: "#.error"
+      description: "Multi wildcard - matches error, orders.error, orders.eu.error, etc."
+    - routing_key: "orders.*.#"
+      description: "Combined wildcards - matches orders.eu.created, orders.us.processing.completed, etc."
+
+  fanout_exchange:
+    - routing_key: ""
+      description: "Empty routing key - fanout exchanges ignore routing keys and route to all bound queues"

@@ -1,0 +1,246 @@
+{
+  "name": "search-ids",
+  "description": "Semantic search for RabbitMQ operations using natural language queries. Returns operation IDs with descriptions and parameter hints ordered by relevance.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Natural language query describing the desired RabbitMQ operation (e.g., 'list queues', 'create exchange', 'get connection status')",
+        "minLength": 3,
+        "maxLength": 200
+      },
+      "pagination": {
+        "type": "object",
+        "description": "Optional pagination parameters for search results",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number (1-based)",
+            "minimum": 1,
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Number of results per page",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "description": "Search results ordered by similarity score (descending)",
+        "items": {
+          "type": "object",
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "description": "Unique operation identifier in format {namespace}.{name}",
+              "pattern": "^[a-z-]+\\.[a-z-]+$"
+            },
+            "name": {
+              "type": "string",
+              "description": "Human-readable operation name"
+            },
+            "description": {
+              "type": "string",
+              "description": "Brief operation description (max 200 chars)",
+              "maxLength": 200
+            },
+            "namespace": {
+              "type": "string",
+              "description": "Operation namespace/category",
+              "enum": [
+                "cluster",
+                "nodes",
+                "connections",
+                "channels",
+                "exchanges",
+                "queues",
+                "bindings",
+                "vhosts",
+                "users",
+                "permissions",
+                "parameters",
+                "policies",
+                "health",
+                "definitions",
+                "features",
+                "amqp"
+              ]
+            },
+            "similarity_score": {
+              "type": "number",
+              "description": "Semantic similarity score between query and operation (0.7-1.0)",
+              "minimum": 0.7,
+              "maximum": 1.0
+            },
+            "parameter_hint": {
+              "type": "string",
+              "description": "Brief hint about main parameters (e.g., 'vhost (required), page, pageSize')",
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "operation_id",
+            "name",
+            "description",
+            "namespace",
+            "similarity_score"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "pagination": {
+        "type": "object",
+        "description": "Pagination metadata",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Current page number",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Items per page",
+            "minimum": 1,
+            "maximum": 25
+          },
+          "totalItems": {
+            "type": "integer",
+            "description": "Total number of matching operations",
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "integer",
+            "description": "Total number of pages",
+            "minimum": 0
+          },
+          "hasNextPage": {
+            "type": "boolean",
+            "description": "Whether there is a next page available"
+          },
+          "hasPreviousPage": {
+            "type": "boolean",
+            "description": "Whether there is a previous page available"
+          }
+        },
+        "required": [
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages",
+          "hasNextPage",
+          "hasPreviousPage"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": ["items", "pagination"],
+    "additionalProperties": false
+  },
+  "examples": [
+    {
+      "input": {
+        "query": "list all queues",
+        "pagination": {
+          "page": 1,
+          "pageSize": 10
+        }
+      },
+      "output": {
+        "items": [
+          {
+            "operation_id": "queues.list",
+            "name": "List Queues",
+            "description": "List all queues in a virtual host with optional filtering",
+            "namespace": "queues",
+            "similarity_score": 0.92,
+            "parameter_hint": "vhost (required), page, pageSize"
+          },
+          {
+            "operation_id": "queues.get",
+            "name": "Get Queue",
+            "description": "Get detailed information about a specific queue",
+            "namespace": "queues",
+            "similarity_score": 0.85,
+            "parameter_hint": "vhost (required), name (required)"
+          }
+        ],
+        "pagination": {
+          "page": 1,
+          "pageSize": 10,
+          "totalItems": 2,
+          "totalPages": 1,
+          "hasNextPage": false,
+          "hasPreviousPage": false
+        }
+      }
+    },
+    {
+      "input": {
+        "query": "create exchange"
+      },
+      "output": {
+        "items": [
+          {
+            "operation_id": "exchanges.create",
+            "name": "Create Exchange",
+            "description": "Create a new exchange in a virtual host",
+            "namespace": "exchanges",
+            "similarity_score": 0.94,
+            "parameter_hint": "vhost (required), name (required), type (required)"
+          }
+        ],
+        "pagination": {
+          "page": 1,
+          "pageSize": 10,
+          "totalItems": 1,
+          "totalPages": 1,
+          "hasNextPage": false,
+          "hasPreviousPage": false
+        }
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": -32602,
+      "message": "Invalid params: query must be at least 3 characters",
+      "condition": "query length < 3"
+    },
+    {
+      "code": -32602,
+      "message": "Invalid params: pageSize must be between 1 and 25",
+      "condition": "pageSize > 25 or pageSize < 1"
+    },
+    {
+      "code": -32603,
+      "message": "Internal error: vector database unavailable",
+      "condition": "vector database connection failed"
+    }
+  ],
+  "performance": {
+    "targetLatency": "< 100ms per page",
+    "maxLatency": "200ms per page",
+    "similarityThreshold": 0.7,
+    "maxResultsPerPage": 25
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "protocol": "MCP",
+    "category": "semantic-discovery",
+    "requiredCapabilities": ["vector-search", "pagination"]
+  }
+}
+
