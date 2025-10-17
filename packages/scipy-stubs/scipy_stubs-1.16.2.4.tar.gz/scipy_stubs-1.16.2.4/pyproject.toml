@@ -1,0 +1,282 @@
+[build-system]
+requires = ["uv_build>=0.9.0,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "scipy-stubs"
+module-root = ""
+source-include = [".mypyignore"] # for scipy-stubs-feedstock
+
+[project]
+name = "scipy-stubs"
+version = "1.16.2.4"
+description = "Type annotations for SciPy"
+readme = "README.md"
+authors = [
+  { name = "Joren Hammudoglu", email = "jhammudoglu@gmail.com" },
+]
+maintainers = [
+  { name = "Joren Hammudoglu", email = "jhammudoglu@gmail.com" },
+  { name = "SciPy Developers", email = "scipy-dev@python.org" },
+]
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+keywords = ["scipy", "typing", "stubs", "mypy", "pyright", "pep484", "pep561", "scipy-stubs"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Stubs Only",
+]
+requires-python = ">=3.11"
+dependencies = ["optype[numpy]>=0.14.0,<0.15"]
+
+[project.optional-dependencies]
+scipy = ["scipy>=1.16.2,<1.17"]
+
+[project.urls]
+Homepage = "https://scipy.org/"
+Repository = "https://github.com/scipy/scipy-stubs"
+Issues = "https://github.com/scipy/scipy-stubs/issues"
+Changelog = "https://github.com/scipy/scipy-stubs/releases"
+
+[dependency-groups]
+extras = ["scipy-stubs[scipy]"]
+ci = ["packaging>=25.0"]
+lint = [
+  { include-group = "extras" },
+  "dprint-py==0.50.2.0",
+  "ruff==0.14.1",
+  "sp-repo-review[cli]==2025.10.1",
+]
+type = [
+  { include-group = "extras" },
+  { include-group = "ci" },
+  "array-api-compat==1.12.0", # bundled as `scipy._lib.array_api_compat`
+  "basedpyright==1.31.7",
+  "mypy[faster-cache]==1.18.2",
+  "pyrefly==0.37.0",
+  "stubdefaulter>=0.1.0",
+]
+dev = [
+  { include-group = "lint" },
+  { include-group = "type" },
+]
+
+# the required stubdefaulter features not released yet (>0.1.0)
+[tool.uv.sources.stubdefaulter]
+git = "https://github.com/JelleZijlstra/stubdefaulter.git"
+rev = "ebe9e31"
+
+[tool.poe.tasks.clean]
+cmd = """
+rm -rf
+  **/*.pyc
+  **/__pycache__
+  **/.cache
+  **/.mypy_cache
+  **/.ruff_cache
+  **/.tox
+"""
+
+[tool.poe.tasks.stubtest]
+cmd = """
+uv run
+  --no-editable
+  --reinstall-package=scipy-stubs
+  stubtest
+  --ignore-disjoint-bases
+  --allowlist=.mypyignore
+  scipy
+"""
+
+[tool.poe.tasks.stubdefaulter]
+cmd = "stubdefaulter --packages=. --exit-zero --check"
+executor.type = "uv"
+
+[tool.typos.files]
+extend-exclude = ["*.pyi", ".mypyignore"]
+
+[tool.typos.default]
+extend-ignore-identifiers-re = ['ND|Nd|Theis']
+
+[tool.mypy]
+strict = true
+strict_equality_for_none = true
+# required by repo-review
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+warn_unreachable = false
+# experimental
+local_partial_types = true
+allow_redefinition_new = true
+
+[tool.pyrefly]
+project-includes = ["scipy-stubs", "scripts", "tests"]
+
+[[tool.pyrefly.sub-config]]
+matches = "scipy-stubs/*/__init__.pyi"
+errors = { deprecated = "ignore" }
+
+[[tool.pyrefly.sub-config]]
+matches = "scipy-stubs/special/_ufuncs.pyi"
+errors = { bad-override = "ignore" }
+
+[[tool.pyrefly.sub-config]]
+matches = "scipy-stubs/special/orthogonal.pyi"
+errors = { deprecated = "ignore" }
+
+[[tool.pyrefly.sub-config]]
+matches = "scipy-stubs/stats/_distn_infrastructure.pyi"
+errors = { bad-override = "ignore" }
+
+[tool.pyright]
+exclude = [
+  "**/__pycache__",
+  "**/.mypy_cache",
+  "**/.ruff_cache",
+  "**/.tox",
+  "**/.venv",
+]
+ignore = [".venv"]
+stubPath = "."
+pythonPlatform = "All"
+typeCheckingMode = "strict"
+deprecateTypingAliases = true
+enableReachabilityAnalysis = false
+enableTypeIgnoreComments = false
+reportCallInDefaultInitializer = true
+reportImplicitOverride = true
+reportImportCycles = true
+reportMissingSuperCall = true
+reportPropertyTypeMismatch = false
+reportUninitializedInstanceVariable = true
+reportUnnecessaryTypeIgnoreComment = true
+reportUnusedCallResult = true
+
+# type-checkers should type-check; linters should lint
+reportImplicitStringConcatenation = false
+reportPrivateImportUsage = false
+reportPrivateUsage = false
+
+# basedpyright
+failOnWarnings = true
+reportIgnoreCommentWithoutRule = true
+reportImplicitAbstractClass = false
+reportImplicitRelativeImport = true
+reportInvalidCast = true
+reportPrivateLocalImportUsage = true
+reportUnannotatedClassAttribute = false
+strictGenericNarrowing = false
+
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportInvalidStubStatement = false
+reportUnusedCallResult = false
+reportUnusedExpression = false
+
+[tool.repo-review]
+ignore = [
+  "PY004", # no /docs
+  "PY006", # pre-commit should not be used
+  "PY007", # tox configured in tox.toml
+  "PP301", # pytest is irrelevant
+  "PC111", # no blacken-docs because markdown has no code
+  "PC170", # no pygrep-hooks because no rST
+  "RTD", # no RTD
+]
+
+[tool.ruff]
+src = ["scipy-stubs", "scripts"]
+extend-exclude = [".git", ".mypy_cache", ".tox", ".venv"]
+force-exclude = true
+# https://typing.python.org/en/latest/guides/writing_stubs.html#maximum-line-length
+line-length = 130
+preview = true
+
+[tool.ruff.format]
+line-ending = "lf"
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["D", "FBT", "ANN401", "COM812", "CPY", "EM", "TD", "FIX", "DOC"]
+
+[tool.ruff.lint.per-file-ignores]
+"*.pyi" = ["F", "E741", "N", "A", "PYI054", "PLC2701", "PLW3201", "PLR", "FURB"]
+
+[tool.ruff.lint.flake8-import-conventions]
+banned-from = ["numpy", "numpy.typing", "optype", "optype.numpy", "optype.typing"]
+
+[tool.ruff.lint.flake8-import-conventions.extend-aliases]
+"ctypes" = "ct"
+"datetime" = "dt"
+"numpy" = "np"
+"numpy.typing" = "npt"
+"optype" = "op"
+"optype.numpy" = "onp"
+"optype.numpy.compat" = "npc"
+"optype.typing" = "opt"
+
+[tool.ruff.lint.isort]
+case-sensitive = true
+combine-as-imports = true
+extra-standard-library = ["_typeshed", "typing_extensions"]
+known-local-folder = ["scipy"]
+split-on-trailing-comma = false
+
+[tool.tox]
+min_version = "4"
+requires = ["tox-uv>=1"]
+env_list = ["lint", "pyrefly", "pyright", "mypy", "3.11", "3.12", "3.13", "3.14"]
+
+[tool.tox.env_run_base]
+description = "stubtest with {base_python}"
+runner = "uv-venv-lock-runner"
+dependency_groups = ["type"]
+uv_sync_flags = ["--no-editable", "--reinstall-package=scipy-stubs"]
+commands = [
+  ["stubtest", "--ignore-disjoint-bases", "--allowlist=.mypyignore", "scipy"],
+  ["stubdefaulter", "--packages=.", "--exit-zero", "--check"],
+]
+
+[tool.tox.env.lint]
+description = "lint"
+runner = "uv-venv-lock-runner"
+dependency_groups = ["lint"]
+commands = [
+  ["repo-review", "."],
+  ["dprint", "check", "--incremental=false"],
+  ["ruff", "check", "--show-fixes"],
+  ["ruff", "format", "--check"],
+]
+
+[tool.tox.env.pyrefly]
+description = "pyrefly"
+runner = "uv-venv-lock-runner"
+dependency_groups = ["type"]
+commands = [["pyrefly", "check", { replace = "posargs", default = [], extend = true }]]
+
+[tool.tox.env.pyright]
+description = "basedpyright"
+runner = "uv-venv-lock-runner"
+dependency_groups = ["type"]
+commands = [["basedpyright", { replace = "posargs", default = [], extend = true }]]
+
+[tool.tox.env.mypy]
+description = "mypy"
+runner = "uv-venv-lock-runner"
+dependency_groups = ["type"]
+commands = [
+  [
+    "mypy",
+    "--no-incremental",
+    { replace = "posargs", default = ["."], extend = true },
+  ],
+]
