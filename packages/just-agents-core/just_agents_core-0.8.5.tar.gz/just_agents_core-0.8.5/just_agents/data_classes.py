@@ -1,0 +1,256 @@
+from enum import Enum
+from typing import List, Union, Optional, Dict, Any, Literal, Sequence
+from pydantic import HttpUrl, Field, BaseModel, ConfigDict, AliasPath, TypeAdapter, field_validator, field_serializer
+from pydantic_core import from_json
+from typing_extensions import TypedDict
+from openai.types.shared_params.function_definition import FunctionDefinition
+
+""" Common OpenAI-compatible data structures """ #TODO: openAI type converters/inheritances
+
+ReasoningEffort = Literal['low', 'medium', 'high']
+
+# Content types and enums
+class EnumLiteral(str, Enum):
+    """
+    A general base class for string-based enums that behave like literals.
+    Ensures compatibility with str comparisons and retains enum benefits.
+    """
+    def __new__(cls, value, *args, **kwargs):
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        return obj
+
+    def __str__(self):
+        # String representation directly returns the value
+        return self.value
+
+    def __eq__(self, other):
+        # Allow direct comparison with strings
+        if isinstance(other, str):
+            return self.value == other
+        return super().__eq__(other)
+
+    def __hash__(self):
+        # Use the hash of the value to behave like a string in hashable contexts
+        return hash(self.value)
+    
+    def __repr__(self):
+        # For print statements
+        return self.value
+
+class GoogleBuiltInTools(EnumLiteral):
+    search = "googleSearch"
+    code = "codeExecution"
+
+class Role(EnumLiteral):
+    """OpenAI compatible role enum class with string representation"""
+    system = "system"
+    user = "user"
+    assistant = "assistant"
+    tool = "tool"
+
+class FinishReason(EnumLiteral):
+    """OpenAI compatible finish_reason enum class with string representation"""
+    stop = "stop"
+    length = "length"
+    tool_calls = "tool_calls"
+    content_filter = "content_filter"
+    function_call = "function_call"
+
+class TextContent(BaseModel):
+    type: str = Field("text", examples=["text"])
+    text: str = Field(..., examples=["What are in these images? Is there any difference between them?"])
+
+class ImageContent(BaseModel):
+    type: str = Field("image_url", examples=["image_url"])
+    image_url: HttpUrl = Field(..., examples=["https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"])
+    
+    @field_serializer('image_url')
+    def serialize_image_url(self, image_url: HttpUrl) -> dict:
+        return {"url": str(image_url)}
+
+#
+class Message(BaseModel):
+    """OpenAI compatible Message class - Simple string content or a list of text or image content for vision model"""
+    model_config = ConfigDict(
+        use_enum_values=True,
+        validate_assignment=True,
+    )
+    role: Optional[Role] = Field(..., examples=[Role.assistant], description="The role of the author of this message.")
+    content: Optional[Union[
+        str,  # Simple string content
+        List[Union[TextContent, ImageContent]]
+    ]] = Field(
+        ...,
+        description="Content can be a simple string, or a list of content items including text or image URLs."
+    )
+
+    def get_text(self, delimiter: str = " ", preserve_trailing: bool = False) -> str:
+        """
+        Retrieves text from the content, optionally joining list items with a custom delimiter.
+
+        Args:
+            delimiter (str): The string used to join list items. Defaults to a space.
+            preserve_trailing (bool): If True, adds a trailing delimiter at the end. Defaults to False.
+
+        Returns:
+            str: The concatenated text or the content string.
+        """
+        content = self.content
+        if isinstance(content, list):
+            # Filter for TextContent items
+            text_items = [item.text for item in content if isinstance(item, TextContent)]
+            # Join with the delimiter and optionally add a trailing one
+            joined_text = delimiter.join(text_items)
+            return joined_text + delimiter if preserve_trailing and text_items else joined_text
+        elif isinstance(content, str):
+            return content
+        return ""
+
+    def text_format(self, delimiter: str = " ", preserve_trailing: bool = False) -> 'Message':
+        message = self.model_copy(deep=True)
+        message.content = self.get_text(delimiter, preserve_trailing)
+        return message
+
+
+class ToolCall(BaseModel):
+    """ OpenAI compatible Tool call class """
+    model_config = ConfigDict(extra="allow")
+    id: str = Field(..., description="The ID of the tool call.")
+    index: Optional[int] = Field(None)
+    name: str = Field(
+        ...,
+        validation_alias=AliasPath('function', 'name'),
+        description="The name of the function to call.")
+    arguments: Union[str, dict] = Field(
+        ...,
+        validation_alias=AliasPath('function', 'arguments'),
+        description="""
+        The arguments to call the function with, as generated by the model in JSON
+        format. Note that the model does not always generate valid JSON, and may
+        hallucinate parameters not defined by your function schema. Validate the
+        arguments in your code before calling your function.
+        """
+    )
+    type: Optional[str] = Field('function', description="The type of the tool. Currently, only `function` is supported.")
+
+    @field_validator('arguments', mode='before')
+    @classmethod
+    def parse_arguments(cls, value):
+        try:
+            parsed = from_json(value, allow_partial=True)
+            return parsed
+        except ValueError as e:
+            return str(e)
+
+class ToolDefinition(BaseModel): ## Derived from OpenAI's FunctionDefinition TypedDict
+
+    model_config = ConfigDict(populate_by_name=True)
+    name: Optional[str] = Field(..., alias='function', description="The simple name of the function or method (e.g., 'my_function' or 'my_method').")
+    description: Optional[str] = Field(None, description="The docstring of the function.")
+    parameters: Optional[Dict[str,Any]]= Field(None, description="Parameters of the function.")
+    strict: Optional[bool]= Field(None, description="Whether to enable strict schema adherence when generating the function call.")
+    
+    @classmethod
+    def from_openai(
+        cls, 
+        openai_function_definition: FunctionDefinition
+    ) -> 'ToolDefinition':
+        """
+        Creates an instance of this class from an OpenAI FunctionDefinition dictionary.
+
+        This method first validates the input against OpenAI's `FunctionDefinition`
+        TypedDict to ensure compliance with the OpenAI protocol. It then uses the
+        validated data to construct an instance of `cls` (e.g., `OpenAIDescription`
+        or a subclass).
+
+        Args:
+            openai_function_definition: A dictionary adhering to the 
+                                        OpenAI FunctionDefinition structure.
+
+        Returns:
+            An instance of `cls` populated with data from the
+            `openai_function_definition`.
+
+        Raises:
+            pydantic.ValidationError: If `openai_function_definition` does not
+                                    conform to the `FunctionDefinition` schema.
+        """
+        validated_data = TypeAdapter(FunctionDefinition).validate_python(openai_function_definition)
+        return cls.model_validate(validated_data)
+class ModelPromptExample(BaseModel):
+    """
+    Provides a single prompt example to demonstrate how the model may be used.
+    """
+    title: str = Field(
+        ..., description="Title or short label for the example prompt.",
+        examples=["Why is the sky blue?"]
+    )
+    prompt: str = Field(
+        ..., description="The actual prompt text you would send to the model.",
+        examples=["Explain in 10 words why the sky is blue"]
+    )
+
+    @classmethod
+    def from_message(cls, message: "Message") -> "ModelPromptExample":
+        """
+        Constructs a ModelPromptExample instance from a Message instance.
+        """
+        if message.get_text():
+            return cls(title="User prompt Example", prompt=message.content)
+        raise ValueError("Message content must be a simple string to create a ModelPromptExample.")
+
+    def to_message_dict(self) -> dict:
+        """
+        Converts the ModelPromptExample instance into a dictionary representing a Message.
+        """
+        message = Message(
+            role=Role.user,  # Default role for the example
+            content=self.prompt
+        )
+        return message.model_dump(mode='json')
+
+class MCPServerConfig(TypedDict, total=False):
+    transport: str
+    url: str
+    headers: Dict[str, Any]
+    auth: Any
+    command: str
+    args: List[str]
+    env: Dict[str, str]
+    cwd: str
+
+class MCPServersConfig(TypedDict):
+    mcpServers: Dict[str, MCPServerConfig]
+
+
+class JustMCPServerParameters(BaseModel):
+    """
+    Parameters for an MCP server.
+    """
+    mcp_client_config: Union[str, MCPServersConfig] = Field(
+        ...,
+        description=(
+            "The MCP endpoint configuration: URL for SSE, command for STDIO, file path, "
+            "or a config dictionary (e.g., {'mcpServers': {...}})."
+        ),
+    )
+    only_include_tools: Optional[Sequence[str]] = Field(
+        default=None,
+        description="The names of the MCP tools to include, if empty includes every tool provided by server listing, otherwise only includes the tools in this list"
+        )
+    exclude_tools: Optional[Sequence[str]] = Field(
+        default=None, 
+        description="The names of the MCP tools to exclude, or empty for none"
+        )
+    raise_on_incorrect_names: bool = Field(
+        default=True, 
+        description="If true, raise an error if any tool name in include/exclude is not found in the server listing"
+        )
+
+    @classmethod
+    def single_tool(cls, tool_name: str, mcp_client_config: Union[str, MCPServersConfig]) -> 'JustMCPServerParameters':
+        """
+        Simplified method to get a single MCP tool from a server.
+        """
+        return cls(mcp_client_config=mcp_client_config, only_include_tools=[tool_name])
