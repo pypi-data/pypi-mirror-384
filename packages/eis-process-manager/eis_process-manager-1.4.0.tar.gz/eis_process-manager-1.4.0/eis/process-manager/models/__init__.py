@@ -1,0 +1,50 @@
+# flake8: noqa
+
+# import all models into this package
+# if you have many models here with many references from one model to another this may
+# raise a RecursionError
+# to avoid this, import only the models that you directly need like:
+# from from eis.process-manager.model.pet import Pet
+# or import this package, but before doing it, use:
+# import sys
+# sys.setrecursionlimit(n)
+
+from eis.process-manager.model.create_decision_table_response_class import CreateDecisionTableResponseClass
+from eis.process-manager.model.create_workflow_request_dto_rest import CreateWorkflowRequestDtoRest
+from eis.process-manager.model.create_workflow_request_dto_shared import CreateWorkflowRequestDtoShared
+from eis.process-manager.model.decision_table_class import DecisionTableClass
+from eis.process-manager.model.decision_table_version_class import DecisionTableVersionClass
+from eis.process-manager.model.decision_table_version_class_without_definition import DecisionTableVersionClassWithoutDefinition
+from eis.process-manager.model.define_service_event_request_dto import DefineServiceEventRequestDto
+from eis.process-manager.model.get_decision_table_response_class import GetDecisionTableResponseClass
+from eis.process-manager.model.get_decision_table_version_response_class import GetDecisionTableVersionResponseClass
+from eis.process-manager.model.get_workflow_instance_request_dto import GetWorkflowInstanceRequestDto
+from eis.process-manager.model.get_workflow_instance_response_class import GetWorkflowInstanceResponseClass
+from eis.process-manager.model.get_workflow_instance_variables_class import GetWorkflowInstanceVariablesClass
+from eis.process-manager.model.get_workflow_request_dto import GetWorkflowRequestDto
+from eis.process-manager.model.get_workflow_response_class import GetWorkflowResponseClass
+from eis.process-manager.model.get_workflow_version_response_class import GetWorkflowVersionResponseClass
+from eis.process-manager.model.inline_response200 import InlineResponse200
+from eis.process-manager.model.inline_response503 import InlineResponse503
+from eis.process-manager.model.list_decision_table_versions_response_class import ListDecisionTableVersionsResponseClass
+from eis.process-manager.model.list_decision_tables_response_class import ListDecisionTablesResponseClass
+from eis.process-manager.model.list_service_event_types_response_class import ListServiceEventTypesResponseClass
+from eis.process-manager.model.list_service_events_response_class import ListServiceEventsResponseClass
+from eis.process-manager.model.list_workflow_instances_response_class import ListWorkflowInstancesResponseClass
+from eis.process-manager.model.list_workflow_versions_response_class import ListWorkflowVersionsResponseClass
+from eis.process-manager.model.list_workflows_response_class import ListWorkflowsResponseClass
+from eis.process-manager.model.patch_decision_table_response_class import PatchDecisionTableResponseClass
+from eis.process-manager.model.patch_workflow_request_dto import PatchWorkflowRequestDto
+from eis.process-manager.model.service_event_class import ServiceEventClass
+from eis.process-manager.model.service_event_type_class import ServiceEventTypeClass
+from eis.process-manager.model.trigger_workflow_request_dto import TriggerWorkflowRequestDto
+from eis.process-manager.model.trigger_workflow_request_grpc_dto import TriggerWorkflowRequestGrpcDto
+from eis.process-manager.model.trigger_workflow_with_result_response_class import TriggerWorkflowWithResultResponseClass
+from eis.process-manager.model.update_decision_table_response_class import UpdateDecisionTableResponseClass
+from eis.process-manager.model.update_workflow_request_dto import UpdateWorkflowRequestDto
+from eis.process-manager.model.workflow_class import WorkflowClass
+from eis.process-manager.model.workflow_event_class import WorkflowEventClass
+from eis.process-manager.model.workflow_instance_class import WorkflowInstanceClass
+from eis.process-manager.model.workflow_instance_code_request_dto import WorkflowInstanceCodeRequestDto
+from eis.process-manager.model.workflow_instance_variables_class import WorkflowInstanceVariablesClass
+from eis.process-manager.model.workflow_version_class import WorkflowVersionClass
