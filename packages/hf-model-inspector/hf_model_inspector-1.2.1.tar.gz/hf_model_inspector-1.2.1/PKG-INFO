@@ -1,0 +1,111 @@
+Metadata-Version: 2.4
+Name: hf-model-inspector
+Version: 1.2.1
+Summary: A package and GitHub Action to generate quality reports on Hugging Face model stats and usage, addressing ambiguity in open model releases.
+Project-URL: homepage, https://github.com/ParagEkbote/hf-model-inspector
+Project-URL: repository, https://github.com/ParagEkbote/hf-model-inspector
+Project-URL: issues, https://github.com/ParagEkbote/hf-model-inspector/issues
+Author-email: Parag Ekbote <paragekbote23@gmail.com>
+License: Apache-2.0
+License-File: LICENSE
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Requires-Dist: huggingface-hub>=0.24.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: transformers>=4.21.0
+Description-Content-Type: text/markdown
+
+# HF Model Inspector
+
+**A package and GitHub Action to generate quality reports on Hugging Face model stats and usage, addressing ambiguity in open model releases.**
+
+---
+
+## Overview
+
+`hf_model_inspector` is a Python package and GitHub Action designed to provide **clear, structured reports** for models hosted on [Hugging Face](https://huggingface.co). Open model releases often come with incomplete or inconsistent metadata, making it hard to quickly assess model size, architecture, quantization, and usage statistics.  
+
+This tool helps you:  
+
+- Inspect **model metadata** including architecture, parameters, and downloads.  
+- Handle **quantization info** cleanly, even when formats differ across releases.  
+- Generate **JSON and Markdown reports** for documentation or review purposes.  
+- Recommend **suitable models for your GPU** based on memory constraints.  
+- Automate reporting with a **GitHub Action** for CI/CD pipelines.  
+
+---
+
+## Installation
+
+```bash
+pip install hf_model_inspector
+````
+
+> Optional: For private models, you can use a Hugging Face token.
+
+---
+
+## Quick Start
+
+### Example 1: Inspect a model and print summary
+
+```python
+from hf_model_inspector import get_model_report_json
+
+repo_id = "openai/gpt-oss-20b"
+report = get_model_report_json(repo_id)
+
+total_params = report["parameters"]["total"]
+param_str = f"{total_params:,}" if total_params else "Unknown"
+
+quant_info = report.get("quantization", {})
+if quant_info.get("quantized"):
+    methods = ", ".join(quant_info.get("quant_methods", [])) or "Unknown"
+    precision = quant_info.get("precision", "Unknown")
+    quant_status = f"{methods} ({precision})"
+else:
+    quant_status = quant_info.get("dtype", "Not Quantized") or "Not Quantized"
+
+print(f"Model: {report['repo_id']}")
+print(f"Architecture: {report['architecture']}")
+print(f"Parameters: {param_str}")
+print(f"Quantization: {quant_status}")
+print(f"Downloads: {report['metadata']['downloads']}")
+print(f"Tags: {', '.join(report['metadata']['tags']) if report['metadata']['tags'] else 'None'}")
+```
+
+---
+
+### Example 2: Full inspection and Markdown report
+
+```python
+from hf_model_inspector import get_model_report_md, save_model_report
+from hf_model_inspector.loader import authenticate_hf
+
+token = authenticate_hf()
+repo_id = "openai/gpt-oss-20b"
+
+# Generate and save Markdown report
+report_md = get_model_report_md(repo_id, token)
+save_model_report(repo_id, md_path="model_report.md", token=token)
+
+print("Markdown report saved as 'model_report.md'")
+```
+
+---
+
+
+## Features
+
+* ✅ Inspect **public and private models**.
+* ✅ Clean handling of **quantization** and **parameter counts**.
+* ✅ Save **JSON or Markdown reports**.
+* ✅ Recommend models suitable for your GPU.
+* ✅ Automate with **GitHub Actions** for reproducible reporting.
+
+---
+
