@@ -1,0 +1,94 @@
+Metadata-Version: 2.4
+Name: artefacts_c2d
+Version: 1.8.5
+Author-email: TN <tomo@artefacts.com>, EP <eric@artefacts.com>
+Project-URL: Homepage, https://github.com/art-e-fact/c2d
+Project-URL: Bug Tracker, https://github.com/art-e-fact/c2d
+Project-URL: Changelog, https://github.com/art-e-fact/c2d/CHANGELOG.md
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: dev
+Requires-Dist: awscli; extra == "dev"
+Requires-Dist: boto3; extra == "dev"
+Requires-Dist: build; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: pytest-env; extra == "dev"
+Requires-Dist: pytest-mock; extra == "dev"
+Requires-Dist: ruff>=0.9.2; extra == "dev"
+Requires-Dist: setuptools_scm; extra == "dev"
+Requires-Dist: twine; extra == "dev"
+
+Code to Docker
+==============
+
+Processor to convert source code into a Artefacts-ready Dockerfile, following guidance from a configuration file.
+
+Setup and development
+---------------------
+
+* Python 3.11
+
+### Setting Up a Dev Environment
+
+It is best practice to setup a virtual environment. One way to do this is by using `virtualenv` which can be installed with `pip install virtualenv`.
+
+Once done, setup your environment for this repo by running the following commands
+```
+python3.11 -m venv env
+source env/bin/activate
+pip install -r requirements.txt
+# and for dev environments
+pip install -r requirements-dev.txt
+```
+
+You will note that running `pip list`  will only have the packages required for this repo (and not everything you might have installed on your computer).
+
+(The env folder created is already noted in .gitignore file so wont be pushed up to github)
+
+### Publication
+
+The package is published on a private repository hosted on AWS. Publication is automated:
+
+    ./scripts/publish [AWS profile name]
+
+If your account is default, no parameter needed. The script relies on Twine (in the development requirements) to package and deploy to AWS CodeArtifact.
+
+
+Usage
+-------
+
+### Generating the DockerFile
+
+The repository contains fake but valid configuration files in `examples/`. A simple trial is to execute:
+
+    PYTHONPATH=src python src/c2d/cli.py . -c examples/basic/config.yaml -o examples/basic/
+
+(or whichever file you wish)
+
+The command results in a `Dockerfile` generated under `examples/basic`, ready to build with Docker.
+
+You can also pass the additional flag `--as_text` to simply output the dockerfile as a string rather than creating an actual file.
+
+### Building the Dockerfile
+
+```
+docker build -t <tagName> .
+```
+
+### Running the Dockerfile (using Artefacts)
+
+* Create your project on artefacts.com, generate an api key and keep a note of it.
+* The project name should match the `project` in the warp.yaml file.
+* Place the dockerfile and artefacts.yaml in the root of your project, then run
+
+```
+docker run --env ARTEFACTS_KEY=<generatedApiKey>  --env ARTEFACTS_JOB_NAME=<jobNameSetInConfigFile> <tagName>
+```
+(For the dev environment you will want to add this additional env `--env ARTEFACTS_API_URL=https://ui.artefacts.com/api`)
+
+The auto-generated dockerfiles by `c2d` are designed to run headless, even if the project *requires* a display. Examples can be seen when running turtlesim examples. If you do however want to use a display for your tests, you can add the following flags to your `docker run` command `--network=host --env DISPLAY=$DISPLAY`
