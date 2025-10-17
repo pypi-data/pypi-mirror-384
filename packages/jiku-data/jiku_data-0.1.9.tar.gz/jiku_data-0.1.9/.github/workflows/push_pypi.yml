@@ -1,0 +1,74 @@
+name: push_pypi
+
+# on:
+#   push:
+#     branches: [ main ]
+
+on:
+  workflow_run:
+    workflows: ["pytest"]
+    branches: [ main ]
+    types: 
+      - completed
+
+
+jobs:
+  publish-pypi:
+    runs-on: ubuntu-latest
+
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+              persist-credentials: false
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install build dependencies
+      run: >-
+        python3 -m
+        pip install
+        build
+        --user
+
+    - name: Build
+      run: python -m build
+
+    - name: Store the distribution packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+        
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+    
+    - name: Publish to pypi
+      uses: pypa/gh-action-pypi-publish@release/v1
+
+
+# name: Release
+# on:
+#   workflow_run:
+#     workflows: ["Run Tests"]
+#     branches: [main]
+#     types:
+#       - completed
+
+# jobs:
+#   on-success:
+#     runs-on: ubuntu-latest
+#     if: ${{ github.event.workflow_run.conclusion == 'success' }}
+#     steps:
+#       - run: echo 'The Run Tests workflow passed'
