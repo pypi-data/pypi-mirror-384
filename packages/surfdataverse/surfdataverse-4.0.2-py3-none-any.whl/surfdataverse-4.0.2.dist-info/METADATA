@@ -1,0 +1,401 @@
+Metadata-Version: 2.3
+Name: surfdataverse
+Version: 4.0.2
+Summary: A Python package for ionysis Microsoft Dataverse integration
+Keywords: dataverse,microsoft,crm,api
+Author: ionysis
+Author-email: ionysis <friedemann.heinz@ionysis.com>
+License: MIT
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Dist: dependency-injector>=4.42.0
+Requires-Dist: msal>=1.33.0
+Requires-Dist: numpy>=2.3.3
+Requires-Dist: pandas>=2.3.2
+Requires-Dist: polars>=1.34.0
+Requires-Dist: requests>=2.32.5
+Requires-Python: >=3.11
+Project-URL: Bug Tracker, https://github.com/FriedemannHeinz/SurfDataverse/issues
+Project-URL: Documentation, https://github.com/FriedemannHeinz/SurfDataverse#readme
+Project-URL: Homepage, https://github.com/FriedemannHeinz/SurfDataverse
+Project-URL: Repository, https://github.com/FriedemannHeinz/SurfDataverse.git
+Description-Content-Type: text/markdown
+
+# SurfDataverse
+
+A modern Python package for Microsoft Dataverse integration, providing a clean, object-oriented interface with dependency injection for connecting to, reading from, and writing to Microsoft Dataverse environments.
+
+## Features
+
+- **Easy Authentication**: Simplified MSAL-based authentication with token caching
+- **Dependency Injection**: Modern IoC container pattern for better testability and flexibility
+- **Automatic Type Detection**: Automatically detects column types and forwards to appropriate methods
+- **Type Safety**: Built-in validation and error handling with comprehensive type conversion
+- **Configurable Prefixes**: Support for custom table/column naming conventions
+- **Modern Testing**: Comprehensive test suite with proper mocking and isolation patterns
+- **Extensible**: Easy to work with any Dataverse table structure
+
+## Quick Start
+
+### 1. Configuration
+
+Create a configuration JSON file with your Dataverse connection details:
+
+```json
+{
+    "authorityBase": "https://login.microsoftonline.com/",
+    "tenantID": "your-tenant-id",
+    "clientID": "your-client-id", 
+    "environmentURI": "https://yourorg.crm.dynamics.com/",
+    "scopeSuffix": "/.default"
+}
+```
+
+### 2. Basic Usage
+
+**Modern Dependency Injection Pattern (Recommended):**
+
+```python
+from surfdataverse import get_client, connect_entity, connect_table
+from pathlib import Path
+
+# Get client using dependency injection (singleton)
+client = get_client()
+client.config_path = "connection_configs/your_config.json"
+
+# Authenticate
+client.get_authenticated_session()
+
+# Test connection
+client.test_connection()
+
+# Create entities/tables using modern DI factory functions
+product = connect_entity("logical_table_name_1")
+table_reader = connect_table("logical_table_name_1")
+
+# Set data using write() method with automatic type detection
+product.write("prefix_name", "My Product")
+product.write("prefix_company", "My Company") 
+product.write("prefix_articlenr", "EXT-001")
+
+# Write to Dataverse
+guid = product.write_to_dataverse()
+print(f"Created/updated product with GUID: {guid}")
+
+# Read table data
+df = table_reader.get_table_data()
+print(f"Retrieved {len(df)} records")
+```
+
+**Legacy Direct Instantiation (Still Supported):**
+
+```python
+from surfdataverse import DataverseClient, DataverseEntity
+from pathlib import Path
+
+# Initialize client directly
+client = DataverseClient(config_path="connection_configs/your_config.json")
+client.get_authenticated_session()
+
+# Create entity directly (will use default DI container)
+product = DataverseEntity("logical_table_name_1", "prefix_", client=client)
+product.write("prefix_name", "My Product")
+guid = product.write_to_dataverse()
+```
+
+## Automatic Type Detection
+
+The core feature of SurfDataverse is its ability to automatically detect column types and forward to appropriate methods. When you use `write()` or `read()`, it:
+
+1. **Fetches table metadata** from Dataverse
+2. **Analyzes column types** (text, choice, lookup, file, etc.)
+3. **Forwards to appropriate methods** automatically
+4. **Handles type conversion** seamlessly
+
+### Example: Working with Different Field Types
+
+**Using Generic Methods (Recommended):**
+
+```python
+from surfdataverse import connect_entity
+
+# Create entity instances using dependency injection
+product = connect_entity("logical_table_name_1", "prefix_")
+formula = connect_entity("logical_table_name_2", "prefix_")
+
+# Text fields (auto-detected as data)
+product.write("prefix_name", "Product Name")
+product.write("prefix_company", "Company Name")
+
+# Choice fields (auto-detected and converts text to numeric values)
+formula.write("prefix_type", "Production")  # Automatically maps to numeric choice value
+
+# Lookup fields (auto-detected relationships to other tables)
+formula.write("prefix_product", product.guid)  # Links formula to product
+
+# File fields (auto-detected and handles JSON data)
+product.write("prefix_specifications", {
+    "weight": 100,
+    "dimensions": {"length": 50, "width": 30}
+})
+
+# Read data with automatic type detection
+name = product.read("prefix_name")  # Returns string
+type_value = formula.read("prefix_type")  # Returns choice label
+specifications = product.read("prefix_specifications")  # Returns parsed JSON
+
+# Save changes
+product.write_to_dataverse()
+formula.write_to_dataverse()
+```
+
+## Table Prefix Configuration
+
+SurfDataverse supports custom table/column prefixes to work with different naming conventions:
+
+```python
+from surfdataverse import connect_entity, connect_table
+
+# Using modern DI pattern with prefixes
+default_entity = connect_entity("prefix_tablename", "prefix_")
+custom_entity = connect_entity("myorg_product", "myorg_")
+
+# For reading data
+table_reader = connect_table("prefix_tablename")
+
+# The system automatically:
+# - Filters columns starting with your prefix
+# - Detects column types for automatic method forwarding
+# - Handles relationships between tables with the same prefix
+```
+
+## Data Retrieval
+
+Fetch data from Dataverse tables as pandas DataFrames using modern DI patterns:
+
+```python
+from surfdataverse import connect_table, get_client
+
+# Create table reader using dependency injection
+table_reader = connect_table("logical_table_name_1")
+
+# Get table data as pandas DataFrame
+df = table_reader.get_table_data()
+
+# Get specific record using entity
+entity = connect_entity("logical_table_name_1", "prefix_")
+entity.fetch_data("guid-here")  # Loads data into entity.data
+
+# Get table metadata
+metadata = table_reader.get_table_metadata()
+
+# Download multiple tables (optionally filtered by schema)
+definitions, data, metadata = table_reader.download_tables_as_df(schema_filter="prefix")
+
+# Direct client access when needed
+client = get_client()
+entity_set_name = client.get_table_entity_set_name(logical_name="logical_table_name_1")
+record = client.get_record(entity_set_name, "guid-here")
+```
+
+## Field Types
+
+The system automatically detects different field types and handles them appropriately:
+
+### Data Fields
+Simple text, numeric, and date fields:
+```python
+entity.write("prefix_name", "Some Value")
+entity.write("prefix_quantity", 100)
+entity.write("prefix_price", 29.99)
+
+# Reading returns the appropriate type
+name = entity.read("prefix_name")  # Returns string
+quantity = entity.read("prefix_quantity")  # Returns int
+price = entity.read("prefix_price")  # Returns float
+```
+
+### Choice Fields
+Option set fields (automatically converts labels to/from numeric values):
+```python
+entity.write("prefix_status", "Active")  # Converts to numeric value
+current_status = entity.read("prefix_status")  # Returns "Active" (readable label)
+```
+
+### Lookup Fields
+Relationships to other tables:
+```python
+entity.write("prefix_parent_record", "parent-guid-here")
+entity.write("prefix_related_item", related_entity.guid)
+
+# Reading returns GUID
+parent_guid = entity.read("prefix_parent_record")
+```
+
+### File Fields
+Virtual file fields for storing complex data:
+```python
+entity.write("prefix_metadata", {
+    "tags": ["important", "production"],
+    "config": {"setting1": "value1"}
+})
+
+# Reading returns parsed JSON
+metadata = entity.read("prefix_metadata")  # Returns dict
+```
+
+### Alternative: Explicit Type Methods
+You can also use explicit type-specific methods when needed:
+```python
+# Explicit methods for specific control
+entity.set_data("prefix_name", "Some Value")
+entity.set_choice("prefix_status", "Active") 
+entity.set_lookup("prefix_parent", "guid-here")
+entity.set_file("prefix_data", {"key": "value"})
+
+# Corresponding getters
+name = entity.get_data("prefix_name")
+status = entity.get_choice("prefix_status")
+parent_guid = entity.get_lookup("prefix_parent")
+file_data = entity.get_file("prefix_data")
+```
+
+## Error Handling
+
+The package provides comprehensive error handling:
+
+```python
+from surfdataverse import (
+    AuthenticationError,
+    ConnectionError, 
+    DataverseAPIError,
+    EntityError,
+    ValidationError
+)
+
+try:
+    client.get_authenticated_session()
+    entity.write_to_dataverse()
+except AuthenticationError as e:
+    print(f"Authentication failed: {e}")
+except DataverseAPIError as e:
+    print(f"API error (status {e.status_code}): {e}")
+except ValidationError as e:
+    print(f"Data validation error: {e}")
+```
+
+## Advanced Usage
+
+### Custom Entity Classes
+For complex business logic, you can extend the base classes:
+
+```python
+from surfdataverse import DataverseEntity
+
+
+# Extend the base class
+class CustomEntity(DataverseEntity):
+    def __init__(self, logical_name, prefix="prefix_"):
+        super().__init__(logical_name, prefix=prefix)
+
+    # Add custom business logic
+    def validate_data(self):
+        name = self.read("prefix_name")
+        if not name:
+            raise ValueError("Name is required")
+        return True
+        
+    def set_defaults(self):
+        """Set default values for new entities"""
+        self.write("prefix_status", "Active")
+        self.write("prefix_created_date", "2024-01-01")
+```
+
+### Batch Operations
+Work with multiple records efficiently:
+
+```python
+# Create multiple records
+products = []
+for i in range(10):
+    product = connect_entity("logical_table_name_1", "prefix_")
+    product.write("prefix_name", f"Product {i}")
+    product.write("prefix_company", "ACME Corp")
+    products.append(product)
+
+# Write all records
+for product in products:
+    product.write_to_dataverse()
+```
+
+### Session Management
+
+The `DataverseClient` uses a singleton pattern for connection management:
+
+```python
+# First initialization
+client1 = DataverseClient(config_path="config1.json")
+
+# Later access (returns same instance)  
+client2 = DataverseClient()  # Same as client1
+```
+
+## Project Structure
+```
+surfdataverse/
+├── __init__.py          # Package initialization
+├── core.py              # Core client and table classes
+└── exceptions.py        # Custom exceptions
+
+examples/
+├── basic_usage.py       # Basic usage examples
+├── example_auto_usage.py # Auto-generation examples
+└── schema_visualization.py # Schema analysis tools
+
+connection_configs/      # Configuration files (not tracked)
+├── dev.json
+└── production.json
+```
+
+## Dependencies
+
+- `msal`: Microsoft Authentication Library
+- `requests`: HTTP client  
+- `pandas`: Data manipulation and analysis
+
+## Testing
+
+```bash
+python -m pytest tests/ -v
+```
+
+## Code Style
+
+```bash
+uv run ruff format src/
+uv run ruff check src/
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Support
+
+For issues and questions:
+- GitHub Issues: [https://github.com/FriedemannHeinz/SurfDataverse/issues](https://github.com/FriedemannHeinz/SurfDataverse/issues)
+- Documentation: This README and inline code documentation
