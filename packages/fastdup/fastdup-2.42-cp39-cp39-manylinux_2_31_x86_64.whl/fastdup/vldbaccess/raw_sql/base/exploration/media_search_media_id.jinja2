@@ -1,0 +1,15 @@
+SELECT
+    media_id as entity_id,
+    is_image,
+    {% if cosine_similarity %} 1 - {% endif %}
+    (embedding {{ similarity_metric }} (
+        SELECT embedding
+            FROM {{ query_vector_table }}
+            WHERE dataset_id = :dataset_id AND media_id = :media_id
+    )) as distance
+FROM image_vector
+JOIN flat_similarity_clusters ON image_vector.media_id = flat_similarity_clusters.image_or_object_id
+WHERE image_vector.dataset_id = :dataset_id AND image_vector.media_id != :media_id
+    AND is_image = :is_image
+    {% include "_composite_filter.jinja2" %}
+ORDER BY distance LIMIT {{ limit }};

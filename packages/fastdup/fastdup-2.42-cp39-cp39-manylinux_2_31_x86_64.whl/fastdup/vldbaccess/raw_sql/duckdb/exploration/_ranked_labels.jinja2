@@ -1,0 +1,14 @@
+SELECT
+    cluster_id,
+    (label, count(*)) label_count,
+    row_number() OVER (PARTITION BY cluster_id ORDER BY count(*) DESC) AS rn
+FROM (
+    SELECT cluster_id, unnest(array_cat(labels, vl_labels)) as label
+    FROM flat_similarity_clusters
+    {% include "_similarity_join_filtering.jinja2" %}
+    WHERE
+    (labels is not null or vl_labels is not null)
+    AND cluster_id IN (SELECT cluster_id FROM page_of_clusters)
+    {% include "_composite_filter.jinja2" %}
+) foo
+GROUP BY cluster_id, label

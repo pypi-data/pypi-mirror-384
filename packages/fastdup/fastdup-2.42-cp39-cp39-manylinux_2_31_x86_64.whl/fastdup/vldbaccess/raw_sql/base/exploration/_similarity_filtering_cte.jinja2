@@ -1,0 +1,24 @@
+--{% if similarity_using_vector_db and anchor_media_id %}
+anchor AS (
+    SELECT embedding
+    FROM {{ query_vector_table }}
+    WHERE media_id = :anchor_media_id AND dataset_id = :dataset_id
+    LIMIT 1
+),
+image_vector_filtered AS (
+	select image_vector.*, image_vector.embedding {{ similarity_metric }} (SELECT embedding FROM anchor) as similarity_distance_
+	from
+	image_vector
+	JOIN {{ query_vector_table }} anchor ON anchor.media_id = :anchor_media_id and anchor.dataset_id = :dataset_id
+	where
+	image_vector.dataset_id = :dataset_id AND {% if "OBJECTS" in entity_type_filter %} NOT {% endif %} image_vector.is_image
+    {% if similarity_threshold %}
+    AND image_vector.embedding <=> (SELECT embedding FROM anchor) < {{ similarity_threshold }}
+    {% endif %}
+    {% if search_similar_clusters_pre_filter_results %}
+    order by similarity_distance_ {% if cosine_similarity %} DESC {% else %} ASC {% endif %} limit {{ search_similar_clusters_pre_filter_results }}
+    {% endif %}
+    )
+{% else %}
+    dummy_ as (select 1)
+{% endif %}

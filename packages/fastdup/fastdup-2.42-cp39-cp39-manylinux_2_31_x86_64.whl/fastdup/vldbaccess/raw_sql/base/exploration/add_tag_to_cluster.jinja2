@@ -1,0 +1,20 @@
+WITH
+{% include "_similarity_filtering_cte.jinja2" %},
+cluster_media as (
+    SELECT
+        *
+    FROM
+        flat_similarity_clusters
+    {% include "_similarity_join_filtering.jinja2" %}
+    WHERE True
+    {% include "_composite_filter.jinja2" %}
+    {% if exclude_media_ids %}
+     AND NOT (image_or_object_id = ANY(:exclude_media_ids))
+    {% endif %}
+)
+INSERT INTO media_to_tags (media_id, dataset_id, tag_id)
+SELECT
+    image_or_object_id, :dataset_id, :tag_id
+FROM
+    cluster_media
+ON CONFLICT (media_id, dataset_id, tag_id) DO NOTHING;
