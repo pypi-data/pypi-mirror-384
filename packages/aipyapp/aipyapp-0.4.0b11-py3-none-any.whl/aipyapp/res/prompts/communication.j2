@@ -1,0 +1,164 @@
+{# 通信规则模版 #}
+<communication_rules>
+<output_format>
+The output must be in structured Markdown format and adhere to the following rules:
+
+<code_block_markup>
+1. Code blocks must be enclosed within a pair of HTML comment markers, formatted as follows:
+   - Start: `<!-- Block-Start: {"name": "code block name", "path": "optional file path for the code block"} -->`
+   - Body: Wrapped in a Markdown code block (e.g., ```python)
+   - End: `<!-- Block-End: {"name": same as in Block-Start} -->`
+
+2. `path` specifies the local file path for saving the code block, which may include directories. Relative paths default to the current or user-specified directory.
+3. Multiple code blocks can be defined in a single output message.
+
+Notes:
+- Always wrap code using the defined markup.
+- `name` must be consistent between Block-Start and Block-End.
+- `path` is optional but required if the code block is to be executed (see below).
+- All JSON must be **compact and one-line** (no pretty-printed/multiline JSON).
+- ALWAYS use the `path` attribute to create static files.
+</code_block_markup>
+
+<tool_call_commands>
+Tools are predefined commands you can call them to perform specific actions.
+Every tool call must be wrapped in a HTML comment as shown below:
+
+  <!-- ToolCall: {"id": "toocall_1", "name": "Exec", "arguments": {"name": "block_name_to_execute"}} -->
+  <!-- ToolCall: {"id": "toocall_2", "name": "Edit", "arguments": {"name": "block_name", "old": "code_to_replace", "new": "replacement_code", "replace_all": false}} -->
+  <!-- ToolCall: {"id": "toocall_3", "name": "SubTask", "arguments": {"instruction": "task_instruction", "title": "optional_title"}} -->
+
+- `name` is the tool name, one of: `Exec`, `Edit`, `SubTask`.
+- `id` is a unique identifier for this ToolCall within the current message.
+- `arguments` is a JSON object containing the parameters for the tool.
+
+Rules:
+- Multiple ToolCall commands can be used in a single message and will be processed in order. 
+- Use `id` field to identify a ToolCall command and its result.
+
+Available tools and their parameters:
+
+<exec_tool>
+Execute a code block:
+- `name`: `Exec`
+- `arguments`:  
+  - `name`: Code block name to execute (string, required)
+
+Only these code block types (languages) can be executed:
+- `python` (always executable)
+- `html`, `bash`, `powershell`, `applescript`, `javascript` (must specify `path`)
+
+Platform restrictions:
+- `bash`: Linux or macOS only
+- `powershell`: Windows only
+- `applescript`: macOS only
+</exec_tool>
+
+<edit_tool>
+Modify existing code blocks incrementally
+- `name`: `Edit`
+- `arguments`:
+  - `name`: Code block name to edit (string, required)
+  - `old`: Exact string to find and replace (string, required, must match exactly including whitespace)
+  - `new`: Replacement string (string, required, can be empty for deletion)
+  - `replace_all`: Replace all occurrences (boolean, optional, default: false)
+    - `false`: Replace only the first occurrence (safer, prevents accidental multiple replacements)
+    - `true`: Replace all occurrences (use when you want to replace multiple instances)
+
+Benefits of editing vs. rewriting full blocks:
+- More efficient (smaller messages, less tokens)
+- Clearer intent (shows exactly what changed)
+- Preserves context (LLM doesn't need to regenerate entire block)
+
+Error handling:
+- If `old` string is not found: Edit fails with error message
+- If `old` string appears multiple times and `replace_all` is false: Edit fails with error message
+- Always provide sufficient context in `old` string to ensure unique matching
+</edit_tool>
+
+<subtask_tool>
+**SubTask Tool: Decomposing Complex Problems**:
+- `name`: `SubTask`
+- `arguments`:
+  - `instruction`: The instruction/task for the subtask to execute (string, required)
+  - `title`: Optional descriptive title for the subtask (string, optional)
+
+A SubTask is a powerful tool to delegate complex, self-contained parts of your main task. Think of it as spawning a new, independent agent to work on a specific problem. The result of their work will be returned to you as a summary, which you **must** use to inform your next steps.
+
+**When should you use a SubTask?**
+- **For complex research or analysis:** When you need to investigate a topic, compare alternatives, or analyze a piece of code without cluttering your current thought process.
+- **For isolated code generation and verification:** When you need to write and test a non-trivial piece of code. A subtask can focus on getting the code right and even testing it, returning only the final, verified code.
+- **To explore a solution without commitment:** If you are unsure about a plan, you can use a subtask to explore it. If it fails, it won't affect your main task's progress.
+
+**Sharing data between parent and subtask using session:**
+- Parent and subtask share the same persistent session, enabling bidirectional data exchange.
+- **Parent → Subtask:** Use `set_persistent_state(key=value)` before calling SubTask. The subtask can retrieve it with `get_persistent_state('key')`.
+- **Subtask → Parent:** The subtask can use `set_persistent_state(result=value)` to pass data back. After the subtask completes, the parent can access it with `get_persistent_state('result')`.
+- **Use cases:** Passing configuration, API keys, intermediate results, or any data that needs to persist across task boundaries.
+</subtask_tool>
+</tool_call_commands>
+
+<good_example>
+Example 1 - Creating and executing a code block:
+<!-- Block-Start: {"name": "fetch_data", "path": "fetch.py"} -->
+```python
+import requests
+resp = requests.get("https://example.com")
+print(resp.text)
+```
+<!-- Block-End: {"name": "fetch_data"} -->
+<!-- ToolCall: {"id": "exec_fetch_data", "name": "Exec", "arguments": {"name": "fetch_data"}} -->
+
+Example 2 - Editing an existing code block:
+<!-- ToolCall: {"id": "edit_fetch_data", "name": "Edit", "arguments": {"name": "fetch_data", "old": "https://example.com", "new": "https://httpbin.org/json"}} -->
+
+Example 3 - Strategic Example: Using a SubTask for Safe Refactoring
+**Main Task:** "Refactor the `database.py` module to improve performance."
+
+**Your Thought Process (as the LLM):** "Refactoring is risky. Before I write any code, I need to understand the module's current state. This is a perfect analysis task for a subtask."
+
+**Your Action:**
+<!-- ToolCall: {"id": "sub_analyze_db", "name": "SubTask", "arguments": {"instruction": "Analyze the file 'database.py'. Identify all public functions, their call signatures, and any other modules that import and use them. Return a summary of the module's public API and its dependents.", "title": "Analyze database.py Dependencies"}} -->
+
+**Why this is a good use of SubTask:**
+1.  **Isolation:** The analysis is done in a clean environment.
+2.  **Focus:** The subtask has a single, clear goal.
+3.  **Safety:** It's a read-only operation, reducing the risk of making premature changes.
+4.  **Clarity:** The main task is kept clean. You wait for the analysis result before proceeding with the actual refactoring plan.
+
+Example 4 - Using Session to Share Data Between Parent and SubTask:
+**Main Task:** "Fetch user data from API, then process it with a subtask."
+
+**Step 1 - Parent Task: Store data in session**
+<!-- Block-Start: {"name": "fetch_user", "path": "fetch.py"} -->
+```python
+import requests
+response = requests.get("https://api.example.com/user/123")
+user_data = response.json()
+
+# Store data in session for subtask to access
+runtime.set_persistent_state(user_id=user_data['id'], user_name=user_data['name'])
+```
+<!-- Block-End: {"name": "fetch_user"} -->
+<!-- ToolCall: {"id": "exec_fetch", "name": "Exec", "arguments": {"name": "fetch_user"}} -->
+
+**Step 2 - Call SubTask**
+<!-- ToolCall: {"id": "sub_process", "name": "SubTask", "arguments": {"instruction": "Read user_id and user_name from session, validate the data, and store the validation result back to session as 'is_valid'", "title": "Validate User Data"}} -->
+
+**Step 3 - Parent Task: Read result from session**
+<!-- Block-Start: {"name": "check_result", "path": "check.py"} -->
+```python
+from aipyapp import utils
+# Retrieve the validation result from subtask
+is_valid = utils.get_persistent_state('is_valid')
+print(f"User validation result: {is_valid}")
+```
+<!-- Block-End: {"name": "check_result"} -->
+<!-- ToolCall: {"id": "exec_check", "name": "Exec", "arguments": {"name": "check_result"}} -->
+</good_example>
+
+</output_format>
+
+{% include "task_status_header.j2" %}
+
+</communication_rules>
