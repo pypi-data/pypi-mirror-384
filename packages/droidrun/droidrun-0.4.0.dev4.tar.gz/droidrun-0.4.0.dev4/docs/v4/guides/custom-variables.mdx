@@ -1,0 +1,221 @@
+---
+title: 'Custom Variables'
+description: 'Pass dynamic data and configuration to your DroidRun agents'
+---
+
+# Custom Variables
+
+Pass dynamic data to your DroidRun agents using the `variables` parameter. Variables enable parameterized workflows and reusable automation.
+
+<Warning>
+**Important Limitation**: Custom variables are **only accessible via agent prompts**, not directly to custom tools. Tools don't have access to `shared_state.custom_variables`. See [workaround below](#accessing-variables-in-custom-tools).
+</Warning>
+
+---
+
+## Quick Start
+
+```python
+from droidrun.agent.droid import DroidAgent
+from droidrun.tools import AdbTools
+from droidrun.config_manager.config_manager import DroidRunConfig
+
+# Define custom prompts that render variables
+custom_prompts = {
+    "manager_system": """
+{{ instruction }}
+
+{% if variables %}
+Available variables:
+{% for key, value in variables.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+    """
+}
+
+# Create agent with variables
+config = DroidRunConfig()
+
+agent = DroidAgent(
+    goal="Send email to recipient with subject",
+    config=config,
+    tools=AdbTools(),
+    variables={"recipient": "john@example.com", "subject": "Update"},
+    prompts=custom_prompts  # Required to see variables
+)
+
+result = await agent.run()
+```
+
+**Important:** Default prompts don't render variables. You must provide custom prompts via the `prompts` parameter.
+
+---
+
+## How Variables Work
+
+When you pass `variables` to `DroidAgent`:
+
+1. **Stored** in `DroidAgentState.custom_variables`
+2. **Passed** to prompt templates as `variables` dict
+3. **Rendered** in Jinja2 templates via `{% if variables %}` blocks
+4. **Available** to all child agents throughout the workflow
+
+**Access Summary:**
+- ✅ Agent prompts (via custom Jinja2 templates)
+- ✅ Agents can read and pass to tools as arguments
+- ❌ NOT directly accessible to custom tools
+
+---
+
+## Basic Usage
+
+```python
+from droidrun.agent.droid import DroidAgent
+from droidrun.tools import AdbTools
+from droidrun.config_manager.config_manager import DroidRunConfig
+
+# Define variables
+variables = {
+    "recipient": "alice@example.com",
+    "message": "Hello from DroidRun!"
+}
+
+# Custom prompt to render variables
+custom_prompts = {
+    "codeact_system": """
+You are an agent that controls Android devices.
+
+{% if variables %}
+Available variables:
+{% for key, value in variables.items() %}
+- {{ key }}: {{ value }}
+{% endfor %}
+{% endif %}
+
+Use these variables when executing tasks.
+    """
+}
+
+# Create agent
+config = DroidRunConfig()
+
+agent = DroidAgent(
+    goal="Send message to recipient",
+    config=config,
+    tools=AdbTools(),
+    variables=variables,
+    prompts=custom_prompts
+)
+
+result = await agent.run()
+```
+
+### Available Prompt Keys
+
+Customize these prompts to render variables:
+
+- `manager_system` - Manager agent system prompt
+- `executor_system` - Executor agent system prompt
+- `codeact_system` - CodeAct agent system prompt
+- `codeact_user` - CodeAct agent user prompt
+- `scripter_system` - Scripter agent system prompt
+
+---
+
+## Accessing Variables in Custom Tools
+
+Custom tools **cannot** directly access `DroidAgentState.custom_variables` because they don't have access to the shared state.
+
+### Workaround: Pass as Tool Arguments (Recommended)
+
+Design tools to accept parameters, then let the agent pass variable values:
+
+```python
+from droidrun.agent.droid import DroidAgent
+from droidrun.tools import AdbTools
+from droidrun.config_manager.config_manager import DroidRunConfig
+
+def send_notification(tools_instance, title: str, channel: str):
+    """Send a notification to a specific channel."""
+    return f"Sent '{title}' to {channel}"
+
+custom_tools = {
+    "send_notification": {
+        "arguments": ["title", "channel"],
+        "description": "Send a notification with title and channel",
+        "function": send_notification
+    }
+}
+
+custom_prompts = {
+    "codeact_system": """
+{% if variables %}
+Variables: {% for k, v in variables.items() %}{{ k }}={{ v }} {% endfor %}
+{% endif %}
+    """
+}
+
+config = DroidRunConfig()
+
+agent = DroidAgent(
+    goal="Send notification to alerts channel",
+    config=config,
+    tools=AdbTools(),
+    custom_tools=custom_tools,
+    variables={"notification_channel": "alerts"},
+    prompts=custom_prompts
+)
+```
+
+The agent sees `notification_channel="alerts"` in the prompt and calls `send_notification(title="...", channel="alerts")`.
+
+---
+
+## Use Cases
+
+### Parameterized Workflows
+
+```python
+# Define reusable workflow with different variables
+for user in ["alice@example.com", "bob@example.com"]:
+    agent = DroidAgent(
+        goal="Send welcome email",
+        config=config,
+        variables={"recipient": user},
+        prompts=custom_prompts
+    )
+    await agent.run()
+```
+
+### Configuration Data
+
+```python
+variables = {
+    "api_endpoint": "https://api.example.com/v2",
+    "timeout": 30
+}
+
+agent = DroidAgent(
+    goal="Call API endpoint",
+    config=config,
+    variables=variables,
+    prompts=custom_prompts
+)
+```
+
+---
+
+## Key Points
+
+1. **Custom prompts required** - Default prompts don't render variables
+2. **Access via prompts only** - Tools cannot access `shared_state.custom_variables` directly
+3. **Workaround** - Agents read variables from prompts → pass as tool arguments
+4. **Available to all agents** - Manager, Executor, CodeAct, Scripter all receive variables
+5. **Jinja2 templates** - Use `{% if variables %}` blocks in custom prompts
+
+## Related Documentation
+
+- [Custom Prompts](/docs/v4/guides/prompts) - How to customize agent prompts
+- [Custom Tools](/docs/v4/guides/custom-tools) - Creating custom tool functions
+- [DroidAgent SDK](/docs/v4/sdk/droid-agent) - Complete API reference
