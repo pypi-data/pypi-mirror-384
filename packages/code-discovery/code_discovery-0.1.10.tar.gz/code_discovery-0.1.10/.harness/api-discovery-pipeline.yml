@@ -1,0 +1,108 @@
+pipeline:
+  name: API Discovery
+  identifier: api_discovery
+  projectIdentifier: default
+  orgIdentifier: default
+  
+  tags: {}
+  
+  stages:
+    - stage:
+        name: Discover APIs
+        identifier: discover_apis
+        type: CI
+        spec:
+          cloneCodebase: true
+          
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Setup Python
+                  identifier: setup_python
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: python:3.11
+                    shell: Bash
+                    command: |
+                      echo "Installing Python dependencies..."
+                      pip install -r requirements.txt
+              
+              - step:
+                  type: Run
+                  name: Setup Java
+                  identifier: setup_java
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: python:3.11
+                    shell: Bash
+                    command: |
+                      if [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+                        echo "Java project detected, installing JDK..."
+                        apt-get update && apt-get install -y default-jdk || true
+                      fi
+                  when:
+                    stageStatus: Success
+                  failureStrategies: []
+              
+              - step:
+                  type: Run
+                  name: Setup .NET
+                  identifier: setup_dotnet
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: python:3.11
+                    shell: Bash
+                    command: |
+                      if find . -name "*.csproj" | grep -q .; then
+                        echo ".NET project detected, installing .NET SDK..."
+                        wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh || true
+                        chmod +x dotnet-install.sh || true
+                        ./dotnet-install.sh --channel 8.0 || true
+                        export PATH="$PATH:$HOME/.dotnet"
+                      fi
+                  when:
+                    stageStatus: Success
+                  failureStrategies: []
+              
+              - step:
+                  type: Run
+                  name: Run API Discovery
+                  identifier: run_discovery
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: python:3.11
+                    shell: Bash
+                    command: |
+                      echo "Running API Discovery..."
+                      python -m src.main
+                    envVariables:
+                      API_DISCOVERY_TOKEN: <+secrets.getValue("api_discovery_token")>
+              
+              - step:
+                  type: Run
+                  name: Archive Results
+                  identifier: archive_results
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: python:3.11
+                    shell: Bash
+                    command: |
+                      echo "OpenAPI specification generated successfully"
+                      ls -la openapi-spec.* || true
+          
+          platform:
+            os: Linux
+            arch: Amd64
+          
+          runtime:
+            type: Cloud
+            spec: {}
+  
+  properties:
+    ci:
+      codebase:
+        connectorRef: <+input>
+        repoName: <+input>
+        build: <+input>
+
