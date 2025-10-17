@@ -1,0 +1,65 @@
+name: GlassCandle
+on:
+  schedule:
+    - cron: '0 0 * * *' # daily at 00:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  glasscandle:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # use SSH so the action can push changes to the main branch
+          # (protected by branch protection rules)
+          ssh-key: ${{ secrets.DEPLOY_KEY }} 
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install glasscandle
+
+
+      - name: Configure git
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name  "GlassCandle Action"
+
+      - name: Switch the remote to SSH (so the deploy key is used)
+        run: |
+          git remote set-url     origin git@github.com:${{ github.repository }}.git
+          git remote set-url --push origin git@github.com:${{ github.repository }}.git
+          git remote -v            # quick sanity-check
+
+      - name: Run GlassCandle
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SNIPPY_SLACK_URL }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_SMTP_SERVER: ${{ secrets.EMAIL_SMTP_SERVER }}
+          EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          MASTODON_API_BASE_URL: ${{ secrets.MASTODON_API_BASE_URL }}
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
+        run: python dependencies/watcher.py
+
+      - name: Commit and push version database changes to glasscandle branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add -A
+          git diff --staged --quiet || git commit -m ":candle: Found updated dependencies!"
+          git push
