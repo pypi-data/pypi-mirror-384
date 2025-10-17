@@ -1,0 +1,402 @@
+on:
+  workflow_call:
+    inputs:
+      sc-ref:
+        required: false
+        type: string
+        description: which siliconcompiler ref to use
+      lambdapdk-ref:
+        required: false
+        type: string
+        description: which lambdapdk ref to use
+      concurrency:
+        required: false
+        type: number
+        default: 50
+        description: how many concurrent runners to use
+      scgallery-ref:
+        required: false
+        type: string
+        default: 'main'
+        description: switch scgallery to use
+      fail-fast:
+        required: false
+        type: boolean
+        default: true
+        description: use fail-fast when running
+      run:
+        required: false
+        type: string
+        default: default
+        description: types of designs to run
+      timeout:
+        required: false
+        type: number
+        default: 120
+        description: timeout for design matrix in minutes
+
+name: 'All Gallery Designs Workflow'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  designs:
+    name: Get design matrix
+    runs-on: ubuntu-latest
+
+    outputs:
+      designs: ${{ steps.designs.outputs.designs }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          repository: siliconcompiler/scgallery
+          ref: ${{ inputs.scgallery-ref }}
+          fetch-depth: 0
+
+      - name: Generate run matrix
+        if: inputs.run != 'default'
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+
+          pip3 install .
+
+          # Temporary
+          pip3 uninstall -y siliconcompiler
+          pip3 install siliconcompiler@git+https://github.com/siliconcompiler/siliconcompiler@main
+
+          # Remove current design matrix
+          rm $GITHUB_WORKSPACE/.github/workflows/config/designs.json
+          if ${{ inputs.run == 'all' }}; then
+            # Replace with full matrix
+            sc-gallery -json $GITHUB_WORKSPACE/.github/workflows/config/designs.json
+          else
+            # Replace with tiny matrix
+            sc-gallery -design heartbeat -json $GITHUB_WORKSPACE/.github/workflows/config/designs.json
+          fi
+
+      - name: Get design matrix
+        id: designs
+        run: |
+          echo "designs=$(python3 $GITHUB_WORKSPACE/scripts/generate_image_cache.py --github)" >> $GITHUB_OUTPUT
+          echo "$(python3 $GITHUB_WORKSPACE/scripts/report_configs.py --markdown)" >> $GITHUB_STEP_SUMMARY
+
+  wheel:
+    name: Package gallery
+    runs-on: ubuntu-latest
+
+    outputs:
+      name: ${{ steps.wheel.outputs.artifact-name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          repository: siliconcompiler/scgallery
+          ref: ${{ inputs.scgallery-ref }}
+          fetch-depth: 0
+
+      - uses: hynek/build-and-inspect-python-package@v2.12.0
+        id: wheel
+        with:
+          upload-name-suffix: '-gallery'
+
+  package_lambdapdk:
+    if: inputs.lambdapdk-ref != ''
+    name: Package lambdapdk
+    runs-on: ubuntu-latest
+
+    outputs:
+      name: ${{ steps.wheel.outputs.artifact-name }}
+
+    steps:
+      - name: Get lambdapdk
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.lambdapdk-ref }}
+          repository: siliconcompiler/lambdapdk
+
+      - uses: hynek/build-and-inspect-python-package@v2.12.0
+        id: wheel
+        with:
+          upload-name-suffix: '-lambdapdk'
+
+  package_siliconcompiler:
+    if: inputs.sc-ref != ''
+    name: Package siliconcompiler
+    runs-on: ubuntu-latest
+
+    outputs:
+      name: ${{ steps.wheel.outputs.artifact-name }}
+
+    steps:
+      - name: Get siliconcompiler
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sc-ref }}
+          repository: siliconcompiler/siliconcompiler
+
+      - uses: hynek/build-and-inspect-python-package@v2.12.0
+        id: wheel
+        with:
+          upload-name-suffix: '-siliconcompiler'
+
+  cache:
+    name: Generate cache
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    needs: [wheel, package_siliconcompiler, package_lambdapdk]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          repository: siliconcompiler/scgallery
+          ref: ${{ inputs.scgallery-ref }}
+          fetch-depth: 0
+
+      - name: Get gallery
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.wheel.outputs.name }}
+          path: dist-gallery
+
+      - name: Get siliconcompiler
+        if: inputs.sc-ref != ''
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.package_siliconcompiler.outputs.name }}
+          path: dist-sc
+
+      - name: Get lambdapdk
+        if: inputs.lambdapdk-ref != ''
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.package_lambdapdk.outputs.name }}
+          path: dist-pdk
+
+      - name: Install
+        run: |
+          python3 -m venv venv
+          . venv/bin/activate
+          wheels=$(find -name "*.whl")
+          echo "$wheels"
+          pip3 install $wheels
+
+      - name: Gather cache
+        run: |
+          . venv/bin/activate
+          python3 .github/workflows/bin/generate_cache.py
+
+      - name: Get lambdapdk path
+        if: inputs.lambdapdk-ref != ''
+        id: lambdapdk-path
+        run: |
+          lpath=$(find .sc/cache -name "lambdapdk-*" | grep -v ".lock")
+          echo "Lambdapdk location: $lpath"
+          echo path=${lpath} >> $GITHUB_OUTPUT # update GitHub vars
+          rm -rf $lpath
+
+      - name: Get lambdapdk
+        uses: actions/checkout@v5
+        if: inputs.lambdapdk-ref != ''
+        with:
+          path: ${{ steps.lambdapdk-path.outputs.path }}
+          ref: ${{ inputs.lambdapdk-ref }}
+          repository: siliconcompiler/lambdapdk
+
+      - name: Upload
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: gallery-cache
+          path: .sc/cache
+          retention-days: 2
+
+  sc_version:
+    if: inputs.sc-ref == ''
+    needs: wheel
+    name: Get SiliconCompiler version
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.sc_version.outputs.version }}
+
+    steps:
+      - uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.wheel.outputs.name }}
+          path: dist
+
+      - name: Install gallery
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip3 install --upgrade pip
+          pip3 install dist/*.whl
+
+      - name: Get version
+        id: sc_version
+        run: |
+          . .venv/bin/activate
+          echo "version=v$(python3 -c "import siliconcompiler;print(siliconcompiler.__version__)")" >> $GITHUB_OUTPUT
+
+  docker_image:
+    needs: sc_version
+    if: always() && !cancelled()
+    name: Get tools image
+    uses: siliconcompiler/siliconcompiler/.github/workflows/docker_image.yml@main
+    with:
+      sc_version: ${{ inputs.sc-ref || needs.sc_version.outputs.version }}
+
+  designs_test:
+    needs: [wheel, docker_image, designs, package_lambdapdk, package_siliconcompiler, cache]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.docker_image.outputs.sc_tool }}
+
+    strategy:
+      fail-fast: ${{ inputs.fail-fast }}
+      max-parallel: ${{ inputs.concurrency }}
+      matrix:
+        include: ${{ fromJson(needs.designs.outputs.designs) }}
+
+    name: Run design
+    steps:
+      - name: Get gallery
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.wheel.outputs.name }}
+          path: dist-gallery
+
+      - name: Get siliconcompiler
+        if: inputs.sc-ref != ''
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.package_siliconcompiler.outputs.name }}
+          path: dist-sc
+
+      - name: Get lambdapdk
+        if: inputs.lambdapdk-ref != ''
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: ${{ needs.package_lambdapdk.outputs.name }}
+          path: dist-pdk
+
+      - name: Install
+        run: |
+          wheels=$(find -name "*.whl")
+          echo "$wheels"
+          pip3 install $wheels
+
+      - name: Restore cache
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: gallery-cache
+          path: /github/home/.sc/cache/
+
+      - name: Run gallery
+        timeout-minutes: ${{ inputs.timeout }}
+        run: |
+          if [ -z "${{ matrix.target }}" ] ; then
+            sc-gallery -design ${{ matrix.design }}
+          else
+            sc-gallery -design ${{ matrix.design }} -target ${{ matrix.target }}
+          fi
+
+      - name: Generate artifact name
+        if: always() && !cancelled()
+        id: artifact_name
+        run: |
+          if [ -z "${{ matrix.target }}" ] ; then
+            ART_NAME=${{ matrix.design }}
+          else
+            ART_NAME=${{ matrix.design }}-${{ matrix.target }}
+          fi
+
+          echo name=${ART_NAME} >> $GITHUB_OUTPUT # update GitHub vars
+
+      - name: Upload gallery image
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}-image
+          path: gallery/*/*.png
+          retention-days: 2
+          if-no-files-found: error
+
+      - name: Upload run manifest
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}-manifest
+          path: build/*/*/*.pkg.json
+          retention-days: 2
+          if-no-files-found: error
+
+      - name: Upload run artifacts
+        id: upload_run
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}-build
+          path: gallery/*/*.tgz
+          retention-days: 2
+          if-no-files-found: error
+
+      - name: Upload build directory
+        if: always() && !cancelled() && steps.upload_run.outputs.artifact-id == ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}-builddir
+          path: build/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload issue artifacts
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}-issue
+          path: build/*/*/sc_issue*.tar.gz
+          retention-days: 7
+          if-no-files-found: ignore
+
+  merge_images:
+    name: Merge image artifacts
+    runs-on: ubuntu-latest
+    if: always() && !failure() && !cancelled()
+    needs: designs_test
+
+    steps:
+      - name: Merge images
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: images
+          pattern: '*-image'
+          delete-merged: true
+          retention-days: 7
+
+  collect_manifests:
+    name: Merge manifests artifacts
+    runs-on: ubuntu-latest
+    if: always() && !failure() && !cancelled()
+    needs: designs_test
+
+    steps:
+      - name: Merge manifests
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: manifests
+          pattern: '*-manifest'
+          delete-merged: true
+          retention-days: 7

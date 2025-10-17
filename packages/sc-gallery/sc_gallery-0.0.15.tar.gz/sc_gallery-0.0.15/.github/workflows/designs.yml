@@ -1,0 +1,50 @@
+on:
+  workflow_dispatch:
+    inputs:
+      sc-ref:
+        required: false
+        type: string
+        description: which siliconcompiler ref to use
+      lambdapdk-ref:
+        required: false
+        type: string
+        description: which lambdapdk ref to use
+      concurrency:
+        required: false
+        type: number
+        default: 50
+        description: how many concurrent runners to use
+      run:
+        required: false
+        type: choice
+        default: default
+        description: types of designs to run
+        options:
+          - all
+          - default
+          - tiny
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.sc-ref }}-${{ inputs.lambdapdk-ref }}
+  cancel-in-progress: true
+
+name: 'Run Gallery Designs'
+
+jobs:
+  designs:
+    uses: ./.github/workflows/run-designs.yml
+    with:
+      sc-ref: ${{ inputs.sc-ref }}
+      lambdapdk-ref: ${{ inputs.lambdapdk-ref }}
+      concurrency: ${{ fromJson(inputs.concurrency) }}
+      scgallery-ref: ${{ github.ref }}
+      fail-fast: false
+      run: ${{ inputs.run }}
+    secrets: inherit
+
+  update_montage:
+    name: Merge image artifacts
+    if: always() && !failure() && !cancelled()
+    needs: designs
+    uses: ./.github/workflows/montage.yml
+    secrets: inherit

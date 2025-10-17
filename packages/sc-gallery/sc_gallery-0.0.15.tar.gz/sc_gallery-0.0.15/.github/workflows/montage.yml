@@ -1,0 +1,86 @@
+name: Update Montage
+on:
+  # Manual Dispatch
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      workflow-id:
+        description: 'Workflow ID'
+        required: false
+
+jobs:
+  generate_montage:
+    name: Generate montage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Get workflow ID
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "${{ inputs.workflow-id || github.run_id }}" ] ; then
+            WID=$(gh run list --workflow .github/workflows/designs.yml --status completed --branch main --json databaseId --jq '.[0] | .databaseId')
+          else
+            WID=${{ inputs.workflow-id || github.run_id }}
+          fi
+          echo WORKFLOW_ID=$WID > $GITHUB_ENV
+
+      - name: Get images
+        uses: actions/download-artifact@v5.0.0
+        with:
+          name: images
+          path: gallery
+          run-id: ${{ env.WORKFLOW_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Handle requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          SC_VERSION=$(ls gallery)
+          echo SC_VERSION="$SC_VERSION" > $GITHUB_ENV
+
+      - name: Resize
+        run: |
+          mkdir resized
+          # First resize cached images
+          cd images
+          mkdir -p ./resized
+          find . -maxdepth 1 -name "*.png" -exec convert -resize 50% {} ./resized/{} \;
+          cd ..
+          mv images/resized/* ./resized
+          # Handle new images
+          cd gallery/${{ env.SC_VERSION }}
+          mkdir -p ./resized
+          find . -maxdepth 1 -name "*.png" -exec convert -resize 50% {} ./resized/{} \;
+          cd ../..
+          mv gallery/${{ env.SC_VERSION }}/resized/* ./resized
+
+      - name: Montage
+        run: |
+          mkdir -p ./resized
+          montage -background '#000000' -geometry +1+1 ./resized/*.png montage.jpg
+          mv montage.jpg images/
+
+      - name: Upload
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: montage
+          path: images/montage.jpg
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+          title: "Update montage"
+          author: "SiliconCompiler Bot <bot@siliconcompiler.com>"
+          body: "Update montage to ${{ env.SC_VERSION }} / https://github.com/siliconcompiler/scgallery/actions/runs/${{ env.WORKFLOW_ID }}"
+          committer: "SiliconCompiler Bot <bot@siliconcompiler.com>"
+          commit-message: Update montage
+          add-paths: images/montage.jpg
+          branch: bot/montage
+          base: main
+          delete-branch: true

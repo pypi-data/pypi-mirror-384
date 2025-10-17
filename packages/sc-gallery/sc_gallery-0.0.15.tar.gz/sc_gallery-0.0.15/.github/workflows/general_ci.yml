@@ -1,0 +1,204 @@
+name: General CI
+on:
+  # Runs on all PRs
+  pull_request:
+  # Manual Dispatch
+  workflow_dispatch:
+  # Runs on pushes to test/ branches and main
+  push:
+    branches:
+      - 'main'
+      - 'test/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+    
+jobs:
+  python:
+    name: Python CI
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+        # Python 3.9 is on macos-13 but not macos-latest (macos-14-arm64)
+        # https://github.com/actions/setup-python/issues/696#issuecomment-1637587760
+        exclude:
+          - { python: "3.9", os: "macos-latest" }
+        include:
+          - { python: "3.9", os: "macos-13" }
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v5
+
+      - name: Setup python
+        id: python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Requirements (non-windows)
+        if: runner.os != 'Windows'
+        run: |
+          ${{ steps.python.outputs.python-path }} -m venv .venv
+          . .venv/bin/activate
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e .[dev]
+
+          # Temporary
+          python3 -m pip uninstall -y siliconcompiler
+          python3 -m pip install siliconcompiler@git+https://github.com/siliconcompiler/siliconcompiler@main
+
+      - name: Run tests (non-windows)
+        if: runner.os != 'Windows'
+        run: |
+          . .venv/bin/activate
+
+          # change running directory
+          mkdir testrun
+          cd testrun
+
+          pytest $GITHUB_WORKSPACE -n logical -m "not eda" --cov --cov-branch --cov-report=xml
+ 
+      - name: Install Requirements (windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+          git config --system core.longpaths true
+
+          ${{ steps.python.outputs.python-path }} -m venv venv
+          venv/Scripts/activate
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e .[dev]
+
+          # Temporary
+          python3 -m pip uninstall -y siliconcompiler
+          python3 -m pip install siliconcompiler@git+https://github.com/siliconcompiler/siliconcompiler@main
+
+      - name: Run tests (windows)
+        if: runner.os == 'Windows'
+        run: |
+          venv/Scripts/activate
+
+          # change running directory
+          mkdir testrun
+          cd testrun
+
+          pytest .. -n logical -m "not eda" --cov --cov-branch --cov-report=xml
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  sc_version:
+    name: Get SiliconCompiler version
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.sc_version.outputs.version }}
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v5
+
+      - name: Install gallery
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python3 -m pip install --upgrade pip
+          python3 -m pip install .
+
+      - name: Get version
+        id: sc_version
+        run: |
+          . .venv/bin/activate
+          echo "version=v$(python3 -c "import siliconcompiler;print(siliconcompiler.__version__)")" >> $GITHUB_OUTPUT
+
+  docker_image:
+    needs: sc_version
+    name: Get tools image
+    uses: siliconcompiler/siliconcompiler/.github/workflows/docker_image.yml@main
+    with:
+      sc_version: ${{ needs.sc_version.outputs.version }}
+
+  eda:
+    name: EDA CI
+    needs: docker_image
+
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.docker_image.outputs.sc_tool }}
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v5
+
+      - name: Install Requirements
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e .[dev]
+
+          # Temporary
+          python3 -m pip uninstall -y siliconcompiler
+          python3 -m pip install siliconcompiler@git+https://github.com/siliconcompiler/siliconcompiler@main
+
+      - name: Run tests
+        run: |
+          . .venv/bin/activate
+
+          # change running directory
+          mkdir testrun
+          cd testrun
+
+          pytest $GITHUB_WORKSPACE -m "eda" --cov --cov-branch --cov-report=xml
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  designs_workflow:
+    name: Github Action Workflow Check
+    uses: ./.github/workflows/run-designs.yml
+    with:
+      scgallery-ref: ${{ github.ref }}
+      sc-ref: main
+      fail-fast: false
+      run: 'tiny'
+    secrets: inherit
+
+  check_designs:
+    name: Check design config
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Generate run matrix
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+
+          pip3 install .
+
+          # Temporary
+          python3 -m pip uninstall -y siliconcompiler
+          python3 -m pip install siliconcompiler@git+https://github.com/siliconcompiler/siliconcompiler@main
+
+      - name: Get design matrix
+        id: designs
+        run: |
+          . .venv/bin/activate
+
+          scripts/generate_image_cache.py --github
+          scripts/report_configs.py --markdown
+          echo "$(python3 scripts/report_configs.py --markdown)" >> $GITHUB_STEP_SUMMARY
