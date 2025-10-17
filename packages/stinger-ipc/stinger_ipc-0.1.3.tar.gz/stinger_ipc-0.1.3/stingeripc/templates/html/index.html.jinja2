@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>{{stinger.title}} Web Interface</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.2.96/css/materialdesignicons.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  {%macro arglist(arg_list, model_parts, read_only) -%}
+  {%set modelpath %}{%for part in model_parts%}{%if not loop.first%}.{%endif%}{{part|snake_case}}{%endfor%}{%endset%}
+  <table class="arglist">
+  {%for arg in arg_list %}
+    <tr class="argrow">
+      <td class="arg-name-cell">
+        <div class="arg-name">{{ arg.name }}</div>
+        {%if arg.description %}
+        <div class="arg-description">{{ arg.description }}</div>
+        {%endif%}
+      </td>
+      <td class="arg-value-cell">
+        {%if arg.arg_type|lower == "argtype.primitive"%}
+        <input {%if read_only%}disabled {%endif%}type="text" ng-model="{{modelpath}}.{{arg.name}}" />
+        {%elif arg.arg_type|lower == "argtype.enum"%}
+        <select {%if read_only%}disabled {%endif%}ng-model="{{modelpath}}.{{arg.name}}" ng-options="n.id as n.name for n in enums.{{arg.enum.name|snake_case}}">
+        </select>
+        {%elif arg.arg_type|lower == "argtype.list"%}
+        <input {%if read_only%}disabled {%endif%}type="text"  ng-model="{{modelpath}}.{{arg.name}}" placeholder="Comma-separated values" />
+        {%elif arg.arg_type|lower == "argtype.struct"%}
+        <div class="struct-arg">
+          {%set new_model_parts = model_parts + [arg.name] %}
+          {{ arglist(arg.members, new_model_parts, read_only) }}
+        </div>
+        {%else%}
+        <input {%if read_only%}disabled {%endif%}type="text" ng-model="{{modelpath}}.{{arg.name}}" placeholder="(unknown type)" />
+        {%endif%} 
+      </td>
+    </tr>
+  {%endfor%}
+  </table>
+  {%- endmacro %}
+  <body ng-app="myApp" ng-controller="myCtrl">
+    <div class="infobox-background" ng-show="!online || showoutput" id="offline">Connecting</div>
+
+    <div class="interface-box">
+      <h1>{{stinger.title}}</h1>
+      <p id="interface-summary"><i>{{stinger.summary}}</i></p>
+      <p id="interface-doc">
+      {%markdown%}
+      {{stinger.documentation}}
+      {%endmarkdown%}
+      </p>
+    </div>
+    <!------------- SIGNALS ------------->
+    {%for sig_name, sig in stinger.signals.items() %}
+    <div class="component-box signal-box" id="signal-box-{{ sig_name }}">
+        <h3 class="component-title signal-title">Signal: {{ sig_name }}</h3>
+        <div class="component-doc signal-doc">{%if sig.documentation %}
+{%markdown%}
+{{ sig.documentation }}
+{%endmarkdown%}
+        {%endif%}
+        </div>
+        <div class="last-received signal-value">
+        {{ arglist(sig.arg_list, ['signals', sig_name, 'received'], true) | indent(8) }}
+        </div>
+    </div>
+    {%endfor%}{# end signals loop #}
+
+    <!------------- PROPERTIES ------------->
+    {%for prop_name, prop in stinger.properties.items() %}
+    <div class="component-box prop-box" id="prop-box-{{ prop_name }}">
+        <h3 class="component-title prop-title">Property: {{ prop_name }}</h3>
+        <div class="component-doc prop-doc">{%if prop.documentation %}
+{%markdown%}
+{{ prop.documentation }}
+{%endmarkdown%}
+        {%endif%}
+        </div>
+        <div class="last-received property-value">
+          {{ arglist(prop.arg_list, ['properties', prop_name, 'received'], prop.read_only) | indent(8) }}
+        </div>
+        {%if not prop.read_only %}
+        <input type="button" class="publish-button" value="Update" ng-click="updateProperty(properties.{{ prop_name | snake_case }})" />
+        {%endif%}
+    </div>
+    {%endfor%} {# end properties loop #}
+
+    <!------------- METHODS ------------->
+    {%for method_name, method in stinger.methods.items() %}
+    <div class="component-box method-box" id="method-box-{{ method_name }}">
+        <h3 class="component-title method-title">Method: {{ method_name }}</h3>
+        <div class="component-doc method-doc">{%if method.documentation %}
+{%markdown%}
+{{ method.documentation }}
+{%endmarkdown%}
+        {%endif%}
+        </div>
+        <div class="method-form-box">
+            <form ng-submit="callMethod(methods.{{method_name|snake_case}})">
+                {{ arglist(method.arg_list, ['methods', method_name, 'args'], false) | indent(8) }}
+                <button type="submit" class="publish-button">Call {{ method_name }}</button>
+            </form>
+        </div>
+        <div class="last-received method-response" ng-bind="methods['{{ method_name }}'].received">
+        {{ arglist(method.return_values, ['methods', method_name, 'received'], true) | indent(8) }}
+        </div>
+    </div>
+    {%endfor%} {# end methods loop #}
+
+    {%raw%}
+    <div id="console" ng-class="{ 'expanded' : (console.showing) }">
+      <div class="top" ng-click=" console.showing = !console.showing ">Request Console <span ng-show="console.showing && console.requests.length > 0" ng-click="console.requests = []"> - Clear</span>
+        <p class="expanded-toggle">{{ console.showing ? 'Hide' : 'Show' }}</p>
+      </div>
+      <div id="request-list">
+        <p ng-repeat="msg in console.requests" class="entry">
+          <strong>{{msg.name}}:</strong> <em>{{msg.topic}}</em> <span class="elapsedTime" ng-show="msg.responseTime">{{msg.responseTime - msg.requestTime}}ms</span><span class="elapsedTime" ng-show="msg.eventTime">{{msg.eventTime}}</span>
+          <span class="outgoing" ng-show="msg.payload">{{msg.payload}}</span>
+          <span class="incoming" ng-show="msg.response">{{msg.response}}</span>
+          <span ng-repeat="result in msg.results" class="action-result">{{result}}</span>
+        </p>
+      </div>
+    </div>
+    {%endraw%}
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js"></script>
+    <script src="https://unpkg.com/mqtt@5.14.0/dist/mqtt.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
