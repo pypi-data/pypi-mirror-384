@@ -1,0 +1,9 @@
+search2 start = "-1d@d" repo="_internal" AND origin = "_collector" AND repoName | eval countDate=toReadableTime(_time, "yyyy-MM-dd") | stats sum(kiloBytesProcessed) as 'dailyIncrease' by repoName,countDate | where countDate = "2025-10-15"
+search2 repo="_internal" AND origin = "_collector" | eval eventsNumPS = eventsNum / 30,failDocNum = failDocNum / 30,succDocNum = succDocNum / 30 | timechart span="30s" sum(eventsNumPS) as '总数',sum(failDocNum) as '失败数',sum(succDocNum) as '成功数' | sort by _time asc
+search2 repo="_internal" AND origin = "_collector" | eval kiloBytesPS=kiloBytes/30 | timechart span="30s" sum(kiloBytesPS) as '流量' | sort by _time asc
+search2 repo="_internal" AND origin="_collector"| timechart span="30s" avg(avgHandlingTimeInMilli) as '响应时间'| sort by _time asc
+search2 repo="_internal" AND origin = "_collector"| where in(host, "keta-web-10-0-1-154","keta-web-10-0-1-225")| eval eventsNumPS=eventsNum/30| timechart span="30s" sum(eventsNumPS) as eps by host| sort by _time asc
+search2 repo="_internal" AND origin = "_collector"| where in(repoName, "app_docker_log_tel")| eval eventsNumPS=eventsNum/30| timechart span="30s" sum(eventsNumPS) as eps by repoName| sort by _time asc
+search2 repo="infrastructure_monitoring_metrics" AND (infra_type="kubernetes" OR service="kubernetes") AND name="pod_container" AND origin="kubernetes_cluster"| stats count() as c by kube_cluster_name,pod_name,namespace| stats count() as num by kube_cluster_name,namespace| sort 10 by num desc
+search2 repo="infrastructure_monitoring_metrics" AND (infra_type="kubernetes" OR service="kubernetes") AND rigin="kubernetes_cluster"
+| stats count() as c by kube_cluster_name,namespace| fields - c| stats count() as c
