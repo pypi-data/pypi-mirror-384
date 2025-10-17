@@ -1,0 +1,60 @@
+from pydantic import BaseModel, Field
+from typing import Annotated
+from maleo.types.string import SeqOfStrs
+from .constants import (
+    ALLOW_METHODS,
+    ALLOW_HEADERS,
+    EXPOSE_HEADERS,
+)
+
+
+class CORSConfig(BaseModel):
+    allow_origins: Annotated[SeqOfStrs, Field([], description="Allowed origins")] = []
+    allow_methods: Annotated[
+        SeqOfStrs, Field(ALLOW_METHODS, description="Allowed methods")
+    ] = ALLOW_METHODS
+    allow_headers: Annotated[
+        SeqOfStrs, Field(ALLOW_HEADERS, description="Allowed headers")
+    ] = ALLOW_HEADERS
+    allow_credentials: Annotated[bool, Field(True, description="Allow credentials")] = (
+        True
+    )
+    expose_headers: Annotated[
+        SeqOfStrs, Field(EXPOSE_HEADERS, description="Exposed headers")
+    ] = EXPOSE_HEADERS
+
+
+class RateLimiterConfig(BaseModel):
+    limit: Annotated[
+        int, Field(10, description="Request limit (per 'window' seconds)", ge=1)
+    ] = 10
+    window: Annotated[
+        int, Field(1, description="Request limit window (seconds)", ge=1)
+    ] = 1
+    cleanup_interval: Annotated[
+        int, Field(60, description="Interval for middleware cleanup (seconds)", ge=1)
+    ] = 60
+    idle_timeout: Annotated[
+        int, Field(300, description="Idle timeout (seconds)", ge=1)
+    ] = 300
+
+
+class MiddlewareConfig(BaseModel):
+    cors: Annotated[
+        CORSConfig,
+        Field(CORSConfig(), description="CORS middleware's configurations"),
+    ] = CORSConfig()
+    rate_limiter: Annotated[
+        RateLimiterConfig,
+        Field(
+            RateLimiterConfig(),
+            description="Rate limiter's configurations",
+        ),
+    ] = RateLimiterConfig()
+
+
+class MiddlewareConfigMixin(BaseModel):
+    middleware: Annotated[
+        MiddlewareConfig,
+        Field(MiddlewareConfig(), description="Middleware config"),
+    ] = MiddlewareConfig()
