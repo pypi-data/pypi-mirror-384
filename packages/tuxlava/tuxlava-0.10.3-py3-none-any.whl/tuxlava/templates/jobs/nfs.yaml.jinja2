@@ -1,0 +1,149 @@
+{% set prefix_len = 'nfs-'|length %}
+device_type: "{{ device.name[prefix_len:] }}"
+
+{% if tests %}
+job_name: "tuxlava@{{ device.name }}: {{ tests|map(attribute="name")|join(", ")}}"
+{% else %}
+job_name: "tuxlava@{{ device.name }}: boot"
+{% endif %}
+priority: {{ LAVA_JOB_PRIORITY }}
+visibility: "{{ visibility }}"
+
+{% set extra_kernel_args = '' %}
+context:
+{% if device.name == 'nfs-ampereone' %}
+    arch: arm64
+{% elif device.name == 'nfs-bcm2711-rpi-4-b' %}
+    arch: arm64
+    booti_dtb_addr: '0x86000000'
+    console_device: ttyS0
+{% set extra_kernel_args = '8250.nr_uarts=1 cma=64M rootwait earlycon systemd.log_level=warning ' %}
+    extra_nfsroot_args: ',vers=3'
+{% elif device.name == 'nfs-juno-r2' %}
+    bootloader_prompt: juno#
+    booti_dtb_addr: '0x88000000'
+    extra_nfsroot_args: ',wsize=65536'
+{% set extra_kernel_args = 'default_hugepagesz=2M hugepages=256 earlycon rw pci=config_acs=000000@pci:0:0' %}
+{% elif device.name == 'nfs-orion-o6' %}
+    arch: arm64
+{% set extra_kernel_args = 'rw console=ttyAMA2,115200 efi=noruntime earlycon=pl011,0x040d0000 arm-smmu-v3.disable_bypass=0 cma=640M acpi=force' %}
+{% elif device.name in ['nfs-rk3399-rock-pi-4b', 'nfs-s32g399a-rdb3'] %}
+    arch: arm64
+    booti_dtb_addr: '0x86000000'
+{% set extra_kernel_args = 'rootwait earlycon systemd.log_level=warning' %}
+    extra_nfsroot_args: ',vers=3'
+{% elif device.name in ['nfs-i386' ,'nfs-x86_64'] %}
+    test_character_delay: 10
+{% set extra_kernel_args = 'rootwait' %}
+{% endif %}
+{% if extra_kernel_args or tux_boot_args %}
+    extra_kernel_args: '{{ extra_kernel_args}}{% if tux_boot_args %} {{ tux_boot_args }}{% endif %}'
+{% endif %}
+
+{%- set deploy_timeout = timeouts.deploy|default(30) %}
+{%- set boot_timeout = timeouts.boot|default(15) %}
+
+{% block timeouts %}
+timeouts:
+  job:
+    minutes: {{ deploy_timeout + boot_timeout + tests_timeout }}
+  connection:
+    minutes: 2
+  actions:
+    power-off:
+      seconds: 60
+    finalize:
+      seconds: 60
+{% if LAVA_QUEUE_TIMEOUT is defined %}
+  queue:
+    hours: {{ LAVA_QUEUE_TIMEOUT }}
+{% endif %}
+{% endblock %}
+
+actions:
+- deploy:
+    to: tftp
+    timeout:
+      minutes: {{ deploy_timeout }}
+    os: {{ deploy_os|default(debian) }}
+    kernel:
+      url: "{{ kernel }}"
+{% if compression(kernel)[1] is not none %}
+      compression: {{ compression(kernel)[1] }}
+      type: image
+{% endif %}
+{% if dtb %}
+    dtb:
+      url: "{{ dtb }}"
+{% endif %}
+    nfsrootfs:
+      url: "{{ rootfs }}"
+{% if compression(rootfs)[1] is not none %}
+      compression: {{ compression(rootfs)[1] }}
+{% endif %}
+      format: tar
+{% if overlays %}
+      overlays:
+{% if tests %}
+{% endif %}
+{% for name, overlay, dst in overlays %}
+        {{ name }}:
+          url: "{{ overlay }}"
+          path: "{{ dst }}"
+          format: tar
+          compression: {{ compression(overlay)[1] }}
+{% endfor %}
+{% endif %}
+- boot:
+    method:
+{% if device.name in ['nfs-ampereone', 'nfs-orion-o6'] %}
+      grub
+{% elif device.name in ['nfs-bcm2711-rpi-4-b', 'nfs-juno-r2', 'nfs-rk3399-rock-pi-4b', 'nfs-s32g399a-rdb3'] %}
+      u-boot
+{% elif device.name in ['nfs-i386', 'nfs-x86_64'] %}
+      ipxe
+{% endif %}
+    commands: nfs
+{% if device.name in ['nfs-i386', 'nfs-x86_64'] %}
+    parameters:
+      shutdown-message: 'reboot: Restarting system'
+{% endif %}
+{% if qemu_image %}
+    docker:
+      image: {{ qemu_image }}
+{% endif %}
+    timeout:
+      minutes: {{ boot_timeout }}
+    auto_login:
+      login_prompt: 'login:'
+      username: root
+    prompts:
+    - 'root@(.*):[/~]#'
+{% for prompt in tux_prompt %}
+    - "{{ prompt }}"{% endfor %}
+
+{% if device.name in ['nfs-ampereone', 'nfs-orion-o6', 'nfs-juno-r2', 'nfs-i386', 'nfs-x86_64'] %}
+- test:
+    timeout:
+      minutes: 5
+    definitions:
+    - from: inline
+      repository:
+        metadata:
+          format: Lava-Test Test Definition 1.0
+          name: prep-tests
+          description: "Device preparation"
+        run:
+          steps:
+{% if device.name in ['nfs-ampereone', 'nfs-orion-o6'] %}
+          - export STORAGE_DEV=/dev/nvme0n1p2
+{% else %}
+          - export STORAGE_DEV=$(lava-target-storage SATA || lava-target-storage USB)
+{% endif %}
+          - mkfs.ext4 -F "$STORAGE_DEV" || lava-test-raise "mkfs.ext4 $STORAGE_DEV failed; job exit"
+          - mkdir -p /scratch && mount "$STORAGE_DEV" /scratch || lava-test-raise "mount $STORAGE_DEV failed; job exit"
+          - df -h
+          - mount
+      name: prep-inline
+      path: inline/prep.yaml
+{% endif %}
