@@ -1,0 +1,174 @@
+# Ask GAP for the directory where sysinfo.gap lives. This is to
+# support system GAP installations. This root-path gathering
+# command is borrowed from gap's spkg-configure.m4 and modified
+# to separate the paths with spaces.
+GAPRUN="gap -r -q --bare --nointeract -c"
+_cmd='Display(JoinStringsWithSeparator(GAPInfo.RootPaths," "));'
+GAP_ROOT_PATHS=$(${GAPRUN} "${_cmd}")
+
+# Loop though GAP_ROOT_PATHS looking for sysinfo.gap
+GAP_ROOT=""
+for grp in $GAP_ROOT_PATHS; do
+    if [ -f "${grp}/sysinfo.gap" ]; then
+        GAP_ROOT=$grp
+        echo "found GAP root $GAP_ROOT"
+        break
+    fi
+done
+
+# Try the old sage default if nothing else worked.
+if [ -z "$GAP_ROOT" ]; then
+    GAP_ROOT="$SAGE_LOCAL/lib/gap"
+    echo "falling back to GAP root $GAP_ROOT"
+fi
+
+# And finally, throw an error ASAP if the build is going to fail anyway.
+if [ ! -f "${GAP_ROOT}/sysinfo.gap" ]; then
+    sdh_die "no sysinfo.gap in your gap root"
+fi
+
+# Where to install these packages
+PKG_DIR="$SAGE_LOCAL/lib/gap/pkg"
+
+BUILDPACKAGES="$(pwd)/src/bin/BuildPackages.sh"
+
+# Patch out unnecessary things from the script
+# - do not set the MAKE variable
+sed -i.bak 's/^ *MAKE=.*/:/' "$BUILDPACKAGES"
+
+PKG_SRC_DIR="$(pwd)/src/pkg"
+cd "$PKG_SRC_DIR"
+
+# remove unused vendored sources, treat as a pure GAP package
+(cd grape && rm -rf nauty* autogen.sh configure)
+
+# remove download and build of normaliz
+rm -f normalizinterface/prerequisites.sh
+
+# Build and install compiled packages:
+
+SPKG_aclib=gap_packages
+SPKG_alnuth=gap                         # one of the packages autoloaded in the default GAP config
+SPKG_atlasrep=gap                       # one of the packages autoloaded in the default GAP config
+SPKG_autodoc=gap_packages
+SPKG_autpgrp=gap                        # one of the packages autoloaded in the default GAP config
+SPKG_cddinterface=gap_packages
+SPKG_caratinterface=gap_packages
+SPKG_cohomolo=gap_packages
+SPKG_corelg=gap_packages
+SPKG_crime=gap_packages
+SPKG_crisp=gap                          # one of the packages autoloaded in the default GAP config
+SPKG_crypting=gap_packages
+SPKG_cryst=gap_packages
+SPKG_crystcat=gap_packages
+SPKG_ctbllib=gap                        # one of the packages autoloaded in the default GAP config
+SPKG_curlinterface=gap_packages
+SPKG_datastructures=gap_packages
+SPKG_design=gap_packages
+SPKG_digraphs=gap_packages
+SPKG_factint=gap                        # one of the packages autoloaded in the default GAP config
+SPKG_fga=gap                            # one of the packages autoloaded in the default GAP config
+SPKG_float=gap_packages                 # this uses deps mpfi mpc fplll; we omit the optional dep CXSC
+SPKG_gapdoc=gap                         # one of the minimal packages GAP needs to run
+SPKG_gbnp=gap_packages
+SPKG_genss=gap_packages
+SPKG_grape=gap_packages
+SPKG_guava=gap_packages
+SPKG_hap=gap_packages
+SPKG_hapcryst=gap_packages
+SPKG_hecke=gap_packages
+SPKG_images=gap_packages
+SPKG_io=gap_packages
+SPKG_irredsol=gap                       # one of the packages autoloaded in the default GAP config
+SPKG_json=gap_pkg_jupyterkernel
+SPKG_jupyterkernel=gap_pkg_jupyterkernel
+SPKG_jupyterviz=gap_pkg_jupyterkernel
+SPKG_laguna=gap                         # one of the packages autoloaded in the default GAP config
+SPKG_liealgdb=gap_packages
+SPKG_liepring=gap_packages
+SPKG_liering=gap_packages
+SPKG_lins=gap_packages
+SPKG_loops=gap_packages
+SPKG_mapclass=gap_packages
+SPKG_nq=gap_packages
+SPKG_normalizinterface=gap_packages
+SPKG_orb=gap_packages
+SPKG_packagemanager=gap
+SPKG_polenta=gap                        # one of the packages autoloaded in the default GAP config
+SPKG_polycyclic=gap                     # one of the packages autoloaded in the default GAP config
+SPKG_polymaking=gap_packages
+SPKG_primgrp=gap                        # one of the minimal packages GAP needs to run
+SPKG_qpa=gap_packages
+SPKG_quagroup=gap_packages
+SPKG_radiroot=gap_packages
+SPKG_repsn=gap_packages
+SPKG_resclasses=gap                     # one of the packages autoloaded in the default GAP config
+SPKG_semigroups=semigroups
+SPKG_singular=gap_packages
+SPKG_sla=gap_packages
+SPKG_smallgrp=gap                       # one of the minimal packages GAP needs to run
+SPKG_sonata=gap_packages
+SPKG_sophus=gap                         # one of the packages autoloaded in the default GAP config
+SPKG_tomlib=gap                         # one of the packages autoloaded in the default GAP config
+SPKG_toric=gap_packages
+SPKG_transgrp=gap                       # one of the minimal packages GAP needs to run
+SPKG_utils=gap_packages
+SPKG_uuid=gap_pkg_jupyterkernel
+SPKG_zeromqinterface=gap_pkg_jupyterkernel
+SPKG_xgap=none
+
+# Build all GAP packages claimed by this SPKG.
+PACKAGES=
+for pkg in *; do
+    if [ -r $pkg/PackageInfo.g ]; then
+        eval SPKG=\${SPKG_$pkg}
+        if [ "$SPKG" = "$PKG_BASE" ]; then
+            PACKAGES="$PACKAGES $pkg"
+        fi
+    fi
+done
+ALL_PACKAGES=$PACKAGES
+
+export CFLAGS="$CFLAGS -std=gnu17 -Wno-implicit-function-declaration"
+
+"$BUILDPACKAGES" --no-color --with-gaproot "$GAP_ROOT" --strict \
+                 --add-package-config-Digraphs "--with-external-planarity" \
+                 --add-package-config-CddInterface "--with-cddlib=$SAGE_LOCAL" \
+                 --add-package-config-float "--with-fplll=$SAGE_LOCAL --with-mpc=$SAGE_LOCAL --with-mpfi=$SAGE_LOCAL --with-mpfr=$SAGE_LOCAL" \
+                 $PACKAGES
+
+# Now build all GAP packages unclaimed by an SPKG, in non-strict mode.
+PACKAGES=
+for pkg in *; do
+    if [ -r $pkg/PackageInfo.g ]; then
+        eval SPKG=\${SPKG_$pkg}
+        if [ "$SPKG" = "" ]; then
+            PACKAGES="$PACKAGES $pkg"
+        fi
+    fi
+done
+ALL_PACKAGES="$ALL_PACKAGES $PACKAGES"
+
+"$BUILDPACKAGES" --no-color --with-gaproot "$GAP_ROOT" --no-strict \
+                 $PACKAGES
+
+# Install all built packages.
+
+mkdir -p $SAGE_DESTDIR$PKG_DIR
+(tar cf - \
+    --exclude "**/*.o" --exclude "**/*.a" --exclude "**/.deps" \
+    --exclude "*/m4" --exclude "*/cnf" --exclude "*/autogen.sh" --exclude "*/*.m4" \
+    --exclude "*/src" --exclude "*/config.log" --exclude "*/config.status" --exclude "*/configure" \
+    --exclude "*/configure.ac" --exclude "*/config.guess" --exclude "*/config.sub" --exclude "*/autom4te.cache" \
+    --exclude "*/Makefile*" --exclude "*/makefile*" \
+    --exclude "*/Dockerfile" \
+    --exclude "anupq/include" \
+    --exclude "caratinterface/*.tgz" \
+    --exclude "cohomolo/standalone/progs.d" \
+    --exclude "digraphs/extern" --exclude "digraphs/gen" \
+    --exclude "ferret/YAPB++" \
+    --exclude "grape/nauty*" \
+    --exclude "kbmag/standalone/lib" \
+    $ALL_PACKAGES) | (cd $SAGE_DESTDIR$PKG_DIR && tar xf -)
+
+(cd $SAGE_DESTDIR$PKG_DIR && du -sh * 2>/dev/null || :)
