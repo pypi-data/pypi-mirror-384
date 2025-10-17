@@ -1,0 +1,66 @@
+name: Unit tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions: {}
+
+env:
+  FORCE_COLOR: "1"
+  PYTHONDEVMODE: "1" # -X dev
+  PYTHONWARNDEFAULTENCODING: "1" # -X warn_default_encoding
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        python:
+          - "3.9"
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+          allow-prereleases: true
+
+      - name: test
+        run: make test INSTALL_EXTRA=test
+        env:
+          # Use the pubic OIDC beacon for online tests, rather than relying
+          # on the workflow's own ID token.
+          EXTREMELY_DANGEROUS_PUBLIC_OIDC_BEACON: 1
+
+  test-offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: 3.13
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+          allow-prereleases: true
+
+      - name: install firejail
+        run: sudo apt-get install -y firejail
+
+      - name: run tests offline
+        run: |
+          make dev INSTALL_EXTRA=test
+          firejail --noprofile --net=none --env=TEST_OFFLINE=1 make test-nocoverage
