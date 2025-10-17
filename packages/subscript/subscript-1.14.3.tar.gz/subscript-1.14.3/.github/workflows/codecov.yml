@@ -1,0 +1,66 @@
+name: codecoverage
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  coverage:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    env:
+      OS: ${{ matrix.os }}
+      PYTHON: '3.12'
+      UV_SYSTEM_PYTHON: 1
+
+    steps:
+
+    - name: Install Ubuntu dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install libegl1
+
+    - uses: actions/checkout@v5
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.12
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+        python-version: "3.12"
+
+    - name: Install OPM-flow (for testing)
+      run: |
+        sudo apt-get install software-properties-common
+        sudo apt-add-repository ppa:opm/ppa
+        sudo apt-get update
+        sudo apt-get install mpi-default-bin
+        sudo apt-get install libopm-simulators-bin
+
+    - name: Install subscript and test dependencies
+      run: |
+        uv pip install ".[tests]"
+
+    - name: Log OPM-Flow version
+      run: |
+        flow --version
+
+    - name: Generate coverage report
+      run: |
+        pytest tests --disable-warnings --cov=subscript --cov-report=xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}

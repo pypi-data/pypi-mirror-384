@@ -1,0 +1,108 @@
+name: subscript
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  release:
+    types:
+      - published
+  schedule:
+    # Run nightly to check that tests are working with latest dependencies
+    - cron: "0 0 * * *"
+
+env:
+  MPLBACKEND: Agg
+  UV_SYSTEM_PYTHON: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  subscript:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install libegl1
+
+      - name: Checkout commit locally
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install OPM-flow (for testing)
+        run: |
+          sudo apt-get install software-properties-common
+          sudo apt-add-repository ppa:opm/ppa
+          sudo apt-get update
+          sudo apt-get install mpi-default-bin
+          sudo apt-get install libopm-simulators-bin
+
+      - name: Install subscript with dependencies
+        if: ${{ always() }}
+        run: |
+          uv pip install ".[tests, docs]"
+
+      - name: Log OPM-Flow version
+        run: |
+          flow --version
+
+      - name: List all installed packages
+        run: uv pip freeze
+
+      - name: Run tests
+        if: ${{ always() }}
+        run: pytest -n logical tests --mpl
+
+      - name: Syntax check documentation
+        if: ${{ always() }}
+        run: rstcheck -r docs
+
+      - name: Build documentation
+        if: ${{ always() }}
+        run: sphinx-build -b html docs build/docs/html
+
+      - name: Update GitHub pages
+        if: github.repository_owner == 'equinor' && github.ref == 'refs/heads/main' && matrix.python-version == '3.12'
+        run: |
+          cp -R ./build/docs/html ../html
+
+          git config --local user.email "subscript-github-action"
+          git config --local user.name "subscript-github-action"
+          git fetch origin gh-pages
+          git checkout --track origin/gh-pages
+          git clean -f -f -d -x  # Double -f is intentional
+          git rm -r *
+
+          cp -R ../html/* .
+          touch .nojekyll  # If not, github pages ignores _* directories.
+          git add .
+
+          if git diff-index --quiet HEAD; then
+            echo "No changes in documentation. Skip documentation deploy."
+          else
+            git commit -m "Update Github Pages"
+            git push "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+          fi

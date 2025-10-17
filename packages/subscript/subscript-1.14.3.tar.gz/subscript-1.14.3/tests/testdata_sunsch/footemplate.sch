@@ -1,0 +1,3 @@
+WCONHIST
+ 'A-90' 'OPEN' 'ORAT' <ORAT> 0 <GRAT> <VFP>/
+/
