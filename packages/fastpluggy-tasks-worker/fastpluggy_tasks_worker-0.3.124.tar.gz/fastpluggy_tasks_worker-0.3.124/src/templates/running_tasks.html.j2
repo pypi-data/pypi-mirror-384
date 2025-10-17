@@ -1,0 +1,356 @@
+<div class="row ">
+    <div class="col-12">
+        <div class="card ">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="subheader">Running Tasks Count</div>
+                    <div class="ms-auto">
+                        <span class="badge bg-warning">{{ widget.running_tasks_count }}</span>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center mt-3 flex-wrap">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="tw-auto-refresh-toggle"
+                               data-ls-key="tw_auto_refresh_enabled">
+                        <label class="form-check-label" for="tw-auto-refresh-toggle">Auto refresh</label>
+                    </div>
+                    <div class="input-group" style="max-width: 220px;">
+                        <span class="input-group-text">Every</span>
+                        <input type="number" class="form-control" id="tw-auto-refresh-interval" min="1" step="1"
+                               value="5" data-ls-key="tw_auto_refresh_interval">
+                        <span class="input-group-text">sec</span>
+                    </div>
+                    <small id="tw-auto-refresh-status" class="text-muted ms-auto"></small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4" id="running-tasks-card">
+    <div class="card-header d-flex align-items-center flex-wrap gap-2">
+        <h3 class="card-title mb-0">Currently Running Tasks</h3>
+        <div class="ms-auto d-flex align-items-center gap-2">
+            <div class="input-group input-group-sm" style="max-width: 420px;">
+                <span class="input-group-text" title="Filter by task name"><i class="ti ti-search"></i></span>
+                <input type="text" class="form-control" id="tw-filter-name" placeholder="Type or pick a task name"
+                       list="tw-tasknames" autocomplete="off" data-ls-key="tw_filter_name" aria-label="Filter by task name">
+                <button class="btn btn-outline-secondary" type="button" id="tw-filter-clear" title="Clear filter">&times;</button>
+            </div>
+            <datalist id="tw-tasknames"></datalist>
+            <small id="tw-filter-count" class="text-muted"></small>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                    data-bs-target="#tasksPieModal" title="Show running tasks chart">
+                <i class="ti ti-chart-bar"></i>
+            </button>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped card-table table-vcenter text-nowrap" id="running-tasks-table">
+            <thead>
+            <tr>
+                <th>Task ID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Start Time</th>
+                <th>Duration</th>
+                <th>Worker</th>
+                <th>Args</th>
+                <th>Kwargs</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody id="running-tasks-tbody">
+            {% if widget.task_data and widget.task_data|length > 0 %}
+                {% for t in widget.task_data %}
+                    <tr data-task-id="{{ t.task_id }}">
+                        <td>{{ t.task_id }}</td>
+                        <td>{{ t.task_name }}</td>
+                        <td>
+                            {% set label = t.status %}
+                            <span class="badge bg-blue-lt">{{ label }}</span>
+                        </td>
+                        <td>
+                            <span class="text-muted" title="{{ t.start_time }}">{{ t.start_time or '-' }}</span>
+                        </td>
+                        <td>
+                            <span class="live-duration" data-start="{{ t.start_time }}">{% if t.duration %}
+                                {{ '%.2f' % t.duration }}s{% else %}-{% endif %}</span>
+                        </td>
+                        <td>
+                            <span class="text-muted">{{ t.worker_id or '-' }}</span>
+                        </td>
+                        <td>
+                            <div class="small" title="{{ t.args }}">
+                                <code class="d-inline-block text-truncate" style="max-width: 420px;">{{ t.args }}</code>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="small" title="{{ t.kwargs }}">
+                                <code class="d-inline-block text-truncate"
+                                      style="max-width: 420px;">{{ t.kwargs }}</code>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="btn-list">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="{{ request.url_for('task_details', task_id=t.task_id) }}">Details</a>
+                                <a class="btn btn-sm btn-danger"
+                                   href="{{ request.url_for('cancel_task', task_id=t.task_id) }}">Cancel</a>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted">No running tasks</td>
+                </tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal to display running tasks chart -->
+<div class="modal modal-blur fade" id="tasksPieModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Running Tasks Chart</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="tasks-pie-modal" class="mx-auto" style="min-height: 320px;"
+                     data-task-names='{{ (widget.task_data | map(attribute="task_name") | list) | tojson | safe }}'></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const toggle = document.getElementById('tw-auto-refresh-toggle');
+        const input = document.getElementById('tw-auto-refresh-interval');
+        const statusEl = document.getElementById('tw-auto-refresh-status');
+        let timer = null;
+        let liveDurationTimer = null;
+
+        // Filter by task name
+        const filterInput = document.getElementById('tw-filter-name');
+        const filterClearBtn = document.getElementById('tw-filter-clear');
+
+        function debounce(fn, wait) {
+            let t;
+            return function (...args) {
+                clearTimeout(t);
+                t = setTimeout(() => fn.apply(this, args), wait);
+            };
+        }
+
+        // Build the datalist of detected task names (keeps ability to type manually)
+        function populateDatalist() {
+            try {
+                const dl = document.getElementById('tw-tasknames');
+                if (!dl) return;
+                // Collect names from table (2nd column)
+                const names = new Set();
+                const rows = document.querySelectorAll('#running-tasks-tbody tr');
+                rows.forEach(row => {
+                    const cell = row.cells && row.cells[1] ? row.cells[1] : null;
+                    const name = cell ? (cell.textContent || '').trim() : '';
+                    if (name) names.add(name);
+                });
+                // Clear and add options
+                dl.innerHTML = '';
+                Array.from(names).sort((a,b) => a.localeCompare(b)).forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n;
+                    dl.appendChild(opt);
+                });
+            } catch (e) {
+                // silently ignore
+            }
+        }
+
+        function applyFilter() {
+            try {
+                const q = (filterInput && filterInput.value ? filterInput.value : '').toLowerCase().trim();
+                const rows = document.querySelectorAll('#running-tasks-tbody tr');
+                let visible = 0;
+                rows.forEach(row => {
+                    const nameCell = row.cells && row.cells[1] ? row.cells[1] : null; // 2nd column is Name
+                    const name = nameCell ? (nameCell.textContent || '').toLowerCase() : '';
+                    const show = !q || name.includes(q);
+                    row.style.display = show ? '' : 'none';
+                    if (show) visible += 1;
+                });
+                const countEl = document.getElementById('tw-filter-count');
+                if (countEl) {
+                    const total = rows.length;
+                    countEl.textContent = total ? `Showing ${visible} / ${total}` : '';
+                }
+            } catch (e) {
+                // ignore filter errors to avoid breaking page
+            }
+        }
+
+        if (filterInput) {
+            filterInput.addEventListener('input', debounce(applyFilter, 120));
+            // Populate suggestions and apply on load (value may be restored via data-ls-key)
+            populateDatalist();
+            setTimeout(applyFilter, 0);
+        }
+        if (filterClearBtn && filterInput) {
+            filterClearBtn.addEventListener('click', () => {
+                filterInput.value = '';
+                const ev = new Event('input', {bubbles: true});
+                filterInput.dispatchEvent(ev);
+                filterInput.focus();
+            });
+        }
+
+        function getIntervalMs() {
+            const sec = Math.max(1, parseInt(input.value || '5', 10));
+            return sec * 1000;
+        }
+
+        function updateStatus(text) {
+            if (statusEl) statusEl.textContent = text || '';
+        }
+
+        function schedule() {
+            clear();
+            const ms = getIntervalMs();
+            updateStatus('Next refresh in ' + Math.round(ms / 1000) + 's');
+            timer = setInterval(() => {
+                updateStatus('Refreshing...');
+                window.location.reload();
+            }, ms);
+        }
+
+        function clear() {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+        }
+
+        // Live duration updater
+        function formatDuration(totalSeconds) {
+            if (!isFinite(totalSeconds) || totalSeconds < 0) return '-';
+            const seconds = Math.floor(totalSeconds % 60);
+            const minutes = Math.floor((totalSeconds / 60) % 60);
+            const hours = Math.floor(totalSeconds / 3600);
+            const pad = (n) => n.toString().padStart(2, '0');
+            if (hours > 0) return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+            return `${pad(minutes)}:${pad(seconds)}`;
+        }
+
+        function updateLiveDurations() {
+            const nodes = document.querySelectorAll('.live-duration[data-start]');
+            const now = Date.now();
+            nodes.forEach(el => {
+                const startStr = el.getAttribute('data-start');
+                if (!startStr) return;
+                const start = Date.parse(startStr);
+                if (isNaN(start)) return;
+                const diffSec = (now - start) / 1000;
+                el.textContent = formatDuration(diffSec);
+            });
+        }
+
+        // Bind events (localStorage handled by data-ls-key in scripts.js)
+        toggle.addEventListener('change', () => {
+            const enabled = toggle.checked;
+            if (enabled) {
+                schedule();
+            } else {
+                clear();
+                updateStatus('');
+            }
+        });
+
+
+        // If enabled, start after DOM init (value restored by data-ls-key)
+        if (toggle.checked) schedule();
+
+        // Start live duration updates
+        updateLiveDurations();
+        liveDurationTimer = setInterval(updateLiveDurations, 1000);
+
+        // Minimal hook points for future websocket integration
+        // window.updateRunningTasks = function(rows) { /* replace tbody based on incoming data */ }
+
+        // Pie (camembert) of running tasks grouped by name using ApexCharts
+        function renderTasksPie() {
+            const container = document.getElementById('tasks-pie-modal');
+            if (!container) return;
+            let names = [];
+            try {
+                const raw = container.getAttribute('data-task-names');
+                names = raw ? JSON.parse(raw) : [];
+            } catch (e) {
+                names = [];
+            }
+
+            if (!names || names.length === 0) {
+                container.innerHTML = '<div class="text-muted">No data</div>';
+                return;
+            }
+
+            const counts = new Map();
+            names.forEach(n => counts.set(n, (counts.get(n) || 0) + 1));
+            const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+            const labels = entries.map(([label]) => label);
+            const series = entries.map(([, value]) => value);
+
+
+            if (typeof ApexCharts === 'undefined') {
+                // If ApexCharts isn't loaded yet, inject it then render
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/apexcharts';
+                script.onload = () => renderWithApex(labels, series, container);
+                document.head.appendChild(script);
+            } else {
+                renderWithApex(labels, series, container);
+            }
+
+            function renderWithApex(labels, series, container) {
+                const options = {
+                    chart: {
+                        type: 'donut',
+                        toolbar: {show: false},
+                        animations: {enabled: true}
+                    },
+                    series: series,
+                    labels: labels,
+                    dataLabels: {enabled: true, formatter: (val, opts) => opts.w.globals.series[opts.seriesIndex]},
+                    tooltip: {y: {formatter: (val) => `${val}`}},
+                    stroke: {width: 1},
+                    plotOptions: {
+                        pie: {
+                            donut: {size: '60%'}
+                        }
+                    }
+                };
+                // Clear container before rendering
+                container.innerHTML = '';
+                const chart = new ApexCharts(container, options);
+                chart.render();
+
+            }
+        }
+
+        // Bind chart rendering to modal visibility (Bootstrap 5 events)
+        const pieModalEl = document.getElementById('tasksPieModal');
+        if (pieModalEl) {
+            pieModalEl.addEventListener('shown.bs.modal', () => {
+                renderTasksPie();
+            });
+            pieModalEl.addEventListener('hidden.bs.modal', () => {
+                const c = document.getElementById('tasks-pie-modal');
+                if (c) c.innerHTML = '';
+            });
+        }
+    })();
+</script>
