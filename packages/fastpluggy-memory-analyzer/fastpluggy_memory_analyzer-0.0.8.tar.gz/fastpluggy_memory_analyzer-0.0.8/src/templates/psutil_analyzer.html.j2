@@ -1,0 +1,427 @@
+ <style>
+        .memory-bar { height: 6px; background: var(--tblr-border-color); border-radius: 3px; overflow: hidden; }
+        .memory-bar-fill { height: 100%; background: linear-gradient(90deg, var(--tblr-primary), var(--tblr-purple)); transition: width 0.3s ease; }
+        .memory-item { transition: all 0.3s ease; border-left: 3px solid var(--tblr-primary); }
+        .memory-item:hover { background-color: var(--tblr-bg-surface-secondary); transform: translateX(2px); }
+        .connection-item { font-family: var(--tblr-font-monospace); font-size: 0.875rem; border-left: 3px solid var(--tblr-success); }
+        .thread-item { border-left: 3px solid var(--tblr-warning); }
+        .env-var { font-family: var(--tblr-font-monospace); font-size: 0.8rem; word-break: break-all; }
+        .metric-large { font-size: 2rem; font-weight: 700; line-height: 1; }
+        .tab-content-active { display: block; }
+        .tab-content-inactive { display: none; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.15); transition: all 0.3s ease; }
+    </style>
+
+<div class="page">
+    <div class="page-header d-print-none">
+        <div class="container-xl">
+            <div class="row g-2 align-items-center">
+                <div class="col">
+                    <div class="page-pretitle">Memory Analysis</div>
+                    <h2 class="page-title"><i class="ti ti-activity me-2"></i> PSUtil Dashboard</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-body">
+        <div class="container-xl">
+            <div class="row row-deck row-cards mb-4" id="summaryCards"></div>
+            <div class="card">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" id="mainTabs">
+                        <li class="nav-item"><a class="nav-link active" href="#memory" onclick="showTab('memory')"><i class="ti ti-cpu me-1"></i>Memory Analysis</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#connections" onclick="showTab('connections')"><i class="ti ti-network me-1"></i>Network Connections</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#threads" onclick="showTab('threads')"><i class="ti ti-brand-threading me-1"></i>Threads</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#environment" onclick="showTab('environment')"><i class="ti ti-settings me-1"></i>Environment</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#process" onclick="showTab('process')"><i class="ti ti-info-circle me-1"></i>Process Info</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#processes" onclick="showTab('processes')"><i class="ti ti-list-details me-1"></i>Processes</a></li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <!-- Memory Tab -->
+                    <div id="memory" class="tab-content-active">
+                        <div class="row mb-3">
+                            <div class="col-md-4"><input id="memoryFilter" class="form-control" placeholder="Filter memory maps..."></div>
+                            <div class="col-md-8"><div class="btn-group"><button class="btn btn-primary" onclick="sortMemoryMaps('size')"><i class="ti ti-sort-descending me-1"></i>Sort by Size</button><button class="btn btn-outline-primary" onclick="sortMemoryMaps('rss')"><i class="ti ti-sort-descending me-1"></i>Sort by RSS</button></div></div>
+                        </div>
+                        <div id="memoryMaps"></div>
+                    </div>
+                    <!-- Connections Tab -->
+                    <div id="connections" class="tab-content-inactive"><div class="row mb-3"><div class="col-md-4"><input id="connectionFilter" class="form-control" placeholder="Filter connections..."></div></div><div id="networkConnections"></div></div>
+                    <!-- Threads Tab -->
+                    <div id="threads" class="tab-content-inactive"><div id="threadInfo"></div></div>
+                    <!-- Environment Tab -->
+                    <div id="environment" class="tab-content-inactive"><div class="row mb-3"><div class="col-md-4"><input id="envFilter" class="form-control" placeholder="Filter environment variables..."></div></div><div id="environmentVars"></div></div>
+                    <!-- Process Tab -->
+                    <div id="process" class="tab-content-inactive"><div class="row" id="processInfo"></div></div>
+                    <!-- Processes Tab -->
+                    <div id="processes" class="tab-content-inactive">
+                      <div class="row mb-3">
+                        <div class="col-md-4"><input id="processesFilter" class="form-control" placeholder="Filter by name/user/cmdline..."></div>
+                        <div class="col-md-2"><select id="processesSort" class="form-select"><option value="rss">Sort: RSS</option><option value="mem">Sort: Memory %</option><option value="pid">Sort: PID</option></select></div>
+                        <div class="col-md-2"><input id="processesLimit" type="number" min="1" max="5000" value="300" class="form-control" placeholder="Limit"></div>
+                        <div class="col-md-2"><button class="btn btn-primary w-100" onclick="reloadProcesses()"><i class="ti ti-refresh me-1"></i>Refresh</button></div>
+                      </div>
+                      <div id="processesTable"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Thread Details Modal -->
+<div id="threadModal" class="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1050;">
+  <div class="modal-dialog modal-lg" style="margin:10vh auto; max-width:800px;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="ti ti-brand-threading me-2"></i>Thread Details</h5>
+        <button type="button" class="btn-close" aria-label="Close" onclick="closeThreadModal()"></button>
+      </div>
+      <div class="modal-body">
+        <div id="threadModalBody" class="text-muted">Loading…</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" onclick="closeThreadModal()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    // Jinja-injected process data
+    const psutilData = {{ widget.process_dict|tojson }};
+    psutilData.thread_detail_url = {{ widget.thread_detail_url|tojson }};
+    psutilData.processes_url = {{ widget.processes_url|tojson }};
+    const tidToPyName = {{ widget.tid_to_pyname|tojson }};
+
+    // Format bytes to human-readable
+    function formatBytes(bytes) {
+        if (!bytes) return '0 B';
+        const k = 1024, sizes = ['B','KB','MB','GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+    }
+
+    // Parse arrays from psutil
+    function parseMemoryInfo(arr) {
+        return { rss: arr[0], vms: arr[1], shared: arr[2] };
+    }
+    function parseMemoryFullInfo(arr) {
+        return {
+            rss: arr[0], vms: arr[1], shared: arr[2], text: arr[3], lib: arr[4],
+            data: arr[5], dirty: arr[6], uss: arr[7], pss: arr[8], swap: arr[9]
+        };
+    }
+
+    // Generate summary cards
+    function createSummaryCards() {
+        const mem = parseMemoryInfo(psutilData.memory_info);
+        const full = parseMemoryFullInfo(psutilData.memory_full_info);
+        const cards = [
+            { title: 'RSS Memory', metric: formatBytes(mem.rss), sub: `${(psutilData.memory_percent*100).toFixed(2)}% of system`, color: mem.rss>500e6?'red':mem.rss>200e6?'yellow':'green', icon:'ti-cpu', tooltip: 'Resident Set Size - Physical memory currently used by the process' },
+            { title: 'Virtual Memory', metric: formatBytes(mem.vms), sub: `Data: ${formatBytes(full.data)}`, color:'blue', icon:'ti-refresh', tooltip: 'Virtual Memory Size - Total virtual memory used by the process' },
+            { title: 'Threads', metric: psutilData.num_threads, sub: `${psutilData.threads.length} active`, color: psutilData.num_threads>50?'yellow':'green', icon:'ti-brand-threading' },
+            { title: 'Connections', metric: psutilData.net_connections.length, sub: `${psutilData.num_fds} file descriptors`, color: psutilData.net_connections.length>20?'yellow':'green', icon:'ti-network' },
+            { title: 'CPU Usage', metric: `${psutilData.cpu_percent}%`, sub: `${psutilData.cpu_num} cores`, color: psutilData.cpu_percent>80?'red':psutilData.cpu_percent>50?'yellow':'green', icon:'ti-activity' },
+            { title: 'Unique Memory (USS)', metric: formatBytes(full.uss), sub: `PSS: ${formatBytes(full.pss)}`, color: full.uss>300e6?'red':full.uss>150e6?'yellow':'green', icon:'ti-lock', tooltip: 'Unique Set Size - Memory unique to a process (not shared with other processes)' }
+        ];
+        const container = document.getElementById('summaryCards');
+        container.innerHTML = cards.map(c=>`
+            <div class="col-sm-6 col-lg-4"><div class="card card-hover"${c.tooltip ? ` title="${c.tooltip}"` : ''}><div class="card-body">
+                <div class="d-flex align-items-center"><div class="subheader">${c.title}${c.tooltip ? ' <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i>' : ''}</div><div class="ms-auto text-${c.color}"><i class="ti ${c.icon}"></i></div></div>
+                <div class="h1 mb-3 metric-large text-${c.color}">${c.metric}</div>
+                <div class="text-muted">${c.sub}</div>
+            </div></div></div>
+        `).join('');
+    }
+
+    // Memory maps
+    let currentMaps = [];
+    let sortDir = 'desc';
+    function createMemoryMaps() {
+        currentMaps = psutilData.memory_maps.map(arr=>({ path: arr[0], size: arr[1], rss: arr[2] }));
+        currentMaps.sort((a,b)=>b.rss-a.rss);
+        renderMemoryMaps();
+    }
+    function renderMemoryMaps() {
+        const max = Math.max(...currentMaps.map(m=>m.rss));
+        const container = document.getElementById('memoryMaps');
+        container.innerHTML = currentMaps.map(m=>{
+            const pct = (m.rss/max)*100;
+            const disp = m.path.length>80? '...'+m.path.slice(-77):m.path;
+            const isAnonymous = m.path === '' || m.path.includes('[heap]') || m.path.includes('[anon]') || m.path.startsWith('[');
+            const inspectButton = isAnonymous ? `<a href="{{ widget.inspect_heap_url }}" class="btn btn-sm btn-outline-primary ms-2" title="Inspect heap content"><i class="ti ti-search"></i></a>` : '';
+            const pathTooltip = isAnonymous ? 'Anonymous memory region (heap, stack, or other unnamed allocation)' : `Memory-mapped file: ${m.path}`;
+            return `
+                <div class="card mb-2 memory-item" title="Memory mapping - Shows how memory is allocated to files or anonymous regions"><div class="card-body py-2">
+                <div class="row align-items-center">
+                  <div class="col"><div class="fw-bold text-truncate" title="${pathTooltip}">${disp || '[anonymous]'} <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div>
+                    <div class="memory-bar" title="RSS usage relative to largest memory map"><div class="memory-bar-fill" style="width:${pct}%"></div></div>
+                  </div>
+                  <div class="col-auto text-end"><div class="text-primary fw-bold" title="RSS - Resident Set Size: Physical memory currently used by this memory region">${formatBytes(m.rss)} <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div><div class="text-muted small" title="Virtual Size - Total virtual address space reserved for this memory region">Size: ${formatBytes(m.size)} <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div>${inspectButton}</div>
+                </div></div></div>
+            `;
+        }).join('');
+    }
+    function sortMemoryMaps(crit) {
+        currentMaps.sort((a,b)=> sortDir==='desc'?(b[crit]-a[crit]):(a[crit]-b[crit]));
+        sortDir = sortDir==='desc'?'asc':'desc'; renderMemoryMaps();
+    }
+
+    // Network connections
+    function createNetworkConnections() {
+        const container = document.getElementById('networkConnections');
+        const items = psutilData.net_connections.map(c=>({ fd:c[0], local:c[3], remote:c[4], status:c[5] }));
+        container.innerHTML = items.map(c=>`
+            <div class="card mb-2 connection-item"><div class="card-body py-2">
+              <div class="row align-items-center">
+                <div class="col-md-2"><span class="badge bg-blue">FD ${c.fd}</span></div>
+                <div class="col-md-3"><div class="text-muted small">Local</div>${c.local[0]}:${c.local[1]}</div>
+                <div class="col-md-3"><div class="text-muted small">Remote</div>${c.remote.length?c.remote[0]+':'+c.remote[1]:'N/A'}</div>
+                <div class="col-md-2"><span class="badge ${c.status==='ESTABLISHED'?'bg-green':c.status==='LISTEN'?'bg-blue':'bg-yellow'}">${c.status}</span></div>
+                <div class="col-md-2 text-end">
+                  ${c.remote[1]==5432?'<span class="badge bg-purple">PostgreSQL</span>':''}
+                </div>
+              </div></div></div>
+        `).join('');
+    }
+
+    // Threads
+    function createThreadInfo() {
+        const container = document.getElementById('threadInfo');
+        const arr = psutilData.threads.map(t=>({ id:t[0], user:t[1], sys:t[2] }));
+        const totalUser = arr.reduce((sum,t)=>sum+t.user,0);
+        const totalSys  = arr.reduce((sum,t)=>sum+t.sys,0);
+        const cards = arr.sort((a,b)=> (b.user+b.sys)-(a.user+a.sys)).map(t=>{
+            const tot = t.user+t.sys;
+            const pct = totalUser? (t.user/totalUser)*100 : 0;
+            return `<div class="card mb-2 thread-item"><div class="card-body py-2">
+            <div class="row align-items-center">
+              <div class="col-md-2"><span class="badge bg-yellow">TID ${t.id}</span><div class="small text-muted text-truncate" title="Python thread name">${(tidToPyName && tidToPyName[String(t.id)]) ? tidToPyName[String(t.id)] : ''}</div></div>
+              <div class="col-md-3"><div class="text-muted small">User Time</div><div class="fw-bold">${t.user.toFixed(2)}s</div></div>
+              <div class="col-md-3"><div class="text-muted small">System Time</div><div class="fw-bold">${t.sys.toFixed(2)}s</div></div>
+              <div class="col-md-2"><div class="text-muted small">Total</div><div class="fw-bold">${tot.toFixed(2)}s</div></div>
+              <div class="col-md-2">
+                <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+                <div class="text-end mt-1">
+                  <button class="btn btn-sm btn-outline-warning" title="More details" onclick="openThreadModal(${t.id})"><i class="ti ti-info-circle"></i> More</button>
+                </div>
+              </div>
+            </div></div></div>`;
+        }).join('');
+        container.innerHTML = `
+          <div class="row mb-3">
+            <div class="col-md-4"><div class="card"><div class="card-body text-center"><div class="text-muted">Total User Time</div><div class="h2 text-primary">${totalUser.toFixed(2)}s</div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body text-center"><div class="text-muted">Total System Time</div><div class="h2 text-warning">${totalSys.toFixed(2)}s</div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body text-center"><div class="text-muted">Active Threads</div><div class="h2 text-success">${psutilData.num_threads}</div></div></div></div>
+          </div>` + cards;
+    }
+
+    // Environment
+    function createEnvironmentVars() {
+        const container = document.getElementById('environmentVars');
+        container.innerHTML = Object.entries(psutilData.environ).map(([k,v])=>`
+            <div class="card mb-1 env-var"><div class="card-body py-2"><div class="row">
+              <div class="col-md-3"><span class="badge bg-blue text-truncate">${k}</span></div>
+              <div class="col-md-9"><code class="text-muted">${v}</code></div>
+            </div></div></div>
+        `).join('');
+    }
+
+    // Process Info
+    function createProcessInfo() {
+        const mem = parseMemoryInfo(psutilData.memory_info);
+        const full = parseMemoryFullInfo(psutilData.memory_full_info);
+        document.getElementById('processInfo').innerHTML = `
+          <div class="col-md-6"><div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-info-circle me-2"></i>Process Details</h3></div><div class="card-body">
+            <div class="row mb-2"><div class="col-5 text-muted">Process ID:</div><div class="col-7"><span class="badge bg-primary">${psutilData.pid}</span></div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">Parent PID:</div><div class="col-7"><span class="badge bg-secondary">${psutilData.ppid}</span></div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">Create Time:</div><div class="col-7">${new Date(psutilData.create_time*1000).toLocaleString()}</div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">Name:</div><div class="col-7"><code>${psutilData.name}</code></div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">Executable:</div><div class="col-7"><code>${psutilData.exe}</code></div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">CWD:</div><div class="col-7"><code>${psutilData.cwd}</code></div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">Status:</div><div class="col-7"><span class="badge bg-success">${psutilData.status}</span></div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">User:</div><div class="col-7"><span class="badge bg-info">${psutilData.username}</span></div></div>
+          </div></div></div>
+          <div class="col-md-6"><div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-cpu me-2"></i>Memory Breakdown</h3></div><div class="card-body">
+            <div class="row mb-2"><div class="col-5 text-muted" title="Resident Set Size - Physical memory currently used by the process">RSS: <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div><div class="col-7 fw-bold text-primary">${formatBytes(full.rss)}</div></div>
+            <div class="row mb-2"><div class="col-5 text-muted" title="Virtual Memory Size - Total virtual memory used by the process">VMS: <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div><div class="col-7 fw-bold text-blue">${formatBytes(full.vms)}</div></div>
+            <div class="row mb-2"><div class="col-5 text-muted" title="Unique Set Size - Memory unique to a process (not shared with other processes)">USS: <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div><div class="col-7 fw-bold text-green">${formatBytes(full.uss)}</div></div>
+            <div class="row mb-2"><div class="col-5 text-muted" title="Proportional Set Size - USS + a portion of shared memory">PSS: <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div><div class="col-7 fw-bold text-orange">${formatBytes(full.pss)}</div></div>
+            <div class="row mb-2"><div class="col-5 text-muted" title="Shared memory - Memory shared with other processes">Shared: <i class="ti ti-info-circle text-muted" style="font-size: 0.75rem;"></i></div><div class="col-7 fw-bold text-purple">${formatBytes(full.shared)}</div></div>
+            <div class="row mb-2"><div class="col-5 text-muted">Memory %:</div><div class="col-7"><div class="progress"><div class="progress-bar" style="width:${(psutilData.memory_percent*100)}%"></div></div><small class="text-muted">${(psutilData.memory_percent*100).toFixed(2)}%</small></div></div>
+          </div></div></div>
+          <div class="col-12 mt-3"><div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-terminal me-2"></i>Command Line</h3></div><div class="card-body"><code class="d-block p-2  rounded">${psutilData.cmdline.join(' ')}</code></div></div></div>
+        `;
+    }
+
+    // Tab switcher and filters
+    function showTab(name) {
+        document.querySelectorAll('.tab-content-active, .tab-content-inactive').forEach(t=>t.className='tab-content-inactive');
+        document.getElementById(name).className='tab-content-active';
+        document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+        document.querySelector(`[href=\"#${name}\"]`).classList.add('active');
+        if (name === 'processes') { reloadProcesses(); }
+    }
+    function setupFilters() {
+        document.getElementById('memoryFilter').addEventListener('input',e=>{
+            const f=e.target.value.toLowerCase(); currentMaps = currentMaps.filter(m=>m.path.toLowerCase().includes(f)); renderMemoryMaps();
+        });
+        document.getElementById('connectionFilter').addEventListener('input',e=>{
+            const f=e.target.value.toLowerCase(); document.querySelectorAll('.connection-item').forEach(el=>el.style.display=el.textContent.toLowerCase().includes(f)?'block':'none');
+        });
+        document.getElementById('envFilter').addEventListener('input',e=>{
+            const f=e.target.value.toLowerCase(); document.querySelectorAll('.env-var').forEach(el=>el.style.display=el.textContent.toLowerCase().includes(f)?'block':'none');
+        });
+    }
+
+    // Modal helpers
+    function closeThreadModal(){
+        const m=document.getElementById('threadModal');
+        if(!m) return; m.style.display='none';
+    }
+    (function(){
+        document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeThreadModal(); });
+        document.addEventListener('click', (e)=>{
+            const m=document.getElementById('threadModal');
+            if(!m || m.style.display==='none') return;
+            if(e.target===m) closeThreadModal();
+        });
+    })();
+    async function openThreadModal(tid){
+        const m=document.getElementById('threadModal');
+        const body=document.getElementById('threadModalBody');
+        if(!m||!body) return;
+
+        const th = (psutilData.threads||[]).find(x=>x[0]===tid);
+        let user=0, sys=0, total=0, pct=0;
+        const arr = (psutilData.threads||[]).map(t=>({ id:t[0], user:t[1], sys:t[2] }));
+        const totalUser = arr.reduce((s,t)=>s+t.user,0) || 0;
+        if(th){ user = th[1]||0; sys = th[2]||0; total = user+sys; pct = totalUser? (user/totalUser*100):0; }
+
+        body.innerHTML = `
+            <div class="row g-3">
+              <div class="col-md-3"><div class="text-muted small">Thread ID</div><div class="h3">${tid}</div></div>
+              <div class="col-md-3"><div class="text-muted small">Python Name</div><div>${(tidToPyName && tidToPyName[String(tid)]) ? tidToPyName[String(tid)] : 'n/a'}</div></div>
+              <div class="col-md-3"><div class="text-muted small">User Time</div><div class="fw-bold">${user.toFixed(4)} s</div></div>
+              <div class="col-md-3"><div class="text-muted small">System Time</div><div class="fw-bold">${sys.toFixed(4)} s</div></div>
+              <div class="col-md-6"><div class="text-muted small">Total</div><div class="fw-bold">${total.toFixed(4)} s</div></div>
+              <div class="col-md-6"><div class="text-muted small">Share of user time</div>
+                <div class="progress" title="Relative share of user time among threads"><div class="progress-bar" style="width:${pct.toFixed(2)}%"></div></div>
+                <small class="text-muted">${pct.toFixed(2)}%</small>
+              </div>
+            </div>
+            <hr/>
+            <div id="thread-extended" class="small text-muted">Fetching extended details…</div>
+        `;
+
+        m.style.display='block';
+
+        const detailUrl = (psutilData.thread_detail_url || '').replace('{tid}', String(tid));
+        if(detailUrl){
+            try{
+                const r = await fetch(detailUrl);
+                if(r.ok){
+                    const j = await r.json();
+                    let html = `
+                        <div class="row g-2">
+                          <div class="col-md-3"><div class="text-muted small">Name</div><div>${j.name ?? 'n/a'}</div></div>
+                          <div class="col-md-3"><div class="text-muted small">Python Name</div><div>${j.py_name ?? 'n/a'}</div></div>
+                          <div class="col-md-3"><div class="text-muted small">CPU % (recent)</div><div>${j.cpu_percent ?? 'n/a'}</div></div>
+                          <div class="col-md-3"><div class="text-muted small">State</div><div>${j.state ?? 'n/a'}</div></div>
+                          <div class="col-12"><div class="text-muted small">Python Stack Trace</div><pre class=" p-2 rounded" style="max-height:35vh; overflow:auto;">${j.stack || 'n/a'}</pre></div>
+                        </div>`;
+                    if (j.procfs) {
+                        const p = j.procfs;
+                        html += `
+                        <hr/>
+                        <div class="row g-2">
+                          <div class="col-12"><div class="text-muted small">/proc Details</div></div>
+                          <div class="col-md-4"><div class="text-muted small">comm</div><div>${p.comm ?? 'n/a'}</div></div>
+                          <div class="col-md-4"><div class="text-muted small">wchan</div><div>${p.wchan ?? 'n/a'}</div></div>
+                          <div class="col-md-4"><div class="text-muted small">State (/proc)</div><div>${(p.status && p.status.State) ? p.status.State : 'n/a'}</div></div>
+                          <div class="col-12"><div class="text-muted small">status</div><pre class=" p-2 rounded" style="max-height:25vh; overflow:auto;">${p.status_raw ?? ''}</pre></div>
+                          <div class="col-12"><div class="text-muted small">sched</div><pre class=" p-2 rounded" style="max-height:25vh; overflow:auto;">${p.sched ?? ''}</pre></div>
+                          <div class="col-12"><div class="text-muted small">kernel stack (/proc)</div><pre class=" p-2 rounded" style="max-height:25vh; overflow:auto;">${p.stack ?? ''}</pre></div>
+                          <div class="col-12"><div class="text-muted small">stat</div><pre class=" p-2 rounded" style="max-height:25vh; overflow:auto;">${p.stat ?? ''}</pre></div>
+                        </div>`;
+                    }
+                    document.getElementById('thread-extended').innerHTML = html;
+                } else {
+                    document.getElementById('thread-extended').textContent = 'No extended details available.';
+                }
+            }catch(err){
+                document.getElementById('thread-extended').textContent = 'Failed to fetch extended details.';
+            }
+        } else {
+            document.getElementById('thread-extended').textContent = 'Extended details endpoint not configured.';
+        }
+    } 
+
+    // Processes list
+    async function reloadProcesses(){
+        const urlBase = psutilData.processes_url || '';
+        const q = (document.getElementById('processesFilter')?.value || '').trim();
+        const sort = (document.getElementById('processesSort')?.value || 'rss');
+        const limit = parseInt(document.getElementById('processesLimit')?.value || '300', 10) || 300;
+        const params = new URLSearchParams({ q, sort, order: 'desc', limit: String(limit) });
+        const target = document.getElementById('processesTable');
+        if(!urlBase || !target){ return; }
+        target.innerHTML = '<div class="text-muted">Loading processes…</div>';
+        try{
+            const r = await fetch(urlBase + '?' + params.toString());
+            if(!r.ok){ throw new Error('HTTP ' + r.status); }
+            const j = await r.json();
+            renderProcessesTable(j.processes || [], j.total || 0);
+        }catch(e){
+            document.getElementById('processesTable').innerHTML = '<div class="text-danger">Failed to load processes: '+(e.message||e)+'</div>';
+        }
+    }
+    function renderProcessesTable(items, total){
+        const target = document.getElementById('processesTable');
+        if(!items || items.length === 0){
+            target.innerHTML = '<div class="text-muted">No processes found.</div>';
+            return;
+        }
+        const th = ['PID','PPID','Name','User','Status','RSS','Mem %','Threads','Nice','Started','Cmdline'];
+        const rowsHtml = items.map(p=>{
+            const started = p.create_time ? new Date(p.create_time*1000).toLocaleString() : '';
+            const rssStr = (p.rss!=null) ? formatBytes(p.rss) : '';
+            const memStr = (p.memory_percent!=null) ? Number(p.memory_percent).toFixed(2)+'%' : '';
+            return `<tr>
+                <td><span class="badge bg-primary">${p.pid}</span></td>
+                <td class="text-muted">${p.ppid ?? ''}</td>
+                <td><code>${p.name ?? ''}</code></td>
+                <td class="text-muted">${p.username ?? ''}</td>
+                <td>${p.status ?? ''}</td>
+                <td class="text-nowrap">${rssStr}</td>
+                <td>${memStr}</td>
+                <td>${p.num_threads ?? ''}</td>
+                <td>${p.nice ?? ''}</td>
+                <td class="text-nowrap">${started}</td>
+                <td class="text-truncate" style="max-width: 420px;"><code>${p.cmdline ?? ''}</code></td>
+            </tr>`;
+        }).join('');
+        target.innerHTML = `
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h3 class="card-title"><i class="ti ti-list-details me-2"></i>Processes <span class="text-muted">(showing ${items.length} of ${total})</span></h3>
+              <div><button class="btn btn-sm btn-outline-secondary" onclick="reloadProcesses()"><i class="ti ti-refresh"></i></button></div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover">
+                <thead><tr>${th.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+                <tbody>
+                  ${rowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>`;
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded',()=>{
+        createSummaryCards(); createMemoryMaps(); createNetworkConnections(); createThreadInfo(); createEnvironmentVars(); createProcessInfo(); setupFilters();
+    });
+</script>

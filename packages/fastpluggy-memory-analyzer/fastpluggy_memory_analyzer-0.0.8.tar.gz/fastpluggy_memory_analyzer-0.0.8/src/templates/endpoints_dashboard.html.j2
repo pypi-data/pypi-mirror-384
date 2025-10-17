@@ -1,0 +1,136 @@
+<div class="row row-cards">
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Per-endpoint memory deltas</h3>
+        <div class="card-actions">
+          <label class="form-check form-switch me-2">
+            <input class="form-check-input" type="checkbox" id="monitorAllToggle" onchange="toggleMonitorAll()">
+            <span class="form-check-label">Monitor All</span>
+          </label>
+          <a class="btn btn-sm btn-secondary" target="_blank" href="{{ data_url }}">Raw JSON</a>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-vcenter">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Endpoint</th>
+                <th class="text-end">Samples</th>
+                <th class="text-end">Avg Δ Bytes</th>
+                <th class="text-end">Avg Duration (s)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for r in widget.rows %}
+              <tr>
+                <td class="nowrap"><span class="badge">{{ r.method }}</span></td>
+                <td class="mono">{{ r.endpoint }}</td>
+                <td class="text-end">{{ r.samples }}</td>
+                <td class="text-end mono">
+                  <span class="{{ 'delta-pos' if r.avg_delta>0 else 'delta-neg' }}">{{ '%.0f'|format(r.avg_delta) }}</span>
+                </td>
+                <td class="text-end">{{ '%.3f'|format(r.avg_duration) }}</td>
+                <td class="text-end"><a class="btn btn-sm btn-primary" href="{{ detail_url_base }}?method={{ r.method }}&endpoint={{ r.endpoint | urlencode }}">Details</a></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-secondary">No samples yet. Send a request with header <code>{{ widget.debug_header }}: 1</code> or wait for sampling.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Avg Δ Bytes (Top 15)</h3></div>
+      <div class="card-body">
+        <div id="barChart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function renderChart(){
+  const resp = await fetch('{{ widget.data_url }}');
+  const rows = await resp.json();
+  const top = rows.slice(0, 15);
+  const labels = top.map(r => r.method + " " + r.endpoint);
+  const values = top.map(r => r.avg_delta);
+  const options = {
+    chart: { type: 'bar', height: 380 },
+    series: [{ name: 'Avg Δ Bytes', data: values }],
+    xaxis: { categories: labels, labels: { rotate: -45 } },
+    dataLabels: { enabled: false },
+    tooltip: { y: { formatter: (val) => Math.round(val) + " B" } }
+  };
+  const chart = new ApexCharts(document.querySelector("#barChart"), options);
+  chart.render();
+}
+
+async function loadMonitorAllStatus() {
+  try {
+    const resp = await fetch('{{ widget.monitor_all_status_url }}');
+    const data = await resp.json();
+    document.getElementById('monitorAllToggle').checked = data.monitor_all_endpoints;
+  } catch (error) {
+    console.error('Failed to load monitor all status:', error);
+  }
+}
+
+async function toggleMonitorAll() {
+  const toggle = document.getElementById('monitorAllToggle');
+  const originalState = toggle.checked;
+  
+  try {
+    const resp = await fetch('{{ widget.monitor_all_toggle_url }}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json();
+    
+    if (resp.ok) {
+      toggle.checked = data.monitor_all_endpoints;
+      // Show success message
+      showMessage(data.message, 'success');
+    } else {
+      // Revert toggle state on error
+      toggle.checked = !originalState;
+      showMessage('Failed to toggle monitor all endpoints', 'error');
+    }
+  } catch (error) {
+    // Revert toggle state on error
+    toggle.checked = !originalState;
+    console.error('Failed to toggle monitor all:', error);
+    showMessage('Network error while toggling monitor all endpoints', 'error');
+  }
+}
+
+function showMessage(message, type) {
+  // Create a simple toast notification
+  const toast = document.createElement('div');
+  toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible position-fixed`;
+  toast.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
+  toast.innerHTML = `
+    ${message}
+    <button type="button" class="btn-close" onclick="this.parentElement.remove()"></button>
+  `;
+  document.body.appendChild(toast);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    if (toast.parentElement) {
+      toast.remove();
+    }
+  }, 3000);
+}
+
+// Initialize
+renderChart();
+loadMonitorAllStatus();
+</script>
