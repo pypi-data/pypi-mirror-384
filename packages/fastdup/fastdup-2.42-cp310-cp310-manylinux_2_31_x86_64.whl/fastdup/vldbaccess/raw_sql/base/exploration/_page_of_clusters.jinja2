@@ -1,0 +1,44 @@
+SELECT *, ROW_NUMBER() OVER() as cluster_rn
+FROM (
+    SELECT
+        --{% if similarity_using_vector_db and anchor_media_id and cosine_similarity %}
+        MAX(image_vector_filtered.similarity_distance_) as cosine_similarity,
+        --{% elif similarity_using_vector_db and anchor_media_id %}
+        MIN(image_vector_filtered.similarity_distance_) as cosine_distance,
+        --{% elif anchor_media_id %}
+        MAX(distance) as cosine_similarity,
+        --{% elif is_textual_search %}
+        max({% include "_text_img_relevance.jinja2" %}) AS textual_search_relevance,
+        --{% endif %}
+        COUNT(*) n_media_filtered,
+        max(formed_by) AS formed,
+        max(n_images+n_objects) AS n_media,
+        count(distinct (metadata->>'video')) n_videos_filtered,
+        sum(CASE WHEN metadata->>'video' IS NOT NULL THEN 1 ELSE 0 END) n_frames_filtered,
+        sum(CASE WHEN cluster_type = 'OBJECTS' THEN 1 ELSE 0 END) n_objects_filtered,
+        sum(CASE WHEN cluster_type = 'IMAGES' THEN 1 ELSE 0 END) n_images_filtered,
+        cluster_id
+    FROM
+        flat_similarity_clusters
+        {% include "_similarity_join_filtering.jinja2" %}
+    WHERE
+        true
+        {% include "_composite_filter.jinja2" %}
+    GROUP BY
+        cluster_id
+    ORDER BY
+        --{% if anchor_media_id and ( not similarity_using_vector_db or cosine_similarity ) %}
+        cosine_similarity DESC NULLS LAST,
+        --{% elif anchor_media_id %}
+        cosine_distance ASC NULLS LAST,
+        --{% elif is_textual_search %}
+        textual_search_relevance DESC NULLS LAST,
+        --{% elif Settings.SORT_EXPLORATION_RESULTS_BY_CLUSTER_FORMED %}
+        formed, n_media_filtered DESC,
+        --{% else %}
+        n_media_filtered DESC,
+        --{% endif %}
+        cluster_id  -- ensure deterministic order
+    OFFSET {{offset}}
+    LIMIT {{page_size}}
+) foo
