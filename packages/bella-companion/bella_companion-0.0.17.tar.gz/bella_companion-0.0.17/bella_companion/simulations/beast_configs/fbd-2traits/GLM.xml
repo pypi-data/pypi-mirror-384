@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<beast
+    namespace="
+        :beast.base.evolution.operator.kernel
+        :beast.base.inference.parameter
+        :beast.base.inference.operator.kernel
+        :beast.base.inference
+        :beast.base.inference.distribution
+        :bdmmprime.distribution
+        :bdmmprime.parameterization
+        :feast.fileio
+        :feast.function
+        :feast.expressions"
+    version="2.5"
+>
+    <map name="Normal">beast.base.inference.distribution.Normal</map>
+    <map name="Uniform">beast.base.inference.distribution.Uniform</map>
+
+    <map name="TreeFromNewickFile">feast.fileio.TreeFromNewickFile</map>
+    <map name="TaxonSetFromTree">feast.fileio.TaxonSetFromTree</map>
+	<map name="TraitSetFromTaxonSet">feast.fileio.TraitSetFromTaxonSet</map>
+    <map name="TypeSet">bdmmprime.parameterization.TypeSet</map>
+
+    <TreeFromNewickFile id="tree" fileName="$(treeFile)" IsLabelledNewick="true" adjustTipHeights='false'/>
+    <TaxonSetFromTree id="taxonSet" tree="@tree"/>
+	<TraitSetFromTaxonSet id="typeTraitSet" traitname="type" delimiter="|" takeGroup="1" taxa="@taxonSet"/>
+	<TypeSet id="typeSet" value="$(types)" typeTraitSet="@typeTraitSet"/>
+
+    <Normal id="weightsPrior" mean="0" sigma="1"/>
+    <Uniform id="birthRatePrior" upper="$(birthRateUpper)"/>
+    <Uniform id="deathRatePrior" upper="$(deathRateUpper)"/>
+
+    <run spec="MCMC" chainLength="10000000">
+        <state id="state">
+            <stateNode spec="RealParameter" id="birthRateScaler" value="1"/>
+            <stateNode spec="RealParameter" id="deathRateScaler" value="1"/>
+            <stateNode spec="RealParameter" id="birthRateW" value="0"/>
+            <stateNode spec="RealParameter" id="deathRateW" value="0"/>
+        </state>
+
+        <distribution id="posterior" spec="CompoundDistribution">
+            <distribution id="likelihood" spec="CompoundDistribution">
+                <distribution spec="BirthDeathMigrationDistribution" tree="@tree" typeTraitSet="@typeTraitSet">
+                    <parameterization spec="CanonicalParameterization" processLength="$(processLength)" typeSet="@typeSet">
+                        <birthRate id="birthRateSP" spec="SkylineVectorParameter" changeTimes="$(changeTimes)" typeSet="@typeSet">
+                            <skylineValues id="birthRate" spec="glmprior.util.GLMLogLinear" coefficients="@birthRateW" scaleFactor="@birthRateScaler" transform="false">
+                                <predictor spec="RealParameter" value="$(timePredictor)"/>
+                                <predictor spec="RealParameter" value="$(trait1Predictor)"/>
+                                <predictor spec="RealParameter" value="$(trait2Predictor)"/>
+                                <predictor spec="RealParameter" value="$(randomPredictor)"/>
+                                <indicators spec="BooleanParameter" value="1"/>
+                            </skylineValues>
+                        </birthRate>
+                        <deathRate id="deathRateSP" spec="SkylineVectorParameter" changeTimes="$(changeTimes)" typeSet="@typeSet">
+                            <skylineValues id="deathRate" spec="glmprior.util.GLMLogLinear" coefficients="@deathRateW" scaleFactor="@deathRateScaler" transform="false">
+                                <predictor spec="RealParameter" value="$(timePredictor)"/>
+                                <predictor spec="RealParameter" value="$(trait1Predictor)"/>
+                                <predictor spec="RealParameter" value="$(trait2Predictor)"/>
+                                <predictor spec="RealParameter" value="$(randomPredictor)"/>
+                                <indicators spec="BooleanParameter" value="1"/>
+                            </skylineValues>
+                        </deathRate>
+                        <migrationRate spec="SkylineMatrixParameter" skylineValues="$(migrationRate)" typeSet="@typeSet"/>
+                        <samplingRate spec="SkylineVectorParameter" skylineValues="$(samplingRate)" typeSet="@typeSet"/>
+                        <removalProb spec="SkylineVectorParameter" skylineValues="0.0" typeSet="@typeSet"/>
+                        <rhoSampling spec="TimedParameter" values="1" times="$(processLength)" typeSet="@typeSet"/>
+                    </parameterization>
+					<startTypePriorProbs spec="RealParameter" value="$(startTypePriorProbs)"/>
+                </distribution>
+            </distribution>
+
+            <distribution id="prior" spec="CompoundDistribution">
+                <distribution spec="Prior" x="@birthRateScaler" distr="@weightsPrior"/>
+                <distribution spec="Prior" x="@deathRateScaler" distr="@weightsPrior"/>
+                <distribution spec="Prior" x="@birthRateW" distr="@weightsPrior"/>
+                <distribution spec="Prior" x="@deathRateW" distr="@weightsPrior"/>
+                <distribution spec="Prior" x="@birthRate" distr="@birthRatePrior"/>
+                <distribution spec="Prior" x="@deathRate" distr="@deathRatePrior"/>
+            </distribution>
+
+        </distribution>
+
+        <operator spec="BactrianScaleOperator" parameter="@birthRateScaler" weight="30.0"/>
+        <operator spec="BactrianScaleOperator" parameter="@deathRateScaler" weight="30.0"/>
+        <operator spec="BactrianRandomWalkOperator" parameter="@birthRateW" weight="30.0"/>
+        <operator spec="BactrianRandomWalkOperator" parameter="@deathRateW" weight="30.0"/>
+
+        <logger spec="Logger" fileName="$(treeID).log" logEvery="1000" model="@posterior">
+            <log idref="posterior"/>
+            <log idref="prior"/>
+            <log idref="likelihood"/>
+            <log idref="birthRateSP"/>
+            <log idref="deathRateSP"/>
+            <log idref="birthRateW"/>
+            <log idref="deathRateW"/>
+            <log idref="birthRateScaler"/>
+            <log idref="deathRateScaler"/>
+        </logger>
+    </run>
+
+</beast>
