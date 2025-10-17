@@ -1,0 +1,22 @@
+SELECT
+    POLICY_DB
+    ,POLICY_SCHEMA
+    ,POLICY_NAME
+    ,POLICY_KIND
+    ,REF_DATABASE_NAME
+    ,REF_SCHEMA_NAME
+    ,REF_ENTITY_NAME
+    ,REF_ENTITY_DOMAIN
+    ,REF_COLUMN_NAME
+    ,REF_ARG_COLUMN_NAMES
+    ,TAG_DATABASE
+    ,TAG_SCHEMA
+    ,TAG_NAME
+    ,POLICY_STATUS
+FROM
+    TABLE (
+        INFORMATION_SCHEMA.POLICY_REFERENCES(
+            POLICY_NAME => '"{schema_name}"."{object_name}"'
+        )
+    )
+;

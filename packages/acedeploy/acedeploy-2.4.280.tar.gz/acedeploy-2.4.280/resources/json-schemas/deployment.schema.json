@@ -1,0 +1,1188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "http://example.com/root.json",
+  "type": "object",
+  "title": "Schema for Acedeploy SQL solution deployment.json",
+  "required": [
+    "deploymentMode",
+    "solutionRepoTagRegex",
+    "parallelThreads",
+    "solutionOptions",
+    "keyService",
+    "targetOptions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "title": "The json schema for this file."
+    },
+    "deploymentMode": {
+      "$id": "#/properties/deploymentMode",
+      "type": "string",
+      "title": "The deployment mode",
+      "description": "The deployment mode describes which steps are carried out in the deployement.",
+      "default": "",
+      "oneOf": [
+        {
+          "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+        },
+        {
+          "enum": [
+            "validate",
+            "develop",
+            "release"
+          ]
+        }
+      ],
+      "examples": [
+        "validate",
+        "develop",
+        "release",
+        "@@ACEDEPLOY_DEPLOYMENT_MODE@@"
+      ]
+    },
+    "releaseName": {
+      "$id": "#/properties/properties/releaseName",
+      "type": "string",
+      "title": "Name of release (only used if deploymentMode is release)",
+      "description": "The release name is used to create the rollback database clone and to tag the snowflake queries.",
+      "examples": [
+        "1.0.5",
+        "@@ACEDEPLOY_RELEASE_NAME@@"
+      ]
+    },
+    "parallelThreads": {
+      "$id": "#/properties/parallelThreads",
+      "title": "The number of parallel threads",
+      "description": "The number of parallel threads to be used during some operations, like cloning a database. Note: To open a new Snowflake Session for each thread during the deployment, set the executeInParallelSessions (deploymentOptions) parameter on true.",
+      "default": "",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "examples": [
+        5,
+        "@@ACEDEPLOY_PARALLEL_THREADS@@"
+      ]
+    },
+    "actionSummaryPath": {
+      "$id": "#/properties/actionSummaryPath",
+      "type": "string",
+      "title": "Path to action summary file.",
+      "description": "Path to save action summary file.",
+      "examples": [
+        "./action_summary.txt",
+        "@@ACTION_SUMMARY_PATH@@"
+      ]
+    },
+    "actionJsonPath": {
+      "$id": "#/properties/actionJsonPath",
+      "type": "string",
+      "title": "Path to action json file.",
+      "description": "Path to save action json file, which can be used for smoketest",
+      "examples": [
+        "./smoketest_info.json",
+        "@@ACTION_JSON_PATH@@"
+      ]
+    },
+    "solutionRepoTagRegex": {
+      "$id": "#/properties/solutionRepoTagRegex",
+      "type": "string",
+      "title": "The repo tag regex",
+      "description": "The regex that will be used to find the latest tagged commit.",
+      "default": "",
+      "examples": [
+        "^[vV](ersion)?\\s?\\d*\\.0(-[a-zA-Z-]*)?$"
+      ],
+      "pattern": "^(.*)$"
+    },
+    "solutionOptions": {
+      "$id": "#/properties/solutionOptions",
+      "type": "object",
+      "title": "The solution options",
+      "description": "Set details about the solution deployment options.",
+      "required": [
+        "ignoreGitInformation",
+        "stopAtDataLoss",
+        "dropTargetObjectsIfNotInProject"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ignoreGitInformation": {
+          "$id": "#/properties/ignoreGitInformation",
+          "title": "Ignore git information",
+          "description": "If true, use all files on disk. If false, use only files that have been added or modified since last tagged commit.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": true,
+          "examples": [
+            true,
+            "@@ACEDEPLOY_IGNORE_GIT_INFORMATION@@"
+          ]
+        },
+        "stopAtDataLoss": {
+          "$id": "#/properties/solutionOptions/properties/stopAtDataLoss",
+          "title": "Stop at data loss",
+          "description": "Stop if potential data loss is discovered.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": true,
+          "examples": [
+            true,
+            "@@ACEDEPLOY_STOP_AT_DATALOSS@@"
+          ]
+        },
+        "dropTargetObjectsIfNotInProject": {
+          "$id": "#/properties/dropTargetObjectsIfNotInProject",
+          "title": "Drop objects on target database if they do not exist in solution or if objects are marked as deleted from git",
+          "description": "If true, drop objects that are currently in the target database, but not in the solution folder or if objects are marked as deleted from git (behavior depends on parameter 'ignoreGitInformation').",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": false,
+          "examples": [
+            false,
+            "@@ACEDEPLOY_DROP_OBJECTS_NOT_IN_PROJECT@@"
+          ]
+        }
+      }
+    },
+    "cloneOptions": {
+      "$id": "#/properties/cloneOptions",
+      "type": "object",
+      "title": "The clone options",
+      "description": "If deployment should be carried out to a clone, use these settings.",
+      "required": [
+        "deployToClone",
+        "cloneMode",
+        "dropCloneAfterDeployment"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "deployToClone": {
+          "title": "If true, create targetDatabase as a clone of cloneSourceDatabase",
+          "description": "If true, create targetDatabase as a clone of cloneSourceDatabase",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": false,
+          "examples": [
+            false,
+            "@@ACEDEPLOY_DEPLOY_TO_CLONE@@"
+          ]
+        },
+        "cloneMode": {
+          "title": "Method by which clone is created",
+          "description": "Method by which clone is created, only used if deployToClone is true",
+          "default": "",
+          "oneOf": [
+            {
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "enum": [
+                "full",
+                "schemaList",
+                "minimal"
+              ]
+            }
+          ],
+          "examples": [
+            "full",
+            "schemaList",
+            "minimal",
+            "@@ACEDEPLOY_CLONE_MODE@@"
+          ]
+        },
+        "dropCloneAfterDeployment": {
+          "title": "If true, drop target database after run",
+          "description": "If true, drop target database after run, only used if deployToClone is true",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": false,
+          "examples": [
+            false,
+            "@@ACEDEPLOY_DROP_CLONE_AFTER_RUN@@"
+          ]
+        }
+      }
+    },
+    "deploymentOptions": {
+      "$id": "#/properties/deploymentOptions",
+      "type": "object",
+      "title": "The deployment options",
+      "description": "Details for the deployment",
+      "additionalProperties": false,
+      "properties": {
+        "policyHandlingCloeExtension": {
+          "$id": "#/properties/deploymentOptions/policyHandlingCloeExtension",
+          "type": "object",
+          "title": "Policy handling options - for the interaction with SNOWFLAKE POLICIES pipeline which handles policy assignments separately.",
+          "description": "Details for policy handling during the deployment",
+          "additionalProperties": false,
+          "properties": {
+            "handlePolicyAssignments": {
+              "title": "Handle policy assignments - for the interaction with SNOWFLAKE POLICIES pipeline which handles policy assignments separately.",
+              "description": "If true, get information about existing policy assignments from a file and alter action statements accordingly.  Note: Can only be used when the parameter reapplyExistingPolicies is set to false! The parameter executeInParallelSessions should be set on true when this setting is used!",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+                },
+                {
+                  "type": "boolean"
+                }
+              ],
+              "default": false,
+              "examples": [
+                false,
+                "@@ACEDEPLOY_HANDLE_POLICY_ASSIGNMENTS@@"
+              ]
+            },
+            "policyAssignmentsProject": {
+              "title": "Project/Solution name as defined in the policy assignments config file.",
+              "description": "The name of the project/solution should correspond to a key in the policy assignments config JSON file under Project_Configs.",
+              "type": "string",
+              "examples": [
+                "PROJECT1",
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_PROJECT@@"
+              ]
+            },
+            "policyAssignmentsDeploymentDB": {
+              "title": "The database name that is the target of the deployment.",
+              "description": "The database name that is the target of the deployment, which is needed for the assignments of policies",
+              "type": "string",
+              "examples": [
+                "POLICY_PIPELINE_DEMO1_QUALITY",
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_DEPLOYMENT_DB@@"
+              ]
+            },
+            "policyAssignmentsRole": {
+              "title": "The policy pipeline admin role.",
+              "description": "This role is used as a secondary role to query the DDLs of objects that have policies assigned. It has the 'APPLY MASKING POLICY' and the 'APPLY ROW ACCESS POLICY' privileges.",
+              "type": "string",
+              "examples": [
+                "R_POLICY_PIPELINE_DEPLOYMENT_DEMO_ADMIN",
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_ROLE@@"
+              ]
+            },
+            "policyAssignmentsRepoPath": {
+              "title": "Policy assignments repository path on the DevOps agent (checkout version).",
+              "description": "",
+              "type": "string",
+              "examples": [
+                "$(Agent.BuildDirectory)/s/$(SNOWFLAKE_POLICIES_PIPELINE_REPO)/",
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_REPO_PATH@@"
+              ]
+            },
+            "policyAssignmentsConfigFilePath": {
+              "title": "File path to the policy assignments config JSON.",
+              "description": "Policy assignments are usually defined separately in a file.",
+              "type": "string",
+              "examples": [
+                "./examples/policies/account1_config.json",
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_CONFIG_FILE_PATH@@"
+              ]
+            },
+            "policyAssignmentsSaveInfo": {
+              "title": "Option to save the policy assignments information in an output file in JSON format.",
+              "description": "The policy assignments handling creates a summary in JSON-format of all policy assignments that are handled during deployment. This information can be saved in JSON format.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+                },
+                {
+                  "type": "boolean"
+                }
+              ],
+              "default": false,
+              "examples": [
+                false,
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_SAVE_INFO@@"
+              ]
+            },
+            "policyAssignmentsInfoOutputFolderPath": {
+              "title": "Output file path for the policy assignments info (JSON).",
+              "description": "The policy assignments handling creates a summary in JSON-format of all policy assignments that are handled during deployment.",
+              "type": "string",
+              "examples": [
+                "./test/policies/",
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_INFO_OUTPUT_FOLDER_PATH@@"
+              ]
+            },
+            "policyAssignmentsCreateAzurePullRequestComments": {
+              "title": "Option to display the policy assignments information as comments in a pull request in Azure DevOps.",
+              "description": "The policy assignments handling creates a summary in JSON-format of all policy assignments that are handled during deployment. This information can be displayed as pull request comments.",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+                },
+                {
+                  "type": "boolean"
+                }
+              ],
+              "default": false,
+              "examples": [
+                false,
+                "@@ACEDEPLOY_POLICY_ASSIGNMENTS_CREATE_AZURE_PULL_REQUEST_COMMENTS@@"
+              ]
+            }
+          }
+        },
+        "resumeTasks": {
+          "title": "Autoresume tasks after successful deployment",
+          "description": "If true, resume tasks which were in state started before deployment. Otherwise, they will be suspended if any task in a tree was changed during deployment.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": false,
+          "examples": [
+            false,
+            "@@ACEDEPLOY_RESUME_TASKS@@"
+          ]
+        },
+        "reapplyExistingPolicies": {
+          "title": "Reapply preexisting policies to a view",
+          "description": "If true, before a deployment, check if there are policies on views. If a view is replaced during the deployment, reapply the policy. Note: Can only be used when the parameter handlePolicyAssignments is set to false!",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": false,
+          "examples": [
+            false,
+            "@@ACEDEPLOY_REAPPLY_EXISTING_POLICIES@@"
+          ]
+        },
+        "executeInParallelSessions": {
+          "title": "Execute deployment statements in parallel Snowflake Sessions. Note: Only applies when the parameter parallelThreads > 1 .",
+          "description": "If true, the deployment statements are executed in a different Snowflake Sessions for each parallel thread. Note: Should be set on true then handlePolicyAssignments is set on true.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "default": false,
+          "examples": [
+            false,
+            "@@ACEDEPLOY_EXECUTE_IN_PARALLEL_SESSIONS@@"
+          ]
+        }
+      }
+    },
+    "workarounds": {
+      "type": "object",
+      "title": "Deployment workarounds",
+      "description": "Workaround for specific deployment issues",
+      "properties": {
+        "snowflakeBugs": {
+          "type": "object",
+          "title": "Workarounds for bugs in Snowflake",
+          "description": "Workarounds for bugs in Snowflake",
+          "properties": {
+            "2025-02-clonedViewsQuotes": {
+              "type": "object",
+              "description": "This bug appeared in Febuary of 2025. The field VIEW_DEFINITION of INFORMATION_SCHEMA.VIEWS falsely adds double quotes to the object name after a view with double quotes has been cloned. \"S1\".\"V1\" becomes \"S1.V1\". This setting accounts for that when querying metadata. It will not work if the any of the name parts contains '.' as part of the schema or view name.",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "keyService": {
+      "$id": "#/properties/keyService",
+      "type": "string",
+      "title": "The key service",
+      "description": "The key service used to retrieve secrets and environment variables.",
+      "default": "ENVIRONMENT",
+      "enum": [
+        "ENVIRONMENT"
+      ],
+      "examples": [
+        "ENVIRONMENT"
+      ]
+    },
+    "extensions": {
+      "$id": "#/properties/extensions",
+      "type": "object",
+      "title": "Extension settings can be added here.",
+      "description": "Extension settings can be added here."
+    },
+    "preAndPostDeploymentFilter": {
+      "type": "array",
+      "title": "Regular expressions that are not allowed in pre- and postdeployment scripts",
+      "description": "Regular expressions that are not allowed in pre- and postdeployment scripts (regex matching is case insensitive)",
+      "items": {
+        "type": "string"
+      },
+      "examples": [
+        [
+          "\\bDATABASE\\b",
+          "\\bSCHEMA\\b",
+          "\\bUSE\\b",
+          "\\bCALL\\b",
+          "\\bSTAGE\\b",
+          "\\bGRANT\\b",
+          "\\bREVOKE\\b",
+          "\\bPROCEDURE\\b",
+          "\\b\\w+\\.\\w+\\.\\w+\\b"
+        ]
+      ]
+    },
+    "objectOptions": {
+      "type": "object",
+      "description": "Set object type specfic options",
+      "properties": {
+        "SCHEMA": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "TABLE": {
+          "$ref": "#/definitions/tableOptionsItem"
+        },
+        "EXTERNAL TABLE": {
+          "$ref": "#/definitions/tableLikeOptionsItem"
+        },
+        "VIEW": {
+          "$ref": "#/definitions/tableLikeOptionsItem"
+        },
+        "MATERIALIZED VIEW": {
+          "$ref": "#/definitions/tableLikeOptionsItem"
+        },
+        "FUNCTION": {
+          "$ref": "#/definitions/functionLikeOptionsItem"
+        },
+        "PROCEDURE": {
+          "$ref": "#/definitions/functionLikeOptionsItem"
+        },
+        "STAGE": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "FILE FORMAT": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "STREAM": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "TASK": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "PIPE": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "SEQUENCE": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "MASKING POLICY": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "ROW ACCESS POLICY": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "TAG": {
+          "$ref": "#/definitions/objectOptionsItem"
+        },
+        "DYNAMIC TABLE": {
+          "$ref": "#/definitions/tableLikeOptionsItem"
+        },
+        "NETWORK RULE": {
+          "$ref": "#/definitions/objectOptionsItem"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "targetOptions": {
+      "$id": "#/properties/targetOptions",
+      "type": "object",
+      "title": "The Snowflake database target options",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "password"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "privateKey"
+                ]
+              },
+              {
+                "required": [
+                  "privateKeyPass"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "privateKey",
+            "privateKeyPass"
+          ],
+          "not": {
+            "required": [
+              "password"
+            ]
+          }
+        }
+      ],
+      "required": [
+        "metaDatabase",
+        "account",
+        "login",
+        "role",
+        "warehouse",
+        "targetDatabase",
+        "projectFolder",
+        "projectSchemas"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "preDeployment"
+                ]
+              },
+              {
+                "required": [
+                  "postDeployment"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "preDeploymentSettings"
+                  ]
+                },
+                {
+                  "required": [
+                    "postDeploymentSettings"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "preDeploymentSettings"
+                ]
+              },
+              {
+                "required": [
+                  "postDeploymentSettings"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "preDeployment"
+                  ]
+                },
+                {
+                  "required": [
+                    "postDeployment"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "snowflakeEdition": {
+          "$id": "#/properties/targetOptions/properties/snowflakeEdition",
+          "type": "string",
+          "title": "Snowflake edition",
+          "description": "The Snowflake edition of the account, defaults to 'Enterprise'.",
+          "examples": [
+            "Enterprise",
+            "Standard",
+            "@@SNOWFLAKE_EDITION@@"
+          ],
+          "oneOf": [
+            {
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "enum": [
+                "Standard",
+                "Enterprise",
+                "BusinessCritical",
+                "VPS"
+              ]
+            }
+          ]
+        },
+        "metaDatabase": {
+          "$id": "#/properties/targetOptions/properties/metaDatabase",
+          "type": "string",
+          "title": "Snowflake database used as meta databse",
+          "description": "The meta database is used to deploy the solution first and the used to compare to the target database. The meta database is recreated each time and will be overwritten.",
+          "examples": [
+            "DEMO_META_DB"
+          ]
+        },
+        "account": {
+          "$id": "#/properties/targetOptions/properties/account",
+          "type": "string",
+          "title": "Snowflake account",
+          "description": "The snowflake account name.",
+          "examples": [
+            "ab12345.west-europe.azure"
+          ]
+        },
+        "login": {
+          "$id": "#/properties/targetOptions/properties/login",
+          "type": "string",
+          "title": "Snowflake user",
+          "description": "The snowflake user name."
+        },
+        "password": {
+          "$id": "#/properties/targetOptions/properties/password",
+          "type": "string",
+          "title": "Snowflake password",
+          "description": "The snowflake user password. It is adviced to inject this value via the keyService and not store the value in this file directly.",
+          "examples": [
+            "@@SNOWACCESSKEY@@"
+          ]
+        },
+        "privateKey": {
+          "$id": "#/properties/targetOptions/properties/privateKey",
+          "type": "string",
+          "title": "Snowflake privateKey",
+          "description": "The encrypted private key to connect to Snowflake. It is adviced not to store the value in the file directly.",
+          "examples": [
+            "@@SNOWACCESSKEY@@"
+          ]
+        },
+        "privateKeyPass": {
+          "$id": "#/properties/targetOptions/properties/privateKeyPass",
+          "type": "string",
+          "title": "Snowflake password for private key",
+          "description": "The passphrase, which would regulate the access to the private key.",
+          "examples": [
+            "@@SNOWACCESSKEY@@"
+          ]
+        },
+        "role": {
+          "$id": "#/properties/targetOptions/properties/role",
+          "type": "string",
+          "title": "Snowflake user role",
+          "description": "The role used by the user.",
+          "examples": [
+            "SYSADMIN"
+          ]
+        },
+        "warehouse": {
+          "type": "string",
+          "title": "Snowflake warehouse",
+          "description": "Snowflake warehouse used for the deployment."
+        },
+        "targetDatabase": {
+          "type": "string",
+          "title": "Snowflake target database",
+          "description": "The deployment will be performed on this database."
+        },
+        "cloneSourceDatabase": {
+          "type": "string",
+          "title": "Snowflake cloneSourceDatabase database",
+          "description": "If the flag deployToClone is set, this database will be cloned to create the target database."
+        },
+        "targetDbRetentionTime": {
+          "title": "Retention time of target databases",
+          "description": "Retention time of target database. This will not set the value on the database, but it is required as an input for the deployment.",
+          "default": "default",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 90
+            },
+            {
+              "enum": [
+                "default"
+              ]
+            }
+          ],
+          "examples": [
+            30,
+            "default",
+            "@@TARGET_DB_RETENTION_TIME@@"
+          ]
+        },
+        "tempDbRetentionTime": {
+          "title": "Retention time of temporary databases",
+          "description": "Retention time of temporary databases created during the deployment (such as meta database, target clone database, rollback clone database)",
+          "default": 1,
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 90
+            },
+            {
+              "enum": [
+                "default"
+              ]
+            }
+          ],
+          "examples": [
+            1,
+            "default",
+            "@@TEMP_DB_RETENTION_TIME@@"
+          ]
+        },
+        "projectFolder": {
+          "type": "string",
+          "title": "Project folder",
+          "description": "The project folder contains the SQL files."
+        },
+        "projectFolderFilter": {
+          "type": "array",
+          "title": "Project folder filter",
+          "description": "Filenames matched by any of the given filter expressions will not be part of the solution. Patterns are relative to `projectFolder`. Filters use python's fnmatch patterns (https://docs.python.org/3/library/fnmatch.html).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preDeployment": {
+          "type": "array",
+          "title": "Deprecated: Pre deployment steps. Can not be used in conjunction with `preDeploymentSettings` or `postDeploymentSettings`.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "postDeployment": {
+          "type": "array",
+          "title": "Deprecated: Post deployment steps. Can not be used in conjunction with `preDeploymentSettings` or `postDeploymentSettings`.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preDeploymentSettings": {
+          "title": "Pre deployment settings. Can not be used in conjunction with `preDeployment` or `postDeployment`.",
+          "$ref": "#/definitions/preAndPostDeployment"
+        },
+        "postDeploymentSettings": {
+          "title": "Post deployment settings. Can not be used in conjunction with `preDeployment` or `postDeployment`.",
+          "$ref": "#/definitions/preAndPostDeployment"
+        },
+        "sqlVariables": {
+          "type": "object",
+          "title": "SQL variables for the deployment",
+          "description": "SQL variables for the deployment, given as key value pairs",
+          "patternProperties": {
+            "^[\\w_]*$": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "additionalProperties": false
+          }
+        },
+        "stringReplace": {
+          "type": "object",
+          "title": "String replace for the deployment",
+          "description": "String replace for the deployment, given as key value pairs. Only accepts strings",
+          "patternProperties": {
+            "^[\\w_]*$": {
+              "type": "string"
+            },
+            "additionalProperties": false
+          }
+        },
+        "projectSchemas": {
+          "type": "object",
+          "title": "Project schemas",
+          "description": "The schemas that are part of the solution. Is used to clone a database. Provide either blacklist or whitelist.",
+          "oneOf": [
+            {
+              "required": [
+                "whitelist"
+              ],
+              "properties": {
+                "whitelist": {
+                  "type": "array",
+                  "title": "Project schemas whitelist",
+                  "description": "List of schemas to include",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "required": [
+                "blacklist"
+              ],
+              "properties": {
+                "blacklist": {
+                  "type": "array",
+                  "title": "Project schemas whitelist",
+                  "description": "List of schemas to include",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "definitions": {
+    "preAndPostDeployment": {
+      "description": "Settings for pre or postdeloyment. Can either be a folder or a single file.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "type",
+          "condition"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "oneOf": [
+              {
+                "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+              },
+              {
+                "enum": [
+                  "folder"
+                ]
+              }
+            ]
+          },
+          "condition": {
+            "type": "string",
+            "oneOf": [
+              {
+                "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+              },
+              {
+                "enum": [
+                  "onChange",
+                  "always",
+                  "never"
+                ]
+              }
+            ]
+          },
+          "target": {
+            "description": "Target for this pre- or postdeployment. Can be 'targetDatabase' (default) or 'metaDatabase'. Do not use 'metaDatabase' unless you know what you are doing.",
+            "type": "string",
+            "default": "targetDatabase",
+            "oneOf": [
+              {
+                "pattern": "^@@[a-zA-Z0-9_\\-]*@@$"
+              },
+              {
+                "enum": [
+                  "targetDatabase",
+                  "metaDatabase"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "objectOptionsItem": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": "true",
+          "description": "Enable or disable deployment of this object type"
+        },
+        "metadataOptions": {
+          "$ref": "#/definitions/metadataOptionsItem"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "tableLikeOptionsItem": {
+      "type": "object",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable deployment of this object type"
+        },
+        "metadataOptions": {
+          "$ref": "#/definitions/metadataOptionsItem"
+        },
+        "manageTagAssignments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable managing tag assignments on this object type"
+        }
+      }
+    },
+    "tableOptionsItem": {
+      "type": "object",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable deployment of this object type"
+        },
+        "metadataOptions": {
+          "$ref": "#/definitions/metadataOptionsItem"
+        },
+        "manageTagAssignments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable managing tag assignments on this object type"
+        },
+        "manageRowAccessPolicyReferences": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable managing row access policy references on this object type"
+        },
+        "manageMaskingPolicyReferences": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable managing masking policy references on this object type"
+        },
+        "alterOptions": {
+          "type": "object",
+          "required": [],
+          "additionalProperties": false,
+          "properties": {
+            "createAndInsert": {
+              "type": "object",
+              "default": {},
+              "description": "When the new state of a table can not be reached using ALTER statements, CREATE a new table and INSERT existing data. Afterwards, swap the tables.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Enable this feature."
+                },
+                "dropOldTable": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "After the tables are swapped, drop the old table from the database."
+                },
+                "useAsFallback": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "In case ALTER statements can not be generated, try to use CREATE and INSERT instead."
+                },
+                "updateAutoincrement": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "If a column uses AUTOINCREMENT, try to determine the correct new starting value for the new table. NOTE: If possible, set this to false and use sequences instead."
+                },
+                "warehouses": {
+                  "type": "array",
+                  "default": [],
+                  "description": "If a table contains more bytes than given in the threshold, use the given warehouse. Any smaller tables will use the default warehouse set in targetOptions.warehouse.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "byteThreshold": {
+                        "type": "integer",
+                        "description": "Use this warehouse if the tables contains more bytes than this threshold."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Name of the warehouse."
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "keepColumnOrder": {
+              "type": "boolean",
+              "default": false,
+              "description": "When altering tables, keep column order. If set to true, this will use additional compute."
+            }
+          }
+        }
+      }
+    },
+    "functionLikeOptionsItem": {
+      "type": "object",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable deployment of this object type"
+        },
+        "metadataOptions": {
+          "$ref": "#/definitions/metadataOptionsItem"
+        },
+        "disabledLanguages": {
+          "type": "array",
+          "default": [],
+          "description": "Disable specific languages for User-Defined Functions and Stored Procedures",
+          "items": {
+            "type": "string",
+            "additionalProperties": false,
+            "enum": [
+              "PYTHON",
+              "JAVA",
+              "JAVASCRIPT",
+              "SCALA",
+              "SQL"
+            ]
+          }
+        },
+        "dropOverloadedObjects": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, drop overloaded procedures/functions (with the same name and same reference) before deployment. This option can be used to avoid errors when deploying overloaded procedures/functions e.g. when adding default values for input parameters."
+        }
+      }
+    },
+    "metadataOptionsItem": {
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ignore": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "patternProperties": {
+                ".*": {
+                  "type": "object",
+                  "properties": {
+                    "ignore": {
+                      "type": "boolean",
+                      "default": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

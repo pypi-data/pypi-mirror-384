@@ -1,0 +1,1 @@
+SHOW MASKING POLICIES IN SCHEMA "{schema_name}";

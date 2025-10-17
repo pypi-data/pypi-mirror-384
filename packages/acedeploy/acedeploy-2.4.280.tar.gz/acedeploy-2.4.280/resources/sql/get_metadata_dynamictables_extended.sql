@@ -1,0 +1,1 @@
+SHOW DYNAMIC TABLES IN SCHEMA "{schema_name}";

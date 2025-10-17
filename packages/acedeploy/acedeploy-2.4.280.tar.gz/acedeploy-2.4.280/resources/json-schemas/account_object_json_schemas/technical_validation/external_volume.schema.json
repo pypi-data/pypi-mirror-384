@@ -1,0 +1,182 @@
+{
+  "definitions": {},
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "External Volume.",
+  "additionalProperties": false,
+  "description": "VALUE: Definition of the external volume with required and optional parameters. \n KEY: String that specifies the identifier (i.e. name) for the external volume; must be unique in the account and inline with the naming convention for external volumes. \n -------- \n Naming Convention: \n EV_<Database_Name> ",
+  "required": [
+    "storage_locations"
+  ],
+  "optional": [
+    "allow_writes",
+    "comment"
+  ],
+  "properties": {
+    "storage_locations": {
+      "type": "object",
+      "minProperties": 1,
+      "title": "Set of named cloud storage locations in different regions and, optionally, cloud platforms.",
+      "additionalProperties": {
+        "type": "object",
+        "title": "Named cloud storage location.",
+        "additionalProperties": false,
+        "description": " \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume",
+        "required": [
+          "storage_provider",
+          "storage_base_url"
+        ],
+        "optional": [
+          "storage_aws_role_arn",
+          "storage_aws_external_id",
+          "encryption",
+          "azure_tenant_id"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "storage_provider": {
+                  "const": "S3"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "storage_aws_role_arn"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "storage_aws_role_arn"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "storage_provider": {
+                  "enum": [
+                    "S3",
+                    "GCS"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "encryption"
+              ]
+            },
+            "else": {
+              "optional": [
+                "encryption"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "storage_provider": {
+                  "const": "AZURE"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "azure_tenant_id"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "azure_tenant_id"
+                ]
+              }
+            }
+          }
+        ],
+        "properties": {
+          "storage_provider": {
+            "type": "string",
+            "title": "Required parameter \n -> Specifies the cloud storage provider that stores your data files.",
+            "enum": [
+              "S3",
+              "GCS",
+              "AZURE"
+            ]
+          },
+          "storage_base_url": {
+            "type": "string",
+            "title": "Required parameter \n -> Specifies the base URL for your cloud storage location.",
+            "description": "For AZURE 'azure://<account>.blob.core.windows.net/<container>[/<path>/]' \n <account> is the name of your Azure account; for example, myaccount. \n <container> is the name of an Azure container that stores your data files. \n <path> is an optional path that can be used to provide granular control over logical directories in the container. \n \n For S3 's3://<bucket>[/<path>/]' and GCS 'gcs://<bucket>[/<path>/]' \n <bucket> is the name of an bucket that stores your data files. \n <path> is an optional path that can be used to provide granular control over objects in the bucket. For GCS: \n 'gcs://<bucket>[/<path>/]' \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume"
+          },
+          "storage_aws_role_arn": {
+            "type": "string",
+            "title": "Required parameter if storage_provider = S3 \n -> Specifies the case-sensitive Amazon Resource Name (ARN) of the AWS identity and access management (IAM) role that grants privileges on the S3 bucket containing your data files."
+          },
+          "storage_aws_external_id": {
+            "type": "string",
+            "title": "Optional parameter if storage_provider = S3 \n -> Optionally specifies an external ID that Snowflake uses to establish a trust relationship with AWS.",
+            "description": "You must specify the same external ID in the trust policy of the IAM role that you configured for this external volume. If you don’t specify a value for this parameter, Snowflake automatically generates an external ID when you create the external volume. \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume"
+          },
+          "encryption": {
+            "type": "object",
+            "title": "Required parameter if storage_provider is S3 or GCS \n -> Specifies the properties needed to encrypt data on the external volume.",
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ],
+            "optional": [
+              "kms_key_id"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "title": "Specifies the encryption type used.",
+                "description": "S3 -> \n 'NONE': No encryption. 'AWS_SSE_S3' : Server-side encryption using S3-managed encryption keys. 'AWS_SSE_KMS' : Server-side encryption using keys stored in KMS. \n GCS -> \n 'NONE': No encryption. 'GCS_SSE_KMS': Server-side encryption using keys stored in KMS.  \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume"
+              },
+              "kms_key_id": {
+                "type": "string",
+                "title": "Optional parameter.",
+                "description": "S3 -> Optionally specifies the ID for the AWS KMS-managed key used to encrypt files written to the bucket. If no value is provided, your default KMS key is used to encrypt files for writing data. Note that this value is ignored when reading data. \n GCS -> Specifies the ID for the Cloud KMS-managed key used to encrypt files written to the bucket. Note that this value is ignored when reading data. The read operation should succeed if the service account has sufficient permissions to the data and any specified KMS keys. \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume"
+              }
+            }
+          },
+          "azure_tenant_id": {
+            "type": "string",
+            "title": "Required parameter if storage_provider = AZURE \n -> Specifies the ID for your Office 365 tenant that the allowed and blocked storage accounts belong to. An external volume can authenticate to only one tenant, so the allowed and blocked storage locations must refer to storage accounts that all belong to this tenant. To find your tenant ID, log into the Azure portal and click Azure Active Directory » Properties. The tenant ID is displayed in the Tenant ID field. \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume",
+            "pattern": "^.*[a-zA-Z0-9]+.*$"
+          }
+        }
+      }
+    },
+    "allow_writes": {
+      "type": "boolean",
+      "title": "Optional parameter \n -> Specifies whether write operations are allowed for the external volume.",
+      "description": "Must be set to TRUE for Iceberg tables that use Snowflake as the catalog. The value of this parameter must also match the permissions that you set on the cloud storage account for each specified storage location. \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume"
+    },
+    "comment": {
+      "type": "string",
+      "title": "Optional parameter \n -> String (literal) which specifies a comment for the external volume.",
+      "description": " \n -------- \n Snowflake Documentation 2024_08_07 \n https://docs.snowflake.com/en/sql-reference/sql/create-external-volume"
+    },
+    "grants": {
+      "type": "object",
+      "title": "Optional parameter \n -> Defines access privileges on the external volume.",
+      "additionalProperties": false,
+      "optional": [
+        "usage"
+      ],
+      "properties": {
+        "usage": {
+          "type": "array",
+          "uniqueItems": true,
+          "title": "List of roles that get the usage-privilege on the external volume."
+        }
+      }
+    }
+  }
+}
