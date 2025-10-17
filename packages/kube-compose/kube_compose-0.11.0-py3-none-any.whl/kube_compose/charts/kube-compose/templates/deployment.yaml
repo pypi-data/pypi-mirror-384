@@ -1,0 +1,296 @@
+{{- define "env" -}}
+env:
+- null
+{{- range $name, $value := .service.environment | default list }}
+{{- if ne ($value | toJson) "null" }}
+{{- if typeIs "int" $name }}
+{{- $value_parsed := regexSplit "=" $value 2 }}
+{{- $name := first $value_parsed }}
+{{- $value := last $value_parsed }}
+- name: {{ $name | toJson }}
+  value: {{ $value | replace "$$" "$" | toJson }}
+{{- else }}
+- name: {{ $name | toJson }}
+  value: {{ $value | replace "$$" "$" | toJson }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{- define "ports" -}}
+ports:
+- null
+{{- range $portIndex, $port := .service.ports | default list }}
+- name: {{ lower $port.protocol }}-{{ $port.target }}
+  containerPort: {{ $port.target }}
+  protocol: {{ upper $port.protocol }}
+  x_kubernetes: {{ index $port "x-kubernetes" | default dict | toJson }}
+{{- end -}}
+{{- end -}}
+
+{{- define "volumes" -}}
+volumes:
+- null
+{{- range $volume := .service.volumes | default list }}
+- name: {{ $volume.source }}
+  mountPath: {{ $volume.target }}
+  subPath: data
+{{- end }}
+{{- if .service.shm_size }}
+- name: shm
+  mountPath: /dev/shm
+{{- end }}
+{{- end -}}
+
+{{- define "configs" -}}
+configs:
+- null
+{{- range $volume := .service.configs | default list }}
+- name: {{ $volume.source }}
+  mountPath: {{ $volume.target }}
+  subPath: content
+{{- end }}
+{{- end -}}
+
+{{- define "template" -}}
+metadata:
+  labels:
+    app.kubernetes.io/name: {{ .name }}
+spec:
+  containers:
+  - name: {{ .name }}
+    image: {{ .service.image | toJson }}
+    {{- if .x_kubernetes.imagePullPolicy }}
+    imagePullPolicy: {{ .x_kubernetes.imagePullPolicy | toJson }}
+    {{- else if eq .service.pull_policy "always" }}
+    imagePullPolicy: "Always"
+    {{- else if eq .service.pull_policy "if_not_present" }}
+    imagePullPolicy: "IfNotPresent"
+    {{- else if eq .service.pull_policy "missing" }}
+    imagePullPolicy: "IfNotPresent"
+    {{- else if eq .service.pull_policy "never" }}
+    imagePullPolicy: "Never"
+    {{- else }}
+    imagePullPolicy: "Always"
+    {{- end }}
+    {{- if .service.entrypoint }}
+    command: {{ .service.entrypoint | toJson }}
+    {{- end }}
+    {{- if .service.command }}
+    args: {{ .service.command | toJson }}
+    {{- end }}
+    {{- if .env }}
+    env:
+{{ toYaml .env | indent 8 }}
+    {{- end }}
+    {{- if or .volumes .configs }}
+    volumeMounts:
+    {{- if .volumes }}
+{{ toYaml .volumes | indent 8 }}
+    {{- end }}
+    {{- if .configs }}
+{{ toYaml .configs | indent 8 }}
+    {{- end }}
+    {{- end }}
+    {{- if .ports }}
+    ports:
+{{- range $port := .ports }}
+{{- if $port }}
+    - name: {{ $port.name }}
+      containerPort: {{ $port.containerPort }}
+      protocol: {{ $port.protocol }}
+{{- end }}
+{{- end }}
+    {{- end }}
+    {{- if (.service.deploy | default dict).resources }}
+    resources:
+      {{- if .service.deploy.resources.limits }}
+      limits:
+        {{- if .service.deploy.resources.limits.cpus }}
+        cpu: {{ .service.deploy.resources.limits.cpus }}
+        {{- end }}
+        {{- if .service.deploy.resources.limits.memory }}
+        memory: {{ div (div .service.deploy.resources.limits.memory 1024) 1024 }}Mi
+        {{- end }}
+      {{- end }}
+      {{- if .service.deploy.resources.reservations }}
+      requests:
+        {{- if .service.deploy.resources.reservations.cpus }}
+        cpu: {{ .service.deploy.resources.reservations.cpus }}
+        {{- end }}
+        {{- if .service.deploy.resources.reservations.memory }}
+        memory: {{ div (div .service.deploy.resources.reservations.memory 1024) 1024 }}Mi
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- if .x_kubernetes.priorityClassName }}
+  priorityClassName: {{ .x_kubernetes.priorityClassName | toJson }}
+  {{- end }}
+  dnsPolicy: {{ .x_kubernetes.dnsPolicy | default "ClusterFirst" }}
+  {{- if .x_kubernetes.restartPolicy }}
+  restartPolicy: {{ .x_kubernetes.restartPolicy }}
+  {{- else if eq .service.restart "no" }}
+  restartPolicy: "Never"
+  {{- else if eq .service.restart "on-failure" }}
+  restartPolicy: "OnFailure"
+  {{- else if eq .service.restart "always" }}
+  restartPolicy: "Always"
+  {{- else if eq .service.restart "unless-stopped" }}
+  restartPolicy: "Always"
+  {{- else }}
+  restartPolicy: "Always"
+  {{- end }}
+  {{- if .x_kubernetes.serviceAccountName }}
+  serviceAccountName: {{ .x_kubernetes.serviceAccountName }}
+  {{- end }}
+  {{- if or .volumes .configs }}
+  volumes:
+  {{- if .volumes }}
+  {{- range $vol := .service.volumes }}
+  {{- $volName := index $vol "source" }}
+  - name: {{ $volName }}
+    persistentVolumeClaim:
+      claimName: {{ $volName }}
+  {{- end }}
+  {{- if .service.shm_size }}
+  - name: shm
+    emptyDir:
+      medium: Memory
+      sizeLimit: {{ div (div .service.shm_size 1024) 1024 }}Mi
+  {{- end }}
+  {{- end }}
+  {{- if .configs }}
+  {{- range $vol := .configs }}
+  {{- $volName := index $vol "name" }}
+  - name: {{ $volName }}
+    configMap:
+      name: {{ $volName }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end -}}
+
+
+{{- range $name, $service := $.Values.services }}
+{{- with dict "name" $name "service" $service }}
+{{- $x_kubernetes := index .service "x-kubernetes" | default dict }}
+{{- if not ($x_kubernetes.exclude | default false) }}
+{{- $ports := slice (index ((include "ports" .) | fromYaml) "ports") 1 }}
+{{- $env := slice (index ((include "env" .) | fromYaml) "env") 1 }}
+{{- $volumes := slice (index ((include "volumes" .) | fromYaml) "volumes") 1 }}
+{{- $configs := slice (index ((include "configs" .) | fromYaml) "configs") 1 }}
+{{ with merge . (dict "x_kubernetes" $x_kubernetes "ports" $ports "env" $env "volumes" $volumes "configs" $configs) }}
+---
+{{- if eq ($x_kubernetes.cron | default "") "" }}
+apiVersion: apps/v1
+{{- if eq ((.service.deploy | default dict).mode | default "") "global" }}
+kind: DaemonSet
+{{- else }}
+kind: Deployment
+{{- end }}
+metadata:
+  {{- if $x_kubernetes.labels }}
+  labels:
+{{ toYaml $x_kubernetes.labels | indent 4 }}
+  {{- end }}
+  {{- if $x_kubernetes.annotations }}
+  annotations:
+{{ toYaml $x_kubernetes.annotations | indent 4 }}
+  {{- end }}
+  name: {{ $name }}
+spec:
+  replicas: {{ (.service.deploy | default dict).replicas | default 1 }}
+  {{- if $x_kubernetes.strategy }}
+  strategy:
+{{ toYaml $x_kubernetes.strategy | indent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+{{ toYaml ((include "template" .) | fromYaml) | indent 4 }}
+
+{{- if $ports }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  {{- if $x_kubernetes.labels }}
+  labels:
+{{ toYaml $x_kubernetes.labels | indent 4 }}
+  {{- end }}
+  {{- if $x_kubernetes.annotations }}
+  annotations:
+{{ toYaml $x_kubernetes.annotations | indent 4 }}
+  {{- end }}
+  name: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+{{- range $port := $ports }}
+    - name: {{ $port.name }}
+      protocol: {{ $port.protocol }}
+      port: {{ $port.containerPort }}
+      targetPort: {{ $port.containerPort }}
+{{- end }}
+
+{{- range $port := $ports }}
+{{- if or $port.x_kubernetes $port.x_kubernetes }}
+{{- $portLabels := merge ($port.x_kubernetes.labels | default dict) ($x_kubernetes.labels | default dict) }}
+{{- $portAnnotations := merge ($port.x_kubernetes.annotations | default dict) ($x_kubernetes.annotations | default dict) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  {{- if $portLabels }}
+  labels:
+{{ toYaml $portLabels | indent 4 }}
+  {{- end }}
+  {{- if $portAnnotations }}
+  annotations:
+{{ toYaml $portAnnotations | indent 4 }}
+  {{- end }}
+  name: {{ $name }}-{{ .name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: {{ $port.name }}
+      protocol: {{ $port.protocol }}
+      port: {{ $port.containerPort }}
+      targetPort: {{ $port.containerPort }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- else }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  {{- if $x_kubernetes.labels }}
+  labels:
+{{ toYaml $x_kubernetes.labels | indent 4 }}
+  {{- end }}
+  {{- if $x_kubernetes.annotations }}
+  annotations:
+{{ toYaml $x_kubernetes.annotations | indent 4 }}
+  {{- end }}
+  name: {{ $name }}
+spec:
+  schedule: {{ $x_kubernetes.cron }}
+  jobTemplate:
+    spec:
+      template:
+{{ toYaml ((include "template" .) | fromYaml) | indent 8 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- if (index $.Values "x-kubernetes" | default dict).apply }}
+{{- $x_kubernetes := index $.Values "x-kubernetes" }}
+---
+{{ $x_kubernetes.apply }}
+{{- end }}
