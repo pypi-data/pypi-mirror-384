@@ -1,0 +1,219 @@
+
+{% macro build_ip_tbody(rules, today, editable=True, group_op=True, whitelist_rule_ids=None, allowed_communities=None) %}
+<tbody>
+    {% for rule in rules %}
+        {% if rule.next_header is defined %}
+            {% set rtype_int = 6 %}
+        {% else %}
+            {% set rtype_int = 4 %}
+        {% endif %}
+
+        <tr 
+        {% if rule.expires < today %} class="table-warning" 
+        {% elif rule.rstate_id == 4 %} class="table-success" 
+        {% elif whitelist_rule_ids and rule.id in whitelist_rule_ids %} class="table-secondary"
+        {% endif %}>
+            <td>
+                <span class="task">{{ rule.source }}</span>{% if rule.source_mask != none %}{{ '/' if rule.source_mask >= 0 else '' }}{{ rule.source_mask if rule.source_mask >= 0 else '' }}{% endif %}
+            </td>
+            <td>
+                {{ rule.source_port }}
+            </td>
+            <td>
+                <span class="task">{{ rule.dest }}</span>{% if rule.dest_mask != none %}{{ '/' if rule.dest_mask >= 0 else '' }}{{ rule.dest_mask if rule.dest_mask >= 0 else '' }}{% endif %}
+            </td>
+            <td>
+                {{ rule.dest_port }}
+            </td>
+            <td>
+                {% if rtype_int == 4 %}
+                    {{ rule.protocol }}
+                {% elif rtype_int == 6 %}
+                    {{ rule.next_header }}
+                {% endif %}
+            </td>
+            <td>
+                {{ rule.packet_len }}
+            </td>
+            <td>
+                {{ rule.expires|strftime }}
+            </td>
+            <td>
+                {{ rule.action.name }}
+            </td>
+            <td>
+                {{ rule.flags}}
+            </td>
+            <td>
+                {{ rule.user.name }}
+            </td>
+            <td>
+            {% if editable %}
+                <a class="btn btn-info btn-sm" href="{{ url_for('rules.reactivate_rule', rule_type=rtype_int, rule_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="set expiration">
+                    <i class="bi bi-clock table-icon"></i>
+                </a>
+                <a class="btn btn-danger btn-sm" href="{{ url_for('rules.delete_rule', rule_type=rtype_int, rule_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="delete">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+            {% endif %}
+            {% if rule.comment %}
+                <button type="button" class="btn btn-info btn-sm" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ rule.comment }}">
+                    <i class="bi bi-chat-left-text-fill"></i>
+                </button>
+            {% endif %}
+            </td>
+
+            {% if editable and group_op %}
+                <td class="text-center">
+                    <input type="checkbox" name="delete-id" value="{{rule.id}}" />
+                </td>
+            {% endif %}
+
+        </tr>
+
+
+    {% endfor %}
+</tbody>
+{% endmacro %}
+
+
+{% macro build_rtbh_tbody(rules, today, editable=True, group_op=True, whitelist_rule_ids=None, allowed_communities=None) %}
+    <tbody>
+{% for rule in rules %}
+    <tr 
+    {% if rule.expires < today %} class="table-warning" 
+    {% elif rule.rstate_id == 4 %} class="table-success" 
+    {% elif whitelist_rule_ids and rule.id in whitelist_rule_ids %} class="table-secondary"
+    {% endif %}>
+        <td>
+        {% if rule.ipv4 %}
+            <span class="task">{{ rule.ipv4 }}</span>{{ '/' if rule.ipv4_mask else '' }}{{rule.ipv4_mask|default("", True)}}
+        {% endif %}
+        {% if rule.ipv6 %}
+            <span class="task">{{ rule.ipv6 }}</span>{{ '/' if rule.ipv6_mask else '' }} {{rule.ipv6_mask|default("", True)}}
+        {% endif %}
+        </td>
+        <td>
+            {{ rule.community.name }}
+        </td>
+
+        <td>
+            {{ rule.expires|strftime }}
+        </td>
+        <td>
+            {{ rule.user.name }}
+        </td>
+        <td>
+            {% if editable %}
+                <a class="btn btn-info btn-sm" href="{{ url_for('rules.reactivate_rule', rule_type=1, rule_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="set expiration">
+                    <i class="bi bi-clock table-icon"></i>
+                </a>
+                <a class="btn btn-danger btn-sm" href="{{ url_for('rules.delete_rule', rule_type=1, rule_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="delete">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% if rule.community.id in allowed_communities %}    
+                    <a class="btn btn-success btn-sm" href="{{ url_for('rules.delete_and_whitelist', rule_type=1, rule_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="whitelist and delete">
+                        <i class="bi bi-shield-x"></i>
+                    </a>
+                {% endif %}    
+            {% endif %}
+            {% if rule.comment %}
+            <button type="button" class="btn btn-info btn-sm" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ rule.comment }}">
+                <i class="bi bi-chat-left-text-fill"></i>
+            </button>
+            {% endif %}
+        </td>
+        {% if editable and group_op %}
+                <td class="text-center">
+                    <input type="checkbox" name="delete-id" value="{{rule.id}}" />
+                </td>
+        {% endif %}
+
+    </tr>
+{% endfor %}
+</tbody>
+{% endmacro %}
+
+
+{% macro build_whitelist_tbody(rules, today, editable=True, group_op=True, whitelist_rule_ids=None, allowed_communities=None) %}
+    <tbody>
+{% for rule in rules %}
+    <tr {% if rule.expires < today %} class="warning"  {% endif %}>
+    <td>
+        <span class="task">{{ rule.ip }}</span>{{ '/' if rule.mask else '' }}{{rule.mask|default("", True)}}
+    </td>
+    <td>
+        {{ rule.expires|strftime }}
+    </td>
+    <td>
+        {{ rule.user.name }}
+    </td>
+    <td>
+        {% if editable %}
+        <a class="btn btn-info btn-sm" href="{{ url_for('whitelist.reactivate', wl_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="set expiration">
+            <i class="bi bi-clock table-icon"></i>
+        </a>
+        <a class="btn btn-danger btn-sm" href="{{ url_for('whitelist.delete', wl_id=rule.id) }}" role="button" data-bs-toggle="tooltip" data-bs-placement="top" title="delete">
+            <i class="bi bi-x-lg"></i>
+        </a>
+        {% endif %}
+        {% if rule.comment %}
+           <button type="button" class="btn btn-info btn-sm" data-bs-toggle="tooltip" data-bs-placement="top" title="{{ rule.comment }}">
+              <i class="bi bi-chat-left-text-fill"></i>
+           </button>
+         {% endif %}
+    </td>
+     {% if editable and group_op %}
+            <td class="text-center">
+                <input type="checkbox" name="delete-id" value="{{rule.id}}" />
+            </td>
+    {% endif %}
+
+    </tr>
+{% endfor %}
+</tbody>
+{% endmacro %}
+
+
+
+{% macro build_rules_thead(rules_columns, rtype, rstate, sort_key, sort_order, search_query='', group_op=True) %}
+<thead>
+    <tr class="table-sorter">
+    {% for sort_key, col_name in rules_columns %}
+    <th>
+        {% if search_query %}
+            <a href="{{ url_for('dashboard.index', rtype=rtype, rstate=rstate, sort=sort_key, order=sort_order, ordsrc='link', squery=search_query) }}" >
+        {% else %}
+            <a href="{{ url_for('dashboard.index', rtype=rtype, rstate=rstate, sort=sort_key, order=sort_order, ordsrc='link') }}" >
+        {% endif %}
+        {{ col_name }}
+        </a>
+        <span class="sort-direction {{ sort_order }}"></span>
+    </th>
+    {% endfor %}
+    <th>Edit</th>
+    {% if group_op %}
+        <th class="text-center">
+            <input id="check-all" type="checkbox">
+        </th>
+    {% endif %}
+    </tr>
+</thead>
+{% endmacro %}
+
+{% macro build_group_buttons_tfoot(button_colspan=10) %}
+<tr>
+    <td colspan="{{ button_colspan }}">
+    </td>
+    <td  class="text-center">
+
+        <button type="submit" name="action" value="group-delete" class="btn btn-danger btn-sm" id="group-delete"  data-bs-toggle="tooltip" data-bs-placement="top" title="delete selected rules">
+            <i class="bi bi-x-lg"></i>
+        </button>
+
+        <button type="submit" name="action" value="group-update" class="btn btn-primary btn-sm" id="group-update" data-bs-toggle="tooltip" data-bs-placement="top" title="update selected rules">
+            <i class="bi bi-clock"></i>
+        </button>
+    </td>
+</tr>
+{% endmacro %}
