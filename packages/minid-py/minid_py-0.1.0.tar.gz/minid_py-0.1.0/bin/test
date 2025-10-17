@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CMD="uv run pytest tests/ --cov=src/minid --cov-report=term-missing --cov-branch -x"
+
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -x, --xml       Output coverage.xml for upload to codecov.io"
+    echo "  -w, --watch     Watch for file changes and re-run tests"
+    echo "  -h, --help      Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0              Run tests with coverage"
+    echo "  $0 --watch      Run tests in watch mode"
+}
+
+run_tests() {
+    echo "Running tests with coverage..."
+    eval "$CMD"
+}
+
+watch_tests() {
+    echo "Starting test watcher..."
+    echo "Watching src/ and tests/ for changes..."
+    echo "Press Ctrl+C to stop"
+    echo ""
+
+    run_tests
+
+    if command -v fswatch >/dev/null 2>&1; then
+        fswatch -o src/ tests/ | while read f; do
+            echo ""
+            echo "Files changed, re-running tests..."
+            run_tests
+        done
+    elif command -v inotifywait >/dev/null 2>&1; then
+        while inotifywait -r -e modify,create,delete src/ tests/ >/dev/null 2>&1; do
+            echo ""
+            echo "Files changed, re-running tests..."
+            run_tests
+        done
+    else
+        echo "Warning: No file watcher found (fswatch or inotifywait)"
+        echo "Install fswatch: brew install fswatch (macOS) or apt install inotify-tools (Linux)"
+        echo "Falling back to manual mode - press Enter to re-run tests"
+        while true; do
+            read -r
+            echo ""
+            echo "Re-running tests..."
+            run_tests
+        done
+    fi
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -x|--xml)
+            CMD+=" --cov-report=xml"
+            shift
+            ;;
+        -w|--watch)
+            watch_tests
+            exit 0
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+run_tests

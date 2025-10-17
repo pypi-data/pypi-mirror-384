@@ -1,0 +1,86 @@
+# minid
+
+[![tests](https://github.com/rfunduk/minid/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/rfunduk/minid/actions/workflows/test.yml)
+[![codecov](https://codecov.io/github/rfunduk/minid/graph/badge.svg?token=7U8QOQBEXF)](https://codecov.io/github/rfunduk/minid)
+
+
+Generate and store minimal, Jira-like IDs for content. Kind of like a URL shortener.
+
+## Installation
+
+```bash
+uv tool install minid-py
+pip install minid-py
+```
+
+## Usage
+
+### Register a prefix
+```bash
+minid prefix SLACK
+```
+
+### Create a new entry
+```bash
+$ minid new slack "https://myorg.slack.com/archives/ABC123/pXYZ456"
+Stored as SLACK-100
+
+# Or use multiline input
+$ minid new slack
+Content (Ctrl+D or 2 blank lines to finish):
+https://myorg.slack.com/archives/ABC123/pXYZ456
+
+A very important thing involving Bob
+
+
+Stored as SLACK-101
+```
+
+### Find entries
+```bash
+# list *all* entries
+$ minid find
+
+# all for prefix
+$ minid find -p slack
+
+# search all entries for content
+$ minid find "Bob"
+
+# search for content within a specific prefix
+$ minid find "important" --prefix slack
+```
+
+### Get a specific entry
+```bash
+$ minid get slack 100
+
+# fuzzy prefix matching
+$ minid g sl 100
+```
+
+## Development
+
+```bash
+# install dependencies
+uv sync
+
+# run tests
+./bin/test
+
+# run tests in watch mode
+./bin/test --watch
+
+# install pre-commit hooks
+uv run pre-commit install
+```
+
+## Features
+
+- **Fuzzy command matching** - Type `minid f` instead of `minid find`
+- **Fuzzy prefix match** - Likewise, `minid f -p s` will attempt to figure out what you meant by matching
+- **Clickable links** - URLs and GitHub references (owner/repo#123) become clickable in terminal
+- **Rich terminal output** - Tables, colors, and formatting
+- **Multiline input** - Support for long descriptions
+- **Fast search** - LMDB-based storage for quick queries
+- **Comprehensive testing** - 100% test coverage
