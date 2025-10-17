@@ -1,0 +1,26 @@
+services:
+  memg-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        YAML_FILE: ${YAML_FILE}
+    container_name: memg-mcp-server-${MEMORY_SYSTEM_MCP_PORT:-8888}
+    ports:
+      - "${MEMORY_SYSTEM_MCP_PORT:-8888}:${MEMORY_SYSTEM_MCP_PORT:-8888}"
+    # Mount persistent database storage
+    volumes:
+      - ${DATABASE_PATH}/db/qdrant:/app/databases/qdrant
+      - ${DATABASE_PATH}/db/kuzu:/app/databases/kuzu
+    environment:
+      MEMORY_SYSTEM_MCP_PORT: ${MEMORY_SYSTEM_MCP_PORT:-8888}
+      MEMORY_SYSTEM_MCP_HOST: "0.0.0.0"
+      MEMG_YAML_SCHEMA: /app/schema.yaml
+      MEMG_DB_PATH: /app/databases
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MEMORY_SYSTEM_MCP_PORT:-8888}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
