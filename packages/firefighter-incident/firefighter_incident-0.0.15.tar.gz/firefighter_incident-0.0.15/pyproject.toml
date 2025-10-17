@@ -1,0 +1,598 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "firefighter-incident"
+description = "Incident Management tool made for Slack using Django"
+authors = [
+  { name = "Gabriel Dugny", email = "gabriel.dugny@manomano.com" },
+  { name = "SRE", email = "teamsre@manomano.com" },
+]
+dependencies = [
+    "django[argon2]>=4.2.8,<5.0.0",
+    "celery[gevent,redis]>=5.3.6",
+    "ddtrace>=2.3.3,<2.4.0",
+    "django-celery-beat>=2.5.0",
+    "django-filter>=23.4",
+    "django-oauth2-authcodeflow>=1.0.1",
+    "django-redis>=5.4.0",
+    "django-stubs-ext~=5.1.1",
+    "django-taggit>=5.0.1",
+    "django-widget-tweaks>=1.5.0",
+    "djangorestframework>=3.14.0",
+    "djangorestframework-csv>=3.0.1",
+    "docutils>=0.20.1",
+    "drf-spectacular>=0.26.5",
+    "gunicorn>=21.2.0",
+    "httpx>=0.25.2",
+    "psycopg[binary]>=3.1.14",
+    "python-dateutil>=2.8.2",
+    "python-decouple>=3.8",
+    "python-json-logger>=2.0.7",
+    "slack-bolt>=1.18.1",
+    "slack-sdk>=3.26.1",
+    "uritemplate>=4.1.1",
+    "whitenoise>=6.6.0",
+    "dateparser>=1.2.0",
+    "django-tables2>=2.6.0",
+    "pdpyras>=5.1.3",
+    "django-components>=0.101",
+    "django-htmx>=1.17.2",
+    "django-simple-menu>=2.1.3",
+    "markdown>=3.5.1",
+    "jira>=3.5.2,<3.6.0", # 3.6.0 stop accepting user id for add_watcher, see https://github.com/pycontribs/jira/issues/1855
+    "drf-standardized-errors>=0.12.6",
+    "aiohttp>=3.9.1", # Transitive dependency of slack_sdk
+    "nh3>=0.2.15",
+    "django-import-export>=4.0.0",
+]
+requires-python = ">=3.11,<4.0"
+license = {file = "LICENSE"}
+readme = "README.md"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Framework :: Django :: 4.2",
+  "Typing :: Typed",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/ManoManoTech/firefighter-incident"
+Documentation = "https://manomanotech.github.io/firefighter-incident/latest/"
+Changelog = "https://github.com/ManoManoTech/firefighter-incident/releases"
+
+[project.scripts]
+ff-web = "main:main"
+ff-manage = "manage:main"
+
+[tool.hatch]
+[tool.hatch.build]
+only-packages = false
+include = [
+  "gunicorn.conf.py",
+  "main.py",
+  "manage.py",
+  "firefighter",
+  "package.json",
+  "package-lock.json",
+  "scripts",
+]
+artifacts = [
+  "src/**/*.min.js",
+  "src/**/*.min.css",
+]
+[tool.hatch.build.hooks.custom]
+path = "scripts/hatch_build.py"
+[tool.hatch.build.sources]
+"src" = ""
+"fixtures" = "firefighter_fixtures"
+"tests" = "firefighter_tests"
+
+[tool.hatch.build.force-include]
+"fixtures" = "firefighter_fixtures"
+"tests" = "firefighter_tests"
+# "~/lib.h" = "pkg/lib.h"
+
+# XXX(dugab): OSS either provide all static files in the package or none
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/firefighter/_version.py"
+
+[tool.pdm]
+plugins = [
+    "sync-pre-commit-lock"
+]
+# Common settings for all scripts
+[tool.pdm.scripts._]
+env_file =".env"
+env = {DJANGO_SETTINGS_MODULE="firefighter.firefighter.settings"}
+
+[tool.pdm.scripts]
+# CD Specific - some tools requires our full configuration, which we do not load by default
+_copy_env = {shell="test -f .env || cp .env.example .env", help="Copy .env.example to .env (if .env does not exist)"}
+_cd-lint-mypy = {composite= ["_copy_env",  "lint-mypy"], help="Run mypy type checker, copy .env.example to .env first"}
+_cd-lint-pylint = {composite= ["_copy_env", "lint-pylint-strict"], help="Run pylint, copy .env.example to .env first"}
+# Lint
+lint-pylint = {cmd="pylint --django-settings-module=firefighter.firefighter.settings src", help="Run pylint"}
+lint-pylint-strict = {shell="pylint --django-settings-module=firefighter.settings src --fail-under=0.99", help="Run pylint, fail if score is under 9.99"}
+lint-mypy = {shell= "mypy", help="Run mypy type checker", env={"ENABLE_PAGERDUTY"="True", "ENABLE_CONFLUENCE"="True"}}
+lint-ruff = {cmd="ruff check .", help="Run ruff linter"}
+lint = {composite= ["lint-ruff", "lint-pylint", "lint-mypy"], help="Run all linters (ruff, pylint, mypy)."}
+# Format
+fmt-black = {cmd="ruff format .", help="Run black-like ruff formatter"}
+fmt-ruff =  {cmd="ruff check . --fix --select I001", help="Run isort-like import sorting with ruff"}
+fmt-dj = {cmd="djhtml src", help="Run HTML formatting with djhtml"}
+fmt = {composite= ["fmt-black", "fmt-ruff", "fmt-dj"], help="Run all formatters (black, isort-like ruff, djhtml)"}
+# Tests
+tests = {cmd="pytest", help="Run the tests"}
+tests-cov ={cmd= "pytest --junitxml=pytest-report.xml --cov --cov-report xml:pytest-coverage.xml --cov-fail-under=0 --cov-report html", help="Run the tests with coverage, and generate reports"}
+# Docs
+docs-serve = {cmd="mkdocs serve", help="Serve the docs locally"}
+docs-build = {cmd="mkdocs build", help="Build the docs"}
+# CSS/JS Build
+build-web =  {cmd="npm run build", help="Build the web assets (CSS/JS)"}
+# Docker-compose dev stack
+dev-env-setup = {composite= ["dev-env-start", "migrate", "loaddata", "createsuperuser", "collectstatic"], help="Initialize the dev environment with Docker-compose and setup Django"}
+dev-env-start = {cmd="docker-compose -f docker-compose.yaml up -d", help="Start the dev environment with Docker-compose"}
+dev-env-stop = {cmd="docker-compose -f docker-compose.yaml down", help="Stop the dev environment with Docker-compose"}
+dev-env-destroy = {shell ='echo "⚠️  This will destroy all data in the database. Are you sure? (y/n)" && read answer && [ "$answer" == "y" ] && docker-compose -f docker-compose.yaml down -v', help="Destroy the dev environment (including DB!)"}
+# Django setup
+loaddata = {shell="ff-manage loaddata fixtures/**/*.json --ignorenonexistent", help="Import fixture data"}
+createsuperuser = {cmd="ff-manage createsuperuser --noinput", help="Create a superuser using `.env` values"}
+collectstatic = {cmd="ff-manage collectstatic --noinput", help="Collect the static files"}
+# Django aliases
+manage = {cmd="ff-manage", help="Run the Django management command"}
+migrate = {cmd="ff-manage migrate", help="Run the Django migrations"}
+runserver = {cmd="ff-manage runserver", help="Run the Django dev server"}
+# Celery aliases
+celery-worker = {cmd="celery -A firefighter.firefighter worker -l DEBUG -c 4 -P gevent  ", help="Run the Celery worker (DEBUG)"}
+celery-beat = {cmd="celery -A firefighter.firefighter beat -l INFO", help="Run the Celery beat (INFO)"}
+# Testing utilities
+switch-test-users = {cmd="ff-manage switch_test_users", help="Generate and apply Slack user mapping for test environment"}
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "mypy>=1.7.1",
+    "pylint>=3.0.2",
+    "pylint-django>=2.5.5",
+    "yamllint>=1.33.0",
+    "django-browser-reload>=1.12.1",
+    "django-silk>=5.0.4",
+    "django-debug-toolbar>=4.2.0",
+    "django-extra-checks>=0.13.3",
+    "nplusone>=1.0.0",
+    "django-migration-linter>=5.0.0",
+    "ipdb>=0.13.13",
+    "ipython>=8.18.1",
+    "djhtml>=3.0.6",
+    "django-extensions>=3.2.3",
+    "pyparsing>=3.1.1",
+    "pydot>=1.4.2",
+    "lazy-object-proxy>=1.9.0",
+    "werkzeug>=3.0.1",
+    "django-watchfiles>=0.1.0",
+    "ruff>=0.1.6",
+    "mypy-to-codeclimate>=0.0.3",
+    "djade>=1.1.1",
+]
+tests = [
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "pytest-deadfixtures>=2.2.1",
+    "pytest-django>=4.7.0",
+    "pytest-mock>=3.12.0",
+    "pytest-randomly>=3.15.0",
+    "pytest-timeout>=2.2.0",
+    "factory-boy>=3.3.0",
+    "pytest-httpx>=0.27.0",
+    "hypothesis>=6.91.0",
+    "django-coverage-plugin>=3.1.0",
+    "django-test-migrations>=1.3.0",
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material[imaging]>=9.5.14",
+    "mkdocs-git-revision-date-plugin>=0.3.2",
+    "mkdocs-section-index>=0.3.8",
+    "mkdocs-include-markdown-plugin>=6.0.4",
+    "mkdocstrings[python]>=0.24.0",
+    "mdx-truly-sane-lists>=1.3",
+    "mike>=2.1.1",
+    "markdown-exec>=1.7",
+    "mkdocs-git-authors-plugin>=0.7.2",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.2",
+    "mkdocs-redirects>=1.2.1",
+    "mkdocs-minify-plugin>=0.7.2",
+    "jinja2>=3.1.2",
+    "black>=24.2.0",
+    "griffe>=0.44",
+]
+
+types = [
+    "django-stubs~=5.1.1",
+    "djangorestframework-stubs>=3.14.4",
+    "django-filter-stubs>=0.1.3",
+    "types-python-dateutil>=2.8.19.14",
+    "types-requests>=2.31.0.10",
+    "types-dateparser>=1.1.4.10",
+    "types-redis>=4.6.0.11",
+    "types-backports>=0.1.3",
+    "types-protobuf>=4.24.0.4",
+    "types-setuptools>=69.0.0.0",
+    "types-six>=1.16.21.9",
+    "types-markdown>=3.5.0.3",
+    "celery-types>=0.20.0",
+]
+
+[[tool.pdm.source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+include_packages = ["*"]
+
+## Linting (Pylint + pylint-django)
+
+[tool.pylint]
+
+[tool.pylint.MASTER]
+load-plugins = [
+  "pylint_django",
+  "pylint.extensions.redefined_variable_type",
+  "pylint.extensions.docparams",
+]
+django-settings-module = "firefighter.firefighter.settings"
+ignore = "migrations"
+
+[tool.pylint.FORMAT]
+max-line-length = 140
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = [
+  "import-error",
+  "invalid-name",
+  "logging-format-interpolation",
+  "inconsistent-return-statements",
+  "duplicate-code",
+  "too-few-public-methods",
+  "unused-wildcard-import",
+  "ungrouped-imports",
+  "unsubscriptable-object",
+  "cyclic-import",
+  "logging-fstring-interpolation",  # TODO: consist logging interpolation style
+  # Disable all rules implemented in ruff:
+  "await-outside-async",
+  "format-needs-mapping",
+  "missing-format-string-key",
+  "missing-kwoa",
+  "no-method-argument",
+  "no-self-argument",
+  "nonexistent-operator",
+  "nonlocal-without-binding",
+  "not-in-loop",
+  "notimplemented-raised",
+  "return-outside-function",
+  "syntax-error",
+  "truncated-format-string",
+  "undefined-variable",
+  "used-before-assignment",
+  "used-prior-global-declaration",
+  "yield-outside-function",
+  "anomalous-backslash-in-string",
+  "assert-on-tuple",
+  "bad-format-string",
+  "bad-format-string-key",
+  "bare-except",
+  "broad-except",
+  "cell-var-from-loop",
+  "dangerous-default-value",
+  "duplicate-except",
+  "duplicate-key",
+  "duplicate-string-formatting-argument",
+  "f-string-without-interpolation",
+  "fixme",
+  "forgotten-debug-statement",
+  "format-string-without-interpolation",
+  "global-variable-not-assigned",
+  "inconsistent-quotes",
+  "misplaced-future",
+  "missing-any-param-doc",
+  "missing-param-doc",
+  "redefined-builtin",
+  "unused-argument",
+  "unused-format-string-argument",
+  "unused-format-string-key",
+  "unused-import", # Replaced by RUFF F401
+  "unused-variable",
+  "useless-else-on-loop",
+  "bad-classmethod-argument",
+  # "bad-docstring-quotes",
+  "bad-file-encoding",
+  # "docstring-first-line-empty",
+  "empty-docstring",
+  "invalid-name",
+  "line-too-long",
+  # "misplaced-comparison-constant",
+  "missing-class-docstring",
+  "missing-final-newline",
+  "missing-function-docstring",
+  "missing-module-docstring",
+  "multiple-imports",
+  "singleton-comparison",
+  "unnecessary-direct-lambda-call",
+  "unnecessary-lambda-assignment",
+  "useless-import-alias",
+  "wrong-import-order",
+  "wrong-import-position",
+  "comparison-of-constants",
+  "consider-merging-isinstance",
+  "consider-using-dict-comprehension",
+  "consider-using-from-import",
+  "consider-using-generator",
+  "consider-using-set-comprehension",
+  "consider-using-sys-exit",
+  "literal-comparison",
+  # "magic-value-comparison",
+  "unnecessary-comprehension",
+  "use-a-generator",
+  "use-dict-literal",
+  "use-list-literal",
+  "useless-object-inheritance", # Replaed by Ruff UP004
+  "too-many-return-statements", # Replaced by Ruff PLR0911
+  "too-many-branches", # Replaced by Ruff PLR0912
+  "too-many-arguments", # Replaced by Ruff PLR0913
+  "too-many-locals", # Replaced by Ruff PLR0914
+  "isinstance-second-argument-not-valid-type",
+  "protected-access", # Replaced by Ruff SLF001
+  "no-member",
+  "too-many-boolean-expressions", # Replaced by Ruff PLR0916
+  "unnecessary-lambda", # Replaced by Ruff PLW0108
+  "import-outside-toplevel", # Replaced by Ruff PLC0415
+  "bad-open-mode", # Replaced by Ruff W1501
+  "useless-with-lock", # Replaced by Ruff W2101
+]
+enable = ["useless-suppression"]
+
+[tool.pylint.DESIGN]
+max-args = 10
+max-attributes = 12
+max-parents = 10
+
+[tool.pylint.'PARAMETER DOCUMENTATION']
+default-docstring-type = "google"
+
+# Configuration name is weird, but it works
+[tool.pylint."django foreign keys referenced by strings"]
+# A module containing Django settings to be used while linting.
+django-settings-module = "firefighter.firefighter.settings"
+
+# XXX(dugab) Restrict imports of firefighter.firefighter.settings
+
+## Type checking (Mypy, Django-stubs, +plugins)
+
+[tool.mypy]
+files = ['src', "stubs"]
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+strict = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR/stubs"
+# Less strict options
+ignore_missing_imports = true
+local_partial_types = true
+# Stricter options
+strict_concatenate = true
+warn_unreachable = true
+warn_no_return = true
+# Disable some options set by `strict=true`
+disallow_subclassing_any = false
+implicit_reexport = true
+warn_return_any = false
+# XXX More aggresive type checking
+
+[[tool.mypy.overrides]]
+module = "*.migrations.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.django-stubs]
+django_settings_module = "firefighter.firefighter.settings"
+
+## Testing and coverage (Pytest)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# markers = [{unit="tests that are isolated from the db, external api calls and other mockable internal code."}]
+norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__ node_modules .venv"
+timeout = 15
+# Ignore deprecation warnings from libs
+filterwarnings = [
+  "ignore::DeprecationWarning:ddtrace.internal*:",
+  "ignore:.*taggit.TaggedItem.*:django.utils.deprecation.RemovedInDjango51Warning",
+  'ignore:SelectableGroups dict interface is deprecated. Use select:DeprecationWarning',
+  'ignore::DeprecationWarning:ddtrace.*',
+  'ignore::DeprecationWarning:pkg_resources.*',
+]
+
+## Pytest other possible options
+# --reuse-db                   # to avoid creating a new database for each test
+# --reuse-db-keepdb # keep the DB after the test
+# --no-migrations              # to avoid running migrations
+## Coverage sample options
+# --cov-branch
+# --cov-report=term-missing:skip-covered --cov-report=html --cov-fail-under=100
+addopts = """
+--strict-markers
+--strict-config
+--fail-on-template-vars
+--tb=short
+"""
+
+# Pytest-django
+FAIL_INVALID_TEMPLATE_VARS = true
+DJANGO_SETTINGS_MODULE = "firefighter.firefighter.settings"
+
+
+[tool.coverage.run]
+branch = true
+omit = [
+  "*/tests/*",
+  "*/migrations/*",
+  "*/node_modules/*",
+  "*/dist/*",
+  "static/*",
+  ".static/*",
+  ".scannerwork/*",
+  "docs/*",
+  ".*",
+  "*/templates/**/*.html",
+  "**/*.html",
+]
+include = [
+  "src/**/*",
+]
+plugins = ["django_coverage_plugin"]
+
+[tool.coverage.report]
+fail_under = 50.0
+# skip_covered=true
+# skip_empty=true
+
+exclude_lines = [
+  "def __repr__",
+  "if TYPE_CHECKING:",
+  "if settings.DEBUG",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  'class .*\bProtocol\):',
+  '@(abc\.)?abstractmethod]',
+]
+
+[tool.ruff]
+preview = true
+line-length = 88
+respect-gitignore = true
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+
+ignore = [
+  "A003",    # Class attribute is shadowing a python builtin - Too many false positive and no way to exclude (yet?)
+  "A005",    # Module `*` is shadowing a Python builtin module
+  "ARG001",  # XXX Enable later - No way to specify which args to ignore
+  "ANN",     # XXX Enable later - More than 400 annotations errors
+  "ANN101",  # Missing type annotation for `self` in method
+  "ANN102",  # Missing type annotation for `cls` in classmethod
+  "ANN401",  # Dynamically typed expressions (typing.Any) are disallowed
+  "COM",     # Trailing commas
+  #  Disable all `Missing docstring`
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+  "D401",    # First line of docstring should be in imperative mood
+  "D205",    # 1 blank line required between summary line and description
+  "DOC201",  # `return` is not documented in docstring
+  "DOC402",  # `yield` is not documented in docstring
+  "DOC501",  # Raised exception `*` missing from docstring
+  "DOC502",  # Raised exception is not explicitly raised: `*`
+  "E501",    # Line too long
+  "EM101",   # Exceptions should not use a string literal but a variable
+  "PLR2004", # Too aggressive, but some good points
+  "PGH003",  # Good point but too many tools
+  "G004",    # Logging statement uses f-string
+  "TRY003",  # Avoid specifying long messages outside the exception class
+  "TD001",   # Forbid F1XME and X*X comments
+  "DJ001",   # XXX: Enable later - Avoid using `null=True` on string-based fields such as TextField and CharField
+  "PLC1901", # XXX: Enable later - Simplify empty string comparison
+  "TD",      # XXX: Enable later - Too many T0D0s
+  "FIX003",  # XXX: Enable later - Too many X*X
+  "FIX002",  # XXX: Enable later - Too many T0D0s
+  "RUF012",  # XXX Enable later - Mutable class attributes should be annotated with `typing.ClassVar`
+  "CPY001",  # Missing copyright notice at top of file
+  "PLR6301", # XXX Method could be a function or static method -- needs allow list or @override support
+  "E203",    # XXX whitespace-before-punctuation -- still unstable with black formatting
+]
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+external = [
+  # Bandit
+  "S104",
+  "WPS440",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/components/**/*.py" = ["INP", "TCH002", "TCH003"]
+"__init__.py" = ["F401"]
+"_version.py" = ["Q000", "UP", "I"]
+"**/settings_builder.py" = ["F403"]
+"tests/*" = ["S101", "D", "ANN", "PLR2004", "INP", "DTZ005", "TCH", "SLF001", "PLC2701"]
+"**/migrations/*" = ["PLR", "D", "ANN", "ARG", "N806", "I002"]
+"stubs/*" = ["ARG", "ANN", "D", "INP", "TCH"]
+"**/apps.py" = ["F401", "PLC0415"]
+"**/manage.py" = ["INP", "PLC0415"]
+"**/main.py" = ["INP"]
+"**/gunicorn.conf.py" = ["INP"]
+"scripts/*" = ["INP"]
+"*.pyi" = ["E301", "E302", "E305"]
+"**/message.py" = ["DJ012"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+known-first-party = ["firefighter", ]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+mypy-init-return = true
+suppress-dummy-args = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-type-checking]
+strict = false
+exempt-modules = ["typing", "typing.Any","typing_extensions"]
+
+[tool.ruff.lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-branches = 15
+max-returns = 10
+max-bool-expr = 6
+max-locals = 20
