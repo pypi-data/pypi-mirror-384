@@ -1,0 +1,1483 @@
+import pytest
+import numpy as np
+import xarray as xr
+from heiplanet_data import preprocess
+import geopandas as gpd
+from shapely.geometry import Polygon
+from pathlib import Path
+from conftest import get_files
+import json
+from datetime import datetime
+
+
+@pytest.fixture()
+def get_data():
+    time_points = np.array(["2024-01-01", "2025-01-01"], dtype="datetime64")
+    latitude = [0, 0.5]
+    longitude = [0, 0.5, 1]
+    longitude_first = np.float64(0.0)
+    longitude_last = np.float64(359.9)
+
+    # create random data for t2m and tp
+    rng = np.random.default_rng(seed=42)
+    data = rng.random((2, 2, 3)) * 1000 + 273.15
+    data_array_t2m = xr.DataArray(
+        data,
+        dims=["time", "latitude", "longitude"],
+        coords={"time": time_points, "latitude": latitude, "longitude": longitude},
+    )
+
+    data = rng.random((2, 2, 3)) / 1000
+    data_array_precip = xr.DataArray(
+        data,
+        dims=["time", "latitude", "longitude"],
+        coords={"time": time_points, "latitude": latitude, "longitude": longitude},
+    )
+    data_array_t2m.attrs = {
+        "GRIB_units": "K",
+        "units": "K",
+        "GRIB_longitudeOfFirstGridPointInDegrees": longitude_first,
+        "GRIB_longitudeOfLastGridPointInDegrees": longitude_last,
+    }
+    data_array_precip.attrs = {
+        "GRIB_units": "m",
+        "units": "m",
+        "GRIB_longitudeOfFirstGridPointInDegrees": longitude_first,
+        "GRIB_longitudeOfLastGridPointInDegrees": longitude_last,
+    }
+    return data_array_t2m, data_array_precip
+
+
+@pytest.fixture()
+def get_dataset(get_data):
+    data_t2m = get_data[0]
+    data_tp = get_data[1]
+    dataset = xr.Dataset(
+        {"t2m": data_t2m, "tp": data_tp},
+        coords={
+            "time": data_t2m.time,
+            "latitude": data_t2m.latitude,
+            "longitude": data_t2m.longitude,
+        },
+    )
+    # create attributes for the dataset
+    dataset.attrs.update({"GRIB_centre": "ecmf"})
+    dataset["longitude"].attrs.update({"units": "degrees_east"})
+    return dataset
+
+
+@pytest.fixture()
+def get_nuts_data():
+    # create a simple GeoDataFrame with NUTS regions
+    data = {
+        "NUTS_ID": ["NUTS1", "NUTS2"],
+        "geometry": [
+            Polygon(
+                [
+                    (-0.25, -0.25),
+                    (-0.25, 1.0),
+                    (0.25, 1.0),
+                    (0.25, -0.25),
+                    (-0.25, -0.25),
+                ]
+            ),
+            Polygon(
+                [(0.25, -0.25), (0.25, 1.0), (1.25, 1.0), (1.25, -0.25), (0.25, -0.25)]
+            ),
+        ],
+    }
+    nuts_data = gpd.GeoDataFrame(data, crs="EPSG:4326")
+    return nuts_data
+
+
+def test_convert_360_to_180(get_data):
+    # convert 360 to 180, xarray
+    t2m_data = get_data[0]
+    converted_array = preprocess.convert_360_to_180(t2m_data)
+    expected_array = (t2m_data + 180) % 360 - 180
+    assert np.allclose(converted_array.values, expected_array.values)
+    assert converted_array.dims == expected_array.dims
+    assert all(
+        converted_array.coords[dim].equals(expected_array.coords[dim])
+        for dim in converted_array.dims
+    )
+
+    # convert with float values
+    num = 360.0
+    converted_num = preprocess.convert_360_to_180(num)
+    expected_num = (num + 180) % 360 - 180
+    assert np.isclose(converted_num, expected_num)
+
+    num = 0.0
+    converted_num = preprocess.convert_360_to_180(num)
+    expected_num = (num + 180) % 360 - 180
+    assert np.isclose(converted_num, expected_num)
+
+    num = 180.0
+    converted_num = preprocess.convert_360_to_180(num)
+    expected_num = (num + 180) % 360 - 180
+    assert np.isclose(converted_num, expected_num)
+
+    num = 90.0
+    converted_num = preprocess.convert_360_to_180(num)
+    assert np.isclose(converted_num, num)
+
+    num = -90.0
+    converted_num = preprocess.convert_360_to_180(num)
+    assert np.isclose(converted_num, num)
+
+
+def test_adjust_longitude_360_to_180(get_dataset):
+    # invalid lon name
+    with pytest.raises(ValueError):
+        preprocess.adjust_longitude_360_to_180(get_dataset, lon_name="invalid_lon")
+    # full area
+    adjusted_dataset = preprocess.adjust_longitude_360_to_180(
+        get_dataset, limited_area=False
+    )
+    expected_dataset = get_dataset.assign_coords(
+        longitude=((get_dataset.longitude + 180) % 360 - 180)
+    ).sortby("longitude")
+
+    # check if the attributes are preserved
+    assert adjusted_dataset.attrs == get_dataset.attrs
+    assert adjusted_dataset["t2m"].attrs.get("units") == get_dataset["t2m"].attrs.get(
+        "units"
+    )
+    assert adjusted_dataset["longitude"].attrs == get_dataset["longitude"].attrs
+    for var in adjusted_dataset.data_vars.keys():
+        assert adjusted_dataset[var].attrs.get(
+            "GRIB_longitudeOfFirstGridPointInDegrees"
+        ) == np.float64(-179.9)
+        assert adjusted_dataset[var].attrs.get(
+            "GRIB_longitudeOfLastGridPointInDegrees"
+        ) == np.float64(180.0)
+
+    # check if the data is adjusted correctly
+    assert np.allclose(adjusted_dataset["t2m"].values, expected_dataset["t2m"].values)
+    assert adjusted_dataset["t2m"].dims == expected_dataset["t2m"].dims
+    assert all(
+        adjusted_dataset["t2m"].coords[dim].equals(expected_dataset["t2m"].coords[dim])
+        for dim in adjusted_dataset["t2m"].dims
+    )
+
+    # limited area
+    for var in get_dataset.data_vars.keys():
+        get_dataset[var].attrs.update(
+            {
+                "GRIB_longitudeOfFirstGridPointInDegrees": np.float64(-45.0),
+                "GRIB_longitudeOfLastGridPointInDegrees": np.float64(45.0),
+            }
+        )
+    adjusted_dataset = preprocess.adjust_longitude_360_to_180(
+        get_dataset, limited_area=True
+    )
+    for var in adjusted_dataset.data_vars.keys():
+        assert adjusted_dataset[var].attrs.get(
+            "GRIB_longitudeOfFirstGridPointInDegrees"
+        ) == np.float64(-45.0)
+        assert adjusted_dataset[var].attrs.get(
+            "GRIB_longitudeOfLastGridPointInDegrees"
+        ) == np.float64(45.0)
+
+
+def test_convert_to_celsius(get_data):
+    t2m_data = get_data[0]
+    # convert to Celsius, xarray
+    celsius_array = preprocess.convert_to_celsius(t2m_data)
+    expected_celsius_array = t2m_data - 273.15
+    assert np.allclose(celsius_array.values, expected_celsius_array.values)
+    assert celsius_array.dims == expected_celsius_array.dims
+    assert all(
+        celsius_array.coords[dim].equals(expected_celsius_array.coords[dim])
+        for dim in celsius_array.dims
+    )
+
+    # float numbers
+    kelvin_temp = 300.0
+    celsius_temp = preprocess.convert_to_celsius(kelvin_temp)
+    expected_temp = kelvin_temp - 273.15
+    assert np.isclose(celsius_temp, expected_temp)
+
+
+def test_convert_to_celsius_with_attributes_no_inplace(get_dataset):
+    # invalid var name
+    with pytest.raises(ValueError):
+        preprocess.convert_to_celsius_with_attributes(get_dataset, var_name="invalid")
+    # convert to Celsius
+    celsius_dataset = preprocess.convert_to_celsius_with_attributes(
+        get_dataset, inplace=False
+    )
+    expected_celsius_array = get_dataset["t2m"] - 273.15
+
+    # check if the attributes are preserved
+    assert celsius_dataset.attrs == get_dataset.attrs
+    assert celsius_dataset["t2m"].attrs.get("GRIB_units") == "C"
+    assert celsius_dataset["t2m"].attrs.get("units") == "C"
+
+    # check if the data is converted correctly
+    assert np.allclose(celsius_dataset["t2m"].values, expected_celsius_array.values)
+    assert celsius_dataset["t2m"].dims == expected_celsius_array.dims
+    assert all(
+        celsius_dataset["t2m"].coords[dim].equals(expected_celsius_array.coords[dim])
+        for dim in celsius_dataset["t2m"].dims
+    )
+
+
+def test_convert_to_celsius_with_attributes_inplace(get_dataset):
+    # convert to Celsius
+    org_data_array = get_dataset["t2m"].copy()
+    org_ds_attrs = get_dataset.attrs.copy()
+    preprocess.convert_to_celsius_with_attributes(get_dataset, inplace=True)
+    expected_celsius_array = org_data_array - 273.15
+
+    # check if the attributes are preserved
+    assert get_dataset.attrs == org_ds_attrs
+    assert get_dataset["t2m"].attrs.get("GRIB_units") == "C"
+    assert get_dataset["t2m"].attrs.get("units") == "C"
+
+    # check if the data is converted correctly
+    assert np.allclose(get_dataset["t2m"].values, expected_celsius_array.values)
+    assert get_dataset["t2m"].dims == expected_celsius_array.dims
+    assert all(
+        get_dataset["t2m"].coords[dim].equals(expected_celsius_array.coords[dim])
+        for dim in get_dataset["t2m"].dims
+    )
+
+
+def test_rename_coords(get_dataset):
+    renamed_dataset = preprocess.rename_coords(get_dataset, {"longitude": "lon"})
+
+    # check if the coordinates are renamed
+    assert "lon" in renamed_dataset.coords
+    assert "longitude" not in renamed_dataset.coords
+
+    # check if other data is preserved
+    assert np.allclose(renamed_dataset["t2m"].values, get_dataset["t2m"].values)
+    assert renamed_dataset["t2m"].dims[0] == get_dataset["t2m"].dims[0]
+
+
+def test_rename_coords_invalid_mapping(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.rename_coords(get_dataset, coords_mapping="")
+
+    with pytest.raises(ValueError):
+        preprocess.rename_coords(get_dataset, coords_mapping={})
+
+    with pytest.raises(ValueError):
+        preprocess.rename_coords(get_dataset, coords_mapping=1)
+
+    with pytest.raises(ValueError):
+        preprocess.rename_coords(get_dataset, coords_mapping={"lon": 2.2})
+
+
+def test_rename_coords_notexist_coords(get_dataset):
+    with pytest.warns(UserWarning):
+        renamed_dataset = preprocess.rename_coords(
+            get_dataset, {"notexist": "lon", "latitude": "lat"}
+        )
+
+    # check if the coordinates are not renamed
+    assert "notexist" not in renamed_dataset.coords
+    assert "lon" not in renamed_dataset.coords
+    assert "longitude" in renamed_dataset.coords
+    assert "latitude" not in renamed_dataset.coords
+    assert "lat" in renamed_dataset.coords
+
+
+def test_convert_m_to_mm(get_data):
+    tp_data = get_data[1]
+    # convert m to mm, xarray
+    mm_array = preprocess.convert_m_to_mm(tp_data)
+    expected_mm_array = tp_data * 1000.0
+    assert np.allclose(mm_array.values, expected_mm_array.values)
+    assert mm_array.dims == expected_mm_array.dims
+    assert all(
+        mm_array.coords[dim].equals(expected_mm_array.coords[dim])
+        for dim in mm_array.dims
+    )
+
+    # float numbers
+    m_precip = 0.001
+    mm_precip = preprocess.convert_m_to_mm(m_precip)
+    expected_precip = m_precip * 1000.0
+    assert np.isclose(mm_precip, expected_precip)
+
+
+def test_convert_m_to_mm_with_attributes_no_inplace(get_dataset):
+    # invalid var name
+    with pytest.raises(ValueError):
+        preprocess.convert_m_to_mm_with_attributes(get_dataset, var_name="invalid")
+    # convert m to mm
+    mm_dataset = preprocess.convert_m_to_mm_with_attributes(
+        get_dataset, inplace=False, var_name="tp"
+    )
+    expected_mm_array = get_dataset["tp"] * 1000.0
+
+    # check if the attributes are preserved
+    assert mm_dataset.attrs == get_dataset.attrs
+    assert mm_dataset["tp"].attrs.get("GRIB_units") == "mm"
+    assert mm_dataset["tp"].attrs.get("units") == "mm"
+
+    # check if the data is converted correctly
+    assert np.allclose(mm_dataset["tp"].values, expected_mm_array.values)
+    assert mm_dataset["tp"].dims == expected_mm_array.dims
+    assert all(
+        mm_dataset["tp"].coords[dim].equals(expected_mm_array.coords[dim])
+        for dim in mm_dataset["tp"].dims
+    )
+
+
+def test_convert_m_to_mm_with_attributes_inplace(get_dataset):
+    # convert m to mm
+    org_data_array = get_dataset["tp"].copy()
+    org_ds_attrs = get_dataset.attrs.copy()
+    preprocess.convert_m_to_mm_with_attributes(get_dataset, inplace=True, var_name="tp")
+    expected_mm_array = org_data_array * 1000.0
+
+    # check if the attributes are preserved
+    assert get_dataset.attrs == org_ds_attrs
+    assert get_dataset["tp"].attrs.get("GRIB_units") == "mm"
+    assert get_dataset["tp"].attrs.get("units") == "mm"
+
+    # check if the data is converted correctly
+    assert np.allclose(get_dataset["tp"].values, expected_mm_array.values)
+    assert get_dataset["tp"].dims == expected_mm_array.dims
+    assert all(
+        get_dataset["tp"].coords[dim].equals(expected_mm_array.coords[dim])
+        for dim in get_dataset["tp"].dims
+    )
+
+
+def test_downsample_resolution_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(get_dataset, new_resolution=0)
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(get_dataset, new_resolution=-0.5)
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(get_dataset, new_resolution=0.5)
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(get_dataset, new_resolution=0.2)
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(
+            get_dataset, new_resolution=1.0, agg_funcs="invalid"
+        )
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(
+            get_dataset,
+            new_resolution=1.0,
+            lat_name="invalid_lat",
+            lon_name="longitude",
+        )
+    with pytest.raises(ValueError):
+        preprocess.downsample_resolution(
+            get_dataset,
+            new_resolution=1.0,
+            lat_name="latitude",
+            lon_name="invalid_lon",
+        )
+
+
+def test_downsample_resolution_default(get_dataset):
+    # downsample resolution
+    downsampled_dataset = preprocess.downsample_resolution(
+        get_dataset, new_resolution=1.0
+    )
+
+    # check if the dimensions are reduced
+    assert len(downsampled_dataset["t2m"].dims) == 3
+    assert len(downsampled_dataset["tp"].dims) == 3
+
+    # check if the coordinates are adjusted
+    assert np.allclose(downsampled_dataset["t2m"].latitude.values, [0.25])
+    assert np.allclose(downsampled_dataset["t2m"].longitude.values, [0.25])
+
+    # check agg. values
+    assert np.allclose(
+        downsampled_dataset["t2m"].values.flatten(),
+        np.mean(get_dataset["t2m"][:, :, :2], axis=(1, 2)),
+    )
+
+    # check attributes
+    assert downsampled_dataset.attrs == get_dataset.attrs
+    for var in downsampled_dataset.data_vars.keys():
+        assert downsampled_dataset[var].attrs == get_dataset[var].attrs
+
+
+def test_downsample_resolution_custom(get_dataset):
+    # downsample resolution with custom aggregation functions
+    agg_funcs = {
+        "t2m": "mean",
+        "tp": "sum",
+    }
+    downsampled_dataset = preprocess.downsample_resolution(
+        get_dataset, new_resolution=1.0, agg_funcs=agg_funcs
+    )
+
+    # check if the dimensions are reduced
+    assert len(downsampled_dataset["t2m"].dims) == 3
+    assert len(downsampled_dataset["tp"].dims) == 3
+
+    # check if the coordinates are adjusted
+    assert np.allclose(downsampled_dataset["t2m"].latitude.values, [0.25])
+    assert np.allclose(downsampled_dataset["t2m"].longitude.values, [0.25])
+
+    # check agg. values
+    assert np.allclose(
+        downsampled_dataset["t2m"].values.flatten(),
+        np.mean(get_dataset["t2m"][:, :, :2], axis=(1, 2)),
+    )
+    assert np.allclose(
+        downsampled_dataset["tp"].values.flatten(),
+        np.sum(get_dataset["tp"][:, :, :2], axis=(1, 2)),
+    )
+
+    # check attributes
+    assert downsampled_dataset.attrs == get_dataset.attrs
+    for var in downsampled_dataset.data_vars.keys():
+        assert downsampled_dataset[var].attrs == get_dataset[var].attrs
+
+    # custom agg map and agg funcs with missing variable
+    downsampled_dataset = preprocess.downsample_resolution(
+        get_dataset,
+        new_resolution=1.0,
+        agg_funcs={"t2m": "mean"},
+        agg_map={"mean": np.mean},
+    )  # tp will also use mean
+    assert np.allclose(
+        downsampled_dataset["tp"].values.flatten(),
+        np.mean(get_dataset["tp"][:, :, :2], axis=(1, 2)),
+    )
+
+
+def test_align_lon_lat_with_popu_data_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.align_lon_lat_with_popu_data(get_dataset, lat_name="invalid_lat")
+    with pytest.raises(ValueError):
+        preprocess.align_lon_lat_with_popu_data(get_dataset, lon_name="invalid_lon")
+
+
+def test_align_lon_lat_with_popu_data_special_case(get_dataset):
+    tmp_lat = [89.8, -89.7]
+    tmp_lon = [-179.7, -179.2, 179.8]
+    get_dataset = get_dataset.assign_coords(
+        latitude=("latitude", tmp_lat),
+        longitude=("longitude", tmp_lon),
+    )
+    aligned_dataset = preprocess.align_lon_lat_with_popu_data(
+        get_dataset, expected_longitude_max=np.float64(179.75)
+    )
+    expected_lon = np.array([-179.75, -179.25, 179.75])
+    expected_lat = np.array([89.75, -89.75])
+    assert np.allclose(aligned_dataset["longitude"].values, expected_lon)
+    assert np.allclose(aligned_dataset["latitude"].values, expected_lat)
+
+
+def test_align_lon_lat_with_popu_data_other_cases(get_dataset):
+    aligned_dataset = preprocess.align_lon_lat_with_popu_data(
+        get_dataset, expected_longitude_max=np.float64(179.75)
+    )
+    assert np.allclose(
+        aligned_dataset["longitude"].values, get_dataset["longitude"].values
+    )
+    assert np.allclose(
+        aligned_dataset["latitude"].values, get_dataset["latitude"].values
+    )
+
+    tmp_lat = [89.8, -89.7]
+    tmp_lon = [-179.7, -179.2, 179.8]
+    get_dataset = get_dataset.assign_coords(
+        latitude=("latitude", tmp_lat),
+        longitude=("longitude", tmp_lon),
+    )
+    aligned_dataset = preprocess.align_lon_lat_with_popu_data(
+        get_dataset, expected_longitude_max=np.float64(179.0)
+    )
+    assert np.allclose(
+        aligned_dataset["longitude"].values, get_dataset["longitude"].values
+    )
+    assert np.allclose(
+        aligned_dataset["latitude"].values, get_dataset["latitude"].values
+    )
+
+
+def test_upsample_resolution_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(get_dataset, new_resolution=0)
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(get_dataset, new_resolution=-0.5)
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(get_dataset, new_resolution=0.5)
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(get_dataset, new_resolution=1.0)
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(
+            get_dataset, new_resolution=0.1, method_map="invalid"
+        )
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(get_dataset, lat_name="invalid_lat")
+    with pytest.raises(ValueError):
+        preprocess.upsample_resolution(get_dataset, lon_name="invalid_lon")
+
+
+def test_upsample_resolution_default(get_dataset):
+    # upsample resolution
+    upsampled_dataset = preprocess.upsample_resolution(get_dataset, new_resolution=0.1)
+
+    # check if the dimensions are increased
+    assert len(upsampled_dataset["t2m"].dims) == 3
+    assert len(upsampled_dataset["tp"].dims) == 3
+
+    # check if the coordinates are adjusted
+    assert np.allclose(
+        upsampled_dataset["t2m"].latitude.values, np.arange(0.0, 0.6, 0.1)
+    )
+    assert np.allclose(
+        upsampled_dataset["t2m"].longitude.values, np.arange(0.0, 1.1, 0.1)
+    )
+
+    # check interpolated values
+    t2m_interp = upsampled_dataset["t2m"].sel(
+        latitude=0.1, longitude=0.1, method="nearest"
+    )
+    t2m_expected = get_dataset["t2m"].interp(
+        latitude=0.1, longitude=0.1, method="linear"
+    )
+    assert np.allclose(t2m_interp.values, t2m_expected.values)
+    tp_interp = upsampled_dataset["tp"].sel(
+        latitude=0.1, longitude=0.1, method="nearest"
+    )
+    tp_expected = get_dataset["tp"].interp(latitude=0.1, longitude=0.1, method="linear")
+    assert np.allclose(tp_interp.values, tp_expected.values)
+
+    # check attributes
+    assert upsampled_dataset.attrs == get_dataset.attrs
+    for var in upsampled_dataset.data_vars.keys():
+        assert upsampled_dataset[var].attrs == get_dataset[var].attrs
+
+
+def test_upsample_resolution_custom(get_dataset):
+    # upsample resolution with custom interpolation methods
+    method_map = {
+        "t2m": "linear",
+        "tp": "nearest",
+    }
+    upsampled_dataset = preprocess.upsample_resolution(
+        get_dataset, new_resolution=0.1, method_map=method_map
+    )
+
+    # check interpolated values
+    tp_interp = upsampled_dataset["tp"].sel(
+        latitude=0.1, longitude=0.1, method="nearest"
+    )
+    tp_expected = get_dataset["tp"].interp(
+        latitude=0.1, longitude=0.1, method="nearest"
+    )
+    assert np.allclose(tp_interp.values, tp_expected.values)
+
+    # custom map with missing variable
+    method_map = {
+        "t2m": "linear",
+    }  # tp will also use linear interpolation
+    upsampled_dataset = preprocess.upsample_resolution(
+        get_dataset, new_resolution=0.1, method_map=method_map
+    )
+    tp_interp = upsampled_dataset["tp"].sel(
+        latitude=0.1, longitude=0.1, method="nearest"
+    )
+    tp_expected = get_dataset["tp"].interp(latitude=0.1, longitude=0.1, method="linear")
+    assert np.allclose(tp_interp.values, tp_expected.values)
+
+
+def test_resample_resolution_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.resample_resolution(get_dataset, new_resolution=-0.5)
+    with pytest.raises(ValueError):
+        preprocess.resample_resolution(get_dataset, lat_name="invalid_lat")
+    with pytest.raises(ValueError):
+        preprocess.resample_resolution(get_dataset, lon_name="invalid_lon")
+
+
+def test_resample_resolution_default(get_dataset):
+    # downsample resolution
+    resampled_dataset = preprocess.resample_resolution(get_dataset, new_resolution=1.0)
+
+    # check if the coordinates are adjusted
+    assert np.allclose(resampled_dataset["tp"].latitude.values, [0.25])
+    assert np.allclose(resampled_dataset["tp"].longitude.values, [0.25])
+
+    # check aggregated values
+    assert np.allclose(
+        resampled_dataset["tp"].values.flatten(),
+        np.mean(get_dataset["tp"][:, :, :2], axis=(1, 2)),
+    )
+
+    # upsample resolution
+    resampled_dataset = preprocess.resample_resolution(get_dataset, new_resolution=0.1)
+
+    # check if the coordinates are adjusted
+    assert np.allclose(
+        resampled_dataset["tp"].latitude.values, np.arange(0.0, 0.6, 0.1)
+    )
+    assert np.allclose(
+        resampled_dataset["tp"].longitude.values, np.arange(0.0, 1.1, 0.1)
+    )
+
+    # check interpolated values
+    tp_interp = resampled_dataset["tp"].sel(
+        latitude=0.1, longitude=0.1, method="nearest"
+    )
+    tp_expected = get_dataset["tp"].interp(latitude=0.1, longitude=0.1, method="linear")
+    assert np.allclose(tp_interp.values, tp_expected.values)
+
+
+def test_shift_time_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.shift_time(
+            get_dataset, offset="invalid", time_unit="D", var_name="time"
+        )
+    with pytest.raises(ValueError):
+        preprocess.shift_time(
+            get_dataset, offset=2.5, time_unit="D", var_name="invalid"
+        )
+    with pytest.raises(ValueError):
+        preprocess.shift_time(get_dataset, offset=2, time_unit="Y", var_name="time")
+    with pytest.raises(ValueError):
+        preprocess.shift_time(get_dataset, offset=2, time_unit="M", var_name="time")
+
+
+def test_shift_time_forward(get_dataset):
+    original_time = get_dataset["time"].copy()
+    # shift time by 2 days
+    offset = 2
+    time_unit = "D"
+    time_shift = np.timedelta64(2, "D")
+    preprocess.shift_time(
+        get_dataset, offset=offset, time_unit=time_unit, var_name="time"
+    )
+
+    # check if the time dimension is preserved
+    assert len(get_dataset["time"]) == 2
+
+    # check if the time is shifted correctly
+    expected_time = original_time + time_shift.astype("timedelta64[ns]")
+    assert np.array_equal(
+        np.sort(get_dataset["time"].values), np.sort(expected_time.values)
+    )
+
+    # check if time is at midnight after shifting
+    assert all(get_dataset["time"].dt.hour.values == 0)
+
+
+def test_shift_time_backward(get_dataset):
+    original_time = get_dataset["time"].copy()
+
+    # shift time by -2 hours
+    offset = -2
+    time_unit = "h"
+    time_shift = np.timedelta64(offset, time_unit)
+    preprocess.shift_time(
+        get_dataset, offset=offset, time_unit=time_unit, var_name="time"
+    )
+    expected_time = original_time + time_shift.astype("timedelta64[ns]")
+    assert np.array_equal(
+        np.sort(get_dataset["time"].values), np.sort(expected_time.values)
+    )
+    assert all(get_dataset["time"].dt.hour.values == 22)
+
+
+def test_parse_date_invalid():
+    with pytest.raises(ValueError):
+        preprocess._parse_date(date="invalid_date")
+
+    with pytest.raises(ValueError):
+        preprocess._parse_date(date="2024-13-01")
+
+    with pytest.raises(ValueError):
+        preprocess._parse_date(date=12345)
+
+
+def test_parse_date():
+    date_str = "2024-07-15"
+    parsed_date = preprocess._parse_date(date_str)
+    expected_date = np.datetime64("2024-07-15")
+    assert parsed_date == expected_date
+
+    date_np = np.datetime64("2025-12-31")
+    parsed_date = preprocess._parse_date(date_np)
+    assert parsed_date == date_np
+
+
+def test_truncate_data_by_time_invalid(get_dataset):
+    with pytest.raises(ValueError):
+        preprocess.truncate_data_by_time(
+            get_dataset, start_date=None, end_date=None, var_name="time"
+        )
+    with pytest.raises(ValueError):
+        preprocess.truncate_data_by_time(
+            get_dataset, start_date="2025-01-01", end_date="2024-01-01", var_name="time"
+        )
+    with pytest.raises(ValueError):
+        preprocess.truncate_data_by_time(
+            get_dataset, start_date="2025-01-01", end_date=None, var_name="invalid_var"
+        )
+
+
+def test_truncate_data_by_time(get_dataset):
+    # truncate data by time
+    truncated_dataset = preprocess.truncate_data_by_time(
+        get_dataset, start_date="2025-01-01", end_date="2025-01-01", var_name="time"
+    )
+
+    # check if the time dimension is reduced
+    assert len(truncated_dataset["t2m"].time) == 1
+    assert len(truncated_dataset["tp"].time) == 1
+
+    # check if the data is truncated correctly
+    assert np.allclose(
+        truncated_dataset["t2m"].values, get_dataset["t2m"].isel(time=1).values
+    )
+    assert np.allclose(
+        truncated_dataset["tp"].values, get_dataset["tp"].isel(time=1).values
+    )
+
+    # start date as np.datetime64
+    truncated_dataset = preprocess.truncate_data_by_time(
+        get_dataset,
+        start_date=np.datetime64("2025-01-01"),
+        end_date=np.datetime64("2025-01-01"),
+        var_name="time",
+    )
+
+    assert np.allclose(
+        truncated_dataset["t2m"].values, get_dataset["t2m"].isel(time=1).values
+    )
+    assert np.allclose(
+        truncated_dataset["tp"].values, get_dataset["tp"].isel(time=1).values
+    )
+
+    # random start date
+    truncated_dataset = preprocess.truncate_data_by_time(
+        get_dataset,
+        start_date=np.datetime64("2024-07-17"),
+        end_date=np.datetime64("2025-01-01"),
+        var_name="time",
+    )
+    assert len(truncated_dataset["t2m"].time) == 1
+    assert truncated_dataset["t2m"].time.values[0] == np.datetime64("2025-01-01")
+
+    # None end date
+    truncated_dataset = preprocess.truncate_data_by_time(
+        get_dataset,
+        start_date=np.datetime64("2025-01-01"),
+        end_date=None,
+        var_name="time",
+    )
+    assert len(truncated_dataset["t2m"].time) == 1
+    assert truncated_dataset["t2m"].time.values[0] == np.datetime64("2025-01-01")
+
+
+def test_replace_decimal_point():
+    assert preprocess._replace_decimal_point(1.0) == "1p0"
+    assert preprocess._replace_decimal_point(1.234) == "1p234"
+    assert preprocess._replace_decimal_point(0.1) == "01"
+
+    with pytest.raises(ValueError):
+        preprocess._replace_decimal_point("1.0")
+
+
+def test_apply_preprocessing_unify_coords(get_dataset):
+    fname_base = "test_data"
+
+    setttings = {
+        "unify_coords": True,
+        "unify_coords_fname": "unicoords",
+        "uni_coords": {"latitude": "lat", "longitude": "lon", "time": "valid_time"},
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=setttings
+    )
+    # check if the coordinates are renamed
+    assert "lat" in preprocessed_dataset.coords
+    assert "lon" in preprocessed_dataset.coords
+    assert "valid_time" in preprocessed_dataset.coords
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_unicoords"
+
+
+def test_apply_preprocessing_adjust_longitude(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "adjust_longitude": True,
+        "adjust_longitude_fname": "adjlon",
+        "adjust_longitude_vname": "longitude",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the longitude is adjusted
+    assert np.allclose(
+        preprocessed_dataset["tp"].longitude.values,
+        (get_dataset["tp"].longitude + 180) % 360 - 180,
+    )
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_adjlon"
+
+
+def test_apply_preprocessing_convert_to_celsius(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "convert_kelvin_to_celsius": True,
+        "convert_kelvin_to_celsius_vname": "t2m",
+        "convert_kelvin_to_celsius_fname": "celsius",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the temperature is converted to Celsius
+    expected_t2m = get_dataset["t2m"] - 273.15
+    assert np.allclose(preprocessed_dataset["t2m"].values, expected_t2m.values)
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_celsius"
+
+
+def test_apply_preprocessing_convert_m_to_mm(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "convert_m_to_mm_precipitation": True,
+        "convert_m_to_mm_precipitation_vname": "tp",
+        "convert_m_to_mm_precipitation_fname": "mm",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the precipitation is converted to mm
+    expected_tp = get_dataset["tp"] * 1000.0
+    assert np.allclose(preprocessed_dataset["tp"].values, expected_tp.values)
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_mm"
+
+
+def test_apply_preprocessing_downsample(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "resample_grid": True,
+        "resample_grid_vname": ["latitude", "longitude"],
+        "resample_degree": 1.0,
+        "resample_grid_fname": "deg_trim",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the dimensions are reduced
+    assert np.allclose(preprocessed_dataset["t2m"].latitude.values, [0.25])
+    assert np.allclose(preprocessed_dataset["t2m"].longitude.values, [0.25])
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_1p0deg_trim"
+
+
+def test_apply_preprocessing_upsample(get_dataset):
+    fname_base = "test_data"
+
+    settings = {
+        "resample_grid": True,
+        "resample_grid_vname": ["latitude", "longitude"],
+        "resample_degree": 0.1,
+        "resample_grid_fname": "deg_trim",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the dimensions are increased
+    assert np.allclose(
+        preprocessed_dataset["t2m"].latitude.values, np.arange(0.0, 0.6, 0.1)
+    )
+    assert np.allclose(
+        preprocessed_dataset["t2m"].longitude.values, np.arange(0.0, 1.1, 0.1)
+    )
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_01deg_trim"
+
+
+def test_apply_preprocessing_truncate(get_dataset):
+    fname_base = "test_data"
+
+    # case where end year is max year
+    settings = {
+        "truncate_date": True,
+        "truncate_date_from": "2024-01-01",
+        "truncate_date_to": "2025-01-01",
+        "truncate_date_vname": "time",
+    }
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the time dimension is retained
+    assert len(preprocessed_dataset["t2m"].time) == 2
+    assert len(preprocessed_dataset["tp"].time) == 2
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_2024-2025"
+
+    # case where end year < max year
+    settings = {
+        "truncate_date": True,
+        "truncate_date_from": "2024-01-01",
+        "truncate_date_to": "2024-01-01",
+        "truncate_date_vname": "time",
+    }
+
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the time dimension is reduced
+    assert len(preprocessed_dataset["t2m"].time) == 1
+    assert len(preprocessed_dataset["tp"].time) == 1
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_2024-2024"
+
+    # case where end year is None
+    settings = {
+        "truncate_date": True,
+        "truncate_date_from": "2025-01-01",
+        "truncate_date_to": None,
+        "truncate_date_vname": "time",
+    }
+
+    # preprocess the data file
+    preprocessed_dataset, updated_fname = preprocess._apply_preprocessing(
+        get_dataset, fname_base, settings=settings
+    )
+
+    # check if the time dimension is reduced
+    assert len(preprocessed_dataset["t2m"].time) == 1
+    assert len(preprocessed_dataset["tp"].time) == 1
+
+    # check if file name is updated
+    assert updated_fname == f"{fname_base}_2025-2025"
+
+
+def test_preprocess_data_file_invalid(tmp_path):
+    # invalid file path
+    with pytest.raises(ValueError):
+        preprocess.preprocess_data_file("", settings="default")
+
+    # non-existing file
+    with pytest.raises(ValueError):
+        preprocess.preprocess_data_file(tmp_path / "invalid.nc", settings="default")
+
+    # empty file
+    empty_file_path = tmp_path / "empty.nc"
+    empty_file_path.touch()  # create an empty file
+    with pytest.raises(ValueError):
+        preprocess.preprocess_data_file(empty_file_path, settings="default")
+
+    # invalid source for settings
+    with open(tmp_path / "test_data.nc", "w") as f:
+        f.write("This is a test file.")
+    with pytest.raises(ValueError):
+        preprocess.preprocess_data_file(
+            tmp_path / "test_data.nc", source="invalid_source", settings="default"
+        )
+
+
+@pytest.fixture
+def get_simple_settings(tmp_path):
+    return {
+        "output_dir": str(tmp_path),
+        "truncate_date": True,
+        "truncate_date_from": "2025-01-01",
+        "truncate_date_to": "2025-01-01",
+        "truncate_date_vname": "time",
+    }
+
+
+def test_preprocess_data_file_tag(tmp_path, get_dataset, get_simple_settings):
+    # save dataset to a temporary file
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    with open(tmp_path / "settings.json", "w", newline="", encoding="utf-8") as f:
+        json.dump(get_simple_settings, f)
+
+    # preprocess the data file
+    preprocessed_dataset, pfname = preprocess.preprocess_data_file(
+        netcdf_file=file_path,
+        source="era5",
+        settings=tmp_path / "settings.json",
+        new_settings=None,
+        unique_tag="today",
+    )
+
+    # check if the time dimension is reduced
+    assert len(preprocessed_dataset["t2m"].time) == 1
+    assert len(preprocessed_dataset["tp"].time) == 1
+
+    assert pfname == "test_data_2025-2025_today.nc"
+
+    # check if there is new file created
+    assert (tmp_path / "test_data_2025-2025_today.nc").exists()
+    with xr.open_dataset(tmp_path / "test_data_2025-2025_today.nc") as ds:
+        assert len(ds["t2m"].time) == 1
+        assert len(ds["tp"].time) == 1
+    # check if the settings file is also saved
+    assert (tmp_path / "settings_today.json").exists()
+
+    # check when file name ends with raw
+    (tmp_path / "test_data_2025-2025_today.nc").unlink()
+    file_path = tmp_path / "test_data_raw.nc"
+    get_dataset.to_netcdf(file_path)
+
+    _, pfname = preprocess.preprocess_data_file(
+        netcdf_file=file_path,
+        settings=tmp_path / "settings.json",
+        unique_tag="anotherday",
+    )
+    assert pfname == "test_data_2025-2025_anotherday.nc"
+    assert (tmp_path / pfname).exists()
+    assert (tmp_path / "settings_anotherday.json").exists()
+
+
+def test_preprocess_data_file_default_tag(tmp_path, get_dataset, get_simple_settings):
+    # save dataset to a temporary file
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    with open(tmp_path / "settings.json", "w", newline="", encoding="utf-8") as f:
+        json.dump(get_simple_settings, f)
+
+    # preprocess the data file with auto tag
+    _, pfname = preprocess.preprocess_data_file(
+        netcdf_file=file_path,
+        settings=tmp_path / "settings.json",
+        unique_tag=None,
+    )
+
+    now = datetime.now()
+    prefix_tag = f"ts{now.strftime('%Y%m%d')}-"
+    assert prefix_tag in pfname
+    # file all files with the prefix tag
+    files = get_files(tmp_path, name_phrase=prefix_tag)
+    assert len(files) == 2  # one for data and one for settings
+
+
+def test_preprocess_data_file_diff_outdir(
+    tmp_path, get_dataset, tmpdir, get_simple_settings
+):
+    # save dataset to a temporary file
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    settings = get_simple_settings.copy()
+    settings["output_dir"] = str(Path(tmpdir) / "data" / "processed")
+    with open(tmp_path / "settings.json", "w", newline="", encoding="utf-8") as f:
+        json.dump(settings, f)
+
+    # preprocess the data file
+    _, pfname = preprocess.preprocess_data_file(
+        netcdf_file=file_path,
+        settings=tmp_path / "settings.json",
+        unique_tag="20250818",
+    )
+
+    assert pfname == "test_data_2025-2025_20250818.nc"
+
+    # check if there is new file created in the specified output directory
+    # the output dir should be created if it does not exist
+    assert (Path(tmpdir) / "data" / "processed" / pfname).exists()
+    assert (Path(tmpdir) / "data" / "processed" / "settings_20250818.json").exists()
+
+    # clean up
+    (Path(tmpdir) / "data" / "processed" / pfname).unlink()
+    (Path(tmpdir) / "data" / "processed" / "settings_20250818.json").unlink()
+    (Path(tmpdir) / "data" / "processed").rmdir()
+
+
+def test_aggregate_netcdf_nuts_invalid(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    # change coordinates to invalid names
+    get_dataset = get_dataset.rename({"latitude": "lat", "longitude": "lon"})
+    get_dataset.to_netcdf(file_path)
+
+    with pytest.raises(ValueError):
+        preprocess._aggregate_netcdf_nuts(
+            get_nuts_data, file_path, agg_dict=None, normalize_time=False
+        )
+
+
+def test_aggregate_netcdf_nuts_normalize(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    # change time to mid-day
+    get_dataset["time"] = get_dataset["time"] + np.timedelta64(12, "h")
+    get_dataset.to_netcdf(file_path)
+
+    # aggregate data without time normalization
+    out_data, var_names = preprocess._aggregate_netcdf_nuts(
+        get_nuts_data, file_path, agg_dict=None, normalize_time=False
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert "time" in out_data.columns
+    assert "t2m" in out_data.columns
+    assert "tp" in out_data.columns
+    assert "latitude" not in out_data.columns
+    assert var_names == ["t2m", "tp"]
+    assert len(out_data) == 4  # two NUTS regions with two time points each
+    assert out_data["time"].dt.hour.unique().tolist() == [
+        12
+    ]  # check if time is mid-day
+    assert np.isclose(
+        out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
+    )
+    assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].mean())
+    assert np.isclose(
+        out_data.iloc[2]["t2m"], get_dataset["t2m"].values[0, :, 1:].mean()
+    )
+
+    # aggregate data with time normalization
+    out_data, _ = preprocess._aggregate_netcdf_nuts(
+        get_nuts_data, file_path, agg_dict=None, normalize_time=True
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert out_data["time"].dt.hour.unique().tolist() == [
+        0
+    ]  # check if time is normalized to midnight
+    assert np.isclose(
+        out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
+    )
+
+
+def test_aggregate_netcdf_nuts_agg_dict(tmp_path, get_dataset, get_nuts_data):
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    # aggregate data with custom aggregation dictionary
+    agg_dict = {
+        "t2m": "mean",
+        "tp": "sum",
+    }
+    out_data, _ = preprocess._aggregate_netcdf_nuts(
+        get_nuts_data, file_path, agg_dict=agg_dict, normalize_time=False
+    )
+
+    assert "NUTS_ID" in out_data.columns
+    assert np.isclose(
+        out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
+    )
+    assert np.isclose(out_data.iloc[0]["tp"], get_dataset["tp"].values[0, :, 0].sum())
+
+    # invalid cases
+    with pytest.warns(UserWarning):
+        out_data, _ = preprocess._aggregate_netcdf_nuts(
+            get_nuts_data, file_path, agg_dict={"t2m": 1}, normalize_time=False
+        )
+    assert np.isclose(
+        out_data.iloc[0]["t2m"], get_dataset["t2m"].values[0, :, 0].mean()
+    )
+
+    with pytest.warns(UserWarning):
+        _, _ = preprocess._aggregate_netcdf_nuts(
+            get_nuts_data, file_path, agg_dict="something", normalize_time=False
+        )
+    assert "time" in out_data.columns
+
+    with pytest.warns(UserWarning):
+        _, _ = preprocess._aggregate_netcdf_nuts(
+            get_nuts_data, file_path, agg_dict={}, normalize_time=False
+        )
+    assert "t2m" in out_data.columns
+
+    with pytest.warns(UserWarning):
+        _, _ = preprocess._aggregate_netcdf_nuts(
+            get_nuts_data,
+            file_path,
+            agg_dict={"invalid_key": "mean"},
+            normalize_time=False,
+        )
+    assert "tp" in out_data.columns
+
+
+def test_aggregate_data_by_nuts_invalid(tmp_path):
+    # non dict
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts("something", tmp_path / "nuts.shp")
+
+    # empty dict
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts({}, tmp_path / "nuts.shp")
+
+    # dict with non-exist file
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts(
+            {"era5": (Path("something"), None)}, tmp_path / "nuts.shp"
+        )
+
+    # dict with empty file
+    nc_file = tmp_path / "test_data.nc"
+    nc_file.touch()  # create an empty file
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts(
+            {"era5": (nc_file, None)}, tmp_path / "nuts.shp"
+        )
+
+    # dict with non-nuts data
+    with open(nc_file, "w") as f:
+        f.write("This is a test file.")
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts(
+            {"era5": (nc_file, None)}, tmp_path / "nuts.shp"
+        )
+
+    # dict with nust data but no NUTS_ID and geometry columns
+    data = {
+        "nuts_name": ["name1", "name2"],
+        "geometry": [None, None],
+    }
+    nuts_data = gpd.GeoDataFrame(data, crs="EPSG:4326")
+    nuts_data.to_file(tmp_path / "nuts.shp")
+    with pytest.raises(ValueError):
+        preprocess.aggregate_data_by_nuts(
+            {"era5": (nc_file, None)}, tmp_path / "nuts.shp"
+        )
+
+
+def test_aggregate_data_by_nuts(tmp_path, get_dataset, get_nuts_data, tmpdir):
+    out_dir = Path(tmpdir) / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # save dataset to a temporary file
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    # save nuts data to a temporary file
+    get_nuts_data.to_file(tmp_path / "nuts.shp")
+
+    # aggregate data by NUTS regions
+    out_file = preprocess.aggregate_data_by_nuts(
+        {"era5": (file_path, None)},
+        tmp_path / "nuts.shp",
+        normalize_time=True,
+        output_dir=out_dir,
+    )
+
+    # check if the output file is created
+    assert out_file.exists()
+    assert out_file.suffix == ".nc"
+    assert out_file.parent == out_dir
+    with xr.open_dataset(out_file) as ds:
+        # check if the data is aggregated correctly
+        assert "NUTS_ID" in ds.coords
+        assert "time" in ds.coords
+        assert "t2m" in ds.data_vars
+        assert "tp" in ds.data_vars
+
+        # check if the time is normalized to midnight
+        assert np.all(ds["time"].dt.hour == 0)
+
+    # clean up the output directory
+    for file in out_dir.glob("*"):
+        file.unlink()
+    out_dir.rmdir()  # remove the output directory after test
+
+
+def test_aggregate_data_by_nuts_outdir(tmp_path, get_dataset, get_nuts_data):
+    # save dataset to a temporary file
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    # save nuts data to a temporary file
+    nuts_file = tmp_path / "nuts.shp"
+    get_nuts_data.to_file(nuts_file)
+
+    # aggregate data by NUTS regions with output directory
+    out_file = preprocess.aggregate_data_by_nuts(
+        {"era5": (file_path, None)},
+        nuts_file,
+        normalize_time=True,
+        output_dir=None,
+    )
+
+    # check if the output file is created in folder of nuts file
+    out_dir = nuts_file.parent
+    assert out_file.exists()
+    assert out_file.suffix == ".nc"
+    assert out_file.parent == out_dir
+
+    # clean up the output directory
+    for file in out_dir.glob("*"):
+        file.unlink()
+    out_dir.rmdir()  # remove the output directory after test
+
+
+def test_aggregate_data_by_nuts_diff_netcdfs(
+    tmp_path, get_dataset, get_nuts_data, tmpdir
+):
+    out_dir = Path(tmpdir) / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # save dataset to a temporary file
+    file_path1 = tmp_path / "test_data1.nc"
+    file_path2 = tmp_path / "test_data2.nc"
+    get_dataset.to_netcdf(file_path1)
+    # modify the dataset for the second file
+    # to create ds with different time values
+    modified_dataset = get_dataset.copy()
+    modified_dataset["time"] = modified_dataset["time"] + np.timedelta64(12, "h")
+    # change variable names
+    modified_dataset = modified_dataset.rename({"t2m": "t2m_mod", "tp": "tp_mod"})
+    modified_dataset.to_netcdf(file_path2)
+
+    # save nuts data to a temporary file
+    get_nuts_data.to_file(tmp_path / "nuts.shp")
+
+    # aggregate data by NUTS regions
+    out_file = preprocess.aggregate_data_by_nuts(
+        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},
+        tmp_path / "nuts.shp",
+        normalize_time=True,
+        output_dir=out_dir,
+    )
+
+    # check if the output file is created
+    assert out_file.exists()
+    assert out_file.suffix == ".nc"
+    assert out_file.parent == out_dir
+    with xr.open_dataset(out_file) as ds:
+        # check if the data is aggregated correctly
+        assert "NUTS_ID" in ds.coords
+        assert "time" in ds.coords
+        assert "t2m" in ds.data_vars
+        assert "tp" in ds.data_vars
+        assert "t2m_mod" in ds.data_vars
+        assert "tp_mod" in ds.data_vars
+
+        # check if the time is normalized to midnight
+        assert np.all(ds["time"].dt.hour == 0)
+
+    # clean up the output directory
+    for file in out_dir.glob("*"):
+        file.unlink()
+    out_dir.rmdir()  # remove the output directory after test
+
+
+def test_aggregate_data_by_nuts_diff_netcdfs_diff_times(
+    tmp_path, get_dataset, get_nuts_data, tmpdir
+):
+    out_dir = Path(tmpdir) / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # save dataset to a temporary file
+    file_path1 = tmp_path / "test_data1.nc"
+    file_path2 = tmp_path / "test_data2.nc"
+    get_dataset.to_netcdf(file_path1)
+    # modify the dataset for the second file
+    # to create ds with different time values
+    modified_dataset = get_dataset.copy()
+    modified_dataset["time"] = np.array(
+        ["2029-01-01T00:00:00", "2030-01-01T00:00:00"], dtype="datetime64"
+    )
+    # change variable names
+    modified_dataset = modified_dataset.rename({"t2m": "t2m_mod", "tp": "tp_mod"})
+    # save the modified dataset to a new file
+    modified_dataset.to_netcdf(file_path2)
+
+    # save nuts data to a temporary file
+    get_nuts_data.to_file(tmp_path / "nuts.shp")
+
+    # aggregate data by NUTS regions with different time values
+    out_file = preprocess.aggregate_data_by_nuts(
+        {"era5": (file_path1, None), "era5_mod": (file_path2, None)},
+        tmp_path / "nuts.shp",
+        normalize_time=True,
+        output_dir=out_dir,
+    )
+
+    # check if the output file is created
+    assert out_file.exists()
+    assert out_file.suffix == ".nc"
+    assert out_file.parent == out_dir
+    with xr.open_dataset(out_file) as ds:
+        # check if the data is aggregated correctly
+        assert "NUTS_ID" in ds.coords
+        assert "time" in ds.coords
+        assert "t2m" in ds.data_vars
+        assert "tp" in ds.data_vars
+        assert "t2m_mod" in ds.data_vars
+        assert "tp_mod" in ds.data_vars
+
+        # check if the time values are doubled
+        assert len(ds["time"]) == 4
+        assert ds["time"].values.min() == np.datetime64("2024-01-01T00:00:00")
+        assert ds["time"].values.max() == np.datetime64("2030-01-01T00:00:00")
+
+    # clean up the output directory
+    for file in out_dir.glob("*"):
+        file.unlink()
+    out_dir.rmdir()  # remove the output directory after test
+
+
+def test_aggregate_data_by_nuts_dup_netcdfs(
+    tmp_path, get_dataset, get_nuts_data, tmpdir
+):
+    out_dir = Path(tmpdir) / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # save dataset to a temporary file
+    file_path = tmp_path / "test_data.nc"
+    get_dataset.to_netcdf(file_path)
+
+    # save nuts data to a temporary file
+    get_nuts_data.to_file(tmp_path / "nuts.shp")
+
+    # aggregate data by NUTS regions with duplicate netcdf files
+    out_file = preprocess.aggregate_data_by_nuts(
+        {"era5": (file_path, None), "era5_dup": (file_path, None)},
+        tmp_path / "nuts.shp",
+        normalize_time=True,
+        output_dir=out_dir,
+    )
+
+    # check if the output file is created
+    assert out_file.exists()
+    assert out_file.suffix == ".nc"
+    assert out_file.parent == out_dir
+    with xr.open_dataset(out_file) as ds:
+        # check if the data is aggregated correctly
+        assert "NUTS_ID" in ds.coords
+        assert "time" in ds.coords
+        assert "t2m" in ds.data_vars
+        assert "tp" in ds.data_vars
+        assert (
+            len(ds["t2m"].values.reshape(-1)) == 4
+        )  # two NUTS regions with two time points each
+
+    # clean up the output directory
+    for file in out_dir.glob("*"):
+        file.unlink()
+    out_dir.rmdir()  # remove the output directory after test
