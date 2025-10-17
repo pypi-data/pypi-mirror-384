@@ -1,0 +1,1 @@
+import{j as r,r as t}from"./index-nLCI8CVL.js";const x=o=>r.jsx("svg",{xmlns:"http://www.w3.org/2000/svg",viewBox:"0 0 100 100",...o,children:r.jsx("path",{d:"M100,100H0V0h100L78.8,50L100,100z"})}),e=t.forwardRef((o,s)=>r.jsx(x,{ref:s,...o}));export{e as KlaviyoIcon};
