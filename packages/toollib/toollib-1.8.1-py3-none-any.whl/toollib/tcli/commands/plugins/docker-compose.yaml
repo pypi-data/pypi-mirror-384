@@ -1,0 +1,253 @@
+#version: "3.9"
+services:
+
+  mysql57:
+    image: mysql:5.7
+    container_name: mysql57
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Mimmm@129
+    volumes:
+      - /volumes/mysql57:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  mysql80:
+    image: mysql:8.0
+    container_name: mysql80
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Mimmm@129
+    volumes:
+      - /volumes/mysql80:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Mimmm@129
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    volumes:
+      - /volumes/postgres:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    command: >
+      postgres -c 'max_connections=200'
+               -c 'shared_buffers=1GB'
+               -c 'temp_buffers=8MB'
+               -c 'work_mem=16MB'
+               -c 'max_prepared_transactions=200'
+
+  pgvector:
+    image: ankane/pgvector:latest
+    container_name: pgvector
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Mimmm@129
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    volumes:
+      - /volumes/pgvector:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    command: >
+      postgres -c 'max_connections=200'
+               -c 'shared_buffers=1GB'
+               -c 'temp_buffers=8MB'
+               -c 'work_mem=16MB'
+               -c 'max_prepared_transactions=200'
+    # After started the container:
+    # 1. Execute in PostgreSQL terminal
+    #    - CREATE EXTENSION IF NOT EXISTS vector;
+
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: Mimmm@129
+    volumes:
+      - /volumes/mongo:/data/db
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - /volumes/redis:/data
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass Mimmm@129
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: Mimmm@129
+    volumes:
+      - /volumes/rabbitmq/data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  neo4j:
+    image: neo4j:latest
+    container_name: neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/Mimmm@129
+    volumes:
+      - /volumes/neo4j:/data
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    user: "neo4j"
+    # Before starting the container:
+    # 1. Create the directory (if it does not exist)
+    #    - sudo mkdir -p /volumes/neo4j
+    # 2. Adjust the ownership and permissions of the directory
+    #    - sudo chown -R 7474:7474 /volumes/neo4j
+    #    - sudo chmod -R 770 /volumes/neo4j
+
+  opensearch-single:
+    image: opensearchproject/opensearch:latest
+    container_name: opensearch-single
+    restart: unless-stopped
+    environment:
+      cluster.name: opensearch-cluster
+      node.name: opensearch-single
+      discovery.type: single-node
+      opensearch_java_opts: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: true
+      mem_limit: 4g
+      plugins.security.disabled: true
+      network.host: 0.0.0.0
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: Mimmm@129
+    volumes:
+      - /volumes/opensearch-single:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    # Before starting the container:
+    # 1. Create the directory (if it does not exist)
+    #    - sudo mkdir -p /volumes/opensearch-single
+    # 2. Adjust the ownership and permissions of the directory
+    #    - sudo chown -R 1000:1000 /volumes/opensearch-single
+    #    - sudo chmod -R 770 /volumes/opensearch-single
+    # 3. vm-map config
+    #   - template:
+    #       - sudo sysctl -w vm.max_map_count=262144
+    #   - forever:
+    #       - sudo echo "vm.max_map_count=262144" >> /etc/sysctl.conf
+    #       - sudo sysctl -p
+
+  zincsearch:
+    image: public.ecr.aws/zinclabs/zincsearch:latest
+    container_name: zincsearch
+    restart: unless-stopped
+    environment:
+      ZINC_SERVER_ADDRESS: 0.0.0.0
+      ZINC_DATA_PATH: "/data"
+      ZINC_FIRST_ADMIN_USER: admin
+      ZINC_FIRST_ADMIN_PASSWORD: Mimmm@129
+    volumes:
+      - /volumes/zincsearch:/data
+    ports:
+      - "4080:4080"
+    # Before starting the container:
+    # 1. Adjust permissions of the directory
+    #    - sudo chmod a+rwx /volumes/zincsearch
+
+  vsftpd:
+    image: fauria/vsftpd:latest
+    container_name: vsftpd
+    restart: unless-stopped
+    environment:
+      FTP_USER: admin
+      FTP_PASS: Mimmm@129
+      PASV_MIN_PORT: 21100
+      PASV_MAX_PORT: 21110
+      UTF8_FILENAMES: YES
+    volumes:
+      - /volumes/vsftpd:/home/vsftpd
+    ports:
+      - "9020:20/tcp"
+      - "9021:21/tcp"
+      - "21100-21110:21100-21110/tcp"
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: Mimmm@129
+#      MINIO_ACCESS_KEY: YOUR_ACCESS_KEY
+#      MINIO_SECRET_KEY: YOUR_SECRET_KEY
+    volumes:
+      - /volumes/minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: unless-stopped
+    volumes:
+#      - /volumes/nginx/conf/nginx.conf:/etc/nginx/nginx.conf
+#      - /volumes/nginx/html:/usr/share/nginx/html
+      - /volumes/nginx/log:/var/log/nginx
+    ports:
+      - "80:80"
+
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    restart: unless-stopped
+    hostname: gitlab.example.com
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url "http://gitlab.example.com"
+        gitlab_rails['gitlab_shell_ssh_port'] = 9022
+    volumes:
+      - /volumes/gitlab/config:/etc/gitlab
+      - /volumes/gitlab/data:/var/opt/gitlab
+      - /volumes/gitlab/log:/var/log/gitlab
+    ports:
+      - "9080:80"
+      - "9443:443"
+      - "9022:22"
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    restart: unless-stopped
+    volumes:
+      - /volumes/jenkins/home:/var/jenkins_home
+      - /volumes/jenkins/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    # Before starting the container:
+    # 1. Create the directory (if it does not exist)
+    #    - sudo mkdir -p /volumes/jenkins
+    # 2. Adjust the ownership and permissions of the directory
+    #    - sudo chown -R 1000:1000 /volumes/jenkins
+    #    - sudo chmod -R 770 /volumes/jenkins
