@@ -1,0 +1,861 @@
+# Workspaces SDK - Python
+
+[![PyPI version](https://badge.fury.io/py/workspaces-sdk.svg)](https://badge.fury.io/py/workspaces-sdk)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Python SDK for Workspaces API with **Enhanced Actor-based RBAC** system, comprehensive billing management, payment processing, and subscription management.
+
+## 🚀 Features
+
+- **Enhanced Actor-based RBAC**: Unified permission system for users and AI agents
+- **AI Agent Management**: Create, configure, and manage AI agents with fine-grained permissions
+- **Permission Delegation**: Time-limited and conditional permission delegation
+- **Resource Management**: Hierarchical resource management with visibility controls
+- **Newsletter Management**: Complete newsletter system with subscriptions, delivery tracking, and analytics
+- **Billing & Payment**: Complete billing account and payment processing (Razorpay & Stripe)
+- **Credit Management**: Credit transactions and spending tracking
+- **Subscription Plans**: Plan creation, management, and subscription handling
+- **Add-on Management**: Feature add-ons and subscription enhancements
+- **Configuration Management**: System and product configuration management
+- **Quota Management**: Quota creation and feature assignments
+- **Usage Analytics**: Usage tracking, monitoring, and analytics with dashboard support
+- **Type Safety**: Full type hints for better development experience
+- **Product ID Integration**: Automatic product identification headers
+
+## 🏗️ Architecture
+
+The SDK implements a comprehensive hierarchical RBAC system:
+
+```
+workspace (root)
+├── project
+│   ├── workflow
+│   ├── bot
+│   └── knowledgeBase
+├── team
+├── billingAccount
+└── supportTicket
+```
+
+## 📦 Installation
+
+```bash
+pip install workspaces-sdk
+```
+
+## ⚙️ Environment Setup
+
+Create a `.env` file in your project root:
+
+```env
+VITE_PRODUCT_ID="1403885f-d554-4d0b-80b3-1c111b15fbb6"
+```
+
+The SDK automatically includes the `x-product-id` header in all requests.
+
+## 🚀 Quick Start
+
+```python
+import asyncio
+from workspaces_sdk import WorkspaceClient
+
+async def main():
+    # Initialize client (automatically loads .env for product ID)
+    client = WorkspaceClient(
+        endpoint="https://api.example.com/graphql",
+        token="your-jwt-token"
+    )
+    
+    # RBAC Operations
+    resource = await client.rbac.create_resource(
+        name="My Project",
+        identifier="proj_123",
+        resource_type_name="project",
+        token="your-token",
+        metadata={"description": "Example project"}
+    )
+    
+    # Billing Operations
+    accounts = await client.billing.get_workspace_billing_accounts("your-token")
+    print(f"Found {len(accounts)} billing accounts")
+    
+    # Plan Management
+    plans = await client.plan.get_all_plans("your-token")
+    print(f"Available plans: {len(plans)}")
+    
+    # Payment Processing
+    stripe_order = await client.payment.create_stripe_order(
+        billing_account_id="billing-123",
+        currency_selected="USD",
+        token="your-token",
+        credit_amount=1000
+    )
+    
+    # Configuration Management
+    config = await client.configuration.get_product_usage_configuration("your-token")
+    print(f"Product configuration loaded: {config is not None}")
+    
+    # Usage Analytics
+    usage_stats = await client.usage.get_usage_analytics(
+        "billing-123", "your-token",
+        start_date="2024-01-01",
+        end_date="2024-01-31"
+    )
+    print(f"Usage analytics for January: {len(usage_stats)} entries")
+
+    # Newsletter Management
+    newsletter = await client.newsletter.create_newsletter(
+        title="Product Updates",
+        topic_id="tech-updates",
+        content_html="<h1>Latest Features</h1>",
+        token="your-token"
+    )
+    print(f"Created newsletter: {newsletter['id'] if newsletter else 'Failed'}")
+
+    print(f"Created Stripe order: {stripe_order['transactionID'] if stripe_order else 'Failed'}")
+
+asyncio.run(main())
+```
+
+## 🎯 Core Functionality
+
+### Resource Management
+
+```python
+# Create resources
+resource = await client.rbac.create_resource(
+    name="My Project",
+    identifier="proj_123", 
+    resource_type_name="project",
+    token=token
+)
+
+# Bulk resource creation
+resources = [
+    {
+        "name": "Resource 1",
+        "identifier": "res_1",
+        "resourceTypeName": "workflow"
+    },
+    # ... more resources
+]
+results = await client.rbac.bulk_create_resources(resources, token)
+```
+
+### AI Agent Management
+
+```python
+# Create an AI agent
+agent = await client.rbac.create_agent(
+    name="Assistant Bot",
+    agent_type="BOT",
+    workspace_id="ws_123",
+    token=token,
+    capabilities={
+        "natural_language": True,
+        "code_execution": True,
+        "file_access": True
+    },
+    configuration={
+        "model": "claude-3-sonnet",
+        "temperature": 0.7,
+        "max_tokens": 4000
+    }
+)
+
+# Get agent details
+agent_info = await client.rbac.get_agent(agent['id'], token)
+```
+
+### Permission Management
+
+```python
+# Check single permission
+has_access = await client.rbac.check_actor_permission(
+    actor_id="actor_123",
+    permission="project.read",
+    resource="proj_456",
+    token=token
+)
+
+# Bulk permission checks
+checks = [
+    {"actorId": "actor_123", "permission": "read", "resource": "res_1"},
+    {"actorId": "actor_123", "permission": "write", "resource": "res_2"},
+]
+results = await client.rbac.check_multiple_actor_permissions(checks, token)
+
+# Delegate permission to agent
+await client.rbac.delegate_permission_to_agent(
+    agent_id="agent_123",
+    resource_id="resource_456",
+    permission_id="perm_789",
+    delegator_id="user_123",
+    token=token,
+    expires_at="2024-12-31T23:59:59Z"
+)
+```
+
+### Enhanced Visibility Controls
+
+```python
+# Set resource visibility with agent support
+visibility = await client.rbac.create_resource_visibility_enhanced(
+    resource_id="resource_123",
+    visibility_type="custom",
+    token=token,
+    allowed_user_ids=["user_1", "user_2"],
+    allowed_agent_ids=["agent_1", "agent_2"],
+    allowed_team_ids=["team_1"]
+)
+```
+
+## 💳 Billing & Payment Modules
+
+### Billing Account Management - `client.billing`
+
+```python
+# Get billing accounts
+accounts = await client.billing.get_workspace_billing_accounts(token)
+account = await client.billing.get_billing_account_details("account-123", token)
+
+# Create billing account
+success = await client.billing.create_billing_account(
+    billing_frequency="monthly",
+    account_name="Company Billing",
+    billing_address="123 Business St",
+    city="San Francisco", state="CA", country="USA", postal_code="94105",
+    contact_email="billing@company.com",
+    token=token,
+    contact_phone_number="+1-555-0123"
+)
+
+# Update billing account
+updated = await client.billing.update_billing_account(
+    "account-123", token,
+    account_name="Updated Company Billing",
+    billing_frequency="quarterly"
+)
+```
+
+### Credit Management - `client.credit`
+
+```python
+# Get credit transactions
+transactions = await client.credit.get_billing_account_credit_transactions(
+    "billing-123", 30, token, page=1, page_size=20
+)
+
+# Get transaction details
+transaction = await client.credit.get_credit_transaction_details("tx-123", token)
+
+# Calculate credit costs
+cost = await client.credit.get_cost_of_credits(500.0, "USD", token)
+print(f"500 credits cost: ${cost['amount']}")
+
+# Spend credits
+spend_result = await client.credit.spend_credits(
+    billing_account_id="billing-123",
+    token=token,
+    plan_id="plan-456",
+    addon_ids=[{"id": "addon-1", "quantity": 2}],
+    is_annual=True
+)
+```
+
+### Payment Processing - `client.payment`
+
+```python
+# Get payment data
+transactions = await client.payment.get_billing_account_transactions(
+    "billing-123", 30, token
+)
+invoices = await client.payment.get_billing_account_invoices("billing-123", token)
+
+# Create Razorpay order
+razorpay_order = await client.payment.create_razorpay_order(
+    billing_account_id="billing-123",
+    currency_selected="INR",
+    token=token,
+    plan_id="plan-456",
+    recurrence=True
+)
+
+# Create Stripe order  
+stripe_order = await client.payment.create_stripe_order(
+    billing_account_id="billing-123",
+    currency_selected="USD", 
+    token=token,
+    credit_amount=1000
+)
+
+# Generate invoices
+invoice = await client.payment.generate_invoice_for_billing_account(
+    "billing-123", "2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z", token
+)
+
+# Get invoice PDF
+pdf = await client.payment.get_invoice_pdf("invoice-123", token)
+```
+
+### Plan Management - `client.plan`
+
+```python
+# Get plans
+all_plans = await client.plan.get_all_plans(token)
+plan = await client.plan.get_plan("plan-123", token)
+
+# Create plan with quotas
+quotas = [
+    client.plan.create_plan_quota_input("storage-quota", 100),
+    client.plan.create_plan_quota_input("api-calls-quota", 10000)
+]
+success = await client.plan.create_plan(
+    name="Professional Plan",
+    price=199.99,
+    duration="monthly",
+    quotas=quotas,
+    product_id="product-123",
+    token=token,
+    currency="USD"
+)
+
+# Update plan
+updated = await client.plan.update_plan(
+    "plan-123", quotas, token,
+    name="Professional Plan Plus",
+    price=249.99,
+    is_active=True
+)
+
+# Toggle plan status
+disabled = await client.plan.toggle_plan("plan-123", False, token)
+```
+
+### Add-on Management - `client.addon`
+
+```python
+# Get add-ons
+all_addons = await client.addon.get_all_addons(token)
+selected = await client.addon.get_selected_addons(["addon-1", "addon-2"], token)
+
+# Create add-on
+quotas = [{"quotaId": "extra-storage", "quantity": 50}]
+success = await client.addon.create_addon(
+    name="Extra Storage Pack",
+    price=29.99,
+    currency="USD",
+    duration="monthly",
+    quotas=quotas,
+    product_id="product-123",
+    token=token
+)
+
+# Update add-on
+updated = await client.addon.update_addon(
+    "addon-123", quotas, token,
+    name="Premium Storage Pack",
+    price=39.99,
+    is_active=True
+)
+
+# Toggle add-on
+toggled = await client.addon.toggle_addon("addon-123", False, token)
+```
+
+### Configuration Management - `client.configuration`
+
+```python
+# Get configurations
+system_config = await client.configuration.get_system_configuration(token)
+product_config = await client.configuration.get_product_usage_configuration(token)
+
+# Update system configuration
+updated_system = await client.configuration.update_system_configuration(
+    config_data={
+        "max_users_per_workspace": 100,
+        "default_plan_id": "plan-basic",
+        "maintenance_mode": False
+    },
+    token=token
+)
+
+# Update product usage configuration
+updated_product = await client.configuration.update_product_usage_configuration(
+    config_data={
+        "usage_tracking_enabled": True,
+        "analytics_retention_days": 90,
+        "quota_enforcement": True
+    },
+    token=token
+)
+```
+
+### Quota Management - `client.quota`
+
+```python
+# Get quotas
+available_quotas = await client.quota.get_available_quotas_to_create(token)
+subscription_quotas = await client.quota.get_subscription_feature_quotas("sub-123", token)
+
+# Create quota
+success = await client.quota.create_quota(
+    name="API Calls Quota",
+    product_id="product-123",
+    token=token,
+    description="Monthly API call limits",
+    unit="requests",
+    default_limit=10000
+)
+
+# Assign features to subscription
+feature_assignment = await client.quota.assign_features_to_subscription(
+    subscription_id="sub-123",
+    quota_assignments=[
+        {"quotaId": "storage-quota", "quantity": 100},
+        {"quotaId": "api-calls-quota", "quantity": 50000}
+    ],
+    token=token
+)
+```
+
+### Usage Analytics - `client.usage`
+
+```python
+# Get usage analytics
+usage_data = await client.usage.get_usage_analytics(
+    billing_account_id="billing-123",
+    token=token,
+    start_date="2024-01-01",
+    end_date="2024-01-31",
+    granularity="daily"
+)
+
+# Get usage trends
+trends = await client.usage.get_usage_trends(
+    billing_account_id="billing-123",
+    token=token,
+    metric="api_calls",
+    period="last_30_days"
+)
+
+# Get dashboard data
+dashboard = await client.usage.get_usage_dashboard(
+    billing_account_id="billing-123",
+    token=token,
+    time_range="current_month"
+)
+
+# Quota usage and assignment management
+quota_usage = await client.usage.get_quota_assignment_usage(
+    assignment_id="assign-123",
+    token=token,
+    start_date="2024-01-01",
+    end_date="2024-01-31"
+)
+
+# Add usage tracking
+usage_added = await client.usage.add_usage_to_quota_assignment(
+    assignment_id="assign-123",
+    usage_amount=100,
+    token=token,
+    usage_type="api_calls",
+    description="Batch API processing"
+)
+
+# Free up usage (for corrections)
+usage_freed = await client.usage.free_up_usage_from_quota_assignment(
+    assignment_id="assign-123",
+    usage_amount=50,
+    token=token,
+    reason="Refund for failed operations"
+)
+
+# Get detailed usage analytics with pagination
+detailed_usage = await client.usage.get_quota_assignment_usage_analytics(
+    assignment_id="assign-123",
+    token=token,
+    start_date="2024-01-01",
+    end_date="2024-01-31",
+    page=1,
+    page_size=50,
+    sort_by="timestamp",
+    sort_order="desc"
+)
+```
+
+### Newsletter Management - `client.newsletter`
+
+The Newsletter module provides comprehensive newsletter management capabilities including CRUD operations, subscription management, delivery tracking, user preferences, and RBAC controls.
+
+#### Newsletter Operations
+
+```python
+# Create a newsletter
+newsletter = await client.newsletter.create_newsletter(
+    title="Product Updates Q4 2024",
+    topic_id="topic-123",
+    content_html="<h1>Exciting Updates</h1><p>Check out our latest features...</p>",
+    token=token,
+    content_text="Exciting Updates - Check out our latest features...",
+    status="DRAFT",
+    scheduled_send_date="2024-12-01T10:00:00Z"
+)
+
+# Get a single newsletter
+newsletter = await client.newsletter.get_newsletter("newsletter-123", token)
+
+# Get newsletters with pagination
+paginated_result = await client.newsletter.get_newsletters_paginated(
+    filter_input={
+        "status": "SENT",
+        "topicIds": ["topic-123", "topic-456"]
+    },
+    page=1,
+    page_size=20,
+    token=token
+)
+print(f"Total newsletters: {paginated_result['pagination']['totalCount']}")
+print(f"Pages: {paginated_result['pagination']['totalPages']}")
+
+# Get newsletters (simple list)
+newsletters = await client.newsletter.get_newsletters(token)
+
+# Update newsletter
+updated = await client.newsletter.update_newsletter(
+    "newsletter-123",
+    token,
+    title="Updated Title",
+    content_html="<h1>Updated Content</h1>",
+    status="SCHEDULED"
+)
+
+# Delete newsletter
+success = await client.newsletter.delete_newsletter("newsletter-123", token)
+```
+
+#### Subscription Management
+
+```python
+# Subscribe to a newsletter
+subscription = await client.newsletter.subscribe_to_newsletter(
+    newsletter_id="newsletter-123",
+    topic_ids=["topic-456", "topic-789"],
+    token=token,
+    metadata={"source": "web_app"}
+)
+
+# Get current user's subscriptions
+my_subscriptions = await client.newsletter.get_my_subscriptions(token)
+for sub in my_subscriptions:
+    print(f"Subscribed to: {sub['newsletter']['title']}")
+
+# Get a specific subscription
+subscription = await client.newsletter.get_newsletter_subscription(
+    "subscription-123",
+    token
+)
+
+# Update subscription topics
+updated_sub = await client.newsletter.update_subscription(
+    "subscription-123",
+    topic_ids=["topic-new"],
+    token=token
+)
+
+# Unsubscribe from newsletter
+success = await client.newsletter.unsubscribe(
+    "newsletter-123",
+    token=token
+)
+
+# Confirm subscription with email token
+confirmed_sub = await client.newsletter.confirm_subscription(
+    "confirmation-token-from-email",
+    token
+)
+
+# Bulk subscribe users (admin)
+bulk_result = await client.newsletter.bulk_subscribe(
+    [
+        {
+            "newsletterId": "newsletter-123",
+            "topicIds": ["topic-1"],
+            "metadata": {"campaign": "Q4-2024"}
+        },
+        {
+            "newsletterId": "newsletter-456",
+            "topicIds": ["topic-2"],
+            "metadata": {"campaign": "Q4-2024"}
+        }
+    ],
+    token
+)
+```
+
+#### User Preferences
+
+```python
+# Get user's newsletter preferences
+preferences = await client.newsletter.get_newsletter_preferences(token)
+print(f"Email notifications: {preferences['emailNotifications']}")
+print(f"Frequency: {preferences['frequency']}")
+
+# Update user preferences
+updated_prefs = await client.newsletter.update_newsletter_preferences(
+    {
+        "emailNotifications": True,
+        "frequency": "WEEKLY",
+        "topicPreferences": ["tech", "product-updates"],
+        "productPreferences": ["product-123"],
+        "unsubscribeAll": False
+    },
+    token
+)
+```
+
+#### Newsletter Delivery & Scheduling
+
+```python
+# Schedule a newsletter
+scheduled = await client.newsletter.schedule_newsletter(
+    "newsletter-123",
+    "2024-12-15T09:00:00Z",
+    token
+)
+
+# Send newsletter immediately (admin)
+sent = await client.newsletter.send_newsletter("newsletter-123", token)
+
+# Cancel scheduled newsletter
+cancelled = await client.newsletter.cancel_newsletter_schedule(
+    "newsletter-123",
+    token
+)
+
+# Force process delivery (retry failed deliveries)
+processed = await client.newsletter.force_process_newsletter_delivery(
+    "newsletter-123",
+    token
+)
+
+# Get deliveries for a newsletter
+deliveries = await client.newsletter.get_newsletter_deliveries(
+    "newsletter-123",
+    token
+)
+for delivery in deliveries:
+    print(f"Sent to: {delivery['recipientEmail']}, Status: {delivery['status']}")
+```
+
+#### Newsletter Analytics
+
+```python
+# Get overall newsletter statistics
+stats = await client.newsletter.get_newsletter_stats(token)
+print(f"Total sent: {stats['totalSent']}")
+print(f"Average open rate: {stats['averageOpenRate']}%")
+
+# Get stats for specific newsletter
+newsletter_stats = await client.newsletter.get_newsletter_stats(
+    token,
+    newsletter_id="newsletter-123"
+)
+print(f"Opens: {newsletter_stats['opens']}")
+print(f"Clicks: {newsletter_stats['clicks']}")
+```
+
+#### RBAC & Sharing
+
+```python
+# Share newsletter with recipients
+share_result = await client.newsletter.share_newsletter(
+    {
+        "newsletterId": "newsletter-123",
+        "recipientEmails": ["user1@example.com", "user2@example.com"],
+        "message": "Check out our latest newsletter!",
+        "allowForwarding": True
+    },
+    token
+)
+print(f"Shared with: {share_result['sharedWith']}")
+print(f"Failed: {share_result['failedRecipients']}")
+
+# Assign permission to user
+perm_result = await client.newsletter.assign_newsletter_permission(
+    {
+        "newsletterId": "newsletter-123",
+        "userId": "user-456",
+        "permission": "EDIT",
+        "expiresAt": "2025-01-31T23:59:59Z"
+    },
+    token
+)
+
+# Revoke permission
+revoke_result = await client.newsletter.revoke_newsletter_permission(
+    {
+        "newsletterId": "newsletter-123",
+        "userId": "user-456"
+    },
+    token
+)
+
+# Get all permissions for newsletter
+permissions = await client.newsletter.get_newsletter_permissions(
+    "newsletter-123",
+    token
+)
+for perm in permissions:
+    print(f"User: {perm['user']['name']}, Permission: {perm['permission']}")
+```
+
+#### Newsletter Classification
+
+Newsletters can be classified into three types:
+
+1. **General Newsletter (No Topics)**: Company-wide announcements sent to all subscribers
+2. **General Newsletter (With Topics)**: General newsletters with topic context for organization
+3. **Topic-Specific Newsletter**: Targeted newsletters sent only to subscribers of specific topics
+
+```python
+# Create general newsletter (all subscribers)
+general = await client.newsletter.create_newsletter(
+    title="Company Announcement",
+    topic_id="general-topic",
+    content_html="<p>Important company-wide update...</p>",
+    token=token,
+    is_general=True  # Sent to all subscribers
+)
+
+# Create topic-specific newsletter
+topic_specific = await client.newsletter.create_newsletter(
+    title="Engineering Updates",
+    topic_id="engineering-topic",
+    content_html="<p>Latest engineering developments...</p>",
+    token=token,
+    is_general=False  # Sent only to engineering topic subscribers
+)
+```
+
+## 🔧 Advanced Usage
+
+### Resource Type Information
+
+```python
+from workspaces_sdk.rbac import get_resource_type_info, get_allowed_permissions
+
+# Get resource type details
+info = get_resource_type_info("project")
+print(info['allowed_permissions'])
+
+# Get permissions for a resource type
+permissions = get_allowed_permissions("workflow")
+```
+
+### Error Handling
+
+```python
+try:
+    resource = await client.rbac.create_resource(
+        name="Test Resource",
+        identifier="test_123",
+        resource_type_name="project",
+        token=token
+    )
+    
+    if resource is None:
+        print("Resource creation failed - check permissions and input")
+    else:
+        print(f"Created resource: {resource['id']}")
+        
+except Exception as e:
+    print(f"SDK error: {e}")
+```
+
+### Custom Client Configuration
+
+```python
+# With custom endpoint and API key
+client = WorkspaceClient(
+    endpoint="https://custom-api.example.com/graphql",
+    api_key="your-api-key"
+)
+
+# Update token dynamically
+client.set_token("new-jwt-token")
+```
+
+## 📚 Resource Types & Permissions
+
+The SDK supports the complete workspace resource hierarchy:
+
+| Resource Type | Parent | Key Permissions |
+|---------------|--------|-----------------|
+| `workspace` | - | `workspace.read`, `workspace.manageRolesAndUserPermissions` |
+| `project` | `workspace` | `project.read`, `project.addMember`, `project.archive` |
+| `workflow` | `project` | `workflow.read`, `workflow.execute`, `workflow.update` |
+| `bot` | `project` | `bot.read`, `bot.update`, `bot.delete` |
+| `team` | `workspace` | `team.read`, `team.addMember`, `team.archive` |
+| `knowledgeBase` | `project` | `knowledgeBase.read`, `knowledgeBase.update` |
+
+## 🔐 Agent Types
+
+- **BOT**: Interactive AI assistants with conversational capabilities
+- **SERVICE_ACCOUNT**: Automated system agents for background tasks
+- **API_CLIENT**: External API integration agents
+- **DELEGATED_AGENT**: Agents operating on behalf of specific users
+
+## 🧪 Examples
+
+Check out the [`examples/`](examples/) directory for comprehensive usage examples:
+
+- [`rbac_example.py`](examples/rbac_example.py) - Complete RBAC functionality demonstration
+- [`newsletter_examples.py`](examples/newsletter_examples.py) - Newsletter management, subscriptions, delivery, and analytics
+
+## 🔧 Development
+
+```bash
+# Install in development mode
+pip install -e .
+
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Type checking
+mypy src/workspaces_sdk
+```
+
+## 📋 Requirements
+
+- Python 3.8+
+- `gql[requests]` >= 3.4.0
+- `requests` >= 2.25.0
+- `typing-extensions` >= 4.0.0
+- `python-dotenv` >= 1.0.0
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- **Documentation**: [API Documentation](https://docs.algoshred.com/workspaces-sdk)
+- **Issues**: [GitHub Issues](https://github.com/Algoshred/workspaces-sdk-python/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Algoshred/workspaces-sdk-python/discussions)
+
+---
+
+Built with ❤️ by [Algoshred](https://algoshred.com)
