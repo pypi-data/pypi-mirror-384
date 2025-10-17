@@ -1,0 +1,824 @@
+{
+  "version": "1.0",
+  "saved_at": "2025-10-16T15:51:50.665237",
+  "templates": [
+    {
+      "name": "test_list_tags",
+      "description": "Test with list tags",
+      "query": "cluster('test').database('test').Table | take 10",
+      "parameters": [],
+      "tags": [
+        "tag1",
+        "tag2",
+        "tag3"
+      ],
+      "created_at": "2025-10-15T11:54:28.209668",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {}
+    },
+    {
+      "name": "test_string_tags",
+      "description": "Test with string tag",
+      "query": "cluster('test').database('test').Table | take 10",
+      "parameters": [],
+      "tags": "single_tag",
+      "created_at": "2025-10-15T11:54:28.210678",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {}
+    },
+    {
+      "name": "test_empty_tags",
+      "description": "Test with empty tags",
+      "query": "cluster('test').database('test').Table | take 10",
+      "parameters": [],
+      "tags": [],
+      "created_at": "2025-10-15T11:54:28.213262",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {}
+    },
+    {
+      "name": "wireserver_heartbeat_check",
+      "description": "Check WireServer heartbeat status to confirm if WireServer is running (Step 1 of troubleshooting)",
+      "query": "// Step 1: Confirm if wireserver is up\n// From WireserverHeartbeatEtwTable, check if heartbeat status is 1(up) every minute\nlet startDate = datetime({start_time});\nlet endDate = datetime({end_time});\nlet theNodeId = \"{node_id}\";\ncluster(\"azcore.centralus\").database(\"Fa\").WireserverHeartbeatEtwTable\n| where NodeId == theNodeId\n| where PreciseTimeStamp between (startDate..endDate)\n| project PreciseTimeStamp, Status\n| make-series kind=nonempty sum(Status) default=0 on PreciseTimeStamp from startDate to endDate step 1m \n| render timechart",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start time for heartbeat check",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End time for heartbeat check",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID to check heartbeat for",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "troubleshooting",
+        "heartbeat",
+        "monitoring",
+        "first-steps"
+      ],
+      "created_at": "2025-10-15T14:51:06.768405",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {}
+    },
+    {
+      "name": "anvil_osconfig_disk_analysis",
+      "description": "Multi-step Anvil operational workflow for analyzing disk space usage and generating repair requests",
+      "query": "// Step 1: Identify Nodes with Excessive Disk Usage\nprint 'Step 1: Analyzing Disk Usage Patterns';\nlet startDate = todatetime(\"{start_time}\");\nlet endDate = todatetime(\"{end_time}\");\nlet sizeThreshold = {size_threshold_mb};\nlet componentPattern = \"{component_pattern}\";\nlet disk_usage = cluster('azcore.centralus.kusto.windows.net').database('Fa').OsConfigTable\n| where PreciseTimeStamp between (startDate..endDate)\n| where ConfigType == \"du\" and Component == \"diskspaceusage\" \n| where ConfigName startswith componentPattern\n| project FabricCluster=Cluster, NodeId, SizeMB = todouble(ConfigValue), PreciseTimeStamp\n| where SizeMB > sizeThreshold;\n\n// Step 2: Get Anvil Tenant Mapping\nprint 'Step 2: Mapping to Anvil Tenants';\nlet anvil_mapping = disk_usage\n| distinct FabricCluster, NodeId\n| join kind=inner (\n    cluster(\"Azurecm\").database(\"AzureCM\").AnvilRepairServiceSnapshot\n    | where isnotempty(ClusterList)\n    | project Tenant, FabricCluster=split(ClusterList, \",\")\n    | mv-expand FabricCluster\n    | extend FabricCluster=tostring(FabricCluster)\n    | distinct Tenant, FabricCluster\n) on FabricCluster;\n\n// Step 3: Generate Summary Statistics\nprint 'Step 3: Summary Statistics';\nanvil_mapping\n| summarize \n    AffectedNodes = dcount(NodeId),\n    AffectedClusters = dcount(FabricCluster),\n    AffectedTenants = dcount(Tenant),\n    NodesByTenant = make_set(NodeId) by Tenant\n| order by AffectedNodes desc;\n\nprint 'Analysis Complete - Nodes ready for Anvil repair workflow';",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Analysis start time",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "Analysis end time",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "size_threshold_mb",
+          "type": "number",
+          "description": "Disk size threshold in MB",
+          "default_value": 1000,
+          "required": false,
+          "validation_regex": null
+        },
+        {
+          "name": "component_pattern",
+          "type": "string",
+          "description": "Component path pattern to search",
+          "default_value": "C:\\\\App\\\\HostGAPlugin.",
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "anvil",
+        "disk-usage",
+        "osconfig",
+        "repair",
+        "operational",
+        "multi-step",
+        "hostgaplugin"
+      ],
+      "created_at": "2025-10-16T15:48:48.802535",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus",
+        "database": "Fa",
+        "confidential": true
+      }
+    },
+    {
+      "name": "attested_endpoint_subs",
+      "description": "Find subscription IDs making calls to attested data endpoint in IMDS. Optimized version with early filtering and efficient joins.",
+      "query": "let timeofinterest_start = {start_time};\nlet timeofinterest_end = {end_time};\n\n// First, get unique ContainerIds from attested endpoint requests (smaller dataset)\nlet attestedContainers = \n    cluster('azcore.centralus.kusto.windows.net').database('Fa').WireServerAllHttpRequestsLogEtwTable\n    | where PreciseTimeStamp between (timeofinterest_start .. timeofinterest_end)\n    | where RequestType == \"MetadataIMDS\"\n    | where RequestUrl startswith \"/metadata/attested/document?api-version=\"\n    | project ContainerId, PreciseTimeStamp\n    | distinct ContainerId; // Remove duplicates early to reduce join size\nattestedContainers\n| join kind=inner hint.strategy=shuffle (\n    cluster('hawkeyekustocluster.centralus').database('AzureCM').LogContainerSnapshot\n    | where PreciseTimeStamp between (timeofinterest_start .. timeofinterest_end)\n    | project containerId, subscriptionId\n    | where isnotempty(subscriptionId) // Filter out empty subscription IDs\n) on $left.ContainerId == $right.containerId\n| project subscriptionId\n| summarize RequestCount = count() by subscriptionId\n| order by RequestCount desc",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start of analysis time window (ISO format or Kusto datetime)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End of analysis time window (ISO format or Kusto datetime)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "imds",
+        "attestation",
+        "subscriptions",
+        "monitoring",
+        "wireserver",
+        "metadata"
+      ],
+      "created_at": "2025-10-16T15:48:48.824702",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus.kusto.windows.net",
+        "database": "Fa",
+        "time_window_minutes": 1440,
+        "historical_duration_days": 4,
+        "source": "tools/KustoUtility/samples/attested_endpoint_subs.kql",
+        "imported_from": "Compute-AzLinux-MetadataServer",
+        "repository_url": "https://msazure.visualstudio.com/One/_git/Compute-AzLinux-MetadataServer",
+        "commit_id": "6216cdb61a2a6ee4b8bd49812e78d955052f83d2",
+        "confidential": true,
+        "query_type": "subscription_analysis",
+        "performance_notes": "Uses early filtering and shuffle join strategy for optimal performance"
+      }
+    },
+    {
+      "name": "imds_connection_timeout_troubleshooting",
+      "description": "Multi-step troubleshooting workflow for IMDS connection timeouts - checks IMDS heartbeat, WireServer health, request flow, and network issues",
+      "query": "// Step 1: Check IMDS Primary Heartbeat\nprint 'Step 1: Checking IMDS Primary Heartbeat';\nlet startDate = todatetime(\"{start_time}\");\nlet endDate = todatetime(\"{end_time}\");\nlet theNodeId = \"{node_id}\";\nlet theContainerId = \"{container_id}\";\nlet imds_heartbeat = cluster(\"azcore.centralus\").database(\"SharedWorkspace\").ImdsHeartbeats(startDate, endDate, nodeId=theNodeId)\n| where IsPf == 1\n| project TIMESTAMP, Status = 1\n| summarize HeartbeatCount = sum(Status);\nimds_heartbeat\n| extend Step1Result = case(HeartbeatCount > 0, \"IMDS Primary was responsive - proceed to Step 2\", \"IMDS Primary was down - investigate PF down TSG\");\n\n// Step 2: Check WireServer Heartbeat\nprint 'Step 2: Checking WireServer Heartbeat';\nlet wireserver_heartbeat = cluster(\"azcore.centralus\").database(\"Fa\").WireserverHeartbeatEtwTable\n| where NodeId == theNodeId\n| where PreciseTimeStamp between (startDate..endDate)\n| summarize HeartbeatCount = count(), AvgStatus = avg(Status);\nwireserver_heartbeat\n| extend Step2Result = case(HeartbeatCount > 0 and AvgStatus > 0, \"WireServer was responsive - proceed to Step 3\", \"WireServer was down - investigate WireServer TSG\");\n\n// Step 3: Check IMDS Request Reception\nprint 'Step 3: Checking IMDS Request Reception';\nlet imds_requests = cluster(\"azcore.centralus\").database(\"SharedWorkspace\").ImdsApiRequests(startDate, endDate, theNodeId, theContainerId)\n| summarize RequestCount = count(), AvgResponseTime = avg(ResponseTimeInMs), ErrorCount = countif(StatusCode >= 400);\nimds_requests\n| extend Step3Result = case(\n    RequestCount == 0, \"No requests received - check Step 4\",\n    ErrorCount > 0, \"Requests received but errors occurred - investigate IMDS errors\",\n    AvgResponseTime > 3000, \"High latency detected - may cause timeouts\",\n    \"Requests processed normally - investigate networking\");\n\n// Step 4: Check Container Network Health\nprint 'Step 4: Network Analysis Summary';\nlet network_summary = cluster(\"azcore.centralus\").database(\"SharedWorkspace\").ImdsApiRequests(startDate, endDate, theNodeId)\n| where Container != theContainerId\n| summarize OtherContainerRequests = count(), OtherContainerErrors = countif(StatusCode >= 400);\nnetwork_summary\n| extend Step4Result = case(\n    OtherContainerRequests > 0 and OtherContainerErrors == 0, \"Other containers successful - likely container-specific networking issue\",\n    OtherContainerRequests > 0 and OtherContainerErrors > 0, \"Node-wide issues detected\",\n    \"No other container activity - investigate node health\");\n\nprint 'Investigation Complete - Review Step Results Above'",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Investigation start time (one hour before incident)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "Investigation end time (one hour after incident)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID where timeout occurred",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "container_id",
+          "type": "string",
+          "description": "Container ID experiencing timeouts",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "imds",
+        "troubleshooting",
+        "multi-step",
+        "timeout",
+        "connection",
+        "workflow",
+        "comprehensive"
+      ],
+      "created_at": "2025-10-16T15:48:48.859873",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus",
+        "database": "SharedWorkspace",
+        "confidential": true
+      }
+    },
+    {
+      "name": "reverse_schenker_affected_subs",
+      "description": "Reverse Schenker affected subscriptions analysis. Analyzes subscription activity through WireServer primary port metadata requests.",
+      "query": "let timeofinterest_start = {start_time};\nlet timeofinterest_end = {end_time};\n\ncluster('azcore.centralus').database('Fa').WireServerPrimaryPortMetadataRequestEtwTable\n| where PreciseTimeStamp between (timeofinterest_start .. timeofinterest_end)\n| project TIMESTAMP, Region, Cluster, NodeId, ContainerId, RequestHeaders\n| join kind = inner (\n    cluster('Azurecm').database('AzureCM').LogContainerSnapshot\n    | where TIMESTAMP between (timeofinterest_start .. timeofinterest_end)\n) on $left.ContainerId == $right.containerId\n| project TIMESTAMP, ContainerId, subscriptionId\n| summarize count() by subscriptionId",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start of analysis time window (ISO format or Kusto datetime)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End of analysis time window (ISO format or Kusto datetime)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "subscriptions",
+        "monitoring",
+        "schenker",
+        "metadata",
+        "troubleshooting"
+      ],
+      "created_at": "2025-10-16T15:48:48.895844",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus.kusto.windows.net",
+        "database": "Fa",
+        "time_window_minutes": 30,
+        "historical_duration_days": 60,
+        "source": "tools/KustoUtility/samples/reverse_schenker_affected_subs.kql",
+        "imported_from": "Compute-AzLinux-MetadataServer",
+        "repository_url": "https://msazure.visualstudio.com/One/_git/Compute-AzLinux-MetadataServer",
+        "commit_id": "6216cdb61a2a6ee4b8bd49812e78d955052f83d2",
+        "confidential": true,
+        "query_type": "subscription_analysis",
+        "performance_notes": "Shorter time windows recommended (30 min default) for optimal performance"
+      }
+    },
+    {
+      "name": "test_template",
+      "description": "Test template for validation",
+      "query": "WireserverReverseShenker | where TIMESTAMP > {start_time} | take 10",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "string",
+          "description": "Start time for query",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "test",
+        "validation"
+      ],
+      "created_at": "2025-10-16T15:48:48.934357",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore",
+        "database": "SharedWorkspace",
+        "confidential": true
+      }
+    },
+    {
+      "name": "test_wireserver_response_analysis",
+      "description": "Test flow for analyzing recent WireServer requests by response code",
+      "query": "WireServerAllHttpRequestsLogEtwTable\n| where TIMESTAMP > ago({time_window})\n| where ResponseStatusCode == {response_code}\n| summarize count() by RequestType, bin(TIMESTAMP, 5m)\n| order by TIMESTAMP desc",
+      "parameters": [
+        {
+          "name": "time_window",
+          "type": "timespan",
+          "description": "Time window for analysis",
+          "default_value": "1h",
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "response_code",
+          "type": "number",
+          "description": "Response code to filter by",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "testing",
+        "response-analysis"
+      ],
+      "created_at": "2025-10-16T15:48:48.957682",
+      "last_used": "2025-10-16T15:51:50.665237",
+      "use_count": 2,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore",
+        "database": "Fa",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_410_cycling_analysis",
+      "description": "Analyze guest container cycling on 410 responses to determine if contract is broken",
+      "query": "// Analyze guest cycling on 410s - check GuestAgent version via roleInstanceName\n// If roleInstanceName begins with 'SmallDedicatedLinuxWebWorkerRole' then transfer to Antares team\nlet containerId = \"{container_id}\";\nlet daysBack = {days_back};\ncluster('hawkeyekustocluster.centralus.kusto.windows.net').database('AzureCM').LogRoleInstanceSnapshot\n| where PreciseTimeStamp > ago(daysBack)\n| where containerId == containerId\n| project PreciseTimeStamp, roleState, roleInstanceName\n| extend IsAntaresContainer = iff(roleInstanceName startswith \"SmallDedicatedLinuxWebWorkerRole\", \"Yes - Transfer to Antares team\", \"No - Continue investigation\")\n| sort by PreciseTimeStamp desc",
+      "parameters": [
+        {
+          "name": "container_id",
+          "type": "string",
+          "description": "Container ID that is cycling on 410 responses",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "days_back",
+          "type": "number",
+          "description": "Number of days to look back for role instance analysis",
+          "default_value": 3,
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "410-cycling",
+        "guest-agent",
+        "troubleshooting",
+        "antares"
+      ],
+      "created_at": "2025-10-16T15:48:48.996907",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "hawkeyekustocluster.centralus.kusto.windows.net",
+        "database": "AzureCM",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_buildout_detection",
+      "description": "Detect buildout clusters by analyzing AgentPackage progression on nodes",
+      "query": "// Detect buildout clusters by analyzing AgentPackage progression\n// A clear sign that a node was newly built is if it was missing AgentPackage in the past\nlet daysBack = {days_back};\nlet nodeIdToCheck = \"{node_id}\";\ncluster('hawkeyekustocluster.centralus.kusto.windows.net').database('AzureCM').LogNodeSnapshot\n| where PreciseTimeStamp between(datetime_add('day', -daysBack, now())..now())\n| where nodeId == nodeIdToCheck\n| extend HEJson = parse_json(hostingEnvironment)\n| extend AgentPackage = tostring(HEJson.AgentPackageName)\n| sort by PreciseTimeStamp asc\n| project PreciseTimeStamp, AgentPackage\n| extend HasAgentPackage = isnotempty(AgentPackage)\n| extend BuildoutIndicator = iff(HasAgentPackage and prev(HasAgentPackage) == false, \"Buildout transition detected\", \"\")",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID to analyze for buildout patterns",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "days_back",
+          "type": "number",
+          "description": "Number of days to look back for analysis",
+          "default_value": 60,
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "buildout-detection",
+        "agent-package",
+        "node-analysis",
+        "infrastructure"
+      ],
+      "created_at": "2025-10-16T15:48:49.034876",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "hawkeyekustocluster.centralus.kusto.windows.net",
+        "database": "AzureCM",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_container_ip_lookup",
+      "description": "Find container IP address from WireServer logs for troubleshooting (Step 4)",
+      "query": "// Find the Host Local IP Address for the container\n// Required for looking up requests in wireserver logs\nlet startDate = datetime({start_time});\nlet endDate = datetime({end_time});\nlet theContainerId = \"{container_id}\";\nWireserverHttpRequestLogEtwTable \n| where PreciseTimeStamp between (startDate .. endDate)\n| where ContainerId == theContainerId\n| extend containerIP=ClientId\n| distinct ContainerId, containerIP",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start time for IP lookup",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End time for IP lookup",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "container_id",
+          "type": "string",
+          "description": "Container ID to find IP for",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "troubleshooting",
+        "ip-lookup",
+        "container-networking",
+        "utility"
+      ],
+      "created_at": "2025-10-16T15:48:49.072563",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus.kusto.windows.net",
+        "database": "Fa",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_host_agent_version",
+      "description": "Check Host Agent version running on a node (Step 1b of troubleshooting)",
+      "query": "// Check what version of Host Agent is running on the node\n// Knowing which version is important for running queries in step two\nlet startDate = datetime({start_time});\nlet endDate = datetime({end_time});\nlet theNodeId = \"{node_id}\";\ncluster('hawkeyekustocluster.centralus.kusto.windows.net').database('AzureCM').LogNodeSnapshot\n| where PreciseTimeStamp between (startDate..endDate)\n| where nodeId == theNodeId\n| extend he=parse_json(hostingEnvironment)\n| extend AgentPackage=tostring(he.AgentPackageName)\n| summarize arg_max(PreciseTimeStamp, *) by nodeId\n| project nodeId, AgentPackage",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start time for version check",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End time for version check",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID to check agent version for",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "troubleshooting",
+        "host-agent",
+        "version-check",
+        "first-steps"
+      ],
+      "created_at": "2025-10-16T15:48:49.110526",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "hawkeyekustocluster.centralus.kusto.windows.net",
+        "database": "AzureCM",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_memory_usage_analysis",
+      "description": "Analyze WireServer memory usage to identify potential memory leaks",
+      "query": "// Analyze WireServer memory usage across nodes to identify memory leaks\n// Used for OaaS mitigation decisions\nlet timeWindow = {time_window};\nlet memoryThresholdMB = {memory_threshold_mb};\nlet clusterFilter = \"{cluster_names}\";\nlet affected_nodes = cluster('gandalffollower.centralus').database('AzureCM').ProcessesPerfCounter\n| where PreciseTimeStamp > ago(timeWindow)\n| where ImageName == \"WireServer.exe\"\n| extend WindowsServices = cluster('gandalffollower.centralus').database('gandalf').GetExtendedServiceName(WindowsServices, ImageName, AutopilotService)\n| where WindowsServices == ''\n| where isempty(clusterFilter) or Cluster_Azure in (split(clusterFilter, \",\"))\n| summarize arg_max(PrivateUsage, MemoryInMB=PrivateUsage/1024.0/1024) by NodeId_Azure, Cluster_Azure\n| where MemoryInMB > memoryThresholdMB\n| order by MemoryInMB desc;\naffected_nodes",
+      "parameters": [
+        {
+          "name": "time_window",
+          "type": "timespan",
+          "description": "Time window to analyze (e.g., 30m, 1h, 2h)",
+          "default_value": "30m",
+          "required": false,
+          "validation_regex": null
+        },
+        {
+          "name": "memory_threshold_mb",
+          "type": "number",
+          "description": "Memory threshold in MB for high usage detection",
+          "default_value": 800,
+          "required": false,
+          "validation_regex": null
+        },
+        {
+          "name": "cluster_names",
+          "type": "string",
+          "description": "Optional: Specific cluster names to filter (comma-separated)",
+          "default_value": null,
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "memory-analysis",
+        "oaas-mitigation",
+        "performance",
+        "troubleshooting"
+      ],
+      "created_at": "2025-10-16T15:48:49.133983",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "gandalffollower.centralus.kusto.windows.net",
+        "database": "gandalf",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_node_type_analysis",
+      "description": "Check if a node is Native (Storage) or Compute for troubleshooting context",
+      "query": "// Check if a Node is Native (Storage) or Compute\n// Useful for understanding node context during troubleshooting\nlet theNodeId = \"{node_id}\";\ncluster('wdgeventstore.kusto.windows.net').database('HostOSDeploy').nodes\n| where nodeId == theNodeId\n| project nodeId, allocationType, VHDVersion, OSVersion, clusterType\n| extend isHostOSCluster = iff(clusterType in (\"PFCC\", \"Others\", \"Storage\", \"Test\", \"XIO Storage\"), \"No\", \"Yes\")\n| extend isNative = iff(allocationType !in (\"MultipleUpdateSet\", \"EmptyNode\") or VHDVersion contains \"native\" or OSVersion contains \"native\", \"Yes\", \"No\")\n| extend isFlightNode = iff(allocationType == \"FlightingUpdateSet\", \"Yes\", \"No\")",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID to check type for",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "node-classification",
+        "infrastructure",
+        "troubleshooting",
+        "storage-vs-compute"
+      ],
+      "created_at": "2025-10-16T15:48:49.172181",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "wdgeventstore.kusto.windows.net",
+        "database": "HostOSDeploy",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_other_containers_analysis",
+      "description": "Check if requests from other containers on same node are successful (Step 2b troubleshooting)",
+      "query": "// To be sure if the issue is with the specific VM (Container) or the node\n// Check if requests coming from other containers are successful\nlet startDate = datetime({start_time});\nlet endDate = datetime({end_time});\nlet theContainerId = \"{excluded_container_id}\";\nlet theNodeId = \"{node_id}\";\nlet theRequestUrl = \"{request_url}\";\ncluster(\"azcore.centralus\").database(\"Fa\").WireServerAllHttpRequestsLogEtwTable\n| where PreciseTimeStamp between (startDate..endDate)\n| where NodeId == theNodeId\n| where ContainerId != theContainerId\n| where RequestUrl == theRequestUrl\n| summarize count() by ContainerId",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start time for analysis",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End time for analysis",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID to analyze",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "excluded_container_id",
+          "type": "string",
+          "description": "Container ID to exclude from analysis (the problematic one)",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "request_url",
+          "type": "string",
+          "description": "Request URL pattern to check",
+          "default_value": "/metadata/instance?api-version=2018-02-01",
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "troubleshooting",
+        "container-comparison",
+        "network-analysis",
+        "first-steps"
+      ],
+      "created_at": "2025-10-16T15:48:49.210088",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus.kusto.windows.net",
+        "database": "Fa",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_request_analysis",
+      "description": "Analyze HTTP requests to WireServer for specific VM container (Step 2a of troubleshooting)",
+      "query": "// Check if the specific VM(Container) is able to send requests to wireserver\n// Look for requests in WireServerAllHttpRequestsLogEtwTable\nlet startDate = datetime({start_time});\nlet endDate = datetime({end_time});\nlet theContainerId = \"{container_id}\";\nlet theNodeId = \"{node_id}\";\nlet theRequestUrl = \"{request_url}\";\ncluster(\"azcore.centralus\").database(\"Fa\").WireServerAllHttpRequestsLogEtwTable\n| where PreciseTimeStamp between (startDate..endDate)\n| where NodeId == theNodeId\n| where ContainerId == theContainerId\n| where RequestUrl == theRequestUrl\n//| where RequestUrl has theRequestUrl\n| project PreciseTimeStamp, RequestUrl, ResponseStatusCode, TimeMS=RequestProcessingTimeInMS, hr=SourceHresult, Start=RequestStartTime, Id=ClientRequestId, nid=NodeId, cid=ContainerId, ClientName, RequestType",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start time for request analysis",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End time for request analysis",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID to analyze requests for",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "container_id",
+          "type": "string",
+          "description": "Container ID to analyze requests for",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "request_url",
+          "type": "string",
+          "description": "Specific request URL pattern to filter (e.g., '/metadata/instance?api-version=2018-02-01')",
+          "default_value": "/metadata/instance?api-version=2018-02-01",
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "troubleshooting",
+        "http-requests",
+        "container-analysis",
+        "first-steps"
+      ],
+      "created_at": "2025-10-16T15:48:49.252298",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus.kusto.windows.net",
+        "database": "Fa",
+        "confidential": true
+      }
+    },
+    {
+      "name": "wireserver_troubleshooting_first_steps",
+      "description": "Comprehensive first steps troubleshooting workflow for WireServer incidents - multi-step analysis",
+      "query": "// WireServer First Steps Troubleshooting Workflow\n// This implements the complete troubleshooting guide from first-steps.md\n\nlet startDate = datetime({start_time});\nlet endDate = datetime({end_time});\nlet theNodeId = \"{node_id}\";\nlet theContainerId = \"{container_id}\";\nlet theRequestUrl = \"{request_url}\";\n\nprint \"=== WireServer Troubleshooting: First Steps Workflow ===\";\n\n// Step 1: Confirm if wireserver is up\nprint \"Step 1: Checking WireServer heartbeat status...\";\nlet heartbeat = cluster(\"azcore.centralus\").database(\"Fa\").WireserverHeartbeatEtwTable\n| where NodeId == theNodeId\n| where PreciseTimeStamp between (startDate..endDate)\n| summarize HeartbeatCount = count(), UpCount = countif(Status == 1), DownCount = countif(Status == 0)\n| extend HealthStatus = iff(UpCount > 0, \"WireServer is UP\", \"WireServer is DOWN\");\nheartbeat;\n\n// Step 1b: Check Host Agent version\nprint \"Step 1b: Checking Host Agent version...\";\nlet agentVersion = cluster('hawkeyekustocluster.centralus.kusto.windows.net').database('AzureCM').LogNodeSnapshot\n| where PreciseTimeStamp between (startDate..endDate)\n| where nodeId == theNodeId\n| extend he=parse_json(hostingEnvironment)\n| extend AgentPackage=tostring(he.AgentPackageName)\n| summarize arg_max(PreciseTimeStamp, *) by nodeId\n| project nodeId, AgentPackage;\nagentVersion;\n\n// Step 2a: Check if specific VM can send requests to WireServer\nprint \"Step 2a: Analyzing requests from target container...\";\nlet targetContainerRequests = cluster(\"azcore.centralus\").database(\"Fa\").WireServerAllHttpRequestsLogEtwTable\n| where PreciseTimeStamp between (startDate..endDate)\n| where NodeId == theNodeId\n| where ContainerId == theContainerId\n| where RequestUrl == theRequestUrl\n| summarize RequestCount = count(), \n           SuccessCount = countif(ResponseStatusCode < 400),\n           ErrorCount = countif(ResponseStatusCode >= 400),\n           AvgResponseTime = avg(RequestProcessingTimeInMS)\n| extend Status = iff(RequestCount > 0, \"Requests found from target container\", \"NO requests found from target container\");\ntargetContainerRequests;\n\n// Step 2b: Check requests from other containers on same node\nprint \"Step 2b: Checking requests from other containers on same node...\";\nlet otherContainerRequests = cluster(\"azcore.centralus\").database(\"Fa\").WireServerAllHttpRequestsLogEtwTable\n| where PreciseTimeStamp between (startDate..endDate)\n| where NodeId == theNodeId\n| where ContainerId != theContainerId\n| where RequestUrl == theRequestUrl\n| summarize RequestCount = count(), UniqueContainers = dcount(ContainerId)\n| extend Status = iff(RequestCount > 0, strcat(\"Requests found from \", UniqueContainers, \" other containers\"), \"NO requests from other containers\");\notherContainerRequests;\n\n// Troubleshooting decision logic\nprint \"=== TROUBLESHOOTING DECISION MATRIX ===\";\nprint \"If target container has NO requests but other containers DO have requests: Likely networking issue (route to Cloudnet/NMAGENT)\";\nprint \"If NO containers have requests: Investigate WireServer/Node level issue\";\nprint \"If target container HAS requests with errors: Analyze error codes (400, 410, 500, etc.)\";\nprint \"If WireServer is DOWN: Check node health and restart WireServer process\";\nprint \"Next steps: Check container IP mapping, analyze logs, review error codes as needed\";",
+      "parameters": [
+        {
+          "name": "start_time",
+          "type": "datetime",
+          "description": "Start time for investigation",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "end_time",
+          "type": "datetime",
+          "description": "End time for investigation",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "node_id",
+          "type": "string",
+          "description": "Node ID experiencing issues",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "container_id",
+          "type": "string",
+          "description": "Container ID experiencing issues",
+          "default_value": null,
+          "required": true,
+          "validation_regex": null
+        },
+        {
+          "name": "request_url",
+          "type": "string",
+          "description": "Request URL pattern to analyze",
+          "default_value": "/metadata/instance?api-version=2018-02-01",
+          "required": false,
+          "validation_regex": null
+        }
+      ],
+      "tags": [
+        "wireserver",
+        "troubleshooting",
+        "multi-step",
+        "first-steps",
+        "comprehensive",
+        "workflow"
+      ],
+      "created_at": "2025-10-16T15:48:49.292061",
+      "last_used": null,
+      "use_count": 0,
+      "estimated_execution_time_ms": null,
+      "example_values": null,
+      "metadata": {
+        "cluster": "azcore.centralus.kusto.windows.net",
+        "database": "Fa",
+        "confidential": true
+      }
+    }
+  ],
+  "workflows": []
+}
