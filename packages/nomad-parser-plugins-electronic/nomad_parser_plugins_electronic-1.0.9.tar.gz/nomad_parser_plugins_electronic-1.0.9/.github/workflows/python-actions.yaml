@@ -1,0 +1,42 @@
+name: install-and-test-workflow
+on: [push]
+jobs:
+  install-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: 3.12
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+      - name: mypy
+        run: |
+          uv run --with types-PyYAML mypy --ignore-missing-imports --follow-imports=silent --no-strict-optional *parsers tests
+      - name: Test with pytest
+        run: |
+          uv run --with coverage coverage run -m pytest -sv
+      - name: Submit to coveralls
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run --with coveralls coveralls --service=github
+
+  ruff-linting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: chartboost/ruff-action@v1
+        with:
+          args: "check ."
+
+  ruff-formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: chartboost/ruff-action@v1
+        with:
+          args: "format ."
