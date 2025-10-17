@@ -1,0 +1,115 @@
+name: Build wheels  
+  
+on:  
+  workflow_dispatch:  
+  push:  
+    tags:  
+      - "v*.*.*"   # Only upload on version tags, optional  
+  
+jobs:  
+  build-wheels:  
+    name: Build wheels (${{ matrix.os }} ${{ matrix.arch }})  
+    runs-on: ${{ matrix.runner }}  
+    strategy:  
+      fail-fast: false  
+      matrix:  
+        include:  
+          - os: linux  
+            arch: x86_64  
+            runner: ubuntu-latest  
+          - os: linux  
+            arch: aarch64  
+            runner: self-hosted  
+          - os: macos  
+            arch: arm64  
+            runner: macos-latest  
+  
+    steps:  
+      - uses: actions/checkout@v4  
+      - uses: actions/setup-python@v5
+  
+      - name: Create and activate virtual environment
+        if: matrix.runner == 'self-hosted'
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
+          echo "PATH=$PWD/venv/bin:$PATH" >> $GITHUB_ENV
+  
+      - name: Clone PcapPlusPlus  
+        run: |  
+          git clone --depth=1 --branch v25.05 https://github.com/seladb/PcapPlusPlus.git ./PcapPlusPlus  
+          echo "PCAPPLUSPLUS_ROOT=$PWD/PcapPlusPlus" >> $GITHUB_ENV  
+  
+      - name: Build wheels with cibuildwheel
+        env:  
+          CIBW_SKIP: "cp*-musllinux* pp*-musllinux*"  
+          CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux2014_x86_64  
+          CIBW_MANYLINUX_AARCH64_IMAGE: quay.io/pypa/manylinux2014_aarch64  
+          CIBW_BEFORE_ALL_LINUX: |  
+            yum -y update  
+            yum install -y libpcap-devel  
+            cd "/host${{ env.PCAPPLUSPLUS_ROOT }}"  
+            git config --global --add safe.directory "/host${{ env.PCAPPLUSPLUS_ROOT }}"  
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPCAPPP_BUILD_EXAMPLES=OFF -DPCAPPP_BUILD_TESTS=OFF  
+            cmake --build build --target install  
+          CIBW_BEFORE_ALL_MACOS: |  
+            brew install libpcap  
+            cd ${{ env.PCAPPLUSPLUS_ROOT }}  
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local -DPCAPPP_BUILD_EXAMPLES=OFF -DPCAPPP_BUILD_TESTS=OFF  
+            cmake --build build --target install  
+          CIBW_TEST_COMMAND: "python -m pytest {package}/tests"
+          CIBW_TEST_REQUIRES: "pytest"  
+        run: |  
+          python -m pip install --upgrade pip  
+          python -m pip install cibuildwheel  
+          python -m cibuildwheel --archs ${{ matrix.arch }} --output-dir wheelhouse  
+  
+      - name: Show built wheels  
+        run: ls -lh wheelhouse  
+  
+      - name: Upload wheel artifact  
+        uses: actions/upload-artifact@v4  
+        with:  
+          name: dist-wheels-${{ matrix.os }}-${{ matrix.arch }} 
+          path: wheelhouse/*.whl  
+  
+  build-sdist:  
+    name: Build sdist  
+    runs-on: ubuntu-latest  
+    steps:  
+      - uses: actions/checkout@v4  
+      - uses: actions/setup-python@v5  
+        with:  
+          python-version: '3.12'
+      - name: Build sdist  
+        run: |  
+          pip install build  
+          python -m build --sdist --outdir dist  
+      - name: Upload sdist artifact  
+        uses: actions/upload-artifact@v4  
+        with:  
+          name: dist-sdist  
+          path: dist/*.tar.gz  
+  
+  upload-pypi:  
+    name: Upload to PyPI  
+    needs: [build-wheels, build-sdist]  
+    runs-on: ubuntu-latest  
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')  
+    steps:  
+      - uses: actions/download-artifact@v4  
+        with:  
+          pattern: dist-wheels-*  
+          path: dist/  
+          merge-multiple: true  
+      - uses: actions/download-artifact@v4  
+        with:  
+          name: dist-sdist  
+          path: dist/
+      - name: Show all artifacts  
+        run: ls -lh dist  
+      - name: Publish package to PyPI
+        run: |  
+          pip install twine  
+          twine upload --repository pypi dist/* -u __token__ -p ${{ secrets.PYPI_API_TOKEN }}

@@ -1,0 +1,36 @@
+name: CI  
+
+on:
+  pull_request:  
+    branches: [main, dev]  
+  
+jobs:  
+  build-and-test:  
+    name: Build and Test  
+    runs-on: ubuntu-latest
+    steps:  
+      - name: Checkout repository  
+        uses: actions/checkout@v4  
+      - uses: actions/setup-python@v5 
+  
+      - name: Download prebuilt PyPcapPlusPlus  
+        run: |  
+          mkdir -p $PWD/prebuilt_pcpp
+          wget -O pcpp.tar.gz https://github.com/seladb/PcapPlusPlus/releases/download/v25.05/pcapplusplus-25.05-ubuntu-24.04-gcc-13.3.0-x86_64.tar.gz
+          tar -C $PWD/prebuilt_pcpp --strip-components=1 -xzvf pcpp.tar.gz 
+          echo "PCAPPLUSPLUS_ROOT=$PWD/prebuilt_pcpp" >> $GITHUB_ENV
+      
+      - name: Install Package
+        env: 
+          CMAKE_PREFIX_PATH: ${{ env.PCAPPLUSPLUS_ROOT }}
+        run: |
+          sudo apt-get install libpcap-dev
+          pip install --upgrade pip  
+          pip install pytest mock  
+          pip install .
+  
+      - name: Run pytest  
+        env:
+          CI: true
+        run: |  
+          pytest -v tests/*
