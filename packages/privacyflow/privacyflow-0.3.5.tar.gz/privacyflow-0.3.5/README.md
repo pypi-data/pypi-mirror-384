@@ -1,0 +1,150 @@
+PrivacyFlow – Mappatura intelligente dei flussi di dati personali
+
+PrivacyFlow è un toolkit open & enterprise per la mappatura automatizzata dei flussi di dati personali, la documentazione dei trattamenti e la generazione di report di compliance (GDPR, Privacy by Design).
+
+Compatibile con GDPR, Privacy by Design e Data Protection Impact Assessment (DPIA).
+
+Funzionalità principali
+
+Scansione automatica dei siti web per individuare tracker, script di terze parti e punti di uscita dei dati.
+
+Composizione automatica tra configurazioni interne (privacy.yaml) e risultati di scansione.
+
+Generazione di report in formato HTML, Markdown e JSON con diagrammi interattivi dei flussi di dati.
+
+Gestione licenze tramite chiavi RSA firmate offline (nessuna connessione a server richiesta).
+
+Riconoscimento automatico dei ruoli GDPR (Titolare, Responsabile, Sub-responsabile, Interessato).
+
+CLI multipiattaforma (Windows, Linux, macOS), pronta per integrazione in pipeline CI/CD o uso standalone.
+
+Installazione
+
+Richiede Python 3.10 o superiore.
+
+Dal pacchetto TestPyPI:
+
+pip install -i https://test.pypi.org/simple/ privacy-flow-map
+
+
+Oppure da codice sorgente locale (repo privato):
+
+cd privacyflow
+pip install -e .
+
+Utilizzo della CLI
+
+PrivacyFlow include una CLI completa per la gestione dei modelli di trattamento.
+
+privacy-flow --help
+
+usage: privacy-flow {init,scan,compose,render,license} ...
+
+Comandi disponibili:
+  init       Crea un file privacy.yaml di esempio
+  scan       Analizza un dominio o sito web e individua terze parti
+  compose    Unisce i risultati di più fonti in una mappa dei flussi
+  render     Genera un report HTML / Markdown / JSON
+  license    Gestisce l’attivazione e verifica della licenza
+
+Esempio di pipeline completa
+privacy-flow init
+privacy-flow scan https://www.example.com -o out
+privacy-flow compose privacy.yaml
+privacy-flow render out/merged/merged.yaml
+
+
+Output:
+
+[OK] Report HTML scritto in: out/report.html
+
+Esempio di file privacy.yaml
+<pre>
+nodes:
+  - id: data_subject
+    name: Utente / Cliente
+    type: subject
+    region: EU
+
+  - id: acme
+    name: ACME Srl
+    type: controller
+    region: EU
+    dpo: privacy@acme.it
+    lawful_bases: [contract, legal_obligation]
+
+  - id: dp_srl
+    name: Data Processor SRL
+    type: processor
+    region: EU
+    lawful_bases: [contract]
+
+flows:
+  - source: data_subject
+    target: acme
+    purpose: registration
+    lawful_basis: consent
+
+  - source: acme
+    target: dp_srl
+    purpose: account_management
+    lawful_basis: contract
+</pre>
+Output generato
+
+PrivacyFlow genera automaticamente i seguenti file:
+
+flowmap.md → diagramma dei flussi in formato Mermaid
+
+report.html → report interattivo completo
+
+merged.yaml → modello unificato per audit o versioning
+
+Esempio di riepilogo del report:
+
+Total nodes: 16
+Controllers: 1
+Processors: 2
+Third-party systems: 10
+Data stores: 1
+Data subjects: 1
+
+Licenze e modalità d’uso
+
+PrivacyFlow è disponibile in due edizioni:
+
+Edizione	Descrizione	Watermark	Licenza
+Community	Gratuita per uso interno e demo	Sì	Integrata
+Enterprise	Attiva funzionalità estese (brand, report avanzati, API)	No	Chiave RSA firmata
+
+Attivazione licenza:
+
+privacy-flow license activate license.json
+
+
+In assenza di licenza, PrivacyFlow opera automaticamente in modalità "Community Edition" con watermark.
+
+Documentazione ufficiale
+
+Documentazione completa, esempi e modelli YAML:
+https://www.privacyflow.it/docs
+
+Approfondimenti:
+
+Ruoli GDPR nel modello PrivacyFlow
+
+Personalizzazione dei report HTML
+
+Integrazione nei processi CI/CD
+
+Autori
+
+PrivacyFlow Labs
+https://privacyflow.it
+
+Maintainer: Fabio Marano
+
+Licenza
+
+Proprietaria – © 2025 PrivacyFlow Labs
+Distribuita per uso interno, audit e ricerca, non per rivendita.
