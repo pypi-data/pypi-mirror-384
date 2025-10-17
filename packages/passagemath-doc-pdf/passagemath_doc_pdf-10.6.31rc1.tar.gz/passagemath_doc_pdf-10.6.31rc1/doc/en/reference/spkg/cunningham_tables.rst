@@ -1,0 +1,43 @@
+.. _spkg_cunningham_tables:
+
+cunningham\_tables: List of the prime numbers occuring in the Cunningham table
+==============================================================================
+
+The script read_cunningham_prime_factors.py was used to generate the
+data set from the file http://cage.ugent.be/~jdemeyer/cunningham/main.gz
+We include a local copy, main.gz (see comments in the file for details)
+
+
+Type
+----
+
+optional
+
+
+Dependencies
+------------
+
+
+
+Version Information
+-------------------
+
+package-version.txt::
+
+    1.0
+
+See https://repology.org/project/cunningham-tables/versions
+
+Installation commands
+---------------------
+
+.. tab:: Sage distribution:
+
+   .. CODE-BLOCK:: bash
+
+       $ sage -i cunningham_tables
+
+
+However, these system packages will not be used for building Sage
+because ``spkg-configure.m4`` has not been written for this package;
+see :issue:`27330` for more information.
