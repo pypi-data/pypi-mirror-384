@@ -1,0 +1,99 @@
+{
+  "name": "A/B Test Routing",
+  "description": "A/B testing configuration splitting traffic between model versions",
+  "rules": [
+    {
+      "name": "image_generation_test",
+      "description": "A/B test for image generation models",
+      "priority": 100,
+      "is_enabled": true,
+      "conditions": [
+        {
+          "field": "request.type",
+          "operator": "equals",
+          "value": "image_generation"
+        }
+      ],
+      "strategy": "split",
+      "targets": [
+        {
+          "provider": "modal",
+          "model_name": "flux-v1",
+          "endpoint": "https://flux-v1--modal.modal.run",
+          "weight": 0.7,
+          "label": "control",
+          "function_name": "generate_image",
+          "request_class": "ImageRequest"
+        },
+        {
+          "provider": "modal",
+          "model_name": "flux-v2",
+          "endpoint": "https://flux-v2--modal.modal.run",
+          "weight": 0.3,
+          "label": "variant",
+          "function_name": "generate_image",
+          "request_class": "ImageRequest"
+        }
+      ]
+    },
+    {
+      "name": "text_generation_shadow",
+      "description": "Shadow routing for text generation",
+      "priority": 90,
+      "is_enabled": true,
+      "conditions": [
+        {
+          "field": "request.type",
+          "operator": "equals",
+          "value": "text_generation"
+        },
+        {
+          "field": "user.tier",
+          "operator": "in",
+          "value": ["premium", "enterprise"]
+        }
+      ],
+      "strategy": "shadow",
+      "targets": [
+        {
+          "provider": "modal",
+          "model_name": "gpt4-primary",
+          "endpoint": "https://gpt4-primary--modal.modal.run",
+          "weight": 1.0,
+          "function_name": "generate_text",
+          "request_class": "TextRequest"
+        },
+        {
+          "provider": "modal",
+          "model_name": "claude-shadow",
+          "endpoint": "https://claude-shadow--modal.modal.run",
+          "weight": 1.0,
+          "function_name": "generate_text",
+          "request_class": "TextRequest"
+        }
+      ]
+    },
+    {
+      "name": "fallback_routing",
+      "description": "Fallback routing for all other requests",
+      "priority": 1,
+      "is_enabled": true,
+      "conditions": [],
+      "strategy": "fallback",
+      "targets": [
+        {
+          "provider": "fal",
+          "model_name": "llama-3-8b",
+          "endpoint": "https://fal.run/fal-ai/llama-3-8b-instruct",
+          "weight": 1.0
+        },
+        {
+          "provider": "fal",
+          "model_name": "llama-3-7b",
+          "endpoint": "https://fal.run/fal-ai/llama-3-7b-instruct",
+          "weight": 1.0
+        }
+      ]
+    }
+  ]
+}
