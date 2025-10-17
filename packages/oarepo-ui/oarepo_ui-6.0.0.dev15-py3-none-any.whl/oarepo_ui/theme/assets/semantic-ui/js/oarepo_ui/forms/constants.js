@@ -1,0 +1,1 @@
+export const DEFAULT_SUGGESTION_SIZE = 20;
