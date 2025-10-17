@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+      - "*.*.x"
+    tags:
+      - '*'
+  pull_request:
+  schedule:
+    # Weekly Monday 9AM build
+    # * is a special character in YAML so you have to quote this string
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+
+jobs:
+  test:
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@28e947497bed4d6ec3fa1d66d198e95a1d17bc63  # v2.2.1
+    with:
+      envs: |
+        - linux: py311-oldestdeps-cov
+          coverage: codecov
+        - linux: py311
+        - linux: py312
+        # `tox` does not currently respect `requires-python` versions when creating testing environments;
+        # if this breaks, add an upper pin to `requires-python` and revert this py3 to the latest working version
+        - linux: py3-cov
+          coverage: codecov
+        - macos: py3
+        - linux: py3-withromancal-cov
+          coverage: codecov
+
+  test_upstream:
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@28e947497bed4d6ec3fa1d66d198e95a1d17bc63  # v2.2.1
+    with:
+      envs: |
+        - linux: py3-rad
+
+  environment:
+    runs-on: ubuntu-latest
+    steps:
+      - id: data_path
+        run: echo "path=${{ runner.temp }}/data" >> $GITHUB_OUTPUT
+    outputs:
+      data_path: ${{ steps.data_path.outputs.path }}
+  crds_contexts:
+    uses: ./.github/workflows/contexts.yml
+  test_downstream:
+    needs: [ environment, crds_contexts ]
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@28e947497bed4d6ec3fa1d66d198e95a1d17bc63  # v2.2.1
+    with:
+      setenv: |
+        CRDS_PATH: ${{ needs.environment.outputs.data_path }}/crds
+        CRDS_SERVER_URL: https://roman-crds.stsci.edu
+        CRDS_CLIENT_RETRY_COUNT: 3
+        CRDS_CLIENT_RETRY_DELAY_SECONDS: 20
+      cache-path: ${{ needs.environment.outputs.data_path }}/crds
+      cache-key: crds-${{ needs.crds_contexts.outputs.roman }}
+      envs: |
+        - linux: py3-romancal
