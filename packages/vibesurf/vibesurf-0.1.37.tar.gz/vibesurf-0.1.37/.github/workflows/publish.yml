@@ -1,0 +1,219 @@
+name: Build and Publish
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: 'main'  # Always checkout main branch for latest code
+        fetch-depth: 0  # Full history for setuptools-scm
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build pytest
+        pip install -e .
+    
+    - name: Test CLI import
+      run: |
+        python -c "import vibe_surf; print(f'VibeSurf version: {vibe_surf.__version__}')"
+        python -c "from vibe_surf.cli import main; print('CLI import successful')"
+
+  build-wheels:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: 'main'  # Always checkout main branch for latest code
+        fetch-depth: 0  # Full history for setuptools-scm
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build setuptools-scm[toml]
+    
+    - name: Build package
+      run: python -m build
+    
+    - name: Check built package
+      run: |
+        pip install twine
+        twine check dist/*
+        
+        # Show package contents
+        echo "=== Built packages ==="
+        ls -la dist/
+        
+        echo "=== Package info ==="
+        python -m pip install dist/*.whl
+        python -c "import vibe_surf; print(f'Installed version: {vibe_surf.__version__}')"
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+  build-executables:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          # Windows x64
+          - os: windows-latest
+            asset_name: vibesurf-windows-x64.exe
+            activate_cmd: .venv\Scripts\activate.bat
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: 'main'  # Always checkout main branch for latest code
+        fetch-depth: 0
+        
+    # Add diagnostic logging
+    - name: Debug checkout and dependencies
+      shell: bash
+      run: |
+        echo "=== Git info ==="
+        git branch
+        git log --oneline -5
+        echo "=== pyproject.toml dependencies ==="
+        grep -A 20 "dependencies = \[" pyproject.toml || echo "No dependencies section found"
+        echo "=== vibe_surf/__init__.py ==="
+        head -5 vibe_surf/__init__.py || echo "No __init__.py found"
+
+    # Install uv (key step for consistent environment)
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    # Create uv environment and install current repository code
+    - name: Create uv environment
+      shell: bash
+      run: |
+        echo "=== Creating uv environment ==="
+        uv venv --python 3.12
+        
+        echo "=== Installing dependencies (all platforms use uv) ==="
+        uv pip install -e .
+        uv pip install pyinstaller
+        echo "=== Installed packages ==="
+        uv pip list
+
+    # Verify environment using uv run (cross-platform)
+    - name: Verify environment with uv run
+      shell: bash
+      run: |
+        echo "=== Environment verification using uv run ==="
+        echo "Python version:"
+        uv run python --version
+        echo "Testing dotenv import:"
+        uv run python -c "from dotenv import load_dotenv; print('dotenv available')"
+        echo "Testing vibe_surf import:"
+        uv run python -c "import vibe_surf; print('vibe_surf available')"
+        echo "Testing CLI import:"
+        uv run python -c "from vibe_surf.cli import main; print('CLI available')"
+
+    # Build executable using uv run (cross-platform)
+    - name: Build executable with uv run
+      shell: bash
+      run: |
+        echo "=== Building executable with uv run ==="
+        echo "Python version check:"
+        uv run python --version
+        echo "Running PyInstaller..."
+        uv run pyinstaller vibesurf.spec --clean --noconfirm
+
+    - name: Prepare executable
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          # Windows: rename .exe file
+          mv dist/vibesurf.exe dist/${{ matrix.asset_name }}
+        fi
+        
+        # Show final result
+        echo "=== Final executable ==="
+        ls -lh dist/${{ matrix.asset_name }}
+
+    - name: Test executable
+      shell: bash
+      run: |
+        # Basic test to ensure executable runs
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          echo "Testing Windows executable..."
+          ls -la dist/${{ matrix.asset_name }}
+        fi
+
+    - name: Upload executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        # Upload the executable file
+        path: dist/${{ matrix.asset_name }}
+        retention-days: 90
+
+  publish-pypi:
+    needs: [test, build-wheels]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write  # Required for trusted publishing
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        skip-existing: true  # Skip if version already exists on PyPI
+        # Use the following line if you want to use trusted publishing instead
+        # trusted-publishing: true
+
+  publish-executables:
+    needs: [test, build-executables]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write  # Required for uploading to GitHub releases
+      actions: read    # Required for downloading artifacts
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Upload executables to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          vibesurf-windows-x64.exe/vibesurf-windows-x64.exe
