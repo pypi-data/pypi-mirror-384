@@ -1,0 +1,328 @@
+project: charmcraft
+
+path: /charmcraft
+environment:
+  PROJECT_PATH: /charmcraft
+  SNAPD_TESTING_TOOLS: $PROJECT_PATH/tools/external/tools
+  PATH: /snap/bin:$PATH:$SNAPD_TESTING_TOOLS
+  CRAFT_DEBUG: 1 # Show exception tracebacks.
+  CRAFT_VERBOSITY_LEVEL: debug # Show debugging output when failing.
+  # Use the staging store for tests:
+  CHARMCRAFT_STORE_API_URL: https://api.staging.charmhub.io
+  CHARMCRAFT_UPLOAD_URL: https://storage.staging.snapcraftcontent.com
+  CHARMCRAFT_REGISTRY_URL: https://registry.staging.jujucharms.com
+
+exclude:
+  - .git
+  - .github
+  - .tox
+  - .venv
+  - .*_cache
+  - charmcraft
+  - libexec
+  - schema
+  - snap
+
+backends:
+  google:
+    key: '$(HOST: echo "$SPREAD_GOOGLE_KEY")'
+    location: snapd-spread/us-east1-b
+    halt-timeout: 3h
+    systems:
+      - ubuntu-18.04-64:
+          workers: 1
+          storage: 40G
+      - ubuntu-20.04-64:
+          workers: 3
+          storage: 40G
+      - ubuntu-22.04-64:
+          workers: 6
+          memory: 8G
+          storage: 40G
+      - ubuntu-24.04-64:
+          workers: 6
+          memory: 8G
+          storage: 40G
+  ci:
+    type: adhoc
+    systems:
+      - ubuntu-24.04-64:
+          workers: 1
+    environment:
+      CONTAINER_REGISTRY_URL: "$(HOST: echo $CONTAINER_REGISTRY_URL)"
+    allocate: ADDRESS $(./spread/.extension allocate ci)
+    discard: ./spread/.extension discard ci
+    prepare: '"$PROJECT_PATH"/spread/.extension backend-prepare ci'
+    restore: '"$PROJECT_PATH"/spread/.extension backend-restore ci'
+    prepare_each: '"$PROJECT_PATH"/spread/.extension backend-prepare-each ci'
+    restore_each: '"$PROJECT_PATH"/spread/.extension backend-restore-each ci'
+
+  multipass:
+    type: adhoc
+    allocate: |
+      sleep 0.$RANDOM  # Minimize chances of a race condition
+      mkdir -p $HOME/.spread
+      export counter_file="$HOME/.spread/multipass-count"
+      instance_num=$(flock -x $counter_file bash -c '
+        [ -s $counter_file ] || echo 0 > $counter_file
+        num=$(< $counter_file)
+        echo $num
+        echo $(( $num + 1 )) > $counter_file')
+
+      multipass_image=$(echo ${SPREAD_SYSTEM} | sed -e s/ubuntu-// -e s/-64//)
+
+      system=$(echo "${SPREAD_SYSTEM}" | tr . -)
+      instance_name="spread-${SPREAD_BACKEND}-${instance_num}-${system}"
+
+      multipass launch --cpus 4 --disk 40G --memory 16G --name "${instance_name}" "${multipass_image}"
+
+      # Enable PasswordAuthentication for root over SSH.
+      multipass exec "$instance_name" -- \
+        sudo sh -c "echo root:${SPREAD_PASSWORD} | sudo chpasswd"
+      multipass exec "$instance_name" -- \
+        sudo sh -c \
+        "if [ -d /etc/ssh/sshd_config.d/ ]
+        then
+          echo 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/10-spread.conf
+          echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config.d/10-spread.conf
+        else
+          sed -i /etc/ssh/sshd_config -E -e 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/' -e 's/^#?PermitRootLogin.*/PermitRootLogin yes/'
+        fi"
+      multipass exec "$instance_name" -- \
+        sudo systemctl restart ssh
+
+      # Get the IP from the instance
+      ip=$(multipass info --format csv "$instance_name" | tail -1 | cut -d\, -f3)
+      ADDRESS "$ip"
+    discard: |
+      instance_name=$(multipass list --format csv | grep $SPREAD_SYSTEM_ADDRESS | cut -f1 -d\,)
+      multipass delete --purge "${instance_name}"
+    systems:
+      - ubuntu-18.04-64:
+          workers: 1
+      - ubuntu-20.04-64:
+          workers: 1
+      - ubuntu-22.04-64:
+          workers: 4
+      - ubuntu-24.04-64:
+          workers: 4
+prepare: |
+  set -e
+
+  # if the 'tools' directory inside the submodule does not exist, then assume the submodule is empty
+  if [[ ! -d "$SNAPD_TESTING_TOOLS" ]]; then
+    echo "Cannot run spread because submodule 'snapd-testing-tools' is empty. Fetch with 'git submodule update --init' and rerun spread."
+    exit 1
+  fi
+
+  if os.query is-ubuntu; then
+    tempfile="$(mktemp)"
+    if ! apt-get update > "$tempfile" 2>&1; then
+        cat "$tempfile"
+        exit 1
+    fi
+  fi
+
+  tests.pkgs install snapd
+  tests.pkgs install unzip
+
+  snap wait system seed.loaded
+
+  # The /snap directory does not exist in some environments
+  [ ! -d /snap ] && ln -s /var/lib/snapd/snap /snap
+
+  # install lxd (previously removing the APT version, if there)
+  [ -e /usr/bin/lxd ] && apt-get remove --purge --yes lxd lxd-client lxcfs liblxc1
+  snap install lxd
+
+  # Hold snap refreshes for 24h.
+  snap set system refresh.hold="$(date --date=tomorrow +%Y-%m-%dT%H:%M:%S%:z)"
+  if ! snap watch --last=auto-refresh?; then
+      journalctl -xe
+  fi
+  if ! snap watch --last=install?; then
+      journalctl -xe
+  fi
+
+  lxd waitready --timeout=30
+  lxd init --auto
+
+  #shellcheck source=tests/spread/tools/prepare.sh
+  . "/charmcraft/tests/spread/tools/prepare.sh"
+
+  # We use uv for the default templates now, but we may need to write requirements files.
+  snap install astral-uv --classic
+
+  install_charmcraft
+
+suites:
+  docs/howto/code/: &docsuite
+    summary: tests howto from the docs
+    systems:
+      - ubuntu-24.04-64
+    manual: true
+    prepare: |
+      juju_channel=3.6/stable
+      microk8s_channel=1.32/stable
+
+      lxc network set lxdbr0 ipv6.address none
+      mkdir -p ~/.local/share  # Workaround for Juju not being able to create the directory
+
+      #shellcheck source=tests/spread/tools/prepare.sh
+      . "/charmcraft/tests/spread/tools/prepare.sh"
+
+      refresh_or_install_snap juju "$juju_channel"
+      refresh_or_install_snap microk8s "$microk8s_channel" --classic
+      refresh_or_install_snap rockcraft latest/edge --classic
+
+      if [[ -v CONTAINER_REGISTRY_URL ]]; then
+        CONTAINER_REGISTRY_HOSTPORT=$(echo "$CONTAINER_REGISTRY_URL" | awk -F/ '{print $3}')
+        echo "server = \"$CONTAINER_REGISTRY_URL\"" > /var/snap/microk8s/current/args/certs.d/docker.io/hosts.toml
+        echo "[host.\"$CONTAINER_REGISTRY_HOSTPORT\"]" >> /var/snap/microk8s/current/args/certs.d/docker.io/hosts.toml
+        echo 'capabilities = ["pull", "resolve"]' >> /var/snap/microk8s/current/args/certs.d/docker.io/hosts.toml
+        microk8s stop
+        microk8s start
+      fi
+
+      microk8s status --wait-ready --timeout 360
+      microk8s enable hostpath-storage
+      microk8s enable registry
+      microk8s enable ingress
+      microk8s kubectl rollout status deployments/hostpath-provisioner -n kube-system -w --timeout=600s
+
+      # Bootstrap controller
+      microk8s config | juju add-k8s my-k8s --client
+      juju bootstrap my-k8s dev-controller --config bootstrap-timeout=500
+
+      echo 'connect-timeout = 10' >> ~/.curlrc
+      echo 'max-time = 20' >> ~/.curlrc
+    debug-each: |
+      microk8s kubectl get all -A
+      juju status
+      juju debug-log --no-tail --limit 1000
+    restore: |
+      juju destroy-controller --force --destroy-all-models \
+      --destroy-storage --no-prompt --no-wait dev-controller
+
+  docs/tutorial/code/:
+    <<: *docsuite
+    summary: tests tutorial from the docs
+
+  tests/spread/commands/:
+    summary: simple charmcraft commands
+  tests/spread/charms/:
+    summary: real charm building tests
+    prepare: |
+      snap install juju --channel=3.2/stable
+      snap install microk8s --channel=1.28-strict/stable
+      # Set up Juju controllers for the charms
+      lxc network set lxdbr0 ipv6.address none
+      mkdir -p ~/.local/share  # Workaround for Juju not being able to create the directory
+      microk8s enable hostpath-storage
+      microk8s enable dns
+      snap alias microk8s.kubectl kubectl
+
+      if ! juju controllers | grep -q k8s; then
+        juju bootstrap microk8s k8s
+      fi
+      if ! juju controllers | grep -q lxd; then
+        juju bootstrap localhost lxd
+      fi
+    prepare-each: |
+      if [[ -v JUJU_MODEL ]] && ! juju add-model "${JUJU_MODEL}"; then
+        juju destroy-model --force --no-prompt --destroy-storage "${JUJU_MODEL}" || true
+        juju add-model "${JUJU_MODEL}"
+      fi
+    restore-each: |
+      if [[ -v JUJU_MODEL ]]; then
+        juju destroy-model --no-prompt --force --destroy-storage $JUJU_MODEL
+      fi
+      rm -f ~/*.charm
+  tests/spread/dependencies/:
+    summary: test charm dependencies
+    systems:
+      - ubuntu-22.04-64
+    kill-timeout: 60m # Setting up Juju can take a while.
+    priority: 50 # Because setting up Juju takes a while, do these first.
+    prepare: |
+      snap install juju --channel=3.2/stable
+      # Set up Juju controllers for the charms
+      lxc network set lxdbr0 ipv6.address none
+      mkdir -p ~/.local/share  # Workaround for Juju not being able to create the directory
+
+      if ! juju controllers | grep -q lxd; then
+        juju bootstrap localhost lxd
+      fi
+    prepare-each: |
+      if [[ -v JUJU_MODEL ]] && ! juju add-model "${JUJU_MODEL}"; then
+        juju destroy-model --force --no-prompt --destroy-storage "${JUJU_MODEL}" || true
+        juju add-model "${JUJU_MODEL}"
+      fi
+    restore-each: |
+      if [[ -v JUJU_MODEL ]]; then
+        juju destroy-model --no-prompt --force --no-wait --timeout 15s --destroy-storage $JUJU_MODEL
+      fi
+      rm -f ~/*.charm
+      rm -rf charm
+  tests/spread/smoketests/:
+    summary: basic charm builds in different combinations
+    systems:
+      - ubuntu-20.04-64
+      - ubuntu-22.04-64
+  tests/spread/hooks/:
+    summary: snap hook tests
+    kill-timeout: 30m
+  tests/spread/store/:
+    prepare: |
+      snap install docker
+      # make sure docker is working
+      retry -n 10 --wait 2 sh -c 'docker run --rm hello-world'
+      # https://linuxcontainers.org/lxd/docs/master/howto/network_bridge_firewalld/#prevent-issues-with-lxd-and-docker
+      # https://github.com/canonical/lxd-cloud/blob/f20a64a8af42485440dcbfd370faf14137d2f349/test/includes/lxd.sh#L13-L23
+      iptables -P FORWARD ACCEPT
+
+      # Ensure that the reused charms are registered if necessary.
+      if ! charmcraft status "${CHARM_DEFAULT_NAME}"; then
+        charmcraft register $CHARM_DEFAULT_NAME
+      fi
+
+      rm -f charmcraft.yaml
+
+    restore: |
+      snap remove docker --purge
+    summary: sequence of commands for different store-related functionalities
+    kill-timeout: 30m
+    manual: true
+    systems:
+      - ubuntu-22.04-64
+    environment:
+      # the content for this key is the content of FILE after running
+      #     charmcraft login --export=FILE --ttl=5184000#
+      # (as the owner of CHARM_DEFAULT_NAME and BUNDLE_DEFAULT_NAME below), and it
+      # should be part of the environment (when running spread locally just define it,
+      # for GH actions set it in Settings -> Security -> Actions -> Repository secrets)
+      CHARMCRAFT_AUTH: "$(HOST: echo $CHARMCRAFT_AUTH)"
+      CHARMCRAFT_SINGLE_CHARM_AUTH: "$(HOST: echo $CHARMCRAFT_SINGLE_CHARM_AUTH)"
+
+      # to not flood Charmhub with names the same two are always used in the Store related
+      # tests (except in the names registration tests, of course); register them manually
+      # in staging Charmhub authenticating with the configured credentials
+      CHARM_DEFAULT_NAME: "$(HOST: echo ${CHARM_DEFAULT_NAME:-$USER-test-charm})"
+
+  # Tests that run on a specific system in destructive mode.
+  # These tests run in destructive mode for speed, since creating the containers takes
+  # a little while each time.
+  tests/spread/ubuntu-20.04/:
+    summary: Destructive tests for Ubuntu Focal (20.04 LTS) builds
+    systems:
+      - ubuntu-20.04-64
+
+  tests/spread/ubuntu-22.04/:
+    summary: Destructive tests for Ubuntu Jammy (22.04 LTS) builds
+    systems:
+      - ubuntu-22.04-64
+
+  tests/spread/ubuntu-24.04/:
+    summary: Destructive tests for Ubuntu Noble (24.04 LTS) builds
+    systems:
+      - ubuntu-24.04-64
