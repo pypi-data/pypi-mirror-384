@@ -1,0 +1,34 @@
+# flake8: noqa
+
+# import all models into this package
+# if you have many models here with many references from one model to another this may
+# raise a RecursionError
+# to avoid this, import only the models that you directly need like:
+# from from eis.dunning.model.pet import Pet
+# or import this package, but before doing it, use:
+# import sys
+# sys.setrecursionlimit(n)
+
+from eis.dunning.model.calculate_dunning_for_invoice_request_dto_rest import CalculateDunningForInvoiceRequestDtoRest
+from eis.dunning.model.calculate_dunning_for_invoice_response_class import CalculateDunningForInvoiceResponseClass
+from eis.dunning.model.create_dunning_config_request_dto import CreateDunningConfigRequestDto
+from eis.dunning.model.create_dunning_config_response_class import CreateDunningConfigResponseClass
+from eis.dunning.model.create_dunning_for_invoice_request_dto_rest import CreateDunningForInvoiceRequestDtoRest
+from eis.dunning.model.create_dunning_position_for_invoice_response_class import CreateDunningPositionForInvoiceResponseClass
+from eis.dunning.model.create_dunning_position_request_dto_rest import CreateDunningPositionRequestDtoRest
+from eis.dunning.model.create_dunning_position_response_class import CreateDunningPositionResponseClass
+from eis.dunning.model.dunning_config_class import DunningConfigClass
+from eis.dunning.model.dunning_configuration_class import DunningConfigurationClass
+from eis.dunning.model.dunning_configuration_request_dto import DunningConfigurationRequestDto
+from eis.dunning.model.dunning_level_class import DunningLevelClass
+from eis.dunning.model.dunning_level_request_dto import DunningLevelRequestDto
+from eis.dunning.model.dunning_position_calculated_class import DunningPositionCalculatedClass
+from eis.dunning.model.dunning_position_class import DunningPositionClass
+from eis.dunning.model.get_dunning_config_response_class import GetDunningConfigResponseClass
+from eis.dunning.model.get_dunning_position_response_class import GetDunningPositionResponseClass
+from eis.dunning.model.inline_response200 import InlineResponse200
+from eis.dunning.model.inline_response503 import InlineResponse503
+from eis.dunning.model.list_dunning_config_response_class import ListDunningConfigResponseClass
+from eis.dunning.model.list_dunning_position_response_class import ListDunningPositionResponseClass
+from eis.dunning.model.update_dunning_config_request_dto import UpdateDunningConfigRequestDto
+from eis.dunning.model.update_dunning_config_response_class import UpdateDunningConfigResponseClass
