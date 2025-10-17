@@ -1,0 +1,39 @@
+stages:
+  - lint
+  - deploy
+  - publish
+
+lint:
+  image: python:latest
+  stage: lint
+  script:
+    - pip install ruff
+    - ruff format jmstate
+    - ruff check jmstate
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+pages:
+  image: python:3.13
+  stage: deploy
+  script:
+    - apt-get update && apt-get install -y git
+    - pip install sphinx furo
+    - pip install . --extra-index-url https://download.pytorch.org/whl/cpu
+    - sphinx-build -b html docs/source public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v.*$/'
+
+publish-to-pypi:
+  image: python:3.13
+  stage: publish
+  script:
+    - python -m pip install --upgrade pip build twine setuptools-scm
+    - python -m build
+    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__ python -m twine upload --verbose dist/*
+  rules: 
+    - if: '$CI_COMMIT_TAG =~ /^v.*$/'
+
