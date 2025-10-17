@@ -1,0 +1,25 @@
+#!/bin/bash
+
+{% if env_vars is not none and env_vars|length > 0 %}
+echo '#!/bin/bash' | sudo tee /etc/profile.d/myenvvars.sh
+{% for key, value in env_vars.items() %}
+echo 'export {{ key }}={{ value }}' | sudo tee -a /etc/profile.d/myenvvars.sh
+{% endfor %}
+{% endif %}
+
+{% if bucket_mounts is not none %}
+{% for bucket_mount in bucket_mounts %}
+sudo mkdir -p {{ bucket_mount["mount_path"] }}/{{ bucket_mount["bucket_name"] }}
+sudo chmod -R 777 {{ bucket_mount["mount_path"] }}/{{ bucket_mount["bucket_name"] }}
+sudo su - jupyter -c "gcsfuse --implicit-dirs {{ bucket_mount["bucket_name"] }} {{ bucket_mount["mount_path"] }}/{{ bucket_mount["bucket_name"] }}"
+{% endfor %}
+{% endif %}
+
+{% if tensorboard_resource_name is not none %}
+echo '#!/bin/bash' | sudo tee /etc/profile.d/myenvvars.sh
+echo 'export AIP_TENSORBOARD_LOG_DIR={{ tensorboard_resource_name }}' | sudo tee -a /etc/profile.d/myenvvars.sh
+{% endif %}
+
+{% if user_script is not none %}
+{{ user_script }}
+{% endif %}
