@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Viewer - Curriculum Mapping</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            color: #2c3e50;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 5px;
+        }
+
+        .filters {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .filters h3 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .filter-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .filter-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-item label {
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .filter-item select,
+        .filter-item input {
+            padding: 10px;
+            border: 1px solid #dfe6e9;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            transition: border-color 0.2s;
+        }
+
+        .filter-item select:focus,
+        .filter-item input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .questions-list {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #dfe6e9;
+        }
+
+        th {
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            color: #2c3e50;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 12px;
+            color: #2c3e50;
+            vertical-align: top;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .question-text-cell {
+            max-width: 300px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .question-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge.grade {
+            background: #3498db;
+            color: white;
+        }
+
+        .badge.source {
+            background: #9b59b6;
+            color: white;
+        }
+
+        .badge.mapped {
+            background: #27ae60;
+            color: white;
+        }
+
+        .badge.unmapped {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .badge.template {
+            background: #16a085;
+            color: white;
+        }
+
+        .template-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f0f9ff;
+            border-radius: 8px;
+            border-left: 4px solid #16a085;
+        }
+
+        .template-section h4 {
+            color: #16a085;
+            font-size: 13px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .template-section h4:hover {
+            opacity: 0.8;
+        }
+
+        .template-content {
+            display: none;
+        }
+
+        .template-text {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #2c3e50;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .parameters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .parameter-item {
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .parameter-name {
+            font-weight: 600;
+            color: #16a085;
+            margin-bottom: 3px;
+        }
+
+        .parameter-detail {
+            color: #7f8c8d;
+            font-size: 11px;
+        }
+
+        .variability-score {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .variability-high {
+            background: #27ae60;
+            color: white;
+        }
+
+        .variability-medium {
+            background: #f39c12;
+            color: white;
+        }
+
+        .variability-low {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .di-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff9e6;
+            border-radius: 8px;
+            border-left: 4px solid #f39c12;
+        }
+
+        .di-section h4 {
+            color: #f39c12;
+            font-size: 13px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .di-section h4:hover {
+            opacity: 0.8;
+        }
+
+        .di-content {
+            display: none;
+        }
+
+        .di-section h5 {
+            color: #2c3e50;
+            font-size: 12px;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .di-section ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .di-section li {
+            font-size: 12px;
+            line-height: 1.5;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+
+        .di-vocab-item {
+            background: white;
+            padding: 6px 8px;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+
+        .di-vocab-term {
+            font-weight: 600;
+            color: #f39c12;
+        }
+
+        .di-vocab-def {
+            color: #7f8c8d;
+            margin-left: 5px;
+        }
+
+        .di-raw-toggle {
+            cursor: pointer;
+            color: #3498db;
+            text-decoration: underline;
+            font-size: 11px;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        .di-raw-toggle:hover {
+            color: #2980b9;
+        }
+
+        .di-raw-content {
+            display: none;
+            margin-top: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .question-text {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .question-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #ecf0f1;
+        }
+
+        .detail-item {
+            font-size: 13px;
+        }
+
+        .detail-item .label {
+            color: #7f8c8d;
+            font-weight: 500;
+            margin-bottom: 3px;
+        }
+
+        .detail-item .value {
+            color: #2c3e50;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #7f8c8d;
+            font-size: 16px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #7f8c8d;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 20px;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error {
+            background: #e74c3c;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 Question Viewer</h1>
+            <p>Browse and filter extracted questions from the curriculum database</p>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="label">Total Questions</div>
+                    <div class="value" id="total-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Mapped</div>
+                    <div class="value" id="mapped-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Unmapped</div>
+                    <div class="value" id="unmapped-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Filtered Results</div>
+                    <div class="value" id="filtered-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Templatized</div>
+                    <div class="value" id="templatized-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">With DI</div>
+                    <div class="value" id="di-count">-</div>
+                </div>
+            </div>
+        </header>
+
+        <div id="error-container"></div>
+
+        <div class="filters">
+            <h3>Filters</h3>
+            <div class="filter-group">
+                <div class="filter-item">
+                    <label>Grade</label>
+                    <select id="filter-grade">
+                        <option value="">All Grades</option>
+                        <option value="3">Grade 3</option>
+                        <option value="4">Grade 4</option>
+                        <option value="5">Grade 5</option>
+                        <option value="6">Grade 6</option>
+                        <option value="7">Grade 7</option>
+                        <option value="8">Grade 8</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>Source Type</label>
+                    <select id="filter-source">
+                        <option value="">All Sources</option>
+                        <option value="athena_api">Athena API</option>
+                        <option value="textbook_pdf">Textbook PDF</option>
+                        <option value="curriculum_generated">Curriculum Generated</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>Domain</label>
+                    <select id="filter-domain">
+                        <option value="">All Domains</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>Mapping Status</label>
+                    <select id="filter-mapped">
+                        <option value="">All</option>
+                        <option value="mapped">Mapped</option>
+                        <option value="unmapped">Unmapped</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>Template Status</label>
+                    <select id="filter-template">
+                        <option value="">All</option>
+                        <option value="has_template">Has Template</option>
+                        <option value="no_template">No Template</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <label>DI Status</label>
+                    <select id="filter-di">
+                        <option value="">All</option>
+                        <option value="has_di">Has DI</option>
+                        <option value="no_di">No DI</option>
+                    </select>
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button class="btn-primary" onclick="applyFilters()">Apply Filters</button>
+                <button class="btn-secondary" onclick="resetFilters()">Reset</button>
+            </div>
+        </div>
+
+        <div class="questions-list" id="questions-container">
+            <div class="loading">Loading questions...</div>
+        </div>
+
+        <div class="pagination" id="pagination" style="display: none;">
+            <button class="btn-secondary" onclick="previousPage()" id="prev-btn">Previous</button>
+            <span id="page-info">Page 1</span>
+            <button class="btn-secondary" onclick="nextPage()" id="next-btn">Next</button>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const SUPABASE_URL = 'https://fvxegmopuuztkdsrikux.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2eGVnbW9wdXV6dGtkc3Jpa3V4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU3MDk5OTAsImV4cCI6MjA3MTI4NTk5MH0.v4HffXHZbDeq9QsuLBNhOy7QePa_X_tQzuKEJxcCJcc';
+
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // State
+        let currentPage = 0;
+        const pageSize = 20;
+        let totalCount = 0;
+
+        // Initialize
+        async function init() {
+            try {
+                await loadDomains();
+                await loadStats();
+                await loadQuestions();
+            } catch (error) {
+                showError('Failed to initialize: ' + error.message);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                // Total count
+                const { count: totalCount } = await supabase
+                    .from('extracted_questions')
+                    .select('*', { count: 'exact', head: true });
+
+                // Mapped count
+                const { count: mappedCount } = await supabase
+                    .from('extracted_questions')
+                    .select('*', { count: 'exact', head: true })
+                    .not('substandard_id', 'is', null);
+
+                // Templatized count
+                const { count: templatizedCount } = await supabase
+                    .from('extracted_questions')
+                    .select('*', { count: 'exact', head: true })
+                    .not('template', 'is', null);
+
+                // DI count
+                const { count: diCount } = await supabase
+                    .from('extracted_questions')
+                    .select('*', { count: 'exact', head: true })
+                    .not('direct_instruction_raw', 'is', null);
+
+                document.getElementById('total-count').textContent = totalCount || 0;
+                document.getElementById('mapped-count').textContent = mappedCount || 0;
+                document.getElementById('unmapped-count').textContent = (totalCount - mappedCount) || 0;
+                document.getElementById('templatized-count').textContent = templatizedCount || 0;
+                document.getElementById('di-count').textContent = diCount || 0;
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        async function loadDomains() {
+            try {
+                const { data, error } = await supabase
+                    .from('curriculum')
+                    .select('domain')
+                    .order('domain');
+
+                if (error) throw error;
+
+                const uniqueDomains = [...new Set(data.map(d => d.domain).filter(Boolean))];
+                const domainSelect = document.getElementById('filter-domain');
+
+                uniqueDomains.forEach(domain => {
+                    const option = document.createElement('option');
+                    option.value = domain;
+                    option.textContent = domain;
+                    domainSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load domains:', error);
+            }
+        }
+
+        async function loadQuestions() {
+            try {
+                showLoading();
+
+                // Build query with filters
+                const grade = document.getElementById('filter-grade').value;
+                const source = document.getElementById('filter-source').value;
+                const domain = document.getElementById('filter-domain').value;
+                const mapped = document.getElementById('filter-mapped').value;
+                const template = document.getElementById('filter-template').value;
+                const di = document.getElementById('filter-di').value;
+
+                let query = supabase
+                    .from('extracted_questions')
+                    .select('*', { count: 'exact' })
+                    .order('created_at', { ascending: false });
+
+                // Apply filters
+                if (grade) {
+                    query = query.eq('grade', parseInt(grade));
+                }
+                if (source) {
+                    query = query.eq('source_type', source);
+                }
+                if (domain) {
+                    query = query.eq('domain', domain);
+                }
+                if (mapped === 'mapped') {
+                    query = query.not('substandard_id', 'is', null);
+                }
+                if (mapped === 'unmapped') {
+                    query = query.is('substandard_id', null);
+                }
+                if (template === 'has_template') {
+                    query = query.not('template', 'is', null);
+                }
+                if (template === 'no_template') {
+                    query = query.is('template', null);
+                }
+                if (di === 'has_di') {
+                    query = query.not('direct_instruction_raw', 'is', null);
+                }
+                if (di === 'no_di') {
+                    query = query.is('direct_instruction_raw', null);
+                }
+
+                // Pagination
+                const start = currentPage * pageSize;
+                const end = start + pageSize - 1;
+                query = query.range(start, end);
+
+                const { data, error, count } = await query;
+
+                if (error) throw error;
+
+                totalCount = count || 0;
+                document.getElementById('filtered-count').textContent = totalCount;
+
+                renderQuestions(data || []);
+            } catch (error) {
+                showError('Failed to load questions: ' + error.message);
+            }
+        }
+
+        function applyFilters() {
+            currentPage = 0;
+            loadQuestions();
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-grade').value = '';
+            document.getElementById('filter-source').value = '';
+            document.getElementById('filter-domain').value = '';
+            document.getElementById('filter-mapped').value = '';
+            document.getElementById('filter-template').value = '';
+            document.getElementById('filter-di').value = '';
+            currentPage = 0;
+            loadQuestions();
+        }
+
+        function renderQuestions(questions) {
+            const container = document.getElementById('questions-container');
+
+            if (!questions || questions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                        </svg>
+                        <h3>No questions found</h3>
+                        <p>Try adjusting your filters</p>
+                    </div>
+                `;
+                document.getElementById('pagination').style.display = 'none';
+                return;
+            }
+
+            container.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Grade</th>
+                            <th>Source</th>
+                            <th>Domain</th>
+                            <th>Unit</th>
+                            <th>Lesson</th>
+                            <th>Substandard ID</th>
+                            <th>Question</th>
+                            <th>Quality</th>
+                            <th>Status</th>
+                            <th>Template</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${questions.map(q => renderQuestionRow(q)).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            // Update pagination
+            const totalPages = Math.ceil(totalCount / pageSize);
+            document.getElementById('page-info').textContent = `Page ${currentPage + 1} of ${totalPages}`;
+            document.getElementById('prev-btn').disabled = currentPage === 0;
+            document.getElementById('next-btn').disabled = currentPage >= totalPages - 1;
+            document.getElementById('pagination').style.display = 'flex';
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function parseDIContent(diRaw) {
+            if (!diRaw) return null;
+
+            const parsed = {
+                prerequisite_skills: [],
+                microskills: [],
+                vocabulary: [],
+                question_stems: [],
+                step_by_step: []
+            };
+
+            // Parse sections using regex
+            const prereqMatch = diRaw.match(/## Prerequisite Skills?\n([\s\S]*?)(?=\n##|\n\n##|$)/i);
+            if (prereqMatch) {
+                parsed.prerequisite_skills = prereqMatch[1]
+                    .split('\n')
+                    .filter(line => line.trim().startsWith('-'))
+                    .map(line => line.replace(/^-\s*/, '').trim());
+            }
+
+            const microMatch = diRaw.match(/## Microskills?\n([\s\S]*?)(?=\n##|\n\n##|$)/i);
+            if (microMatch) {
+                parsed.microskills = microMatch[1]
+                    .split('\n')
+                    .filter(line => line.trim().startsWith('-'))
+                    .map(line => line.replace(/^-\s*/, '').trim());
+            }
+
+            const vocabMatch = diRaw.match(/## Precise Vocabulary\n([\s\S]*?)(?=\n##|\n\n##|$)/i);
+            if (vocabMatch) {
+                parsed.vocabulary = vocabMatch[1]
+                    .split('\n')
+                    .filter(line => line.trim().startsWith('-'))
+                    .map(line => {
+                        const match = line.match(/^-\s*\*\*([^*]+)\*\*:\s*(.+)/);
+                        if (match) {
+                            return { term: match[1].trim(), definition: match[2].trim() };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean);
+            }
+
+            const stemsMatch = diRaw.match(/## Question Stems?\n([\s\S]*?)(?=\n##|\n\n##|$)/i);
+            if (stemsMatch) {
+                parsed.question_stems = stemsMatch[1]
+                    .split('\n')
+                    .filter(line => line.trim().startsWith('-'))
+                    .map(line => line.replace(/^-\s*/, '').trim());
+            }
+
+            const stepsMatch = diRaw.match(/## Step-by-Step Explanation\n([\s\S]*?)(?=\n##|\n\n##|$)/i);
+            if (stepsMatch) {
+                parsed.step_by_step = stepsMatch[1]
+                    .split('\n')
+                    .filter(line => /^\d+\./.test(line.trim()))
+                    .map(line => line.replace(/^\d+\.\s*/, '').trim());
+            }
+
+            return parsed;
+        }
+
+        function renderQuestionRow(q) {
+            const hasTemplate = q.template && q.template.trim() !== '';
+            const templateBadge = hasTemplate
+                ? '<span class="badge template">Templated</span>'
+                : '<span class="badge unmapped">No Template</span>';
+
+            let templateDetails = '';
+            if (hasTemplate && q.parameter_constraints) {
+                const variabilityClass =
+                    q.variability_score >= 0.8 ? 'variability-high' :
+                    q.variability_score >= 0.5 ? 'variability-medium' : 'variability-low';
+
+                const variabilityLabel =
+                    q.variability_score >= 0.8 ? 'High' :
+                    q.variability_score >= 0.5 ? 'Medium' : 'Low';
+
+                const parameters = Object.entries(q.parameter_constraints || {})
+                    .map(([name, constraint]) => {
+                        let details = `Type: ${constraint.type}`;
+                        if (constraint.min_value !== null && constraint.max_value !== null) {
+                            details += ` | Range: ${constraint.min_value}-${constraint.max_value}`;
+                        }
+                        if (constraint.options && constraint.options.length > 0) {
+                            details += ` | Options: ${constraint.options.slice(0, 3).join(', ')}${constraint.options.length > 3 ? '...' : ''}`;
+                        }
+                        return `
+                            <div class="parameter-item">
+                                <div class="parameter-name">{{${name}}}</div>
+                                <div class="parameter-detail">${details}</div>
+                            </div>
+                        `;
+                    }).join('');
+
+                const templateId = q.id.replace(/-/g, '');
+                templateDetails = `
+                    <div class="template-section">
+                        <h4 onclick="toggleTemplate('${templateId}')">📝 Template ▸</h4>
+                        <div class="template-content" id="template-${templateId}">
+                            <div class="template-text">${q.template}</div>
+                            ${q.variability_score ? `<span class="variability-score ${variabilityClass}">Variability: ${variabilityLabel} (${q.variability_score.toFixed(2)})</span>` : ''}
+                            ${parameters ? `
+                                <h4 style="margin-top: 15px;">Parameters</h4>
+                                <div class="parameters-grid">${parameters}</div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Parse and render DI content
+            let diDetails = '';
+            if (q.direct_instruction_raw && q.direct_instruction_raw.trim() !== '') {
+                const diParsed = parseDIContent(q.direct_instruction_raw);
+                const rowId = q.id.replace(/-/g, '');
+
+                if (diParsed) {
+                    diDetails = `
+                        <div class="di-section">
+                            <h4 onclick="toggleDI('${rowId}')">🎓 Direct Instruction ▸</h4>
+                            <div class="di-content" id="di-${rowId}">
+                                ${diParsed.prerequisite_skills.length > 0 ? `
+                                    <h5>Prerequisite Skills</h5>
+                                    <ul>
+                                        ${diParsed.prerequisite_skills.map(skill => `<li>${skill}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+                                ${diParsed.microskills.length > 0 ? `
+                                    <h5>Microskills</h5>
+                                    <ul>
+                                        ${diParsed.microskills.map(skill => `<li>${skill}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+                                ${diParsed.vocabulary.length > 0 ? `
+                                    <h5>Vocabulary</h5>
+                                    ${diParsed.vocabulary.map(v => `
+                                        <div class="di-vocab-item">
+                                            <span class="di-vocab-term">${v.term}:</span>
+                                            <span class="di-vocab-def">${v.definition}</span>
+                                        </div>
+                                    `).join('')}
+                                ` : ''}
+                                ${diParsed.question_stems.length > 0 ? `
+                                    <h5>Question Stems</h5>
+                                    <ul>
+                                        ${diParsed.question_stems.map(stem => `<li>${stem}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+                                ${diParsed.step_by_step.length > 0 ? `
+                                    <h5>Step-by-Step Explanation</h5>
+                                    <ul>
+                                        ${diParsed.step_by_step.map(step => `<li>${step}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+                                <span class="di-raw-toggle" onclick="toggleDIRaw('${rowId}')">Show raw markdown</span>
+                                <div class="di-raw-content" id="di-raw-${rowId}">${q.direct_instruction_raw}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            return `
+                <tr>
+                    <td>${q.grade || '-'}</td>
+                    <td>${q.source_type ? q.source_type.replace('_', ' ') : '-'}</td>
+                    <td>${q.domain || '-'}</td>
+                    <td>${q.unit_name || '-'}</td>
+                    <td>${q.lesson_title || '-'}</td>
+                    <td>${q.substandard_id || '-'}</td>
+                    <td class="question-text-cell">
+                        ${q.question_en || q.question_ar || 'No question'}
+                        ${templateDetails}
+                        ${diDetails}
+                    </td>
+                    <td>${q.quality_score != null ? q.quality_score.toFixed(1) : '-'}</td>
+                    <td>${q.substandard_id ? '<span class="badge mapped">Mapped</span>' : '<span class="badge unmapped">Unmapped</span>'}</td>
+                    <td>${templateBadge}</td>
+                </tr>
+            `;
+        }
+
+        function toggleTemplate(templateId) {
+            const element = document.getElementById(`template-${templateId}`);
+            const header = element.previousElementSibling;
+            if (element.style.display === 'none' || element.style.display === '') {
+                element.style.display = 'block';
+                header.innerHTML = header.innerHTML.replace('▸', '▾');
+            } else {
+                element.style.display = 'none';
+                header.innerHTML = header.innerHTML.replace('▾', '▸');
+            }
+        }
+
+        function toggleDI(rowId) {
+            const element = document.getElementById(`di-${rowId}`);
+            const header = element.previousElementSibling;
+            if (element.style.display === 'none' || element.style.display === '') {
+                element.style.display = 'block';
+                header.innerHTML = header.innerHTML.replace('▸', '▾');
+            } else {
+                element.style.display = 'none';
+                header.innerHTML = header.innerHTML.replace('▾', '▸');
+            }
+        }
+
+        function toggleDIRaw(rowId) {
+            const element = document.getElementById(`di-raw-${rowId}`);
+            if (element.style.display === 'none' || element.style.display === '') {
+                element.style.display = 'block';
+            } else {
+                element.style.display = 'none';
+            }
+        }
+
+        function previousPage() {
+            if (currentPage > 0) {
+                currentPage--;
+                loadQuestions();
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(totalCount / pageSize);
+            if (currentPage < totalPages - 1) {
+                currentPage++;
+                loadQuestions();
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('questions-container').innerHTML = '<div class="loading">Loading questions...</div>';
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error">⚠️ ${message}</div>`;
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

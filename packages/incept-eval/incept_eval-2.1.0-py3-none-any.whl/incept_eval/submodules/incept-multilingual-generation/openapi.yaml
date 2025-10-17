@@ -1,0 +1,1092 @@
+openapi: 3.0.3
+info:
+  title: Incept Multilingual Generation API
+  description: API for generating educational questions with multilingual support
+  version: 2.0.0
+  contact:
+    name: API Support
+    email: support@incept.ai
+
+servers:
+  - url: https://uae-poc.inceptapi.com
+    description: Production server
+  - url: http://localhost:8000
+    description: Development server
+
+paths:
+  /completions:
+    post:
+      summary: LLM Completions
+      description: Direct access to the LLM solving function with provider selection
+      operationId: completions
+      tags:
+        - LLM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompletionsRequest'
+            examples:
+              falcon:
+                summary: Using Falcon provider
+                value:
+                  messages:
+                    - role: system
+                      content: "You are a helpful assistant"
+                    - role: user
+                      content: "What is 2+2?"
+                  max_tokens: 8000
+                  provider: "falcon"
+                  language: "english"
+              dspy:
+                summary: Using DSPy provider
+                value:
+                  messages:
+                    - role: system
+                      content: "You are a math tutor"
+                    - role: user
+                      content: "Explain prime numbers"
+                  max_tokens: 8000
+                  provider: "dspy"
+                  language: "english"
+              openai:
+                summary: Using OpenAI provider
+                value:
+                  messages:
+                    - role: system
+                      content: "You are a coding assistant"
+                    - role: user
+                      content: "Write a Python function"
+                  max_tokens: 8000
+                  provider: "openai"
+                  language: "english"
+              arabic:
+                summary: Request in Arabic language
+                value:
+                  messages:
+                    - role: system
+                      content: "You are a math teacher"
+                    - role: user
+                      content: "What is 5 times 7?"
+                  max_tokens: 8000
+                  provider: "falcon"
+                  language: "arabic"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletionsResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    description: Error message
+
+  /v1/generate_questions:
+    post:
+      summary: Generate Educational Questions
+      description: |
+        Generate educational questions with comprehensive response format including:
+        - Multiple question types (MCQ, fill-in)
+        - Detailed explanations with step-by-step breakdown
+        - Voiceover scripts for accessibility
+        - Skill-based context integration
+        - Personalized academic insights
+      operationId: generateQuestionsV1
+      tags:
+        - Question Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateQuestionsRequest'
+            examples:
+              basic:
+                summary: Basic request
+                value:
+                  grade: 5
+                  instructions: "Generate questions about fractions"
+                  count: 3
+                  difficulty: "medium"
+              withSkill:
+                summary: Request with skill context
+                value:
+                  grade: 7
+                  instructions: "Create algebra problems focusing on solving linear equations"
+                  count: 5
+                  question_type: "mixed"
+                  difficulty: "medium"
+                  skill:
+                    id: "skill_linear_equations"
+                    title: "Solving Linear Equations"
+                    unit_name: "Algebra"
+                    lesson_title: "Introduction to Linear Equations"
+              advanced:
+                summary: Advanced request with all options
+                value:
+                  grade: 9
+                  instructions: "Generate challenging geometry problems"
+                  count: 10
+                  question_type: "mcq"
+                  difficulty: "hard"
+                  subject: "mathematics"
+                  topic: "Pythagorean Theorem"
+                  subtopic: "Applications in Real World"
+                  unit: "Geometry"
+                  student_level: "advanced"
+                  language: "english"
+      responses:
+        '200':
+          description: Successfully generated questions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateQuestionResponse'
+              examples:
+                mcq:
+                  summary: Multiple choice question
+                  value:
+                    data:
+                      - type: "mcq"
+                        question: "What is the area of a rectangle with length 6 cm and width 4 cm?"
+                        options:
+                          A: "24 cm²"
+                          B: "20 cm²"
+                          C: "28 cm²" 
+                          D: "18 cm²"
+                        answer_choice: "A"
+                        answer: "24 cm²"
+                        difficulty: "medium"
+                        explanation: "Area = length × width = 6 × 4 = 24 cm²"
+                        detailed_explanation:
+                          steps:
+                            - title: "Identify the formula"
+                              content: "For a rectangle, Area = length × width"
+                            - title: "Substitute values"
+                              content: "Area = 6 cm × 4 cm" 
+                            - title: "Calculate"
+                              content: "Area = 24 cm²"
+                          personalized_academic_insights:
+                            - answer: "20 cm²"
+                              insight: "This would be the perimeter formula (2×length + 2×width)"
+                            - answer: "10 cm²"  
+                              insight: "This is just length + width, not the area formula"
+                        skill:
+                          id: "geometry_area"
+                          title: "Rectangle Area Calculation"
+                          unit: "Geometry"
+                          grade: 5
+                    request_id: "123e4567-e89b-12d3-a456-426614174000"
+                    total_questions: 1
+                    grade: 5
+                fill_in:
+                  summary: Fill-in question format
+                  value:
+                    data:
+                      - type: "fill-in"
+                        question: "The capital of France is ____."
+                        answer: "Paris"
+                        difficulty: "easy"
+                        explanation: "Paris has been the capital of France since 508 AD"
+                        skill:
+                          id: "geography_capitals"
+                          title: "World Capitals"
+                          unit: "Geography"
+                          grade: 5
+                    request_id: "123e4567-e89b-12d3-a456-426614174001"
+                    total_questions: 1
+                    grade: 5
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/evaluate_unified:
+    post:
+      summary: Unified Evaluation API
+      description: |
+        Evaluate generated questions using unified evaluator (v3 + edubench + answer verification).
+
+        Takes a request and 1-5 questions, returns comprehensive evaluation scores including:
+        - V3 scaffolding/DI compliance scores per question
+        - GPT-4o answer correctness verification
+        - EduBench task evaluations (QA, EC, IP)
+        - Overall aggregate scores and recommendation
+      operationId: evaluateUnified
+      tags:
+        - Evaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnifiedEvaluationRequest'
+            examples:
+              basic:
+                summary: Basic evaluation request
+                value:
+                  request:
+                    grade: 3
+                    count: 2
+                    subject: "mathematics"
+                    instructions: "Generate multiplication word problems"
+                    language: "arabic"
+                  questions:
+                    - type: "mcq"
+                      question: "إذا كان لديك 9 صناديق وكل صندوق يحتوي على 3 ألعاب، كم عدد الألعاب لديك إجمالاً؟"
+                      answer: "27"
+                      difficulty: "medium"
+                      explanation: "أعد المجموعات المتساوية لحساب الإجمالي."
+                      options:
+                        A: "24"
+                        B: "25"
+                        C: "26"
+                        D: "27"
+                      answer_choice: "D"
+                    - type: "mcq"
+                      question: "إذا كان لديك 5 صناديق وكل صندوق يحتوي على 4 ألعاب، كم عدد الألعاب لديك إجمالاً؟"
+                      answer: "20"
+                      difficulty: "medium"
+                      explanation: "جمع مجموعات متساوية بضرب عدد الصناديق في عدد الألعاب بكل صندوق."
+                      options:
+                        A: "18"
+                        B: "20"
+                        C: "22"
+                        D: "24"
+                      answer_choice: "B"
+                  task_types: ["QA", "EC", "IP"]
+              customTasks:
+                summary: With custom EduBench tasks
+                value:
+                  request:
+                    grade: 5
+                    count: 1
+                    subject: "mathematics"
+                    instructions: "Generate fraction problems"
+                    language: "english"
+                  questions:
+                    - type: "mcq"
+                      question: "What is 1/4 + 1/4?"
+                      answer: "1/2"
+                      difficulty: "medium"
+                      explanation: "When adding fractions with same denominator, add numerators: 1+1=2, result is 2/4 = 1/2"
+                      options:
+                        A: "1/4"
+                        B: "1/2"
+                        C: "2/4"
+                        D: "1/8"
+                      answer_choice: "B"
+                  task_types: ["QA", "EC"]
+      responses:
+        '200':
+          description: Successfully evaluated questions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnifiedEvaluationResponse'
+              examples:
+                success:
+                  summary: Successful evaluation
+                  value:
+                    request_id: "123e4567-e89b-12d3-a456-426614174000"
+                    overall_scores:
+                      v3_average: 0.87
+                      answer_correctness_rate: 1.0
+                      total_questions: 2
+                      total_edubench_tasks: 6
+                    v3_scores:
+                      - overall: 0.87
+                        recommendation: "accept"
+                        scores:
+                          correctness: 0.95
+                          grade_alignment: 0.90
+                          pedagogical_value: 0.85
+                    answer_verification:
+                      - is_correct: true
+                        confidence: 10
+                        explanation: "The answer is mathematically correct"
+                    edubench_tasks:
+                      - question_idx: 0
+                        task_type: "QA"
+                        prompt: "Answer this question..."
+                        response: "The student correctly calculated..."
+                        timestamp: "2025-10-09T16:34:27.000Z"
+                    summary:
+                      evaluation_time_seconds: 24.5
+                      questions_evaluated: 2
+                      v3_evaluations: 2
+                      answer_checks: 2
+                      edubench_tasks_completed: 6
+                      recommendation: "accept"
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /generate_content:
+    post:
+      summary: Generate Educational Content
+      description: |
+        Generate educational content such as explanations, summaries, or learning materials.
+        Similar to question generation but focuses on content creation rather than assessment.
+      operationId: generateContentV2
+      tags:
+        - Content Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateContentRequest'
+            examples:
+              basic:
+                summary: Basic content request
+                value:
+                  grade: 6
+                  instructions: "Create an explanation about photosynthesis"
+                  content_type: "explanation"
+                  language: "english"
+              lesson:
+                summary: Lesson content request
+                value:
+                  grade: 8
+                  instructions: "Generate a lesson summary on quadratic equations"
+                  content_type: "lesson_summary"
+                  language: "arabic"
+                  subject: "mathematics"
+      responses:
+        '200':
+          description: Successfully generated content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateContentResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+components:
+  schemas:
+    CompletionsRequest:
+      type: object
+      required:
+        - messages
+      properties:
+        messages:
+          type: array
+          description: List of messages in the conversation
+          items:
+            type: object
+            required:
+              - role
+              - content
+            properties:
+              role:
+                type: string
+                enum: [system, user, assistant]
+                description: The role of the message author
+              content:
+                type: string
+                description: The content of the message
+        max_tokens:
+          type: integer
+          default: 8000
+          description: Maximum number of tokens to generate
+        provider:
+          type: string
+          default: falcon
+          enum: [falcon, dspy, openai]
+          description: LLM provider to use for completion
+        language:
+          type: string
+          default: english
+          description: Language for the response (e.g., english, arabic, spanish)
+
+    CompletionsResponse:
+      type: object
+      properties:
+        response:
+          description: The LLM response (can be string or structured JSON)
+
+    GenerateQuestionsRequest:
+      type: object
+      required:
+        - grade
+        - instructions
+      properties:
+        grade:
+          type: integer
+          minimum: 0
+          maximum: 12
+          description: Grade level (0-12)
+          example: 7
+        instructions:
+          type: string
+          description: Instructions for question generation
+          example: "Generate questions about quadratic equations"
+        count:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 5
+          description: Number of questions to generate
+        question_type:
+          type: string
+          enum: [mcq, fill-in, mixed]
+          default: mixed
+          description: Type of questions to generate
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, expert, mixed]
+          default: mixed
+          description: Difficulty level of questions
+        subject:
+          type: string
+          description: Subject override (auto-detected if not provided)
+          example: mathematics
+        skill:
+          $ref: '#/components/schemas/SkillContext'
+        topic:
+          type: string
+          description: Alternative to skill object - direct topic specification
+          example: "Linear Equations"
+        subtopic:
+          type: string
+          description: Specific subtopic within the topic
+          example: "Two-step equations"
+        unit:
+          type: string
+          description: Educational unit context
+          example: "Algebra"
+        student_level:
+          type: string
+          enum: [struggling, average, advanced]
+          description: Student performance level for personalization
+        previous_mistakes:
+          type: array
+          items:
+            type: string
+          description: Previous mistakes for targeted practice
+        language:
+          type: string
+          default: english
+          description: Language for content generation (english/arabic)
+          enum: [english, arabic]
+        model:
+          type: string
+          default: openai
+          description: AI model preference for generation
+          enum: [openai, falcon]
+        translate:
+          type: boolean
+          default: false
+          description: Enable translation for scaffolding content
+
+    SkillContext:
+      type: object
+      required:
+        - id
+        - title
+        - unit_name
+        - lesson_title
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the skill
+          example: "skill_123"
+        title:
+          type: string
+          description: Title of the skill
+          example: "Solving Linear Equations"
+        unit_name:
+          type: string
+          description: Name of the educational unit
+          example: "Algebra"
+        lesson_title:
+          type: string
+          description: Title of the lesson
+          example: "Introduction to Linear Equations"
+        standard_description:
+          type: string
+          nullable: true
+          description: Educational standard description
+        substandard_description:
+          type: string
+          nullable: true
+          description: Sub-standard description
+
+    GenerateQuestionResponse:
+      type: object
+      required:
+        - data
+        - request_id
+        - total_questions
+        - grade
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeneratedQuestion'
+          description: Array of generated questions
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        total_questions:
+          type: integer
+          description: Total number of questions generated
+          example: 5
+        grade:
+          type: integer
+          description: Grade level of generated questions
+          example: 7
+
+    GeneratedQuestion:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [fill-in, mcq]
+          nullable: true
+          description: Type of question
+        question:
+          type: string
+          nullable: true
+          description: The question text
+          example: "What is the area of a rectangle with length 6 cm and width 4 cm?"
+        options:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+          description: Multiple choice options as dictionary with A/B/C/D keys (only for MCQ)
+          example: 
+            A: "24 cm²"
+            B: "20 cm²" 
+            C: "28 cm²"
+            D: "18 cm²"
+        answer_choice:
+          type: string
+          enum: [A, B, C, D]
+          nullable: true
+          description: Which option letter is correct (only for MCQ)
+          example: "A"
+        answer:
+          type: string
+          nullable: true
+          description: Correct answer text
+          example: "24 cm²"
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, expert]
+          nullable: true
+          description: Difficulty level of the question
+        explanation:
+          type: string
+          nullable: true
+          description: Simple text explanation of the answer
+        detailed_explanation:
+          $ref: '#/components/schemas/DetailedExplanation'
+        voiceover_script:
+          $ref: '#/components/schemas/VoiceoverScript'
+        skill:
+          $ref: '#/components/schemas/SkillInfo'
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+          description: URL of associated image (if any)
+        di_formats_used:
+          type: array
+          items:
+            type: object
+          nullable: true
+          description: Direct instruction formats used for scaffolding generation
+
+    DetailedExplanation:
+      type: object
+      nullable: true
+      required:
+        - steps
+        - personalized_academic_insights
+      properties:
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExplanationStep'
+          description: Step-by-step explanation
+        personalized_academic_insights:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonalizedInsight'
+          description: Personalized insights based on answer
+
+    ExplanationStep:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+          description: Step title
+          example: "Step 1: Isolate the variable term"
+        content:
+          type: string
+          description: Step content/explanation
+          example: "Subtract 5 from both sides: 2x + 5 - 5 = 13 - 5"
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: Optional image URL for the step
+        image_alt_text:
+          type: string
+          nullable: true
+          description: Alt text for accessibility
+
+    PersonalizedInsight:
+      type: object
+      required:
+        - answer
+        - insight
+      properties:
+        answer:
+          type: string
+          description: Student's answer
+          example: "x = 4"
+        insight:
+          type: string
+          description: Personalized feedback/insight
+          example: "Great job! You correctly isolated the variable and performed the inverse operations."
+
+    VoiceoverScript:
+      type: object
+      nullable: true
+      required:
+        - question_script
+        - explanation_step_scripts
+      properties:
+        question_script:
+          type: string
+          description: Script for reading the question aloud
+        answer_choice_scripts:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Scripts for each answer choice (MCQ only)
+        explanation_step_scripts:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoiceoverStepScript'
+          description: Scripts for each explanation step
+
+    VoiceoverStepScript:
+      type: object
+      required:
+        - step_number
+        - script
+      properties:
+        step_number:
+          type: integer
+          description: Step number in sequence
+          example: 1
+        script:
+          type: string
+          description: Voiceover script for this step
+          example: "First, we need to isolate the variable term by subtracting 5 from both sides"
+
+    SkillInfo:
+      type: object
+      nullable: true
+      required:
+        - id
+        - title
+        - unit
+        - grade
+      properties:
+        id:
+          type: string
+          description: Skill identifier
+          example: "skill_linear_equations"
+        title:
+          type: string
+          description: Skill title
+          example: "Solving Linear Equations"
+        unit:
+          type: string
+          description: Educational unit
+          example: "Algebra"
+        grade:
+          type: integer
+          description: Grade level
+          example: 7
+
+    GenerateContentRequest:
+      type: object
+      required:
+        - grade
+        - instructions
+      properties:
+        grade:
+          type: integer
+          minimum: 0
+          maximum: 12
+          description: Grade level (0-12)
+          example: 7
+        instructions:
+          type: string
+          description: Instructions for content generation
+          example: "Create an explanation about photosynthesis for grade 6 students"
+        content_type:
+          type: string
+          enum: [explanation, lesson_summary, study_guide, worksheet, activity]
+          default: explanation
+          description: Type of content to generate
+        language:
+          type: string
+          default: english
+          description: Language for content generation (english/arabic)
+          enum: [english, arabic]
+        subject:
+          type: string
+          description: Subject area (auto-detected if not provided)
+          example: science
+        topic:
+          type: string
+          description: Specific topic for content
+          example: "Plant Biology"
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, expert]
+          default: medium
+          description: Content difficulty level
+        model:
+          type: string
+          default: openai
+          description: AI model preference for generation
+          enum: [openai, falcon]
+
+    GenerateContentResponse:
+      type: object
+      required:
+        - content
+        - request_id
+        - grade
+        - content_type
+      properties:
+        content:
+          type: string
+          description: Generated educational content
+          example: "Photosynthesis is the process by which plants make their own food using sunlight, water, and carbon dioxide..."
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier
+        grade:
+          type: integer
+          description: Grade level of generated content
+        content_type:
+          type: string
+          description: Type of generated content
+        subject:
+          type: string
+          nullable: true
+          description: Detected or specified subject area
+        metadata:
+          type: object
+          nullable: true
+          description: Additional content metadata
+
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: "GENERATION_FAILED"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Failed to generate questions due to invalid parameters"
+        details:
+          type: object
+          nullable: true
+          description: Additional error details
+
+    ValidationError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required:
+              - loc
+              - msg
+              - type
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                description: Location of the error
+                example: ["body", "grade"]
+              msg:
+                type: string
+                description: Error message
+                example: "ensure this value is greater than or equal to 1"
+              type:
+                type: string
+                description: Error type
+                example: "value_error.number.not_ge"
+
+    UnifiedEvaluationRequest:
+      type: object
+      required:
+        - request
+        - questions
+      properties:
+        request:
+          $ref: '#/components/schemas/GenerateQuestionsRequest'
+          description: Original question generation request context
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/GeneratedQuestion'
+          description: 1-5 questions to evaluate
+        task_types:
+          type: array
+          items:
+            type: string
+            enum: [QA, EC, IP]
+          default: ["QA", "EC", "IP"]
+          description: |
+            EduBench task types to run:
+            - QA: Question Answering
+            - EC: Error Correction
+            - IP: Instructional Planning
+
+    UnifiedEvaluationResponse:
+      type: object
+      required:
+        - request_id
+        - overall_scores
+        - v3_scores
+        - answer_verification
+        - edubench_tasks
+        - summary
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: Unique evaluation request identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        overall_scores:
+          type: object
+          description: Aggregate scores across all evaluators
+          required:
+            - v3_average
+            - answer_correctness_rate
+            - total_questions
+            - total_edubench_tasks
+          properties:
+            v3_average:
+              type: number
+              format: float
+              minimum: 0.0
+              maximum: 1.0
+              description: Average V3 score across all questions (0-1)
+              example: 0.87
+            answer_correctness_rate:
+              type: number
+              format: float
+              minimum: 0.0
+              maximum: 1.0
+              description: Percentage of answers verified as correct (0-1)
+              example: 1.0
+            total_questions:
+              type: integer
+              description: Number of questions evaluated
+              example: 2
+            total_edubench_tasks:
+              type: integer
+              description: Total EduBench tasks executed
+              example: 6
+        v3_scores:
+          type: array
+          description: Detailed V3 scaffolding/DI compliance scores per question
+          items:
+            type: object
+            properties:
+              overall:
+                type: number
+                format: float
+                description: Overall V3 score for this question (0-1)
+              recommendation:
+                type: string
+                enum: [accept, revise, reject]
+                description: V3 recommendation for this question
+              scores:
+                type: object
+                description: Detailed dimension scores
+                additionalProperties:
+                  type: number
+                  format: float
+              issues:
+                type: array
+                items:
+                  type: string
+                description: List of identified issues
+              strengths:
+                type: array
+                items:
+                  type: string
+                description: List of identified strengths
+        answer_verification:
+          type: array
+          description: GPT-4o answer correctness verification results
+          items:
+            type: object
+            properties:
+              is_correct:
+                type: boolean
+                description: Whether the answer is correct
+              confidence:
+                type: integer
+                minimum: 0
+                maximum: 10
+                description: Confidence score (0-10)
+              explanation:
+                type: string
+                description: Explanation of the verification result
+        edubench_tasks:
+          type: array
+          description: Raw EduBench model responses for each task
+          items:
+            type: object
+            required:
+              - question_idx
+              - task_type
+              - prompt
+              - response
+              - timestamp
+            properties:
+              question_idx:
+                type: integer
+                description: Index of the question (0-based)
+                example: 0
+              task_type:
+                type: string
+                enum: [QA, EC, IP]
+                description: Type of EduBench task
+                example: "QA"
+              prompt:
+                type: string
+                description: Prompt sent to the model
+              response:
+                type: string
+                description: Raw model response
+              timestamp:
+                type: string
+                format: date-time
+                description: Task execution timestamp
+        summary:
+          type: object
+          description: High-level summary statistics
+          required:
+            - evaluation_time_seconds
+            - questions_evaluated
+            - v3_evaluations
+            - answer_checks
+            - edubench_tasks_completed
+            - recommendation
+          properties:
+            evaluation_time_seconds:
+              type: number
+              format: float
+              description: Total evaluation time in seconds
+              example: 24.5
+            questions_evaluated:
+              type: integer
+              description: Number of questions evaluated
+              example: 2
+            v3_evaluations:
+              type: integer
+              description: Number of V3 evaluations completed
+              example: 2
+            answer_checks:
+              type: integer
+              description: Number of answer verifications completed
+              example: 2
+            edubench_tasks_completed:
+              type: integer
+              description: Number of EduBench tasks completed
+              example: 6
+            recommendation:
+              type: string
+              enum: [accept, revise]
+              description: |
+                Overall recommendation based on thresholds:
+                - accept: V3 avg >= 85% AND answer correctness >= 80%
+                - revise: Otherwise
+              example: "accept"
