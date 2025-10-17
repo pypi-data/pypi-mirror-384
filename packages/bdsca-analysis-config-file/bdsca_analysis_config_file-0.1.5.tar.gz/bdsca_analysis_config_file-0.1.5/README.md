@@ -1,0 +1,280 @@
+
+# bdsca-analysis-config-file
+
+Utilities and CLI to validate and work with BDSCA analysis configuration files (YAML).
+
+This tool supports:
+- Validating config files with friendly error output
+- Adding missing components to a project BOM
+- Overwriting component versions in the BOM
+- Triaging vulnerabilities (by CVE or BDSA), including filters by vendor and SHA
+
+It also supports dry-run mode to preview changes, and paginated search when resolving components by name/version.
+
+## CLI usage
+
+All commands are available via the `bdsca-config` CLI.
+
+### Show version
+
+```
+bdsca-config --version
+```
+
+### Validate a YAML configuration file
+
+```
+bdsca-config validate <config.yaml> [--output yaml|json|summary] [--target]
+```
+
+- Validates the file and prints errors in a table if invalid.
+- `--output` pretty-prints the file in YAML, JSON, or a concise summary.
+- `--target` prints the effective change target (project info).
+
+### Add missing components to BOM
+
+```
+bdsca-config add-components <config.yaml> --base-url <BLACKDUCK_URL> --api-token <TOKEN> [--insecure] [--verbosity info|debug] [--dryrun]
+```
+
+- Adds missing components from `componentAdditions` to each target project.
+- Each `componentAdditions` entry can identify a component by:
+  - purl
+  - name (with optional version and vendor)
+
+Examples:
+
+```
+componentAdditions:
+  - component:
+      purl: pkg:maven/org.apache.commons/commons-lang3@3.12.0
+  - component:
+      name: commons-io
+      version: "2.13.0"
+      vendor: maven
+```
+
+### Remediate vulnerabilities
+
+```
+bdsca-config remediate <config.yaml> --base-url <BLACKDUCK_URL> --api-token <TOKEN> [--insecure] [--verbosity info|debug] [--dryrun]
+```
+
+- Validates the file and performs remediation using Black Duck.
+- `vulnerabilityTriages` can identify a component by any of:
+  - purl
+  - name + version
+  - sha (file/component SHA)
+- Each triage uses either `cve` or `bdsa`, plus a `resolution` and optional `comment`.
+- `--dryrun` previews changes without making updates.
+
+Example excerpt:
+
+```
+vulnerabilityTriages:
+  - component:
+      name: lodash
+      version: "4.17.21"
+      vendor: npmjs
+    triages:
+      - cve: CVE-2020-8203
+        resolution: NOT_AFFECTED
+        comment: Affected code not used
+  - component:
+      sha: 5e884898da28047151d0e56f8dc6292773603d0d
+    triages:
+      - bdsa: BDSA-2024-1234
+        resolution: PATCHED
+        comment: Fixed by upstream
+```
+
+### Overwrite component version
+
+```
+bdsca-config overwrite <config.yaml> --base-url <BLACKDUCK_URL> --api-token <TOKEN> [--insecure] [--verbosity info|debug] [--dryrun]
+```
+
+- Reads the `overrides` section and updates matching BOM components.
+- A component can be identified by `purl` OR by `name` (with optional `version` and `vendor`).
+- Set `newVersion` to the desired component version.
+- `--dryrun` previews without making changes.
+
+Example excerpt:
+
+```
+overrides:
+  - component:
+      name: Apache Commons IO
+      version: "2.2"
+      vendor: maven
+    newVersion: "2.3"
+  - component:
+      purl: pkg:npm/semver@5.7.2
+    newVersion: "5.7.1"
+```
+
+Notes:
+- The `vendor` should match the origin name in Black Duck (e.g., `maven`, `npmjs`).
+- The tool resolves component versions and origins; for name-based lookups it paginates results when necessary.
+
+### Module usage
+
+You can also run commands via Python module execution:
+
+```
+python -m bdsca_analysis_config_file --version
+python -m bdsca_analysis_config_file validate examples/example.yaml
+```
+
+## Configuration reference
+
+High-level structure:
+
+```
+specVersion: "1"
+changeTarget:
+  - project: { name: <string>, version: <string> }
+componentAdditions: []
+overrides: []
+vulnerabilityTriages: []
+```
+
+Targets (one or more projects):
+
+```
+changeTarget:
+  - project:
+      name: example-project
+      version: "1.0"
+  - project:
+      name: another-project
+      version: "main"
+```
+
+Component additions:
+
+```
+componentAdditions:
+  - component:
+      purl: pkg:pypi/sample@1.0.0
+  - component:
+      name: sample-lib
+      version: "2.0.0"
+      vendor: maven
+```
+
+Overrides:
+
+```
+overrides:
+  - component:
+      name: example-component
+      vendor: ExampleVendor
+      version: "1.0.0"
+    newVersion: "1.0.1"
+```
+
+Vulnerability triages:
+
+```
+vulnerabilityTriages:
+  - component:
+      purl: pkg:maven/org.example/foo@1.2.3
+    triages:
+      - cve: CVE-2024-0001
+        resolution: PATCHED
+        comment: fixed upstream
+  - component:
+      name: lib-a
+      version: "1.2.3"
+      vendor: vendor-a
+    triages:
+      - bdsa: BDSA-2024-1111
+        resolution: IGNORED
+        comment: Not in our threat model
+  - component:
+      sha: 0123456789abcdef0123456789abcdef01234567
+    triages:
+      - cve: CVE-2023-9999
+        resolution: MITIGATED
+        comment: Mitigated by sandboxing
+```
+
+See `examples/example_all.yaml` for a comprehensive sample covering all flows.
+
+## Output examples
+
+Single project summary:
+
+```
+bdsca-config validate examples/example.yaml --output summary --target
+...
+target: project name='example-project' version='1.0'
+```
+
+Multiple projects summary:
+
+```
+bdsca-config validate examples/example2.yaml --output summary --target
+...
+target:
+  - project name='HippotechOrg/sampleapp' version='main'
+  - project name='HippotechOrg/anotherapp' version='1.2.3'
+```
+
+## Features
+
+- Modern `src/` layout with `pyproject.toml`
+- CLI with validate, add-components, remediate, overwrite
+- Tests via pytest; lint via ruff/black; typing via mypy
+- Dry-run support for safe previews
+- Pagination when searching components by name/version
+
+## Quickstart
+
+Install in editable mode and run tests:
+
+```
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -U pip
+pip install -e .[dev]
+pytest
+```
+
+## Installation
+
+Local build and install:
+
+```
+python -m build
+pip install dist/bdsca_analysis_config_file-<version>-py3-none-any.whl
+```
+
+Replace `<version>` with the actual version (e.g., `0.1.2`).
+
+From PyPI or TestPyPI:
+
+```
+pip install bdsca-analysis-config-file
+```
+
+or
+
+```
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple bdsca-analysis-config-file
+```
+
+## Release documentation
+
+See the dedicated guide in `docs/release.md` for release workflow and options.
+
+## Dry-run mode
+
+- Use the `--dryrun` flag with `remediate` or `overwrite` to preview changes.
+- The CLI prints current values alongside the new values that would be applied.
+- No PUT requests are sent in dry-run mode.
+
+## License
+
+MIT © Jouni Lehto
