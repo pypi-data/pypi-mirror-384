@@ -1,0 +1,1 @@
+SHOW NETWORK RULES IN SCHEMA "{schema_name}";

@@ -1,0 +1,1 @@
+SHOW ROW ACCESS POLICIES IN SCHEMA "{schema_name}";

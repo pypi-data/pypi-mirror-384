@@ -1,0 +1,1 @@
+SHOW FILE FORMATS IN SCHEMA "{schema_name}";

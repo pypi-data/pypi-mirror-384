@@ -1,0 +1,1 @@
+SHOW TAGS IN SCHEMA "{schema_name}";
