@@ -1,0 +1,65 @@
+"""LFU eviction policy."""
+
+from typing import final
+
+from ..mixins.hash import PickleMd5HashMixin
+from ..mixins.scripts import LfuScriptsMixin
+from .base import BaseClusterMultiplePolicy, BaseClusterSinglePolicy, BaseMultiplePolicy, BaseSinglePolicy
+
+__all__ = ("LfuPolicy", "LfuMultiplePolicy", "LfuClusterPolicy", "LfuClusterMultiplePolicy")
+
+
+@final
+class LfuPolicy(LfuScriptsMixin, PickleMd5HashMixin, BaseSinglePolicy):
+    """
+    LFU eviction policy, single key pair.
+
+    .. inheritance-diagram:: LfuPolicy
+        :parts: 1
+
+    All decorated functions share the same Redis key pair.
+    """
+
+    __key__ = "lfu"
+
+
+@final
+class LfuMultiplePolicy(LfuScriptsMixin, PickleMd5HashMixin, BaseMultiplePolicy):
+    """
+    LFU eviction policy, multiple key pairs.
+
+    .. inheritance-diagram:: LfuMultiplePolicy
+        :parts: 1
+
+    Each decorated function has its own Redis key pair.
+    """
+
+    __key__ = "lfu-m"
+
+
+@final
+class LfuClusterPolicy(LfuScriptsMixin, PickleMd5HashMixin, BaseClusterSinglePolicy):
+    """
+    LFU eviction policy with Redis cluster support, single key pair.
+
+    .. inheritance-diagram:: LfuClusterPolicy
+        :parts: 1
+
+    All decorated functions share the same Redis key pair.
+    """
+
+    __key__ = "lfu-c"
+
+
+@final
+class LfuClusterMultiplePolicy(LfuScriptsMixin, PickleMd5HashMixin, BaseClusterMultiplePolicy):
+    """
+    LFU eviction policy with Redis cluster support, multiple key pairs.
+
+    .. inheritance-diagram:: LfuClusterMultiplePolicy
+        :parts: 1
+
+    Each decorated function has its own Redis key pair.
+    """
+
+    __key__ = "lfu-cm"
