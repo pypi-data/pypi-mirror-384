@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<beast
+    namespace="
+        :beast.base.evolution.operator.kernel
+        :beast.base.inference.parameter
+        :beast.base.inference.operator.kernel
+        :beast.base.inference
+        :beast.base.inference.distribution
+        :bdmmprime.distribution
+        :bdmmprime.parameterization
+        :feast.fileio
+        :feast.expressions"
+    version="2.5"
+>
+    <map name="Normal">beast.base.inference.distribution.Normal</map>
+    <map name="Uniform">beast.base.inference.distribution.Uniform</map>
+
+    <map name="TreeFromNewickFile">feast.fileio.TreeFromNewickFile</map>
+
+    <TreeFromNewickFile id="tree" fileName="$(treeFile)" IsLabelledNewick="true" adjustTipHeights='false'/>
+
+    <parameter id="finalSampleOffset" spec="ExpCalculator" value="$(processLength)-$(lastSampleTime)"/>
+
+    <Normal id="weightsPrior" mean="0" sigma="1"/>
+    <Uniform id="reproductionNumberPrior" upper="$(reproductionNumberUpper)"/>
+
+    <run spec="MCMC" chainLength="10000000">
+        <state id="state">
+            <stateNode spec="RealParameter" id="reproductionNumberScaler" value="1"/>
+            <stateNode spec="RealParameter" id="reproductionNumberW" value="0"/>
+        </state>
+
+        <distribution id="posterior" spec="CompoundDistribution">
+            <distribution id="likelihood" spec="CompoundDistribution">
+                <distribution spec="BirthDeathMigrationDistribution" tree="@tree" finalSampleOffset="@finalSampleOffset">
+                    <parameterization spec="EpiParameterization" processLength="$(processLength)">
+                        <Re id="reproductionNumberSP" spec="SkylineVectorParameter" changeTimes="$(changeTimes)">
+                            <skylineValues id="reproductionNumber" spec="glmprior.util.GLMLogLinear" coefficients="@reproductionNumberW" scaleFactor="@reproductionNumberScaler" transform="false">
+                                <predictor spec="RealParameter" value="$(timePredictor)"/>
+                                <predictor spec="RealParameter" value="$(randomPredictor)"/>
+                                <indicators spec="BooleanParameter" value="1"/>
+                            </skylineValues>
+                        </Re>
+                        <becomeUninfectiousRate spec="SkylineVectorParameter" skylineValues="$(becomeUninfectiousRate)"/>
+                        <samplingProportion spec="SkylineVectorParameter" skylineValues="$(samplingProportion)"/>
+						<removalProb spec="SkylineVectorParameter" skylineValues="1.0"/>
+                    </parameterization>
+                </distribution>
+            </distribution>
+
+            <distribution id="prior" spec="CompoundDistribution">
+                <distribution spec="Prior" x="@reproductionNumber" distr="@reproductionNumberPrior"/>
+                <distribution spec="Prior" x="@reproductionNumberScaler" distr="@weightsPrior"/>
+                <distribution spec="Prior" x="@reproductionNumberW" distr="@weightsPrior"/>
+            </distribution>
+        </distribution>
+
+        <operator spec="BactrianScaleOperator" parameter="@reproductionNumberScaler" weight="30.0"/>
+        <operator spec="BactrianRandomWalkOperator" parameter="@reproductionNumberW" weight="30.0"/>
+
+        <logger spec="Logger" fileName="$(treeID).log" logEvery="1000" model="@posterior">
+            <log idref="posterior"/>
+            <log idref="prior"/>
+            <log idref="likelihood"/>
+            <log idref="reproductionNumberSP"/>
+            <log idref="reproductionNumberW"/>
+            <log idref="reproductionNumberScaler"/>
+        </logger>
+    </run>
+
+</beast>
