@@ -1,0 +1,135 @@
+[envs.hatch-static-analysis]
+config-path = "ruff_defaults.toml"
+
+[envs.default]
+installer = "uv"
+post-install-commands = [
+  "uv pip install {verbosity:flag:-1} -e ./backend",
+]
+
+[envs.hatch-test]
+extra-dependencies = [
+  "filelock",
+  "pyfakefs",
+  "trustme",
+  # Hatchling dynamic dependency
+  "editables",
+]
+post-install-commands = [
+  "pip install {verbosity:flag:-1} -e ./backend",
+]
+extra-args = ["--dist", "worksteal"]
+
+[envs.hatch-test.extra-scripts]
+pip = "{env:HATCH_UV} pip {args}"
+
+[envs.coverage]
+detached = true
+dependencies = [
+  "coverage[toml]>=6.2",
+  "lxml",
+]
+[envs.coverage.scripts]
+combine = "coverage combine {args}"
+report-xml = "coverage xml"
+report-uncovered-html = "coverage html --skip-covered --skip-empty"
+generate-summary = "python scripts/generate_coverage_summary.py"
+write-summary-report = "python scripts/write_coverage_summary_report.py"
+
+[envs.types]
+extra-dependencies = [
+  "mypy>=1.0.0",
+]
+[envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:backend/src/hatchling src/hatch tests}"
+
+[envs.docs]
+dependencies = [
+  "mkdocs~=1.6.0",
+  "mkdocs-material~=9.5.24",
+  # Plugins
+  "mkdocs-minify-plugin~=0.8.0",
+  "mkdocs-git-revision-date-localized-plugin~=1.2.5",
+  "mkdocs-git-committers-plugin-2~=2.3.0",
+  "mkdocstrings-python~=1.10.3",
+  "mkdocs-redirects~=1.2.1",
+  "mkdocs-glightbox~=0.4.0",
+  "mike~=2.1.1",
+  # Extensions
+  "mkdocs-click~=0.8.1",
+  "pymdown-extensions~=10.8.1",
+  # Necessary for syntax highlighting in code blocks
+  "pygments~=2.18.0",
+  # Validation
+  # https://github.com/linkchecker/linkchecker/pull/669#issuecomment-1267236287
+  "linkchecker @ git+https://github.com/linkchecker/linkchecker.git@d9265bb71c2054bf57b8c5734a4825d62505c779",
+]
+pre-install-commands = [
+  "python scripts/install_mkdocs_material_insiders.py",
+]
+[envs.docs.overrides]
+env.GH_TOKEN_MKDOCS_MATERIAL_INSIDERS.env-vars = [
+  { key = "MKDOCS_CONFIG", value = "mkdocs.insiders.yml" },
+  { key = "MKDOCS_CONFIG", value = "mkdocs.yml", if = [""] },
+  { key = "MKDOCS_IMAGE_PROCESSING", value = "true" },
+]
+[envs.docs.env-vars]
+SOURCE_DATE_EPOCH = "1580601600"
+PYTHONUNBUFFERED = "1"
+MKDOCS_CONFIG = "mkdocs.yml"
+[envs.docs.scripts]
+build = "mkdocs build --config-file {env:MKDOCS_CONFIG} --clean --strict {args}"
+serve = "mkdocs serve --config-file {env:MKDOCS_CONFIG} --dev-addr localhost:8000 {args}"
+ci-build = "mike deploy --config-file {env:MKDOCS_CONFIG} --update-aliases {args}"
+validate = "linkchecker --config .linkcheckerrc site"
+# https://github.com/linkchecker/linkchecker/issues/678
+build-check = [
+  "build --no-directory-urls",
+  "validate",
+]
+
+[envs.backend]
+detached = true
+installer = "uv"
+dependencies = [
+  "build~=0.7.0",
+  "httpx",
+]
+[envs.backend.env-vars]
+HATCH_BUILD_CLEAN = "true"
+[envs.backend.scripts]
+build = "python -m build backend"
+publish = "hatch publish backend/dist"
+version = "cd backend && hatch version {args}"
+
+[envs.upkeep]
+detached = true
+installer = "uv"
+dependencies = [
+  "httpx",
+  "ruff",
+]
+[envs.upkeep.scripts]
+update-hatch = [
+  "update-distributions",
+  "update-ruff",
+]
+update-hatchling = [
+  "update-licenses",
+]
+update-distributions = "python scripts/update_distributions.py"
+update-licenses = "python backend/scripts/update_licenses.py"
+update-ruff = [
+  "{env:HATCH_UV} pip install --upgrade ruff",
+  "python scripts/update_ruff.py",
+]
+
+[envs.release]
+detached = true
+installer = "uv"
+dependencies = [
+  "hatchling",
+]
+[envs.release.scripts]
+bump = "python scripts/bump.py {args}"
+github = "python scripts/release_github.py {args}"
