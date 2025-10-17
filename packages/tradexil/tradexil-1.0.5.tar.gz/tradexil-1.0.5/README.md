@@ -1,0 +1,315 @@
+# TradeXil Python SDK
+
+Official Python client library for the **TradeXil Real-Time API** - Access live BTCUSDT candle data with 197 pre-calculated technical indicators across 6 timeframes.
+
+---
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install tradexil
+```
+
+### Basic Usage
+
+```python
+from tradexil import TradeXilAPI
+
+# Initialize client
+api = TradeXilAPI(api_key="your-api-key-here")
+
+# Get latest 1-hour candle
+candle = api.get_latest_candle("1h", format="json")
+
+print(f"Close: {candle['close']}")
+print(f"RSI(14): {candle['RSI_14']}")
+print(f"MACD: {candle['MACD_12_26_9_line']}")
+```
+
+---
+
+## What You Get
+
+- **Real-time BTCUSDT data** from Binance
+- **6 timeframes**: 5m, 15m, 30m, 1h, 4h, 1d
+- **197 technical indicators** pre-calculated
+- **Two output formats**: JSON (lightweight) or Parquet (fast DataFrame)
+- **Production-ready**: Sub-second latency, 99.9% uptime
+
+### Available Indicators
+
+The API provides 197 columns including:
+
+**Trend Indicators**
+- EMA (8, 21, 50, 100, 200)
+- MACD (12-26-9, 26-52-18, 50-100-50)
+- Supertrend (10-3, 20-5, 30-7)
+- ADX, Aroon, Parabolic SAR, TRIX, Vortex
+
+**Momentum Indicators**
+- RSI (7, 14, 21)
+- Stochastic (14-3-3, 21-5-5)
+- CCI, CMO, MFI, ROC, Williams %R, Ultimate Oscillator
+
+**Volatility Indicators**
+- Bollinger Bands (20-2, 50-2.5)
+- ATR (14, 21)
+- Keltner Channels (20-2, 50-2.5)
+- Donchian Channels
+
+**Volume Indicators**
+- OBV, CMF, VWAP, Volume SMA/EMA, A/D Line, VPVR, Ease of Movement
+
+**Specialized Features**
+- Market Structure (BOS, CHoCH, swing highs/lows)
+- Fair Value Gaps (FVG)
+- Order Blocks (bullish/bearish)
+- Liquidity Zones
+- Premium/Discount Zones
+- Volume Profile (POC, VAH, VAL)
+- Support/Resistance Levels
+- Pivot Points (Standard, Fibonacci, Camarilla)
+
+---
+
+## Getting Your API Key
+
+1. Visit [https://tradexil.com/api](https://tradexil.com/api)
+2. Sign up or log in
+3. Generate your API key
+4. Start using the SDK immediately
+
+**Free Tier**: 1,000 requests/day  
+**Pro Tier**: Unlimited requests with priority access
+
+---
+
+## Documentation
+
+### Initialize Client
+
+```python
+from tradexil import TradeXilAPI
+
+api = TradeXilAPI(
+    api_key="your-api-key-here",
+    base_url="https://tradexil.com",  # Optional
+    timeout=10  # Optional, seconds
+)
+```
+
+### Get API Status
+
+```python
+status = api.get_status()
+print(status)
+# {
+#   "status": "operational",
+#   "available_timeframes": ["5m", "15m", "30m", "1h", "4h", "1d"],
+#   "total_columns": 197
+# }
+```
+
+### Get Latest Candle
+
+**JSON Format (Lightweight)**
+
+```python
+candle = api.get_latest_candle("1h", format="json")
+
+print(f"Timestamp: {candle['timestamp']}")
+print(f"Close: {candle['close']}")
+print(f"Volume: {candle['volume']}")
+print(f"RSI: {candle['RSI_14']}")
+```
+
+**Parquet Format (Fast DataFrame)**
+
+```python
+df = api.get_latest_candle("5m", format="parquet")
+
+# Access as DataFrame
+print(df[['timestamp', 'close', 'RSI_14', 'MACD_12_26_9_line']])
+print(df.shape)  # (1, 197)
+```
+
+### Get All Timeframes
+
+```python
+# Get latest candle for all timeframes
+candles = api.get_all_timeframes(format="json")
+
+for timeframe, candle in candles.items():
+    print(f"{timeframe}: Close = {candle['close']}, RSI = {candle['RSI_14']}")
+```
+
+### Stream Candles (Polling)
+
+**Generator Pattern**
+
+```python
+# Stream with generator
+for candle in api.stream_candles("5m", interval=60):
+    print(f"New 5m candle: Close = {candle['close']}")
+```
+
+**Callback Pattern**
+
+```python
+def handle_candle(candle):
+    print(f"Timestamp: {candle['timestamp']}")
+    print(f"Close: {candle['close']}")
+    print(f"RSI: {candle['RSI_14']}")
+
+# Stream with callback (blocks until Ctrl+C)
+api.stream_candles("1h", interval=60, callback=handle_candle)
+```
+
+### Quick Helper Function
+
+```python
+from tradexil import get_latest_candle
+
+# One-liner access (no client initialization needed)
+candle = get_latest_candle("1h", api_key="your-key")
+print(candle['close'])
+```
+
+---
+
+## Error Handling
+
+The SDK provides specific exception types for different error scenarios:
+
+```python
+from tradexil import (
+    TradeXilAPI,
+    TradeXilAuthError,
+    TradeXilDataError,
+    TradeXilAPIError
+)
+
+api = TradeXilAPI(api_key="your-key")
+
+try:
+    candle = api.get_latest_candle("1h")
+    print(f"Close: {candle['close']}")
+
+except TradeXilAuthError as e:
+    print(f"Authentication failed: {e}")
+    # Invalid or expired API key
+
+except TradeXilDataError as e:
+    print(f"Data not available: {e}")
+    # Wait a few seconds and retry
+
+except TradeXilAPIError as e:
+    print(f"API error: {e}")
+    # Other API errors
+
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+**Exception Types:**
+- `TradeXilAuthError`: Invalid or expired API key (HTTP 401)
+- `TradeXilDataError`: Data not available yet (HTTP 503)
+- `TradeXilAPIError`: General API errors (timeouts, connection issues, etc.)
+
+---
+
+## Requirements
+
+- Python 3.7+
+- `requests>=2.25.0`
+- `pandas>=1.3.0`
+- `pyarrow>=6.0.0`
+
+All dependencies are automatically installed with `pip install tradexil`.
+
+---
+
+## Use Cases
+
+### Algorithmic Trading
+
+```python
+api = TradeXilAPI(api_key="your-key")
+
+def trading_strategy():
+    candle = api.get_latest_candle("1h", format="json")
+    
+    rsi = candle['RSI_14']
+    macd = candle['MACD_12_26_9_line']
+    
+    if rsi < 30 and macd > 0:
+        return "BUY"
+    elif rsi > 70 and macd < 0:
+        return "SELL"
+    else:
+        return "HOLD"
+
+signal = trading_strategy()
+print(f"Signal: {signal}")
+```
+
+### Market Analysis
+
+```python
+# Get multi-timeframe view
+candles = api.get_all_timeframes(format="parquet")
+
+for tf, df in candles.items():
+    rsi = df['RSI_14'].iloc[0]
+    trend = "Bullish" if df['EMA_21'].iloc[0] > df['EMA_50'].iloc[0] else "Bearish"
+    print(f"{tf}: RSI={rsi:.2f}, Trend={trend}")
+```
+
+### Data Pipeline
+
+```python
+import pandas as pd
+
+def collect_data(timeframe="1h", samples=100):
+    api = TradeXilAPI(api_key="your-key")
+    data = []
+    
+    for candle in api.stream_candles(timeframe, interval=60):
+        data.append(candle)
+        if len(data) >= samples:
+            break
+    
+    return pd.DataFrame(data)
+
+# Collect 100 hourly candles
+df = collect_data("1h", samples=100)
+df.to_csv("btcusdt_1h.csv", index=False)
+```
+
+---
+
+## Links
+
+- **Website**: [https://tradexil.com](https://tradexil.com)
+- **API Documentation**: [https://tradexil.com/api](https://tradexil.com/api)
+- **Get API Key**: [https://tradexil.com/api](https://tradexil.com/api)
+- **Support**: support@tradexil.com
+
+---
+
+## License
+
+MIT License © 2025 TradeXil
+
+---
+
+## Support
+
+Need help? Have questions?
+
+- **Email**: support@tradexil.com
+- **Documentation**: [https://tradexil.com/api](https://tradexil.com/api)
+
+---
