@@ -1,0 +1,72 @@
+stages:
+  - code_check
+  - build
+  - test
+  - deploy
+
+include:
+  - component: $CI_SERVER_FQDN/components/code-quality-oss/codequality-os-scanners-integration/pmd@1.1.2
+    inputs:
+      stage: code_check
+      pmd_args: "--minimum-tokens 100 --language python"
+
+lint:
+  stage: code_check
+  image: python:latest
+  script:
+    - pip install pre-commit
+    - pre-commit install
+    - pwd
+    - find
+    - pre-commit run --all-files --verbose
+
+package:
+  stage: build
+  image: python:latest
+  script:
+    - pip install build
+    - python3 -m build
+  artifacts:
+    when: on_success
+    paths:
+      - dist/
+    expire_in: 1 day
+
+test:
+  stage: test
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.10", "3.11", "3.12"]
+  rules:
+  image: python:${PYTHON_VERSION}
+  before_script:
+    - apt-get update && apt-get install -y rclone
+    - echo "CI_COMMIT_BRANCH=${CI_COMMIT_BRANCH}"
+    - echo "CI_MERGE_REQUEST_TARGET_BRANCH_NAME=${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+    - export BRANCH="${CI_COMMIT_BRANCH}${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+    - if [[ -z "${BRANCH}" ]]; then echo "force branch to main"; export BRANCH="main"; fi
+
+  script:
+    - echo $BRANCH
+    - git clone -b ${BRANCH} --single-branch https://gitlab.com/solidipes/solidipes.git
+    - pip install ./solidipes
+    - pip install .[test]
+    - pip show -f solidipes | grep bin
+    - solidipes --version
+    - bash tests/start-webdav-test-server.sh
+    - find /tmp/webdav_root/
+    - "rclone ls webdav-local:"
+    - python3 -m pytest
+
+publish_pypi:
+  stage: deploy
+  image: python:latest
+  needs:
+    - job: package
+  #    - job: test
+  script:
+    - pip install twine
+    - TWINE_PASSWORD=${PYPI_TOKEN} TWINE_USERNAME=__token__
+      python3 -m twine upload --verbose dist/*
+  only:
+    - tags
