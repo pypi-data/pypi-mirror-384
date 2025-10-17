@@ -1,0 +1,74 @@
+#!/usr/bin/env condor_submit
+accounting_group_user = cody.messick
+universe = local
+getenv = true
+executable = /usr/bin/env
+log = .local/state/log/gwcelery-condor.log
+on_exit_remove = false
+request_disk = 7GB
+JobBatchName = gwcelery
+# FIXME: the gwcelery-worker job does not always stop when condor_rm'd.
+# Give all jobs 20 seconds to stop gracefully, then forcefully kill them.
+job_max_vacate_time = 20
+kill_sig = SIGKILL
+
+arguments = "gwcelery beat -f .local/state/log/gwcelery-beat.log"
+description = gwcelery-beat
+queue
+
+arguments = "gwcelery flask -l info -f .local/state/log/gwcelery-flask.log run --with-threads --host 127.0.0.1"
+description = gwcelery-flask
+queue
+
+arguments = "gwcelery flower --address=127.0.0.1 --log-file-prefix=.local/state/log/gwcelery-flower.log"
+description = gwcelery-flower
+queue
+
+# FIXME: The GraceDB tasks are not very computationally intensive, but take a
+# very long time to execute. Manually bump up the concurrency well past the
+# number of hardware threads until the GraceDB API throughput is improved.
+arguments = "gwcelery worker -l info -n gwcelery-worker@%h -f .local/state/log/%n.log -Q celery --igwn-alert --email --concurrency 32 --max-memory-per-child 2097152"
+description = gwcelery-worker
+queue
+
+arguments = "gwcelery worker -l info -n gwcelery-exttrig-worker@%h -f .local/state/log/%n.log -Q exttrig -c 1 --prefetch-multiplier 1"
+description = gwcelery-exttrig-worker
+queue
+
+arguments = "gwcelery worker -l info -n gwcelery-superevent-worker@%h -f .local/state/log/%n.log -Q superevent -c 1 --prefetch-multiplier 1"
+description = gwcelery-superevent-worker
+queue
+
+arguments = "gwcelery worker -l info -n gwcelery-voevent-worker@%h -f .local/state/log/%n.log -Q voevent -P solo"
+description = gwcelery-voevent-worker
+queue
+
+arguments = "gwcelery worker -l info -n gwcelery-kafka-worker@%h -f .local/state/log/%n.log -Q kafka -P solo"
+description = gwcelery-kafka-worker
+queue
+
+arguments = "gwcelery worker -l info -n gwcelery-em-bright-worker@%h -f .local/state/log/%n.log -Q em-bright -c 2 --prefetch-multiplier 1"
+description = gwcelery-em-bright-worker
+queue
+
+arguments = "gwcelery worker -l info -n gwcelery-highmem-worker@%h -f .local/state/log/%n.log -Q highmem -c 2 --prefetch-multiplier 1"
+description = gwcelery-highmem-worker
+queue
+
+# Jobs defined below this point will run on specially configured cluster nodes.
++Online_EMFollow = True
+Requirements = (TARGET.Online_EMFollow =?= True)
+request_cpus = TARGET.Cpus
+request_memory = 16GB
+universe = vanilla
+# FIXME: workaround for https://www-auth.cs.wisc.edu/lists/htcondor-users/2019-October/msg00051.shtml
+executable = /bin/env
+
+
+arguments = "gwcelery-condor-submit-helper gwcelery worker -l info -n gwcelery-multiprocessing-worker@%h -f .local/state/log/%n.log -Q multiprocessing -c 1 --prefetch-multiplier 1"
+description = gwcelery-multiprocessing-worker
+queue
+
+arguments = "--unset OMP_NUM_THREADS gwcelery-condor-submit-helper gwcelery worker -l info -n gwcelery-openmp-worker-$(Process)@%h -f .local/state/log/%n.log -Q openmp -c 1 --prefetch-multiplier 1"
+description = gwcelery-openmp-worker-$(Process)
+queue 15

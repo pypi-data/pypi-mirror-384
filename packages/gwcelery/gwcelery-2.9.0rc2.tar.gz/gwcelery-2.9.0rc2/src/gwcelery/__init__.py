@@ -1,0 +1,41 @@
+"""Celery application initialization."""
+
+import sys
+from importlib.metadata import version
+
+from celery import Celery
+
+from . import email, igwn_alert, kafka, sentry, voevent
+from .conf import playground
+
+__all__ = ('app',)
+
+__version__ = version(__name__)
+
+# Use redis broker, because it supports locks (and thus singleton tasks).
+app = Celery(__name__, broker='redis://', config_source=playground)
+"""Celery application object."""
+
+# Register email, LVAlert and VOEvent subsystems.
+email.install(app)
+igwn_alert.install(app)
+voevent.install(app)
+kafka.install(app)
+
+# Register all tasks.
+app.autodiscover_tasks([__name__])
+
+# Customize configuration from environment variable.
+app.config_from_envvar('CELERY_CONFIG_MODULE', silent=True)
+
+# Use the same URL for both the result backend and the broker.
+app.conf['result_backend'] = app.conf.broker_url
+
+sentry.configure()
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
+    argv = argv[1:]  # Strip off the script name; click doesn't want it.
+    app.start(argv)  # The application can take it from here!

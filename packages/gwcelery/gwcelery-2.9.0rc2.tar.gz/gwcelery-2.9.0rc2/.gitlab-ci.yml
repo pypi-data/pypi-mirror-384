@@ -1,0 +1,470 @@
+include:
+  - component: git.ligo.org/computing/gitlab/components/python/qa@2
+  - component: git.ligo.org/computing/gitlab/components/python/sdist@2
+  - component: git.ligo.org/computing/gitlab/components/python/wheel@2
+    inputs:
+      pure_python: true
+  - component: git.ligo.org/computing/gitlab/components/python/publish@2
+    inputs:
+      needs:
+        - sdist
+        - wheel
+  - component: git.ligo.org/computing/gitlab/components/debian/base@2
+  - component: git.ligo.org/computing/gitlab/components/docker/build@2
+    inputs:
+      job_name: docker
+      image_tag: ${CI_COMMIT_TAG}${CI_COMMIT_BRANCH}
+
+variables:
+  # Allow Celery to run as root, because everything runs as root under Docker.
+  C_FORCE_ROOT: 'true'
+  # UV version to install
+  UV_VERSION: 0.8.12
+
+stages:
+  - build
+  - test
+  - deploy
+
+# Only let one docker job run at a time
+docker:
+  resource_group: docker-build
+  rules:
+    - if: $CI_PROJECT_PATH == "emfollow/gwcelery" && ($CI_COMMIT_REF_PROTECTED == "true" || $CI_COMMIT_TAG)
+      when: always
+    - if: $CI_PIPELINE_SOURCE != "merge_request_event"
+      when: manual
+      allow_failure: true
+
+# Install redis
+.install-redis: &install-redis
+  apt-get install -y -qq redis-server
+
+# Run test suite using uv environment and locked dependencies
+.test-uv:
+  stage: test
+  extends: .debian_base
+  variables:
+    PYTEST_OPTIONS: "--cov=gwcelery --cov-report=html"
+    # Prevent virtualenv creation
+    UV_SYSTEM_PYTHON: 1
+  before_script:
+    - !reference [.debian_base, before_script]
+    - *install-redis
+    - export PATH="/root/.local/bin:$PATH"
+    - python3 -m pip install uv==${UV_VERSION}
+    - uv lock --check
+    - uv sync --extra test
+  script:
+    - uv run pytest ${PYTEST_OPTIONS}
+  artifacts:
+    paths:
+      - htmlcov/
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+  needs: []
+test/uv/python3.11:
+  extends: .test-uv
+  image: python:3.11-bookworm # https://git.ligo.org/emfollow/gwcelery/-/issues/996
+test/uv/python3.12:
+  extends: .test-uv
+  image: python:3.12-bookworm # https://git.ligo.org/emfollow/gwcelery/-/issues/996
+
+# Run test suite using wheel and bleeding-edge dependencies
+.test-wheel:
+  stage: test
+  extends: .debian_base
+  variables:
+    PYTEST_OPTIONS: "--pyargs $CI_PROJECT_NAME"
+    # Prevent virtualenv creation
+    UV_SYSTEM_PYTHON: 1
+  before_script:
+    - !reference [.debian_base, before_script]
+    - *install-redis
+    - INSTALL_TARGET=$(echo *.whl)[test]
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install ${INSTALL_TARGET}
+  script:
+    - python3 -m pytest ${PYTEST_OPTIONS}
+  artifacts:
+    paths:
+      - htmlcov/
+  needs:
+    - wheel
+test/wheel/python3.11:
+  extends: .test-wheel
+  image: python:3.11-bookworm # https://git.ligo.org/emfollow/gwcelery/-/issues/996
+test/wheel/python3.12:
+  extends: .test-wheel
+  image: python:3.12-bookworm # https://git.ligo.org/emfollow/gwcelery/-/issues/996
+
+.test-macos:
+  stage: test
+  variables:
+    PYTEST_OPTIONS: "--cov=gwcelery --cov-report=html"
+  artifacts:
+    paths:
+      - htmlcov/
+  before_script:
+    - . /opt/local/share/macports/setupenv.bash
+    - python3.11 -m venv env
+    - source env/bin/activate
+    - python3.11 -m pip install uv==${UV_VERSION}
+    - uv lock --check
+    - uv sync --active --extra test
+  script:
+    - uv run --active pytest ${PYTEST_OPTIONS}
+  needs: []
+
+test/uv/python3.11/macos/arm64:
+  extends: .test-macos
+  tags:
+    - macos_sequoia_arm64
+
+# Test that SCCB issue template renders to match upstream exactly
+sccb-template:
+  stage: test
+  extends: .debian_base
+  image: python:3.11
+  before_script:
+    - !reference [.debian_base, before_script]
+    - apt-get install -y -qq curl
+    - python -m pip install jinja2
+  script:
+    # Download upstream template
+    - 'curl -s --header "PRIVATE-TOKEN: $GITLAB_ACCESS_TOKEN" "https://git.ligo.org/api/v4/projects/computing%2Fsccb/repository/files/.gitlab%2Fissue_templates%2FDefault.md/raw?ref=main" > /tmp/upstream.md'
+    # Render our Jinja template without variables (should match upstream)
+    - python -c "from jinja2 import Environment, FileSystemLoader; env = Environment(loader=FileSystemLoader('src/gwcelery/templates'), keep_trailing_newline=True); template = env.get_template('sccb_template.jinja2'); rendered = template.render(); f = open('/tmp/rendered.md', 'w'); f.write(rendered); f.close()"
+    # Compare rendered template with upstream (ignore final newline differences)
+    - echo "Comparing rendered template with upstream..."
+    - diff -u /tmp/upstream.md /tmp/rendered.md || (echo "Template output does not match upstream!" && exit 1)
+    - echo "✓ Template renders to match upstream exactly"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: always
+    - if: $CI_COMMIT_BRANCH || $CI_COMMIT_TAG
+      when: manual
+      allow_failure: true
+  needs: []
+
+associate commits in Sentry:
+  stage: test
+  needs:
+    - sdist
+  only:
+    - main@emfollow/gwcelery
+    - tags@emfollow/gwcelery
+  image:
+    name: getsentry/sentry-cli
+    entrypoint: [""]
+  script:
+    - SENTRY_VERSION=$(echo *.tar.* | sed 's/\.tar\..*//')
+    - sentry-cli releases new ${SENTRY_VERSION}
+    - sentry-cli releases set-commits --auto ${SENTRY_VERSION}
+
+# Generate documentation
+doc:
+  stage: test
+  extends: .debian_base
+  image: python:3.11
+  variables:
+    SOURCEDIR: doc
+    REQUIREMENTS: .[doc]
+  before_script:
+    - !reference [.debian_base, before_script]
+    - apt-get install -y -qq graphviz
+    - python -m pip install --upgrade pip
+    - python -m pip install sphinx .[doc]
+  script:
+    - pushd ${SOURCEDIR}
+    - make html BUILDDIR="${CI_PROJECT_DIR}/_build"
+    - popd
+    - mv -v ${CI_PROJECT_DIR}/_build/html html
+  artifacts:
+    expose_as: "Sphinx docs"
+    paths:
+      - html/index.html
+      - html
+  needs: []
+
+# Modify flake8 job script from qa component
+# FIXME Either remove job or remove this FIXME, depending on how
+# https://git.ligo.org/computing/gitlab/components/python/-/issues/26 is
+# resolved
+flake8-code_quality:
+  before_script:
+    - python -m pip install
+          flake8
+          flake8-gl-codeclimate
+          flake8-isort
+  script:
+    - python -m flake8 .
+  after_script:
+    - python -m flake8 .
+          --exit-zero
+          --format gl-codeclimate
+          --output-file flake8.json
+
+
+# SCCB request
+sccb:
+  image: python
+  stage: deploy
+  when: manual
+  only:
+    - tags@emfollow/gwcelery
+  variables:
+    GIT_STRATEGY: fetch
+  before_script:
+    - python -m pip install --upgrade pip
+  script:
+    # install the tools we need
+    - python -m pip install build packaging jinja2
+    # run the SCCB issue generation script
+    - ./.gitlab/ci/generate_sccb_issue.sh
+  needs: []
+
+# Publish coverage
+pages:
+  stage: deploy
+  script:
+    - mv htmlcov public/
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+  only:
+    - main
+  needs:
+    - test/uv/python3.11
+
+
+# Create a release in GitLab
+release:
+  stage: deploy
+  needs:
+    - wheel
+  image: python:3.11
+  variables:
+    GIT_STRATEGY: fetch
+  before_script:
+    - !reference [.test-wheel, before_script]
+  script:
+    - PACKAGE_NAME="$(basename $PWD)"
+    - PACKAGE_VERSION="$(python -c 'import gwcelery; print(gwcelery.__version__)')"
+    - CHANGES_FILENAME="$(echo CHANGES.*)"
+    - |
+      tee json <<EOF
+      {
+        "name": "${PACKAGE_VERSION}",
+        "tag_name": "${CI_COMMIT_TAG}",
+        "description": "Version ${PACKAGE_VERSION}",
+        "assets": {
+          "links": [
+            {
+              "name": "PyPI",
+              "url": "https://pypi.org/project/${PACKAGE_NAME}/${PACKAGE_VERSION}/"
+            },
+            {
+              "name": "Change log",
+              "url": "${CI_PROJECT_URL}/blob/v${VERSION}/${CHANGES_FILENAME}"
+            },
+            {
+              "name": "Documentation",
+              "url": "https://${PACKAGE_NAME}.readthedocs.io/en/v${PACKAGE_VERSION}/"
+            }
+          ]
+        }
+      }
+      EOF
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]
+      then
+        curl --silent --show-error --fail \
+        --request POST --header "Private-Token: $GITLAB_ACCESS_TOKEN" \
+        --header "Content-Type: application/json" \
+        --data "@json" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
+      fi
+
+.deploy-common: &deploy-common
+  image: containers.ligo.org/emfollow/ssh-kerberos
+  stage: deploy
+  rules:
+    - if: $CI_PROJECT_PATH == "emfollow/gwcelery" && ($CI_COMMIT_BRANCH || $CI_COMMIT_TAG)
+      when: manual
+      allow_failure: true
+  needs: []
+
+# Continuous deployment.
+# Note that all deployments except playground/CIT are manual.
+
+.deploy-start: &deploy-start
+  <<: *deploy-common
+  script:
+    # Update the repository.
+    - |
+      ssh -T $REMOTE_HOST bash <<EOF
+      set -e
+      if [ ! -d .git ]; then git init; fi
+      git fetch --tags ${CI_REPOSITORY_URL} $CI_COMMIT_SHA
+      git checkout -f $CI_COMMIT_SHA
+      EOF
+    # Reinstall and start (new session to reload bashrc).
+    - |
+      ssh -T $REMOTE_HOST bash <<EOF
+      set -e
+      # Install uv to user site
+      python3.11 -m ensurepip --user --upgrade
+      python3.11 -m pip install --user --upgrade uv==${UV_VERSION}
+      # Create or update virtual environment
+      if [ -d "\$HOME/.venv" ]; then
+          echo "Updating existing virtual environment..."
+          python3.11 -m venv "\$HOME/.venv" --upgrade --prompt gwcelery
+      else
+          echo "Creating new virtual environment..."
+          python3.11 -m venv "\$HOME/.venv" --prompt gwcelery
+      fi
+
+      source "\$HOME/.venv/bin/activate"
+      pip install --upgrade pip
+      # install in --no-editable mode (see .bashrc)
+      # additionally reinstall the checkout repo instead of using the cached version
+      uv sync --reinstall-package gwcelery
+      gwcelery condor resubmit
+      EOF
+
+.deploy-stop: &deploy-stop
+  <<: *deploy-common
+  script: |
+    ssh -T $REMOTE_HOST bash <<EOF
+    . .bashrc
+    set -e
+    gwcelery condor rm
+    EOF
+
+deploy to production at CIT:
+  <<: *deploy-start
+  environment:
+    name: production/CIT
+    on_stop: stop deployment on production at CIT
+    url: https://emfollow.ligo.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow@emfollow.ligo.caltech.edu
+  resource_group: deploy-production
+
+deploy to production at LHO:
+  <<: *deploy-start
+  environment:
+    name: production/LHO
+    on_stop: stop deployment on production at LHO
+    url: https://emfollow.ligo-wa.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow@emfollow.ligo-wa.caltech.edu
+
+deploy to playground at CIT:
+  <<: *deploy-start
+  environment:
+    name: playground/CIT
+    on_stop: stop deployment on playground at CIT
+    url: https://emfollow-playground.ligo.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow-playground@emfollow-playground.ligo.caltech.edu
+  resource_group: deploy-playground
+
+deploy to playground at LHO:
+  <<: *deploy-start
+  environment:
+    name: playground/LHO
+    on_stop: stop deployment on playground at LHO
+    url: https://emfollow-playground.ligo-wa.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow-playground@emfollow-playground.ligo-wa.caltech.edu
+
+deploy to test at CIT:
+  <<: *deploy-start
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_PATH == "emfollow/gwcelery" && ($CI_COMMIT_BRANCH || $CI_COMMIT_TAG)
+      when: manual
+      allow_failure: true
+    - if: $CI_PROJECT_PATH == "emfollow/gwcelery" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - if: $CI_PROJECT_PATH == "emfollow/gwcelery" && $CI_PIPELINE_SOURCE != "merge_request_event"
+      when: manual
+      allow_failure: true
+  environment:
+    name: test/CIT
+    on_stop: stop deployment on test at CIT
+    url: https://emfollow-test.ligo.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow-test@emfollow-test.ligo.caltech.edu
+  resource_group: deploy-test
+
+deploy to test at LHO:
+  <<: *deploy-start
+  environment:
+    name: test/LHO
+    on_stop: stop deployment on test at LHO
+    url: https://emfollow-test.ligo-wa.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow-test@emfollow-test.ligo-wa.caltech.edu
+
+deploy to dev at CIT:
+  <<: *deploy-start
+  environment:
+    name: dev/CIT
+    on_stop: stop deployment on dev at CIT
+    url: https://emfollow-dev.ligo.caltech.edu/flower
+  variables:
+    REMOTE_HOST: emfollow-dev@emfollow-dev.ligo.caltech.edu
+
+stop deployment on production at CIT:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: production/CIT
+    action: stop
+
+stop deployment on production at LHO:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: production/LHO
+    action: stop
+
+stop deployment on playground at CIT:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: playground/CIT
+    action: stop
+
+stop deployment on playground at LHO:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: playground/LHO
+    action: stop
+
+stop deployment on test at CIT:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: test/CIT
+    action: stop
+
+stop deployment on test at LHO:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: test/LHO
+    action: stop
+
+stop deployment on dev at CIT:
+  <<: *deploy-stop
+  when: manual
+  environment:
+    name: dev/CIT
+    action: stop

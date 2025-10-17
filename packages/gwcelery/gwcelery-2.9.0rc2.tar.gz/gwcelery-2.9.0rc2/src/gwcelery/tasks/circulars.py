@@ -1,0 +1,47 @@
+"""Generate and upload automated circulars."""
+import ligo.followup_advocate
+
+from . import legacy_gracedb as gracedb
+
+
+@gracedb.task(shared=False)
+def create_initial_circular(graceid):
+    """Create and return circular txt."""
+    return ligo.followup_advocate.compose(graceid, client=gracedb.client,
+                                          remove_text_wrap=True)
+
+
+@gracedb.task(shared=False)
+def create_emcoinc_circular(graceid, gw_is_subthreshold=False):
+    """Create and return the em_coinc circular txt."""
+    return ligo.followup_advocate.compose_raven(
+        graceid, gw_is_subthreshold=gw_is_subthreshold,
+        client=gracedb.client, remove_text_wrap=True)
+
+
+@gracedb.task(shared=False)
+def create_medium_latency_circular(graceid):
+    """Create and return the em_coinc circular txt."""
+    return ligo.followup_advocate.compose_grb_medium_latency(
+               graceid, client=gracedb.client, remove_text_wrap=True)
+
+
+@gracedb.task(shared=False)
+def create_update_circular(graceid, cgmi_filename=None,
+                           update_types=['sky_localization',
+                                         'em_bright', 'p_astro'],
+                           remove_text_wrap=True):
+    """Create and return update circular txt."""
+    return ligo.followup_advocate.compose_update(graceid,
+                                                 update_types=update_types,
+                                                 client=gracedb.client,
+                                                 remove_text_wrap=True,
+                                                 cgmi_filename=cgmi_filename)
+
+
+@gracedb.task(shared=False)
+def create_retraction_circular(graceid):
+    """Create and return retraction circular txt."""
+    return ligo.followup_advocate.compose_retraction(graceid,
+                                                     client=gracedb.client,
+                                                     remove_text_wrap=True)

@@ -1,0 +1,273 @@
+{# Template of ini file for Parameter Estimation. This is a jinja template. The
+explanation on jinja is here http://jinja.pocoo.org . #}
+
+{% set engine = 'lalinferencenest' %}
+{% set nparallel = '4' %}
+{% set roq = 'True' %}
+{% set roqdir = '/home/cbc/ROQ_data/IMRPhenomPv2/' %}
+{% set approx = 'IMRPhenomPv2pseudoFourPN' %}
+{% set neff = '1000' %}
+
+{% set Nchain = '10' %}
+{% set Niter = '100000' %}
+{% if mc >= 4.2 %}
+    {% set bayeswave_request_memory = '1000' %}
+    {% set bayeswave_post_request_memory = '4000' %}
+{% else %}
+    {% set bayeswave_request_memory = '16000' %}
+    {% set bayeswave_post_request_memory = '16000' %}
+    {% if mc <= 2.6 %}
+        {% set additional_bayeswave_options = 'bw_srate = 4096' %}
+    {% endif %}
+{% endif %}
+
+{# IMRPhenomPv2_ROQ can not be applied for large massratio #}
+{% if q <= 0.143 %}
+    {% set approx = 'SEOBNRv4_ROMpseudoFourPN' %}
+    {% set roqdir = '/home/cbc/ROQ_data/SEOBNRv4ROQ/' %}
+{% endif %}
+
+{# SEOBNRv4 for large massratio is not ROQed. #}
+{# Change to non-ROQ run but use mcmc with 10 chains to make the run fast #}
+{% if q <= 0.0588 %}
+    {% set engine = 'lalinferencemcmc' %}
+    {% set nparallel = '10' %}
+    {% set roq = 'False' %}
+    {% set neff = '300' %}
+    {% set margphi = 'margphi=' %}
+{% endif %}
+
+{% if gracedb_host != 'gracedb.ligo.org' %}
+    {# FIXME: lalinference_pipe fails to read state vector in Virgo's Replay
+    data with gwpy. This issue will be solved by
+    https://git.ligo.org/lscsoft/lalsuite/merge_requests/1110. #}
+    {% set ifos = '["H1", "L1"]' %}
+    {% set accounting_group = 'ligo.dev.o3.cbc.pe.lalinference' %}
+    {% set engine = 'lalinferencemcmc' %}
+    {% set nparallel = '2' %}
+    {% set roq = 'True' %}
+    {% set neff = '100' %}
+    {% set zeroLogLike = 'zeroLogLike=' %}
+    {% set Nchain = '1' %}
+    {% set Niter = '100' %}
+{% else %}
+    {% set ifos = '["H1", "L1", "V1"]' %}
+    {% set accounting_group = 'ligo.prod.o3.cbc.pe.lalinference' %}
+{% endif %}
+
+
+[analysis]
+ifos={{ ifos | safe }}
+engine={{ engine }}
+nparallel={{ nparallel }}
+roq={{ roq }}
+coherence-test=False
+upload-to-gracedb=False
+singularity=False
+osg=False
+
+
+[paths]
+# Replace the webdir with a directory under your public_html when you start a
+# run manually based on this ini file.
+webdir={{ webdir }}
+roq_b_matrix_directory={{ roqdir }}
+
+
+[input]
+max-psd-length=16384
+padding=0
+events=all
+analyse-all-time=False
+timeslides=False
+ignore-gracedb-psd=True
+threshold-snr=3
+
+
+[condor]
+{# paths to executables #}
+{% for path in paths %}
+{{ path.name }}={{ path.path }}
+{% endfor %}
+
+# When you start a run manually based on this ini file, delete the above
+# executable paths and specify the paths to your own executables with the
+# following scripts.
+#
+# lalsuite-install=/home/albert.einstein/opt/lalsuite/
+# datafind=%(lalsuite-install)s/bin/gw_data_find
+# mergeNSscript=%(lalsuite-install)s/bin/lalinference_nest2pos
+# mergeMCMCscript=%(lalsuite-install)s/bin/cbcBayesMCMC2pos
+# combinePTMCMCh5script=%(lalsuite-install)s/bin/cbcBayesCombinePTMCMCh5s
+# resultspage=%(lalsuite-install)s/bin/cbcBayesPostProc
+# segfind=%(lalsuite-install)s/bin/ligolw_segment_query
+# ligolw_print=%(lalsuite-install)s/bin/ligolw_print
+# coherencetest=%(lalsuite-install)s/bin/lalinference_coherence_test
+# lalinferencenest=%(lalsuite-install)s/bin/lalinference_nest
+# lalinferencemcmc=%(lalsuite-install)s/bin/lalinference_mcmc
+# lalinferencebambi=%(lalsuite-install)s/bin/lalinference_bambi
+# lalinferencedatadump=%(lalsuite-install)s/bin/lalinference_datadump
+# ligo-skymap-from-samples=%(lalsuite-install)s/bin/ligo-skymap-from-samples
+# ligo-skymap-plot=%(lalsuite-install)s/bin/ligo-skymap-plot
+# processareas=%(lalsuite-install)s/bin/process_areas
+# computeroqweights=%(lalsuite-install)s/bin/lalinference_compute_roq_weights
+# mpiwrapper=%(lalsuite-install)s/bin/lalinference_mpi_wrapper
+# gracedb=%(lalsuite-install)s/bin/gracedb
+# ppanalysis=%(lalsuite-install)s/bin/cbcBayesPPAnalysis
+# pos_to_sim_inspiral=%(lalsuite-install)s/bin/cbcBayesPosToSimInspiral
+
+mpirun={{ mpirun }}
+accounting_group={{ accounting_group  }}
+# Remove the following line when you start a run manually based on this ini
+# file.
+accounting_group_user=soichiro.morisaki
+
+# Comment out the line below unless your run is of urgency.
+queue = Online_PE
+
+bayeswave_request_memory={{ bayeswave_request_memory }}
+bayeswavepost_request_memory={{ bayeswave_post_request_memory }}
+
+[datafind]
+url-type=file
+# Use types = {'H1': 'H1_HOFT_C00', 'L1': 'L1_HOFT_C00', 'V1': 'V1Online'} when
+# you start a run manually.
+types = {{ types | safe }}
+
+
+[data]
+channels = {{ channels | safe }}
+
+
+[lalinference]
+flow = {'H1': 20.0, 'L1': 20.0, 'V1': 20.0}
+
+
+[engine]
+fref=20
+approx={{ approx }}
+amporder=0
+neff={{ neff }}
+nlive=512
+tolerance=0.1
+ntemps=8
+resume=
+adapt-temps=
+progress=
+spcal-nodes = 10
+enable-spline-calibration =
+H1-spcal-envelope = {{ h1_calibration }}
+L1-spcal-envelope = {{ l1_calibration }}
+V1-spcal-envelope = {{ v1_calibration }}
+{{ margphi }}
+{{ zeroLogLike }}
+# You can use your own PSDs by specifying their paths.
+# H1-psd=
+# L1-psd=
+# V1-psd=
+
+
+# Priors
+# For all parameters known to lalinference, the min and max default prior can be overwritten with
+# parname-min=MIN
+# parname-max=MAX
+
+# The starting point for the MCMC chain(s) can be specified with
+# parname=START
+
+# Parameters can be fixed to some value with
+# fix-parname=FIXVALUE
+
+# currently known parameters, together with default [min-max] are (radians for angle, Mpc for distance, Msun for masses)
+
+# time                         Waveform time [trigtime-0.1-trigtime+0.1]
+# chirpmass                    Chirpmass [1,15.3]
+# eta                          Symmetric massratio (needs --use-eta) [0,0.0312]
+# q                            Asymmetric massratio (a.k.a. q=m2/m1 with m1>m2) [0.033,1]
+# phase                        Coalescence phase [0,2Pi]
+# costheta_jn                  Cosine of angle between J and line of sight [-1,1]
+# logdistance                  Log Distance [log(1),log(2000)]
+# rightascension               Rightascension [0,2Pi]
+# declination                  Declination [-Pi/2,Pi/2]
+# polarisation                 Polarisation angle [0,Pi]
+
+# Spin Parameters:
+# a_spin1                      Spin1 magnitude [-1,1] for aligned, [0,1] for precessing
+# a_spin2                      Spin2 magnitude [-1,1] for aligned, [0,1] for precessing
+# tilt_spin1                   Angle between spin1 and orbital angular momentum [0,Pi]
+# tilt_spin2                   Angle between spin2 and orbital angular momentum  [0, Pi]
+# phi_12                       Difference between spins' azimuthal angles [0,2Pi]
+# phi_jl                       Difference between total and orbital angular momentum azimuthal angles [0,2Pi]
+
+# Tidal parameters (requires tidal= or tidalT=):
+# lambda1                      lambda1 [0,3000]
+# lambda2                      lambda2 [0,3000]
+# lambdaT                      lambdaT [0,3000]
+# dLambdaT                     dLambdaT [-500,500]
+
+# Equation of State parameters (requires 4PolyEOS=):
+# logp1                        logp1 [33.6,35.4]
+# gamma1                       gamma1 [2.0,4.5]
+# gamma2                       gamma2 [1.1,4.5]
+# gamma3                       gamma3 [1.1,4.5]
+
+# Settings for allowed component masses in Solar Masses, with default values
+# comp-max=30.0
+# comp-min=1.0
+
+# Allowed total masses in Msun (note, used together with component masses, mc,q,eta priors may lead to inconsistencies. Be careful!)
+# mtotal-max=35
+# mtotal-min=2
+
+# Setting time prior [seconds]
+# dt=0.1
+
+
+[mpi]
+mpi_task_count=8
+machine-count=8
+machine-memory=4000
+
+
+[skyarea]
+maxpts=2000
+
+
+[resultspage]
+skyres=0.5
+
+
+[bayeswave]
+Dmax=200
+Nchain={{ Nchain }}
+Niter={{ Niter }}
+{{ additional_bayeswave_options }}
+
+
+[statevector]
+state-vector-channel={{ state_vector_channels | safe }}
+
+# Bits of state vector channel referred to. Use only data during the time when
+# the following bits are active. The meaning of each bit is summarized in
+# https://wiki.ligo.org/Calibration/TDCalibReview and
+# https://dcc.ligo.org/cgi-bin/private/DocDB/ShowDocument?docid=G1801125&version= .
+# The most important bits for PE are
+# Bit 0: HOFT_OK: h(t) was successfully computed
+# Bit 1: OBSERVATION_INTENT: "observation intent" button is pushed
+# Bit 2: OBSERVATION_READY: observation ready data is available
+bits=['Bit 0', 'Bit 1', 'Bit 2']
+
+
+[ppanalysis]
+
+
+[singularity]
+
+
+[ligo-skymap-from-samples]
+enable-multiresolution=
+
+
+[ligo-skymap-plot]
+annotate=
+contour= 50 90
