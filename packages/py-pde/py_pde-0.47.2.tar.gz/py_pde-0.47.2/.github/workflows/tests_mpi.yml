@@ -1,0 +1,44 @@
+name: "Multiprocessing tests"
+
+on: [push]
+
+jobs:
+  test_mpi:
+    strategy:
+      matrix:
+        include:
+          - os: "ubuntu-latest"
+            mpi: "openmpi"
+          - os: "macos-13"
+            mpi: "mpich"
+          - os: "windows-latest"
+            mpi: "msmpi"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Setup MPI]
+      uses: mpi4py/setup-mpi@v1
+      with:
+        mpi: ${{ matrix.mpi }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r tests/requirements_mpi.txt
+        pip install -r tests/requirements.txt
+
+    - name: Run parallel tests with pytest
+      env:
+        NUMBA_WARNINGS: 1
+        MPLBACKEND: agg
+      run: |
+        cd scripts
+        python run_tests.py --unit --use_mpi --showconfig
