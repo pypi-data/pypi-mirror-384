@@ -1,0 +1,82 @@
+<div class="container-fluid py-4">
+  <div class="row justify-content-center">
+    <div class="col">
+      <div class="{{ widget.card_class or 'card' }}">
+        <div class="card-header">
+          <h3 class="card-title">{{ widget.title or 'Workers' }}</h3>
+        </div>
+        <div class="card-body p-0">
+          {% if widget.data %}
+          <div class="table-responsive">
+            <table id="{{ widget.table_id or 'workers-table' }}" class="{{ widget.table_class or 'table table-vcenter' }}">
+              <thead>
+                <tr>
+                  {% for f in widget.use_fields %}
+                    <th>{{ widget.use_headers.get(f, f) }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in widget.data %}
+                  <tr>
+                    {% for f in widget.use_fields %}
+                      {% set val = row.get(f) %}
+                      <td>
+                        {% if f == 'details' %}
+                          {% set base_id = (row.worker_id or (row.host ~ '-' ~ row.pid)) | string %}
+                          {% set dlg_id = (row.dialog_id or ('wkdlg-' ~ base_id|replace(' ', '-')|replace('.', '-')|replace(':', '-')|replace('@', '-')|replace('/', '-'))) if row is mapping else ('wkdlg-' ~ loop.index) %}
+                          <button type="button" class="btn btn-outline-primary btn-sm"
+                                  onclick="(function(m){ if(m) m.style.display='block'; })(document.getElementById('{{ dlg_id }}'))"
+                                  aria-label="Show worker details">Info</button>
+                          <div id="{{ dlg_id }}" class="modal modal-blur" style="display:none;">
+                            <div class="modal-dialog modal-lg" role="document">
+                              <div class="modal-content">
+                                <div class="modal-header">
+                                  <h5 class="modal-title">Worker {{ row.worker_id }} details</h5>
+                                  <button type="button" class="btn-close" aria-label="Close"
+                                          onclick="(function(m){ if(m) m.style.display='none'; })(this.closest('.modal'))"></button>
+                                </div>
+                                <div class="modal-body" style="max-height:70vh; overflow:auto;">
+                                  <pre class="code">{{ row | tojson(indent=2) }}</pre>
+                                </div>
+                                <div class="modal-footer">
+                                  <button type="button" class="btn"
+                                          onclick="(function(m){ if(m) m.style.display='none'; })(this.closest('.modal'))">Close</button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        {% elif f == 'last_seen_min' %}
+                          {{ (val | safe) if val is string else (val | string) }}
+                        {% elif val is mapping %}
+                          <pre class="code">{{ val | tojson(indent=2) }}</pre>
+                        {% elif val is sequence and val is not string %}
+                          <span>
+                            {% for it in val %}
+                              <span class="badge bg-blue-lt me-1">{{ it }}</span>
+                            {% endfor %}
+                          </span>
+                        {% else %}
+                          {{ val }}
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+            <div class="empty">
+              <div class="empty-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="7" x2="16" y2="7" /><line x1="8" y1="11" x2="16" y2="11" /><line x1="8" y1="15" x2="12" y2="15" /></svg>
+              </div>
+              <p class="empty-title">No workers found</p>
+              <p class="empty-subtitle text-muted">Workers will appear here once they register and send heartbeats.</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
