@@ -1,0 +1,99 @@
+name: Build odbclient and upload to PyPI
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+  push:
+    branches: [ci-debug]
+
+  pull_request:
+    branches:
+      - master
+      - develop
+
+
+defaults:
+  run:
+    working-directory: tools/odbclient
+
+jobs:
+  build_wheels:
+    name: Build wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        name: Install Python
+        with:
+          python-version: '3.12'
+
+      - name: Install setuptools
+        run: |
+          pip install -U setuptools setuptools_scm wheel
+      - name: Build wheels
+        run: |
+          pip wheel --no-deps -w dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-wheel
+          path: tools/odbclient/dist/*.whl
+
+
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        name: Install Python
+        with:
+          python-version: '3.12'
+
+      - name: Install setuptools
+        run: |
+          pip install -U setuptools setuptools_scm build
+
+      - name: Build sdist
+        run: python -m build . --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-sdist
+          path: tools/odbclient/dist/*.tar.gz
+
+  upload_pypi:
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # IMPORTANT: this permission is mandatory for Trusted Publishing
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifact-sdist
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: artifact-wheel
+          path: dist
+
+      - name: Publish package distributions to PyPI
+        if: github.event_name == 'release' && github.event.action == 'published'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish package distributions to PyPI test
+        if: github.event_name != 'release'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+          repository-url: https://test.pypi.org/legacy/
