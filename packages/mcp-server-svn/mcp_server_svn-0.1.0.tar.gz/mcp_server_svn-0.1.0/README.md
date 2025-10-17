@@ -1,0 +1,73 @@
+# mcp-server-svn
+
+An **MCP server integration for SVN**. This project exposes core Subversion (SVN) version control operations as MCP tools, enabling seamless automation and integration with the Model Context Protocol (MCP) framework.
+
+## Features
+
+- Status, diff, log, update, add, commit, and checkout for SVN repositories
+- Branching operations: list, create, and delete branches/tags
+- Integration via the [fastmcp](https://github.com/modelcontextprotocol/fastmcp) library as a first-class MCP server
+- Easily connects SVN workflows to automated agent ecosystems
+
+## Requirements
+
+- Python >= 3.10
+- [fastmcp](https://github.com/modelcontextprotocol/fastmcp)
+- Subversion (SVN) command-line client should be installed and available in PATH.
+
+## Installation
+
+```bash
+pip install .
+# or with poetry:
+# poetry install
+```
+
+## Usage
+
+Start the server (available after install via entry point):
+
+```bash
+mcp-server-svn
+```
+
+The server will launch and register the following MCP tools:
+- `svn_status`
+- `svn_diff`
+- `svn_commit`
+- `svn_update`
+- `svn_log`
+- `svn_add`
+- `svn_checkout`
+- `svn_switch`
+- `svn_list_branches`
+- `svn_create_branch`
+- `svn_delete_branch`
+
+Each tool corresponds to the documented Python wrapper in `mcp_server_svn/tools/`.
+
+You can also run directly via Python:
+
+```bash
+python -m mcp_server_svn
+```
+
+## Example: Checking repo status
+
+You can call the `svn_status` tool through MCP/fastmcp-compatible agents or directly in Python:
+
+```python
+from fastmcp import FastMCP
+server = FastMCP("svn")
+result = server.call("svn_status", {"repo_path": "/path/to/your/repo"})
+print(result)
+```
+
+## Development
+
+- All code is PEP8-compliant and type-hinted.
+- Contributions are welcome. Please open an issue for bugs/feature requests.
+
+## Author
+
+© Manav Desai ([manav27202@gmail.com](mailto:manav27202@gmail.com))
