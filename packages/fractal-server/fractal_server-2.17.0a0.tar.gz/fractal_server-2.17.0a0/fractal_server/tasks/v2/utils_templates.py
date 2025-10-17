@@ -1,0 +1,106 @@
+from pathlib import Path
+
+from fractal_server.app.models import Resource
+from fractal_server.app.models.v2 import TaskGroupV2
+from fractal_server.logger import set_logger
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+SCRIPTS_SUBFOLDER = "scripts"
+
+logger = set_logger(__name__)
+
+
+def _check_pixi_frozen_option(replacements: set[tuple[str, str]]):
+    try:
+        replacement = next(
+            rep for rep in replacements if rep[0] == "__FROZEN_OPTION__"
+        )
+        if replacement[1] not in ["", "--frozen"]:
+            raise ValueError(f"Invalid {replacement=}.")
+    except StopIteration:
+        pass
+
+
+def customize_template(
+    *,
+    template_name: str,
+    replacements: set[tuple[str, str]],
+    script_path: str,
+) -> None:
+    """
+    Customize a bash-script template and write it to disk.
+
+    Args:
+        template_name: Name of the template that will be customized.
+        replacements: List of replacements for template customization.
+        script_path: Local path where the customized template will be written.
+    """
+    _check_pixi_frozen_option(replacements=replacements)
+
+    # Read template
+    template_path = TEMPLATES_DIR / template_name
+    with template_path.open("r") as f:
+        template_data = f.read()
+    # Customize template
+    script_data = template_data
+    for old_new in replacements:
+        script_data = script_data.replace(old_new[0], old_new[1])
+    # Create parent folder if needed
+    Path(script_path).parent.mkdir(exist_ok=True)
+    # Write script locally
+    with open(script_path, "w") as f:
+        f.write(script_data)
+
+
+def parse_script_pip_show_stdout(stdout: str) -> dict[str, str]:
+    """
+    Parse standard output of 4_pip_show.sh
+    """
+    searches = [
+        ("Python interpreter:", "python_bin"),
+        ("Package name:", "package_name"),
+        ("Package version:", "package_version"),
+        ("Package parent folder:", "package_root_parent"),
+        ("Manifest absolute path:", "manifest_path"),
+    ]
+    stdout_lines = stdout.splitlines()
+    attributes = dict()
+    for search, attribute_name in searches:
+        matching_lines = [_line for _line in stdout_lines if search in _line]
+        if len(matching_lines) == 0:
+            raise ValueError(f"String '{search}' not found in stdout.")
+        elif len(matching_lines) > 1:
+            raise ValueError(
+                f"String '{search}' found too many times "
+                f"({len(matching_lines)})."
+            )
+        else:
+            actual_line = matching_lines[0]
+            attribute_value = actual_line.split(search)[-1].strip(" ")
+            attributes[attribute_name] = attribute_value
+    return attributes
+
+
+def get_collection_replacements(
+    *, task_group: TaskGroupV2, python_bin: str, resource: Resource
+) -> list[tuple[str, str]]:
+    replacements = [
+        ("__PACKAGE_NAME__", task_group.pkg_name),
+        ("__PACKAGE_ENV_DIR__", task_group.venv_path),
+        ("__PYTHON__", python_bin),
+        ("__INSTALL_STRING__", task_group.pip_install_string),
+        ("__FRACTAL_PIP_CACHE_DIR_ARG__", resource.pip_cache_dir_arg),
+        (
+            "__PINNED_PACKAGE_LIST_PRE__",
+            task_group.pinned_package_versions_pre_string,
+        ),
+        (
+            "__PINNED_PACKAGE_LIST_POST__",
+            task_group.pinned_package_versions_post_string,
+        ),
+    ]
+    logger.info(
+        f"Cache-dir argument for `pip install`: {resource.pip_cache_dir_arg}"
+    )
+    return replacements
