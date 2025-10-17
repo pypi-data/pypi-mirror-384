@@ -1,0 +1,87 @@
+services:
+  mcplaywright:
+    build: .
+    expose:
+      - "8000"
+    networks:
+      - caddy
+      - mcplaywright-internal
+    labels:
+      caddy: mcplaywright.${DOMAIN:-localhost}
+      caddy.reverse_proxy: "{{upstreams}}"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-memory}
+      - DEBUG_LEVEL=${DEBUG_LEVEL:-INFO}
+    volumes:
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - mcplaywright-internal
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Development service with hot-reload
+  mcplaywright-dev:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - .:/app
+      - ./artifacts:/app/artifacts
+      - ./data:/app/data
+    networks:
+      - mcplaywright-internal
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=1  # Use different DB for development
+      - STORAGE_BACKEND=redis
+      - DEBUG_LEVEL=DEBUG
+      - PYTHONPATH=/app/src
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
+    command: ["uv", "run", "python", "-m", "mcplaywright.server", "--reload"]
+    profiles:
+      - dev
+
+  # Redis Commander for development debugging
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    networks:
+      - mcplaywright-internal
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    profiles:
+      - dev
+
+networks:
+  caddy:
+    external: true
+  mcplaywright-internal:
+    internal: true
+
+volumes:
+  redis_data:
