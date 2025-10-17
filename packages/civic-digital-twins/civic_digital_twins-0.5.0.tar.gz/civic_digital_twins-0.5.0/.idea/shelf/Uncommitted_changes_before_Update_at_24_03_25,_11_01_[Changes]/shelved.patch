@@ -1,0 +1,149 @@
+Index: dt_model/__init__.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from dt_model.simulation.ensemble import Ensemble\nfrom dt_model.model.model import Model\nfrom dt_model.symbols.constraint import Constraint\nfrom dt_model.symbols.context_variable import (\n    ContextVariable,\n    UniformCategoricalContextVariable,\n    CategoricalContextVariable,\n    ContinuousContextVariable,\n)\nfrom dt_model.symbols.index import Index, ConstIndex, SymIndex, UniformDistIndex, LognormDistIndex, TriangDistIndex\nfrom dt_model.symbols.presence_variable import PresenceVariable\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/dt_model/__init__.py b/dt_model/__init__.py
+--- a/dt_model/__init__.py	(revision bd2e81eb6b79f6077a36466053a65139abd195b8)
++++ b/dt_model/__init__.py	(date 1742810368438)
+@@ -1,4 +1,4 @@
+-from dt_model.simulation.ensemble import Ensemble
++from dt_model.ensemble.ensemble import Ensemble
+ from dt_model.model.model import Model
+ from dt_model.symbols.constraint import Constraint
+ from dt_model.symbols.context_variable import (
+Index: dt_model/model/model.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\n\nfrom dt_model.model.abstract_model import AbstractModel\nfrom dt_model.model.instantiated_model import InstantiatedModel\nfrom dt_model.simulation.evaluation import Evaluation\nfrom dt_model.symbols.constraint import Constraint\nfrom dt_model.symbols.context_variable import ContextVariable\nfrom dt_model.symbols.index import Index\nfrom dt_model.symbols.presence_variable import PresenceVariable\n\n\nclass Model:\n    def __init__(\n        self,\n        name,\n        cvs: list[ContextVariable],\n        pvs: list[PresenceVariable],\n        indexes: list[Index],\n        capacities: list[Index],\n        constraints: list[Constraint],\n    ) -> None:\n        self.abs = AbstractModel(name, cvs, pvs, indexes, capacities, constraints)\n        self.evaluation = None\n\n    @property\n    def name(self):\n        return self.abs.name\n\n    # TODO: Remove, should be immutable\n    @name.setter\n    def name(self, value):\n        self.abs.name = value\n\n    @property\n    def cvs(self):\n        return self.abs.cvs\n\n    @property\n    def pvs(self):\n        return self.abs.pvs\n\n    @property\n    def indexes(self):\n        return self.abs.indexes\n\n    @property\n    def capacities(self):\n        return self.abs.capacities\n\n    @property\n    def constraints(self):\n        return self.abs.constraints\n\n    @property\n    def index_vals(self):\n        assert(self.evaluation is not None)\n        return self.evaluation.index_vals\n\n    @property\n    def field_elements(self):\n        assert(self.evaluation is not None)\n        return self.evaluation.field_elements\n\n    def reset(self):\n        assert(self.evaluation is not None)\n        self.evaluation = None\n\n    def evaluate(self, grid, ensemble):\n        assert(self.evaluation is None)\n        evaluation = Evaluation(InstantiatedModel(self.abs))\n        result = evaluation.evaluate(grid, ensemble)\n        self.evaluation = evaluation\n        return result\n\n    def get_index_value(self, i: Index) -> float:\n        assert(self.evaluation is not None)\n        return self.evaluation.get_index_value(i)\n\n    def get_index_mean_value(self, i: Index) -> float:\n        assert(self.evaluation is not None)\n        return self.evaluation.get_index_mean_value(i)\n\n    def compute_sustainable_area(self) -> float:\n        assert self.evaluation is not None\n        return self.evaluation.compute_sustainable_area()\n\n    # TODO: change API - order of presence variables\n    def compute_sustainability_index(self, presences: list) -> float:\n        assert self.evaluation is not None\n        return self.evaluation.compute_sustainability_index(presences)\n\n    def compute_sustainability_index_per_constraint(self, presences: list) -> dict:\n        assert self.evaluation is not None\n        return self.evaluation.compute_sustainability_index_per_constraint(presences)\n\n    def compute_modal_line_per_constraint(self) -> dict:\n        assert self.evaluation is not None\n        return self.evaluation.compute_modal_line_per_constraint()\n\n    def variation(self, new_name, *, change_indexes=None, change_capacities=None):\n        # TODO: check if changes are valid (ie they change elements present in the model)\n        if change_indexes is None:\n            new_indexes = self.indexes\n            change_indexes = {}\n        else:\n            new_indexes = []\n            for index in self.indexes:\n                if index in change_indexes:\n                    new_indexes.append(change_indexes[index])\n                else:\n                    new_indexes.append(index)\n        if change_capacities is None:\n            new_capacities = self.capacities\n            change_capacities = {}\n        else:\n            new_capacities = []\n            for capacity in self.capacities:\n                if capacity in change_capacities:\n                    new_capacities.append(change_capacities[capacity])\n                else:\n                    new_capacities.append(capacity)\n        new_constraints = []\n        for constraint in self.constraints:\n            new_constraints.append(\n                Constraint(\n                    constraint.usage.subs(change_indexes),\n                    constraint.capacity.subs(change_capacities),\n                    group=constraint.group,\n                    name=constraint.name,\n                )\n            )\n        return Model(new_name, self.cvs, self.pvs, new_indexes, new_capacities, new_constraints)\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/dt_model/model/model.py b/dt_model/model/model.py
+--- a/dt_model/model/model.py	(revision bd2e81eb6b79f6077a36466053a65139abd195b8)
++++ b/dt_model/model/model.py	(date 1742810513092)
+@@ -2,7 +2,7 @@
+ 
+ from dt_model.model.abstract_model import AbstractModel
+ from dt_model.model.instantiated_model import InstantiatedModel
+-from dt_model.simulation.evaluation import Evaluation
++from dt_model.ensemble.evaluation import Evaluation
+ from dt_model.symbols.constraint import Constraint
+ from dt_model.symbols.context_variable import ContextVariable
+ from dt_model.symbols.index import Index
+@@ -12,7 +12,7 @@
+ class Model:
+     def __init__(
+         self,
+-        name,
++        name: str,
+         cvs: list[ContextVariable],
+         pvs: list[PresenceVariable],
+         indexes: list[Index],
+@@ -53,31 +53,31 @@
+ 
+     @property
+     def index_vals(self):
+-        assert(self.evaluation is not None)
++        assert self.evaluation is not None
+         return self.evaluation.index_vals
+ 
+     @property
+     def field_elements(self):
+-        assert(self.evaluation is not None)
++        assert self.evaluation is not None
+         return self.evaluation.field_elements
+ 
+     def reset(self):
+-        assert(self.evaluation is not None)
++        assert self.evaluation is not None
+         self.evaluation = None
+ 
+     def evaluate(self, grid, ensemble):
+-        assert(self.evaluation is None)
++        assert self.evaluation is None
+         evaluation = Evaluation(InstantiatedModel(self.abs))
+         result = evaluation.evaluate(grid, ensemble)
+         self.evaluation = evaluation
+         return result
+ 
+     def get_index_value(self, i: Index) -> float:
+-        assert(self.evaluation is not None)
++        assert self.evaluation is not None
+         return self.evaluation.get_index_value(i)
+ 
+     def get_index_mean_value(self, i: Index) -> float:
+-        assert(self.evaluation is not None)
++        assert self.evaluation is not None
+         return self.evaluation.get_index_mean_value(i)
+ 
+     def compute_sustainable_area(self) -> float:
+Index: dt_model/simulation/evaluation.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/dt_model/simulation/evaluation.py b/dt_model/ensemble/evaluation.py
+rename from dt_model/simulation/evaluation.py
+rename to dt_model/ensemble/evaluation.py
+--- a/dt_model/simulation/evaluation.py	(revision bd2e81eb6b79f6077a36466053a65139abd195b8)
++++ b/dt_model/ensemble/evaluation.py	(date 1742810368459)
+@@ -29,7 +29,7 @@
+         assert(self.inst.legacy is not None)
+         return self.inst.legacy.compute_sustainable_area()
+ 
+-    # TODO: change API - order of presence variables
++    # TODO(pistore): change API - order of presence variables
+     def compute_sustainability_index(self, presences: list) -> float:
+         assert(self.inst.legacy is not None)
+         return self.inst.legacy.compute_sustainability_index(presences)
+Index: dt_model/model/abstract_model.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\n\nfrom dt_model.symbols.context_variable import ContextVariable\nfrom dt_model.symbols.presence_variable import PresenceVariable\nfrom dt_model.symbols.index import Index\nfrom dt_model.symbols.constraint import Constraint\n\n\nclass AbstractModel:\n    def __init__(\n            self,\n            name,\n            cvs: list[ContextVariable],\n            pvs: list[PresenceVariable],\n            indexes: list[Index],\n            capacities: list[Index],\n            constraints: list[Constraint],\n    ) -> None:\n        self.name = name\n        self.cvs = cvs\n        self.pvs = pvs\n        self.indexes = indexes\n        self.capacities = capacities\n        self.constraints = constraints\n\n\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/dt_model/model/abstract_model.py b/dt_model/model/abstract_model.py
+--- a/dt_model/model/abstract_model.py	(revision bd2e81eb6b79f6077a36466053a65139abd195b8)
++++ b/dt_model/model/abstract_model.py	(date 1742810368502)
+@@ -9,7 +9,7 @@
+ class AbstractModel:
+     def __init__(
+             self,
+-            name,
++            name: str,
+             cvs: list[ContextVariable],
+             pvs: list[PresenceVariable],
+             indexes: list[Index],
+Index: dt_model/model/instantiated_model.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from dt_model.model.legacy_model import LegacyModel\nfrom dt_model.model.abstract_model import AbstractModel\nfrom dt_model.symbols.context_variable import ContextVariable\nfrom dt_model.symbols.presence_variable import PresenceVariable\nfrom dt_model.symbols.index import Index\n\n\nclass InstantiatedModel():\n    def __init__(self, abs: AbstractModel) -> None:\n        self.abs = abs\n        self.legacy = LegacyModel(abs.name, abs.cvs, abs.pvs, abs.indexes, abs.capacities, abs.constraints)\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/dt_model/model/instantiated_model.py b/dt_model/model/instantiated_model.py
+--- a/dt_model/model/instantiated_model.py	(revision bd2e81eb6b79f6077a36466053a65139abd195b8)
++++ b/dt_model/model/instantiated_model.py	(date 1742810368517)
+@@ -1,11 +1,8 @@
+ from dt_model.model.legacy_model import LegacyModel
+ from dt_model.model.abstract_model import AbstractModel
+-from dt_model.symbols.context_variable import ContextVariable
+-from dt_model.symbols.presence_variable import PresenceVariable
+-from dt_model.symbols.index import Index
+ 
+ 
+-class InstantiatedModel():
++class InstantiatedModel:
+     def __init__(self, abs: AbstractModel) -> None:
+         self.abs = abs
+         self.legacy = LegacyModel(abs.name, abs.cvs, abs.pvs, abs.indexes, abs.capacities, abs.constraints)
+diff --git a/dt_model/simulation/__init__.py b/dt_model/ensemble/__init__.py
+rename from dt_model/simulation/__init__.py
+rename to dt_model/ensemble/__init__.py
+diff --git a/dt_model/simulation/ensemble.py b/dt_model/ensemble/ensemble.py
+rename from dt_model/simulation/ensemble.py
+rename to dt_model/ensemble/ensemble.py

@@ -1,0 +1,62 @@
+Index: dt_model/examples/molveno/overtourism.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>\"\"\"This module contains the (mostly-immutable) model definition.\"\"\"\n\n# SPDX-License-Identifier: Apache-2.0\n\nfrom ... import (\n    CategoricalContextVariable,\n    Constraint,\n    Index,\n    LognormDistIndex,\n    Model,\n    PresenceVariable,\n    SymIndex,\n    TriangDistIndex,\n    UniformCategoricalContextVariable,\n    UniformDistIndex,\n)\nfrom ...internal.sympyke import Eq, Piecewise, Symbol\nfrom .presence_stats import excursionist_presences_stats, season, tourist_presences_stats, weather, weekday\n\n# Context variables\n\nCV_weekday = UniformCategoricalContextVariable(\"weekday\", [Symbol(v) for v in weekday])\nCV_season = CategoricalContextVariable(\"season\", {Symbol(v): season[v] for v in season.keys()})\nCV_weather = CategoricalContextVariable(\"weather\", {Symbol(v): weather[v] for v in weather.keys()})\n\n# Presence variables\n\nPV_tourists = PresenceVariable(\"tourists\", [CV_weekday, CV_season, CV_weather], tourist_presences_stats)\nPV_excursionists = PresenceVariable(\"excursionists\", [CV_weekday, CV_season, CV_weather], excursionist_presences_stats)\n\n# Capacity indexes\n\nI_C_parking = UniformDistIndex(\"parking capacity\", loc=350.0, scale=100.0)\nI_C_beach = UniformDistIndex(\"beach capacity\", loc=6000.0, scale=1000.0)\nI_C_accommodation = LognormDistIndex(\"accommodation capacity\", s=0.125, loc=0.0, scale=5000.0)\nI_C_food = TriangDistIndex(\"food service capacity\", loc=3000.0, scale=1000.0, c=0.5)\n\n# Usage indexes\n\nI_U_tourists_parking = Index(\"tourist parking usage factor\", 0.02)\nI_U_excursionists_parking = Index(\n    \"excursionist parking usage factor\",\n    Piecewise((0.55, Eq(CV_weather.node, Symbol(\"bad\"))), (0.80, True)),\n    cvs=[CV_weather],\n)\n\nI_U_tourists_beach = Index(\n    \"tourist beach usage factor\", Piecewise((0.25, Eq(CV_weather.node, Symbol(\"bad\"))), (0.50, True)), cvs=[CV_weather]\n)\nI_U_excursionists_beach = Index(\n    \"excursionist beach usage factor\",\n    Piecewise((0.35, Eq(CV_weather.node, Symbol(\"bad\"))), (0.80, True)),\n    cvs=[CV_weather],\n)\n\nI_U_tourists_accommodation = Index(\"tourist accommodation usage factor\", 0.90)\n\nI_U_tourists_food = Index(\"tourist food service usage factor\", 0.20)\nI_U_excursionists_food = Index(\n    \"excursionist food service usage factor\",\n    Piecewise((0.80, Eq(CV_weather.node, Symbol(\"bad\"))), (0.40, True)),\n    cvs=[CV_weather, CV_weekday],\n)\n\n# Conversion indexes\n\nI_Xa_tourists_per_vehicle = Index(\"tourists per vehicle allocation factor\", 2.5)\nI_Xa_excursionists_per_vehicle = Index(\"excursionists per vehicle allocation factor\", 2.5)\nI_Xo_tourists_parking = Index(\"tourists in parking rotation factor\", 1.02)\nI_Xo_excursionists_parking = Index(\"excursionists in parking rotation factor\", 3.5)\n\nI_Xo_tourists_beach = UniformDistIndex(\"tourists on beach rotation factor\", loc=1.0, scale=2.0)\nI_Xo_excursionists_beach = Index(\"excursionists on beach rotation factor\", 1.02)\n\nI_Xa_tourists_accommodation = Index(\"tourists per accommodation allocation factor\", 1.05)\n\nI_Xa_visitors_food = Index(\"visitors in food service allocation factor\", 0.9)\nI_Xo_visitors_food = Index(\"visitors in food service rotation factor\", 2.0)\n\n# Presence indexes\n\nI_P_tourists_reduction_factor = Index(\"tourists reduction factor\", 1.0)\nI_P_excursionists_reduction_factor = Index(\"excursionists reduction factor\", 1.0)\n\nI_P_tourists_saturation_level = Index(\"tourists saturation level\", 10000)\nI_P_excursionists_saturation_level = Index(\"excursionists saturation level\", 10000)\n\n\n# Constraints\n\nC_parking = Constraint(\n    usage=SymIndex(\n        name=\"\",\n        value=(\n            PV_tourists.node * I_U_tourists_parking.node / (I_Xa_tourists_per_vehicle.node * I_Xo_tourists_parking.node)\n            + PV_excursionists.node\n            * I_U_excursionists_parking.node\n            / (I_Xa_excursionists_per_vehicle.node * I_Xo_excursionists_parking.node)\n        ),\n    ),\n    capacity=I_C_parking,\n    name=\"parking\",\n)\n\nC_beach = Constraint(\n    usage=SymIndex(\n        name=\"\",\n        value=(\n            PV_tourists.node * I_U_tourists_beach.node / I_Xo_tourists_beach.node\n            + PV_excursionists.node * I_U_excursionists_beach.node / I_Xo_excursionists_beach.node\n        ),\n    ),\n    capacity=I_C_beach,\n    name=\"beach\",\n)\n\n# TODO: also capacity should be a formula\n# C_accommodation = Constraint(usage=PV_tourists * I_U_tourists_accommodation,\n#                              capacity=I_C_accommodation *  I_Xa_tourists_accommodation)\n\nC_accommodation = Constraint(\n    usage=SymIndex(\n        name=\"\", value=PV_tourists.node * I_U_tourists_accommodation.node / I_Xa_tourists_accommodation.node\n    ),\n    capacity=I_C_accommodation,\n    name=\"accommodation\",\n)\n\n# TODO: also capacity should be a formula\n# C_food = Constraint(usage=PV_tourists * I_U_tourists_food +\n#                              PV_excursionists * I_U_excursionists_food,\n#                     capacity=I_C_food * I_Xa_visitors_food * I_Xo_visitors_food)\nC_food = Constraint(\n    usage=SymIndex(\n        name=\"\",\n        value=(PV_tourists.node * I_U_tourists_food.node + PV_excursionists.node * I_U_excursionists_food.node)\n        / (I_Xa_visitors_food.node * I_Xo_visitors_food.node),\n    ),\n    capacity=I_C_food,\n    name=\"food\",\n)\n\n# Models\n# TODO: what is the better process to create a model? (e.g., adding elements incrementally)\n\n# Base model\nM_Base = Model(\n    \"base model\",\n    [CV_weekday, CV_season, CV_weather],\n    [PV_tourists, PV_excursionists],\n    [\n        I_U_tourists_parking,\n        I_U_excursionists_parking,\n        I_U_tourists_beach,\n        I_U_excursionists_beach,\n        I_U_tourists_accommodation,\n        I_U_tourists_food,\n        I_U_excursionists_food,\n        I_Xa_tourists_per_vehicle,\n        I_Xa_excursionists_per_vehicle,\n        I_Xa_tourists_accommodation,\n        I_Xo_tourists_parking,\n        I_Xo_excursionists_parking,\n        I_Xo_tourists_beach,\n        I_Xo_excursionists_beach,\n        I_Xa_visitors_food,\n        I_Xo_visitors_food,\n        I_P_tourists_reduction_factor,\n        I_P_excursionists_reduction_factor,\n        I_P_tourists_saturation_level,\n        I_P_excursionists_saturation_level,\n    ],\n    [I_C_parking, I_C_beach, I_C_accommodation, I_C_food],\n    [C_parking, C_beach, C_accommodation, C_food],\n)\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/dt_model/examples/molveno/overtourism.py b/dt_model/examples/molveno/overtourism.py
+--- a/dt_model/examples/molveno/overtourism.py	(revision 92a0887a73ae5ffc001562065a8c733df3224455)
++++ b/dt_model/examples/molveno/overtourism.py	(date 1744095688959)
+@@ -89,14 +89,11 @@
+ # Constraints
+ 
+ C_parking = Constraint(
+-    usage=SymIndex(
+-        name="",
+-        value=(
++    usage=(
+             PV_tourists.node * I_U_tourists_parking.node / (I_Xa_tourists_per_vehicle.node * I_Xo_tourists_parking.node)
+             + PV_excursionists.node
+             * I_U_excursionists_parking.node
+             / (I_Xa_excursionists_per_vehicle.node * I_Xo_excursionists_parking.node)
+-        ),
+     ),
+     capacity=I_C_parking,
+     name="parking",
+@@ -104,11 +101,8 @@
+ 
+ C_beach = Constraint(
+     usage=SymIndex(
+-        name="",
+-        value=(
+             PV_tourists.node * I_U_tourists_beach.node / I_Xo_tourists_beach.node
+             + PV_excursionists.node * I_U_excursionists_beach.node / I_Xo_excursionists_beach.node
+-        ),
+     ),
+     capacity=I_C_beach,
+     name="beach",
+@@ -119,9 +113,7 @@
+ #                              capacity=I_C_accommodation *  I_Xa_tourists_accommodation)
+ 
+ C_accommodation = Constraint(
+-    usage=SymIndex(
+-        name="", value=PV_tourists.node * I_U_tourists_accommodation.node / I_Xa_tourists_accommodation.node
+-    ),
++    usage=PV_tourists.node * I_U_tourists_accommodation.node / I_Xa_tourists_accommodation.node,
+     capacity=I_C_accommodation,
+     name="accommodation",
+ )
+@@ -131,10 +123,8 @@
+ #                              PV_excursionists * I_U_excursionists_food,
+ #                     capacity=I_C_food * I_Xa_visitors_food * I_Xo_visitors_food)
+ C_food = Constraint(
+-    usage=SymIndex(
+-        name="",
+-        value=(PV_tourists.node * I_U_tourists_food.node + PV_excursionists.node * I_U_excursionists_food.node)
+-        / (I_Xa_visitors_food.node * I_Xo_visitors_food.node),
++    usage=(PV_tourists.node * I_U_tourists_food.node + PV_excursionists.node * I_U_excursionists_food.node)
++        / (I_Xa_visitors_food.node * I_Xo_visitors_food.node
+     ),
+     capacity=I_C_food,
+     name="food",
