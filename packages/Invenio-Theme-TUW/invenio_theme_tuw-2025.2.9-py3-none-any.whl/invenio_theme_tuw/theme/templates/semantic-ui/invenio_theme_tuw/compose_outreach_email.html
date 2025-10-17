@@ -1,0 +1,120 @@
+{# -*- coding: utf-8 -*-
+
+  Copyright (C) 2025 TU Wien.
+
+  Invenio Theme TUW is free software; you can redistribute it and/or modify it
+  under the terms of the MIT License; see LICENSE file for more details.
+#}
+
+{%- extends config.BASE_TEMPLATE %}
+
+{%- block page_body %}
+  <div class="ui container">
+    <h1 class="ui dividing header">Outreach email</h1>
+
+    <form class="ui form" action="" method="POST">
+
+      <h2>Metadata</h2>
+      <div class="three fields">
+        <div class="required field">
+          <label for="recipients">Email recipients (<a href="https://www.w3schools.com/sql/sql_wildcards.asp" target="_blank">SQL wildcards</a> are supported)</label>
+          <input name="recipients" id="recipients" placeholder="%@tuwien.ac.at" type="text" value="{{ default_values.recipients }}" required autofocus />
+        </div>
+
+        <div class="required field">
+          <label for="subject">Subject</label>
+          <input name="subject" id="subject" placeholder="Listen up buttercup!" type="text" value="{{ default_values.subject }}" required />
+        </div>
+
+        <div class="field">
+          <label for="sender">Sender</label>
+          <input name="sender" id="sender" placeholder="no-reply@tuwien.ac.at" type="text" value="{{ default_values.sender }}" />
+        </div>
+      </div>
+
+      <h2>Content</h2>
+      <p>
+        Some users disable the rendering of HTML in their emails, e.g. to be on the safe side about loading and executing code from untrusted sources.
+        In such cases, the plain-text variant will be displayed instead.
+        <br />
+        Note: If either of the formats is omitted, very simple transformations will be used to generate the missing content.
+        For complex content, it is recommended to provide manual input for both formats.
+      </p>
+      <div class="two fields">
+        <div class="field">
+          <label for="html-msg">HTML-formatted message to send</label>
+          <div id="html-msg-container" class="html message container">
+            <textarea name="html-msg" id="html-msg">{{ default_values.html_msg }}</textarea>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="txt-msg">Plain-text message to send</label>
+          <div id="txt-msg-container" class="plain text message container">
+            <textarea name="txt-msg" id="txt-msg">{{ default_values.txt_msg }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      {%- if not has_data %}
+      <input class="ui button" type="submit" formaction="?preview=1" value="Preview email" />
+      {%- elif sent_email %}
+      <input class="ui button" type="submit" formaction="?preview=1" value="Preview another email" />
+      {%- elif not sent_email %}
+      <input class="ui button" type="submit" formaction="?preview=1" value="Update preview" />
+      <input class="ui positive button" type="submit" formaction="?preview=0" value="Send email" />
+      {%- endif %}
+    </form>
+
+    {%- if has_data %}
+    <hr />
+    <div>
+      <h2>Preview</h2>
+      <p>
+        The following email with the subject <strong>{{ subject or "No Subject" }}</strong> will be sent to <strong>{{ users|length }}</strong> recipients.
+        This will take about {{ users|length }} seconds.
+      </p>
+
+      <h3>HTML-formatted message</h3>
+      <div id="html-preview">
+        <!-- using an iframe to avoid any styling interference -->
+        <iframe id="html-preview-iframe" title="HTML email preview" srcdoc="{{ html }}">
+        </iframe>
+      </div>
+
+      <h3>Plain-text message</h3>
+      <div id="txt-preview">
+        <pre>{{ body|safe }}</pre>
+      </div>
+
+      <h3>Recipients</h3>
+      <p>The email will be sent to {{ users|length }} recipients.</p>
+      <div id="users-list">
+        <ul>
+          {%- for user in users %}
+          <li>{{ user.email }}</li>
+          {%- endfor %}
+        </ul>
+      </div>
+    </div>
+    {%- endif %}
+
+  </div>
+{%- endblock %}
+
+{%- block css %}
+  {{ super() }}
+  {{ webpack['invenio-theme-tuw-compose-outreach.css'] }}
+{%- endblock css %}
+
+{%- block javascript %}
+  {{ super() }}
+  {{ webpack['invenio-theme-tuw-compose-outreach-editor.js'] }}
+
+  <script nonce="{{ csp_nonce() }}">
+    /* get the height of the <html> element within the iframe and resize the latter to fit */
+    const iframe = document.getElementById("html-preview-iframe");
+    iframe.height = "";
+    iframe.height = iframe.contentWindow.document.body.parentElement.scrollHeight + 'px';
+  </script>
+{%- endblock %}
