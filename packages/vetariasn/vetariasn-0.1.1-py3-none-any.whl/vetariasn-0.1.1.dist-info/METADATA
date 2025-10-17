@@ -1,0 +1,86 @@
+Metadata-Version: 2.1
+Name: vetariasn
+Version: 0.1.1
+Summary: Vetariasn: An new framework for developing great application
+Author: lilingyi
+Author-email: alan_sudo@yeah.net
+License: The MIT License (MIT)
+        
+        Copyright © 2025 Project VsingerXiaoice Community Foundation
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Requires: sqlalchemy
+Requires: aiosqlite
+Requires: fastapi
+Requires: uvicorn
+Requires: aiohttp
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+# Vetariasn: An new framework for developing great application
+
+## Usage
+
+This is API example.
+
+```python
+# An simple CRUD example.
+import vetariasn as vt
+
+class Employee(vt.orm.Base):
+    # vt.orm.Base is an subclass of sqlalchemy.orm.DeclarativeBase
+    # __tablename__ is optional. Convention over Configuration.
+    uid = vt.orm.op.Column(int, primary_key=True) # vt.orm.op == sqlalchemy
+    name = vt.orm.op.Column(str, unique=True, nullable=False)
+
+class Message(vt.transient.Base):
+    # vt.transient: in-memory sqlite ORM API.
+    seq = vt.orm.op.Column(int, primary_key=True)
+    sender = vt.orm.op.Column(int, primary_key=True)
+    target = vt.orm.op.Column(int, primary_key=True)
+    content = vt.orm.op.Column(vt.orm.op.Text(), nullable=False)
+
+# Create.
+@vt.http.get("/create-employee")
+async def create_employee(name: str):
+    async with vt.orm.Session() as session:
+        uid = vt.algo.calc_seqid() # Snowflake UID
+        # An simple creation operation
+        result = (await session.execute(
+            vt.orm.op.select(Employee)
+            .where(Employee.name == name)
+        )).fetchone()
+        if result is not None:
+            return {"uid": result._tuple()[0].uid, "already": True}
+        session.add(Employee(uid=uid, name=name))
+        await session.commit()
+    return {"uid": uid, "already": False}
+
+# Read.
+@vt.http.get("/get-employee/{name}")
+async def get_employee_by_name(name: str):
+    async with vt.orm.Session() as session:
+        result = (await session.execute(
+            vt.orm.op.select(Employee)
+            .where(Employee.name == name)
+        )).fetchone()
+        if result is None:
+            return {"found": False, "uid": 0, "name": ""}
+        employee = result._tuple()[0]
+        return {"found": True, "uid": employee.uid, "name": employee.name}
+
+# Start system.
+if __name__ == "__main__":
+    vt.run()
+```
+
+## Environment Variables
+
+|Variable|Description|
+|---|---|
+|VETA_DB_URL|Database URL (Sqlalchemy Async)|
+|VETA_HTTP_PORT|HTTP Web Port|
