@@ -1,0 +1,100 @@
+name: 🧪 Unit tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "yak_server/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/test.yml"
+
+permissions: {}
+
+jobs:
+  check-lock-file:
+    name: Check lock file
+    runs-on: ubuntu-latest
+
+    permissions: {}
+
+    env:
+      python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
+        with:
+          python-version: ${{ env.python-version }}
+          enable-cache: false
+
+      - name: Check lock file
+        run: uv lock --check
+
+  unit-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    name: Python ${{ matrix.python-version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    permissions: {}
+
+    env:
+      host: 127.0.0.1
+      username: ci
+      password: test
+      database: test
+      port: 6522
+      postgres-version: 17
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Postgres
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: ${{ env.username }}
+          password: ${{ env.password }}
+          database: ${{ env.database }}
+          port: ${{ env.port }}
+          postgres-version: ${{ env.postgres-version }}
+          ssl: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run test
+        env:
+          POSTGRES_HOST: ${{ env.host }}
+          POSTGRES_USER: ${{ env.username }}
+          POSTGRES_PASSWORD: ${{ env.password }}
+          POSTGRES_PORT: ${{ env.port }}
+          POSTGRES_DB: ${{ env.database }}
+        run: uv run pytest --cov=yak_server --cov=scripts --cov=tests --cov=testing --cov-report=xml --cov-config=pyproject.toml -vv
+        if: ${{ always() }}
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        if: ${{ always() }}
+        with:
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true

@@ -1,0 +1,76 @@
+name: 🆙 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        type: choice
+        description: Release type
+        options:
+          - patch
+          - minor
+          - major
+
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write # <-- Required for publishing to PyPI
+      contents: write # <-- Enables push
+
+    env:
+      python-version: "3.13"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@3259c6206f993105e3a61b142c2d97bf4b9ef83d # v7.1.0
+        with:
+          python-version: ${{ env.python-version }}
+          enable-cache: false
+
+      - name: Create commits
+        id: create-commits
+        run: |
+          git config user.name 'yak-toto'
+          git config user.email 'yaktoto648@gmail.com'
+          uv version --bump "${GITHUB_EVENT_INPUTS_RELEASE_TYPE}"
+          NEW_VERSION=$(uv version --short)
+          uv lock
+          git add pyproject.toml uv.lock
+          git commit -m "Release ${NEW_VERSION}"
+          git tag -a "${NEW_VERSION}" HEAD -m \""${NEW_VERSION}"\"
+          echo "new-version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_EVENT_INPUTS_RELEASE_TYPE: ${{ github.event.inputs.release-type }}
+
+      - name: Push
+        uses: ad-m/github-push-action@77c5b412c50b723d2a4fbc6d71fb5723bcd439aa # v1
+        with:
+          tags: true
+
+      - name: Checkout code
+        run: git checkout "${STEPS_CREATE_COMMITS_OUTPUTS_NEW_VERSION}"
+        env:
+          STEPS_CREATE_COMMITS_OUTPUTS_NEW_VERSION: ${{ steps.create-commits.outputs.new-version }}
+
+      - name: Build distribution
+        run: uv build
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+
+      - name: Create Release
+        uses: ncipollo/release-action@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1.20.0
+        with:
+          artifacts: "dist/*"
+          generateReleaseNotes: true
+          tag: ${{ steps.create-commits.outputs.new-version }}
