@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Athena Math Questions Viewer</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        select, input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 200px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 12px;
+        }
+
+        th {
+            background: #007bff;
+            color: white;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            font-size: 11px;
+        }
+
+        td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            vertical-align: top;
+            font-size: 12px;
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            display: inline-block;
+            word-wrap: break-word;
+            white-space: normal;
+        }
+
+        .grade-badge {
+            background: #4caf50;
+            color: white;
+        }
+
+        .type-badge {
+            background: #2196f3;
+            color: white;
+        }
+
+        .unit-badge {
+            background: #ff9800;
+            color: white;
+        }
+
+        .question-text {
+            line-height: 1.4;
+            max-width: 400px;
+        }
+
+        .stimulus-image {
+            max-width: 150px;
+            max-height: 100px;
+            margin-top: 4px;
+            border-radius: 3px;
+        }
+
+        .answer-text {
+            color: #2e7d32;
+            font-weight: 500;
+        }
+
+        .mcq-option {
+            font-size: 11px;
+            margin: 2px 0;
+            padding: 3px;
+        }
+
+        .mcq-option.correct {
+            color: #2e7d32;
+            font-weight: bold;
+        }
+
+        .worked-step {
+            font-size: 11px;
+            margin: 3px 0;
+            color: #666;
+        }
+
+        .difficulty {
+            font-size: 10px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        .no-data {
+            padding: 40px;
+            text-align: center;
+            color: #999;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .filter-section {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .difficulty {
+            font-size: 11px;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Athena Math Questions Viewer</h1>
+
+        <div class="controls">
+            <select id="fileSelect" onchange="loadSelectedFile()">
+                <option value="">Select a grade...</option>
+                <option value="../../data/athena_extracted/math_questions_grade_3.jsonl">Grade 3</option>
+                <option value="../../data/athena_extracted/math_questions_grade_4.jsonl">Grade 4</option>
+                <option value="../../data/athena_extracted/math_questions_grade_5.jsonl">Grade 5</option>
+                <option value="../../data/athena_extracted/math_questions_grade_6.jsonl">Grade 6</option>
+                <option value="../../data/athena_extracted/math_questions_grade_7.jsonl">Grade 7</option>
+                <option value="../../data/athena_extracted/math_questions_grade_8.jsonl">Grade 8</option>
+            </select>
+            <button onclick="clearData()">Clear</button>
+        </div>
+
+        <div class="filter-section">
+            <input type="text" id="searchInput" placeholder="Search questions..." oninput="filterQuestions()">
+            <select id="unitFilter" onchange="filterQuestions()">
+                <option value="">All Units</option>
+            </select>
+            <select id="lessonFilter" onchange="filterQuestions()">
+                <option value="">All Lessons</option>
+            </select>
+            <select id="typeFilter" onchange="filterQuestions()">
+                <option value="">All Types</option>
+            </select>
+            <button onclick="clearFilters()">Clear Filters</button>
+        </div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-item">
+                <span class="stat-label">Total Questions</span>
+                <span class="stat-value" id="totalQuestions">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Units</span>
+                <span class="stat-value" id="totalUnits">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Lessons</span>
+                <span class="stat-value" id="totalLessons">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Content Types</span>
+                <span class="stat-value" id="totalTypes">0</span>
+            </div>
+        </div>
+
+        <div class="table-wrapper">
+            <table id="questionsTable">
+                <thead>
+                    <tr>
+                        <th>Grade</th>
+                        <th>Type</th>
+                        <th>Unit</th>
+                        <th>Lesson</th>
+                        <th>Level</th>
+                        <th>Question</th>
+                        <th>Answer</th>
+                        <th>Difficulty</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="8" class="no-data">
+                            📂 Select a grade to view questions
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let allQuestions = [];
+        let filteredQuestions = [];
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const file = params.get('file');
+
+            if (file) {
+                const select = document.getElementById('fileSelect');
+                select.value = file;
+                loadSelectedFile().then(() => {
+                    // Restore filters from URL
+                    const search = params.get('search');
+                    const unit = params.get('unit');
+                    const lesson = params.get('lesson');
+                    const type = params.get('type');
+
+                    if (search) document.getElementById('searchInput').value = search;
+                    if (unit) document.getElementById('unitFilter').value = unit;
+                    if (lesson) document.getElementById('lessonFilter').value = lesson;
+                    if (type) document.getElementById('typeFilter').value = type;
+
+                    filterQuestions();
+                });
+            }
+        });
+
+        async function loadSelectedFile() {
+            const select = document.getElementById('fileSelect');
+            const filePath = select.value;
+
+            if (!filePath) {
+                clearData();
+                // Clear URL param
+                const url = new URL(window.location);
+                url.searchParams.delete('file');
+                window.history.replaceState({}, '', url);
+                return;
+            }
+
+            // Update URL param
+            const url = new URL(window.location);
+            url.searchParams.set('file', filePath);
+            window.history.replaceState({}, '', url);
+
+            try {
+                const response = await fetch(filePath);
+                if (!response.ok) {
+                    throw new Error(`Failed to load file: ${response.statusText}`);
+                }
+
+                const text = await response.text();
+                const lines = text.split('\n').filter(line => line.trim());
+
+                allQuestions = [];
+                for (const line of lines) {
+                    try {
+                        const question = JSON.parse(line);
+                        // Parse the question JSON string if it exists
+                        if (question.question && typeof question.question === 'string') {
+                            try {
+                                question.parsed_question = JSON.parse(question.question);
+                            } catch (e) {
+                                console.error('Error parsing question content:', e);
+                            }
+                        }
+                        allQuestions.push(question);
+                    } catch (e) {
+                        console.error('Error parsing line:', e);
+                    }
+                }
+
+                if (allQuestions.length > 0) {
+                    updateStats();
+                    populateFilters();
+                    filterQuestions();
+                } else {
+                    document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="no-data">No questions found in selected file</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error loading file:', error);
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="8" class="no-data">Error loading file: ${error.message}</td></tr>`;
+            }
+        }
+
+        function updateStats() {
+            const dataSet = filteredQuestions.length > 0 ? filteredQuestions : allQuestions;
+            const units = new Set(dataSet.map(q => q.unit_name));
+            const lessons = new Set(dataSet.map(q => q.lesson_name));
+            const types = new Set(dataSet.map(q => q.content_type_name));
+
+            document.getElementById('totalQuestions').textContent = dataSet.length;
+            document.getElementById('totalUnits').textContent = units.size;
+            document.getElementById('totalLessons').textContent = lessons.size;
+            document.getElementById('totalTypes').textContent = types.size;
+            document.getElementById('stats').style.display = 'flex';
+        }
+
+        function populateFilters() {
+            // Populate unit filter
+            const units = [...new Set(allQuestions.map(q => q.unit_name).filter(u => u))].sort();
+            const unitFilter = document.getElementById('unitFilter');
+            unitFilter.innerHTML = '<option value="">All Units</option>';
+            units.forEach(unit => {
+                const option = document.createElement('option');
+                option.value = unit;
+                option.textContent = unit;
+                unitFilter.appendChild(option);
+            });
+
+            // Populate lesson filter
+            const lessons = [...new Set(allQuestions.map(q => q.lesson_name).filter(l => l))].sort();
+            const lessonFilter = document.getElementById('lessonFilter');
+            lessonFilter.innerHTML = '<option value="">All Lessons</option>';
+            lessons.forEach(lesson => {
+                const option = document.createElement('option');
+                option.value = lesson;
+                option.textContent = lesson.substring(0, 50) + (lesson.length > 50 ? '...' : '');
+                lessonFilter.appendChild(option);
+            });
+
+            // Populate type filter
+            const types = [...new Set(allQuestions.map(q => q.content_type_name).filter(t => t))].sort();
+            const typeFilter = document.getElementById('typeFilter');
+            typeFilter.innerHTML = '<option value="">All Types</option>';
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                typeFilter.appendChild(option);
+            });
+        }
+
+        function filterQuestions() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const unitFilter = document.getElementById('unitFilter').value;
+            const lessonFilter = document.getElementById('lessonFilter').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+
+            // Update URL params
+            const url = new URL(window.location);
+            if (searchTerm) {
+                url.searchParams.set('search', searchTerm);
+            } else {
+                url.searchParams.delete('search');
+            }
+            if (unitFilter) {
+                url.searchParams.set('unit', unitFilter);
+            } else {
+                url.searchParams.delete('unit');
+            }
+            if (lessonFilter) {
+                url.searchParams.set('lesson', lessonFilter);
+            } else {
+                url.searchParams.delete('lesson');
+            }
+            if (typeFilter) {
+                url.searchParams.set('type', typeFilter);
+            } else {
+                url.searchParams.delete('type');
+            }
+            window.history.replaceState({}, '', url);
+
+            filteredQuestions = allQuestions.filter(question => {
+                const matchesSearch = !searchTerm ||
+                    question.unit_name?.toLowerCase().includes(searchTerm) ||
+                    question.lesson_name?.toLowerCase().includes(searchTerm) ||
+                    question.level_name?.toLowerCase().includes(searchTerm) ||
+                    JSON.stringify(question.parsed_question || {}).toLowerCase().includes(searchTerm);
+
+                const matchesUnit = !unitFilter || question.unit_name === unitFilter;
+                const matchesLesson = !lessonFilter || question.lesson_name === lessonFilter;
+                const matchesType = !typeFilter || question.content_type_name === typeFilter;
+
+                return matchesSearch && matchesUnit && matchesLesson && matchesType;
+            });
+
+            updateStats();
+            renderQuestions();
+        }
+
+        function renderQuestions() {
+            const tbody = document.getElementById('tableBody');
+
+            if (filteredQuestions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">No questions match your filters</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredQuestions.map(question => {
+                const parsed = question.parsed_question || {};
+                const difficulty = question.attributes?.find(a => a.attributeName === 'difficulty')?.attributeValue || 'N/A';
+
+                return `
+                    <tr>
+                        <td><span class="badge grade-badge">${question.grade}</span></td>
+                        <td style="max-width: 120px;"><span class="badge type-badge">${question.content_type_name}</span></td>
+                        <td style="max-width: 100px;">${question.unit_name}</td>
+                        <td style="max-width: 150px; font-size: 11px;">${question.lesson_name}</td>
+                        <td style="max-width: 120px; font-size: 11px;">${question.level_name}</td>
+                        <td class="question-text">
+                            ${formatQuestionText(parsed.question || 'No question text')}
+                            ${renderStimulus(parsed.stimulus)}
+                            ${renderMCQOptions(parsed.answer_options)}
+                        </td>
+                        <td style="max-width: 200px;">
+                            ${renderAnswerCompact(parsed)}
+                        </td>
+                        <td><span class="difficulty">${difficulty}</span></td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Trigger MathJax rendering
+            if (window.MathJax) {
+                MathJax.typesetPromise();
+            }
+        }
+
+        function formatQuestionText(text) {
+            // Convert <blank> to a visible placeholder
+            return text.replace(/<blank>/g, '<strong style="color: #2196f3;">______</strong>');
+        }
+
+        function renderStimulus(stimulus) {
+            if (!stimulus || !Array.isArray(stimulus) || stimulus.length === 0) {
+                return '';
+            }
+
+            return stimulus.map(s => {
+                if (s.type === 'image' && s.image && s.image.url) {
+                    return `<img src="${s.image.url}" class="stimulus-image" alt="Question stimulus">`;
+                }
+                return '';
+            }).join('');
+        }
+
+        function renderAnswerCompact(parsed) {
+            if (!parsed.answer) return '<span style="color: #999;">N/A</span>';
+
+            const answers = Array.isArray(parsed.answer) ? parsed.answer : [parsed.answer];
+            return `<span class="answer-text">${answers.join(', ')}</span>`;
+        }
+
+        function renderMCQOptions(options) {
+            if (!options || !Array.isArray(options)) return '';
+
+            return `
+                <div style="margin-top: 8px; font-size: 11px;">
+                    ${options.map(opt => `
+                        <div class="mcq-option ${opt.correct ? 'correct' : ''}">
+                            <strong>${opt.id})</strong> ${opt.answer} ${opt.correct ? '✓' : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('unitFilter').value = '';
+            document.getElementById('lessonFilter').value = '';
+            document.getElementById('typeFilter').value = '';
+
+            // Remove filter params from URL but keep file param
+            const url = new URL(window.location);
+            url.searchParams.delete('search');
+            url.searchParams.delete('unit');
+            url.searchParams.delete('lesson');
+            url.searchParams.delete('type');
+            window.history.replaceState({}, '', url);
+
+            filterQuestions();
+        }
+
+        function clearData() {
+            allQuestions = [];
+            filteredQuestions = [];
+            document.getElementById('fileSelect').value = '';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('unitFilter').value = '';
+            document.getElementById('lessonFilter').value = '';
+            document.getElementById('typeFilter').value = '';
+            document.getElementById('stats').style.display = 'none';
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="no-data">📂 Select a grade to view questions</td></tr>';
+
+            // Clear all URL params
+            const url = new URL(window.location);
+            url.search = '';
+            window.history.replaceState({}, '', url);
+        }
+    </script>
+</body>
+</html>
