@@ -1,0 +1,451 @@
+# User Details Cache
+
+A lightweight Python package for **local caching** of user details with automatic 24-hour expiration. No external dependencies, no API calls - just simple, fast local storage.
+
+## Features
+
+✨ **Pure Python** - No external dependencies  
+💾 **In-Memory Caching** - Fast access with automatic expiration  
+📁 **Optional File Persistence** - Survive restarts  
+🔒 **Thread-Safe** - Safe for multi-threaded applications  
+⏰ **Auto-Expiration** - 24-hour default TTL with automatic cleanup  
+🔄 **Data Merging** - Smart update strategy  
+📊 **Statistics** - Monitor cache usage  
+
+## Installation
+
+```bash
+cd user_details_cache
+pip install .
+```
+
+Or copy the `user_details_cache` directory directly into your project.
+
+## Quick Start
+
+```python
+from user_details_cache import UserDetailsCache
+
+# Create cache (in-memory only)
+cache = UserDetailsCache()
+
+# Store user details
+cache.set(tracking_id="track_123", data={
+    "name": "John Doe",
+    "email": "john@example.com",
+    "pan": "ABCDE1234F"
+})
+
+# Retrieve user details
+details = cache.get(tracking_id="track_123")
+print(details)  # {'name': 'John Doe', 'email': '...', 'pan': '...'}
+
+# After 24 hours, data automatically expires
+details = cache.get(tracking_id="track_123")
+print(details)  # None
+```
+
+## Usage Examples
+
+### 1. Basic In-Memory Caching
+
+```python
+from user_details_cache import UserDetailsCache
+
+# Initialize cache
+cache = UserDetailsCache()
+
+# Store data
+cache.set("track_001", {
+    "name": "Alice Smith",
+    "email": "alice@example.com",
+    "mobile": "+919876543210"
+})
+
+# Retrieve data
+user_data = cache.get("track_001")
+if user_data:
+    print(f"Name: {user_data['name']}")
+else:
+    print("Data not found or expired")
+```
+
+### 2. File-Based Persistence
+
+```python
+from user_details_cache import UserDetailsCache
+
+# Cache with file persistence
+cache = UserDetailsCache(storage_path="./cache_storage")
+
+# Data is automatically saved to file
+cache.set("track_002", {
+    "name": "Bob Johnson",
+    "email": "bob@example.com"
+})
+
+# Data survives Python process restart
+# (as long as it's within 24 hours)
+```
+
+### 3. Data Merging
+
+```python
+cache = UserDetailsCache()
+
+# Initial data
+cache.set("track_003", {
+    "name": "Carol White",
+    "email": "carol@example.com"
+})
+
+# Update with merge (default)
+cache.set("track_003", {
+    "mobile": "+919999999999",
+    "pan": "ABCDE1234F"
+}, merge=True)
+
+# Retrieve merged data
+data = cache.get("track_003")
+print(data)
+# {
+#     'name': 'Carol White',
+#     'email': 'carol@example.com',
+#     'mobile': '+919999999999',
+#     'pan': 'ABCDE1234F'
+# }
+```
+
+### 4. Custom TTL
+
+```python
+# Cache with 48-hour expiration
+cache = UserDetailsCache(ttl_hours=48)
+
+cache.set("track_004", {"name": "Dave"})
+# Data expires after 48 hours
+```
+
+### 5. Manual Cleanup
+
+```python
+cache = UserDetailsCache()
+
+# Disable auto-cleanup
+cache = UserDetailsCache(auto_cleanup=False)
+
+# Store some data
+cache.set("track_005", {"name": "Eve"})
+
+# Manually cleanup expired entries
+removed = cache.cleanup_expired()
+print(f"Removed {removed} expired entries")
+```
+
+### 6. Cache Statistics
+
+```python
+cache = UserDetailsCache()
+
+# Add some data
+cache.set("track_006", {"name": "Frank"})
+cache.set("track_007", {"name": "Grace"})
+
+# Get statistics
+stats = cache.get_stats()
+print(stats)
+# {
+#     'total_entries': 2,
+#     'valid_entries': 2,
+#     'expired_entries': 0,
+#     'ttl_hours': 24,
+#     'storage_enabled': False,
+#     'auto_cleanup': True
+# }
+```
+
+### 7. List All Cached Data
+
+```python
+cache = UserDetailsCache()
+
+cache.set("track_008", {"name": "Henry"})
+cache.set("track_009", {"name": "Iris"})
+
+# List all valid entries
+all_data = cache.list_all()
+for tracking_id, data in all_data.items():
+    print(f"{tracking_id}: {data['name']}")
+```
+
+### 8. Delete Specific Entry
+
+```python
+cache = UserDetailsCache()
+
+cache.set("track_010", {"name": "Jack"})
+
+# Delete entry
+deleted = cache.delete("track_010")
+print(f"Deleted: {deleted}")  # True
+
+# Try to get deleted entry
+data = cache.get("track_010")
+print(data)  # None
+```
+
+### 9. Clear All Data
+
+```python
+cache = UserDetailsCache()
+
+cache.set("track_011", {"name": "Kate"})
+cache.set("track_012", {"name": "Leo"})
+
+# Clear all data
+cache.clear()
+
+# Cache is now empty
+print(len(cache))  # 0
+```
+
+### 10. Thread-Safe Usage
+
+```python
+import threading
+from user_details_cache import UserDetailsCache
+
+cache = UserDetailsCache()
+
+def worker(tracking_id, name):
+    cache.set(tracking_id, {"name": name})
+    data = cache.get(tracking_id)
+    print(f"Thread {tracking_id}: {data}")
+
+# Create multiple threads
+threads = []
+for i in range(10):
+    t = threading.Thread(target=worker, args=(f"track_{i}", f"User{i}"))
+    threads.append(t)
+    t.start()
+
+# Wait for all threads
+for t in threads:
+    t.join()
+
+print(f"Total cached: {len(cache)}")
+```
+
+## Complete Example
+
+```python
+from user_details_cache import UserDetailsCache
+from datetime import datetime
+
+# Initialize with file persistence
+cache = UserDetailsCache(
+    storage_path="./user_cache",
+    ttl_hours=24,
+    auto_cleanup=True
+)
+
+# Store comprehensive user details
+tracking_id = "track_12345"
+
+user_data = {
+    "tracking_id": tracking_id,
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "pan": "ABCDE1234F",
+    "mobile": "+919876543210",
+    "date_of_birth": "1990-01-15",
+    "address": {
+        "street": "123 Main Street",
+        "city": "Mumbai",
+        "state": "Maharashtra",
+        "pincode": "400001"
+    },
+    "employment": {
+        "company_name": "Example Corp",
+        "designation": "Software Engineer",
+        "monthly_salary": 75000
+    },
+    "cached_at": datetime.now().isoformat()
+}
+
+# Store in cache
+cache.set(tracking_id, user_data)
+print(f"✓ Stored user data for {tracking_id}")
+
+# Retrieve from cache
+retrieved = cache.get(tracking_id)
+if retrieved:
+    print(f"✓ Retrieved: {retrieved['name']}")
+    print(f"  Email: {retrieved['email']}")
+    print(f"  Cached at: {retrieved['cached_at']}")
+
+# Update with additional info
+cache.set(tracking_id, {
+    "kyc_status": "COMPLETED",
+    "kyc_completed_at": datetime.now().isoformat()
+}, merge=True)
+
+# Get updated data
+updated = cache.get(tracking_id)
+print(f"✓ KYC Status: {updated.get('kyc_status')}")
+
+# Check statistics
+stats = cache.get_stats()
+print(f"\n📊 Cache Stats:")
+print(f"  Valid entries: {stats['valid_entries']}")
+print(f"  TTL: {stats['ttl_hours']} hours")
+print(f"  Storage: {'enabled' if stats['storage_enabled'] else 'disabled'}")
+
+# List all cached tracking IDs
+all_entries = cache.list_all()
+print(f"\n📋 Cached Tracking IDs: {list(all_entries.keys())}")
+```
+
+## API Reference
+
+### `UserDetailsCache(storage_path=None, ttl_hours=24, auto_cleanup=True)`
+
+Initialize the cache.
+
+**Parameters:**
+- `storage_path` (str, optional): Path for file-based persistence
+- `ttl_hours` (int): Time-to-live in hours (default: 24)
+- `auto_cleanup` (bool): Enable automatic cleanup (default: True)
+
+### Methods
+
+#### `set(tracking_id, data, merge=True)`
+
+Store user details in cache.
+
+**Parameters:**
+- `tracking_id` (str): Unique identifier
+- `data` (dict): User details to store
+- `merge` (bool): Merge with existing data (default: True)
+
+**Returns:** Stored data (after merge)
+
+#### `get(tracking_id)`
+
+Retrieve user details from cache.
+
+**Parameters:**
+- `tracking_id` (str): Unique identifier
+
+**Returns:** User details dict, or None if not found/expired
+
+#### `delete(tracking_id)`
+
+Delete specific entry from cache.
+
+**Parameters:**
+- `tracking_id` (str): Unique identifier
+
+**Returns:** True if deleted, False if not found
+
+#### `clear()`
+
+Clear all cached data.
+
+#### `cleanup_expired()`
+
+Manually cleanup expired entries.
+
+**Returns:** Number of entries removed
+
+#### `get_stats()`
+
+Get cache statistics.
+
+**Returns:** Dictionary with cache stats
+
+#### `list_all(include_expired=False)`
+
+List all cached entries.
+
+**Parameters:**
+- `include_expired` (bool): Include expired entries
+
+**Returns:** Dictionary of all entries
+
+### Special Methods
+
+```python
+len(cache)           # Number of valid entries
+tracking_id in cache # Check if exists and not expired
+repr(cache)          # Cache representation
+```
+
+## Cache Behavior
+
+### Expiration
+
+- Default TTL: 24 hours (86400 seconds)
+- Automatic expiration check on `get()` operations
+- Optional auto-cleanup on `set()` operations
+- Manual cleanup with `cleanup_expired()`
+
+### Data Merging
+
+```python
+# Initial data
+cache.set("id", {"name": "John", "email": "john@example.com"})
+
+# Merge update (default)
+cache.set("id", {"mobile": "+919999999999"}, merge=True)
+# Result: {"name": "John", "email": "john@example.com", "mobile": "+919999999999"}
+
+# Replace update
+cache.set("id", {"mobile": "+919999999999"}, merge=False)
+# Result: {"mobile": "+919999999999"}
+```
+
+### File Persistence
+
+When `storage_path` is provided:
+- Data is automatically saved to `{storage_path}/user_details_cache.json`
+- Cache is loaded on initialization
+- Expired entries are cleaned during load
+- All operations sync to file
+
+### Thread Safety
+
+All operations are thread-safe using internal locks:
+- `set()`, `get()`, `delete()`, `clear()`
+- Safe for multi-threaded applications
+- No external locking required
+
+## Use Cases
+
+✅ **Perfect for:**
+- Temporary session data storage
+- User journey tracking
+- Form data caching
+- Reducing database queries
+- Multi-step processes
+- Development/testing
+
+❌ **Not suitable for:**
+- Permanent data storage
+- Critical data requiring persistence beyond 24 hours
+- Multi-process applications (use Redis/Memcached)
+- Very large datasets (limited by memory)
+
+## Requirements
+
+- Python 3.7+
+- No external dependencies!
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+Contributions welcome! Feel free to submit issues or pull requests.
+
