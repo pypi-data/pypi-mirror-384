@@ -1,0 +1,155 @@
+{% load static %}
+{% load wagtailcore_tags %}
+
+<script src="https://kit.fontawesome.com/2e8803d931.js" crossorigin="anonymous"></script>
+
+<div class="faq-container-faq" id="faq-{{ faq.id }}">
+    <h2 class="faq-title-h2">{{ self.faq.titulo }}</h2>
+    
+    <div class="faq-temas" style="max-width: 1142px; margin: auto;">
+        {% for tema_block in self.faq.temas %}
+            {% if tema_block.block_type == 'tema' %}
+                {% with tema=tema_block.value tema_id=forloop.counter %}
+                
+                <!-- Botão do Tema (Dropdown) -->
+                <button class="accordion tema-accordion" data-panel-target="tema-{{ faq.id }}-{{ tema_id }}">
+                    <div class="flex-accordion">
+                        <div>
+                        <h2 class="h2-accordion-faq">{{ tema.tema_titulo }}</h2>
+                        {% if tema.tema_descricao %}
+                        <div class="faq-tema-descricao" style="padding: 5px 0; font-size: 14px; color: #58606E;">
+                            {{ tema.tema_descricao|richtext }}
+                        </div>
+                        {% endif %}
+                        </div>
+                        <div class="wrapper-icon">
+                            <i style="font-size: 18px;" class="fa-solid fa-plus tema-icon"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="line-accordions"></div>
+                </button>
+
+                <!-- Painel do Tema -->
+                <div id="tema-{{ faq.id }}-{{ tema_id }}" class="panel tema-panel" style="display: none;">
+                    
+                    
+                    <!-- Accordions internos do tema -->
+                    <section style="max-width: 100%;" data-accordion-id="tema-{{ faq.id }}-{{ tema_id }}">
+                        {% for accordion_item in tema.accordions %}
+                            {% if accordion_item.block_type == 'accordion_item' %}
+                                {% with item=accordion_item.value item_id=forloop.counter %}
+                                
+                                <button class="accordion" data-panel-target="panel-{{ faq.id }}-{{ tema_id }}-{{ item_id }}">
+                                    <div class="flex-accordion">
+                                        <h2 class="h2-accordion">{{ item.title }}</h2>
+                                        <div class="wrapper-icon">
+                                            <i style="font-size: 18px;" class="fa-solid fa-chevron-down"></i>
+                                        </div>
+                                    </div>
+                                    <div class="line-accordions"></div>
+                                </button>
+
+                                <div id="panel-{{ faq.id }}-{{ tema_id }}-{{ item_id }}" class="panel" style="display: none;">
+                                    <p class="p-accordion">
+                                        {{ item.content|richtext }}
+                                    </p>
+                                </div>
+                                
+                                {% endwith %}
+                            {% endif %}
+                        {% endfor %}
+                    </section>
+                    
+                </div>
+                
+                {% endwith %}
+            {% endif %}
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const faqContainer = document.getElementById('faq-{{ faq.id }}');
+    
+    // ========== TEMAS (Dropdown com +) ==========
+    const temaButtons = faqContainer.querySelectorAll('.tema-accordion');
+    
+    temaButtons.forEach(temaButton => {
+        temaButton.addEventListener('click', function() {
+            const panelId = this.getAttribute('data-panel-target');
+            const panel = document.getElementById(panelId);
+            const icon = this.querySelector('.tema-icon');
+            
+            const isVisible = panel.style.display === "block";
+            
+            if (isVisible) {
+                // Fechar tema
+                panel.style.display = "none";
+                this.classList.remove('accordion-open');
+                icon.classList.remove('fa-minus');
+                icon.classList.add('fa-plus');
+            } else {
+                // Fechar todos os outros temas
+                temaButtons.forEach(otherButton => {
+                    const otherPanelId = otherButton.getAttribute('data-panel-target');
+                    const otherPanel = document.getElementById(otherPanelId);
+                    const otherIcon = otherButton.querySelector('.tema-icon');
+                    
+                    otherPanel.style.display = "none";
+                    otherButton.classList.remove('accordion-open');
+                    otherIcon.classList.remove('fa-minus');
+                    otherIcon.classList.add('fa-plus');
+                });
+                
+                // Abrir tema clicado
+                panel.style.display = "block";
+                this.classList.add('accordion-open');
+                icon.classList.remove('fa-plus');
+                icon.classList.add('fa-minus');
+            }
+        });
+    });
+    
+    // ========== ACCORDIONS INTERNOS (com chevron) ==========
+    const temasSections = faqContainer.querySelectorAll('[data-accordion-id^="tema-"]');
+    
+    temasSections.forEach(section => {
+        const accordionButtons = section.querySelectorAll('.accordion:not(.tema-accordion)');
+        
+        accordionButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const panelId = this.getAttribute('data-panel-target');
+                const panel = document.getElementById(panelId);
+                const arrowIcon = this.querySelector('.fa-chevron-down');
+                
+                const isVisible = panel.style.display === "block";
+                
+                if (isVisible) {
+                    // Fechar este accordion
+                    panel.style.display = "none";
+                    this.classList.remove('accordion-open');
+                    arrowIcon.style.transform = 'rotate(0deg)';
+                } else {
+                    // Fechar todos os outros accordions do mesmo tema
+                    accordionButtons.forEach(otherButton => {
+                        const otherPanelId = otherButton.getAttribute('data-panel-target');
+                        const otherPanel = document.getElementById(otherPanelId);
+                        const otherArrowIcon = otherButton.querySelector('.fa-chevron-down');
+                        
+                        otherPanel.style.display = "none";
+                        otherButton.classList.remove('accordion-open');
+                        otherArrowIcon.style.transform = 'rotate(0deg)';
+                    });
+                    
+                    // Abrir accordion clicado
+                    panel.style.display = "block";
+                    this.classList.add('accordion-open');
+                    arrowIcon.style.transform = 'rotate(180deg)';
+                }
+            });
+        });
+    });
+});
+</script>
