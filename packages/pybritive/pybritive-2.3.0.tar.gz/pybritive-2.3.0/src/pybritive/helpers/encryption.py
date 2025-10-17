@@ -1,0 +1,53 @@
+import base64
+import hashlib
+import os
+import platform
+from getpass import getuser
+from typing import Optional
+
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+
+class InvalidPassphraseException(Exception):
+    pass
+
+
+class StringEncryption:
+    def __init__(self, passphrase: Optional[str] = None):
+        self.passphrase = (
+            passphrase
+            or hashlib.sha256(
+                '|'.join([getuser(), *platform.uname()._asdict().values()]).replace(' ', '').encode('utf-8')
+            ).hexdigest()
+        )
+
+    @staticmethod
+    def _salt():
+        return base64.b64encode(os.urandom(32)).decode('utf-8')
+
+    def _key(self, salt: str):
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=base64.b64decode(salt.encode()),
+            iterations=100000,
+            backend=default_backend(),
+        )
+        return base64.urlsafe_b64encode(kdf.derive(self.passphrase.encode()))
+
+    def encrypt(self, plaintext: str) -> str:
+        salt = self._salt()
+        key = self._key(salt)
+        ciphertext = Fernet(key).encrypt(plaintext.encode('utf-8'))
+        return f'{base64.b64encode(ciphertext).decode("utf-8")}:{salt}'
+
+    def decrypt(self, ciphertext: str):
+        try:
+            ciphertext, b64salt = ciphertext.split(':')
+            key = self._key(b64salt)
+            return Fernet(key).decrypt(base64.b64decode(ciphertext.encode())).decode('utf-8')
+        except InvalidToken as e:
+            raise InvalidPassphraseException from e
