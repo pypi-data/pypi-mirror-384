@@ -1,0 +1,28 @@
+NUTS = [
+    r"acorn",
+    r"almond",
+    r"beech(?: ?nut)?s?",
+    r"brazil nuts?",
+    r"betel(?: ?nut)?s?",
+    r"bread ?nuts?",
+    r"cashews?",
+    r"(?<!water )chestnuts?",
+    r"coconuts?",
+    r"dika ?nuts?",
+    r"doum nuts?",
+    r"ginkgo ?nuts?",
+    r"hazelnuts?",
+    r"hickory ?nuts?",
+    r"indian ?nuts?",
+    r"macadamia ?nuts?",
+    r"peanuts?",
+    r"pecans?",
+    r"pili nuts?",
+    r"pine nuts?",
+    r"pistachios?",
+    r"walnuts?",
+    r"quandong nuts?",
+    r"souari nuts?",
+]
+
+RE_NUTS = r"(?:\b" + r"\b|\b".join(NUTS) + r"\b)$"
