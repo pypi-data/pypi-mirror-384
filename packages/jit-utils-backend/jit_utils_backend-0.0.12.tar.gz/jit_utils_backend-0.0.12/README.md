@@ -1,0 +1,156 @@
+# JIT Utils Backend
+
+Jit Backend Toolkit - A Python package that provides convenient utilities for backend development.
+
+## Installation
+
+```bash
+pip install jit_utils_backend
+```
+
+## Usage
+
+### Importing the Package
+
+```python
+# Import the entire package
+import jit_utils
+
+# Import specific functions (from specific submodules)
+from jit_utils.time import now
+from jit_utils.string import randomString
+from jit_utils.qrcode import Qrcode
+from jit_utils.barcode import Barcode
+
+# Import specific modules
+import jit_utils.time
+import jit_utils.string
+```
+
+## Key Features
+
+### 1. Time Utilities
+
+```python
+from jit_utils.time import now, today, dayShift, formatNow
+
+# Get current time
+current_time = now()
+
+# Get today's date
+today_date = today()
+
+# Date offset
+tomorrow = dayShift(today_date, 1)
+
+# Format current time
+formatted_time = formatNow("%Y-%m-%d %H:%M:%S")
+```
+
+### 2. String Utilities
+
+```python
+from jit_utils.string import randomString, md5Str, getUuidStr
+
+# Generate random string
+random_str = randomString(8)
+
+# MD5 encryption
+encrypted = md5Str("hello world")
+
+# Generate UUID
+uuid_str = getUuidStr()
+```
+
+### 3. QR Code Generation
+
+```python
+from jit_utils.qrcode import Qrcode
+
+# Create QR code
+qr = Qrcode("https://example.com")
+
+# Get QR code image as bytes
+qr_bytes = qr.toByte()
+
+# Get QR code as base64 string
+qr_str = qr.toStr()
+```
+
+### 4. Barcode Generation
+
+```python
+from jit_utils.barcode import Barcode
+
+# Create barcode
+barcode = Barcode("123456789")
+
+# Get barcode image as bytes
+barcode_bytes = barcode.toByte()
+
+# Get barcode as base64 string
+barcode_str = barcode.toStr()
+```
+
+### 5. Data Validation
+
+```python
+from jit_utils.validator import ParamsValidator
+from dataclasses import dataclass
+
+@dataclass
+class UserParams(ParamsValidator):
+    name: str
+    age: int
+    email: str = ""
+
+# Validate parameters
+params = UserParams("test_function", name="John", age=25)
+```
+
+### 6. Decorators
+
+```python
+from jit_utils.decorator import forward
+
+@forward("module.submodule")
+def my_function():
+    pass
+```
+
+## Module Overview
+
+- **time_utils**: Time handling utilities
+- **string_utils**: String processing utilities
+- **qrcode**: QR code generation tools
+- **barcode**: Barcode generation tools
+- **validator**: Data validation tools
+- **network**: Network-related utilities
+- **signature**: Signature-related utilities
+- **matchTool**: Matching utilities
+- **clsTool**: Class utilities
+- **exceptions**: Exception handling
+- **workday_constants**: Workday constants
+- **config**: Configuration utilities
+
+## Dependencies
+
+- requests
+- qrcode
+- python-barcode
+- Pillow
+- arrow
+- python-dateutil
+
+## License
+
+MIT License
+
+## Author
+
+JitAi (support@jit.pro)
+
+## Version
+
+0.0.11
+
