@@ -1,0 +1,179 @@
+name: CI
+on:
+  pull_request:
+  push:
+    tags:
+      - "*"
+    branches:
+      - main
+
+env:
+  MAIN_PYTHON_VERSION: "3.13"
+  DOCUMENTATION_CNAME: "simai.docs.pyansys.com"
+  LIBRARY_NAME: "ansys-simai-core"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  code-style:
+    name: "Code style"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: ansys/actions/code-style@v10.1
+        with:
+          python-version: ${{ env.MAIN_PYTHON_VERSION }}
+
+  doc-style:
+    name: "Documentation style"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: ansys/actions/doc-style@v10.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  smoke-tests:
+    name: "Build and Smoke tests"
+    runs-on: ${{ matrix.os }}
+    needs: [code-style]
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: ansys/actions/build-wheelhouse@v10.1
+        with:
+          library-name: ${{ env.LIBRARY_NAME }}
+          operating-system: ${{ matrix.os }}
+          python-version: ${{ matrix.python-version }}
+          check-licenses: ${{ matrix.python-version != '3.9' }}
+          # jeepney is MIT but action thinks it's UNKNOWN
+          # https://gitlab.com/takluyver/jeepney/-/blob/master/LICENSE?ref_type=heads
+          whitelist-license-check: "jeepney,urllib3"
+  check-vulnerabilities:
+    name: "Check library vulnerabilities"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ansys/actions/check-vulnerabilities@v10.1
+        with:
+          python-version: ${{ env.MAIN_PYTHON_VERSION }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          python-package-name: ${{ env.LIBRARY_NAME }}
+          dev-mode: ${{ github.ref != 'refs/heads/main' }}
+  tests:
+    name: "Test using Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    needs: [smoke-tests]
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+      fail-fast: false
+    steps:
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: uv sync
+      - name: run tests
+        run: uv run pytest --cov=ansys --cov-report=term --cov-report=html:.cov/html
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: matrix.python-version ==  ${{ env.MAIN_PYTHON_VERSION }} && matrix.os == 'ubuntu-latest'
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  doc-build:
+    name: "Build documentation"
+    runs-on: ubuntu-latest
+    needs: [doc-style]
+    timeout-minutes: 10
+    steps:
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/checkout@v5
+      - name: Generate doc requirements
+        run: uv export --only-group docs -o doc_requirements.txt
+      - uses: ansys/actions/doc-build@v10.1
+        with:
+          python-version: ${{ env.MAIN_PYTHON_VERSION }}
+          checkout: false
+          check-links: false
+          requirements-file: doc_requirements.txt
+
+  build-library:
+    name: "Build library basic example"
+    runs-on: ubuntu-latest
+    needs: [doc-build, tests]
+    timeout-minutes: 10
+    steps:
+      - uses: ansys/actions/build-library@v10.1
+        with:
+          library-name: ${{ env.LIBRARY_NAME }}
+          python-version: ${{ env.MAIN_PYTHON_VERSION }}
+
+  doc-deploy-dev:
+    name: "Deploy development documentation"
+    runs-on: ubuntu-latest
+    needs: [build-library]
+    timeout-minutes: 10
+    if: github.event_name == 'push' && !contains(github.ref, 'refs/tags')
+    steps:
+      - uses: ansys/actions/doc-deploy-dev@v10.1
+        with:
+          cname: ${{ env.DOCUMENTATION_CNAME }}
+          bot-user: ${{ secrets.PYANSYS_CI_BOT_USERNAME }}
+          bot-email: ${{ secrets.PYANSYS_CI_BOT_EMAIL }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  doc-deploy-stable:
+    name: "Deploy stable documentation"
+    runs-on: ubuntu-latest
+    needs: [build-library]
+    timeout-minutes: 10
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags')
+    steps:
+      - uses: ansys/actions/doc-deploy-stable@v10.1
+        with:
+          cname: ${{ env.DOCUMENTATION_CNAME }}
+          bot-user: ${{ secrets.PYANSYS_CI_BOT_USERNAME }}
+          bot-email: ${{ secrets.PYANSYS_CI_BOT_EMAIL }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: "Release to private and public PyPI and to GitHub"
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags')
+    permissions:
+      id-token: write
+      contents: write
+    runs-on: ubuntu-latest
+    needs: [build-library]
+    timeout-minutes: 10
+    steps:
+      - name: "Download the library artifacts from build-library step"
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ env.LIBRARY_NAME }}-artifacts
+          path: ${{ env.LIBRARY_NAME }}-artifacts
+      - name: "Upload artifacts to PyPI using trusted publisher"
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        with:
+          repository-url: "https://upload.pypi.org/legacy/"
+          print-hash: true
+          packages-dir: ${{ env.LIBRARY_NAME }}-artifacts
+          skip-existing: false
+      - name: "Release to GitHub"
+        uses: ansys/actions/release-github@v10.1
+        with:
+          library-name: ${{ env.LIBRARY_NAME }}
+          token: ${{ secrets.GITHUB_TOKEN }}
