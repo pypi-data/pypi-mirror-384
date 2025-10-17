@@ -1,0 +1,178 @@
+###########################################################################
+##
+#W todo.txt                 The SCSCP package            Olexandr Konovalov
+#W                                                             Steve Linton
+##
+###########################################################################
+
+
+###########################################################################
+1.Early development notes (in case of discrepancies, trust the manual)
+###########################################################################
+
+The GAP package "SCSCP" has two main components:
+
+1) GAP Server
+2) GAP Client
+
+Description:
+
+1) GAP Server is started from the GAP session or during GAP startup.
+During GAP Server startup it:
+* loads all functions which has to be accessible as SCSCP services
+* loads lookup mechanisms for them
+* starts to listen specified port (default 26133, as registered by IANA)
+
+For example, the service provider can write a file "myservice.g" looking like:
+
+LoadPackage("scscp");
+InstallSCSCPprocedure("factorial", Factorial, ["integer"],  
+    "computes factorials of positive integers");
+.....
+InstallSCSCPprocedure("Simplify", OM-Simplify, ["raw-openmath"],
+    "does some special simplification of OpenMath objects");
+    
+RunSCSCPserver( "servername", portnumber );
+
+After this to start the GAP server it remains to do 
+
+gap myservice.g
+
+RunSCSCPserver:
+* accepts connection from client via port 26133
+* performs an exchange of connection initionation messages with the client
+* sends, if requested, the meta-information about provided services
+* starts read-evaluate-write loop:
+  - obtains OM message "procedure_call"
+  - performs lookup of the appropriate GAP function and checks all input,
+    with the message "procedure_terminated" if this step fails
+  - starts computation, during which it controls GAP and returns 
+    "procedure_terminated" message if:
+    a) interrupt sygnal was obtained
+    b) system is out of resources (in multiuser mode the limits may be 
+       specified by WS provider and the user may not have control over them, 
+       in single-user they must be specified by the user within bounds
+       specified by WS provider)
+    c) computation was terminated by GAP:
+       - Error message with brk> loop (how can we catch this? are we
+         going two run an interface from GAP to GAP??? Can/should we 
+         manage to do this within single copy of the system? This 
+         must be possible, provided sygnal kernel and time-space
+         limits control will be implemented in the kernel)
+       - system crash (in this case the client detects broken connection,
+         and eventually we may want some way to start new GAP server process
+         automatically in this case, but anyway there is no point to try to
+         pick up the ongoing session)
+  - if none of this was happened, returns the result in the form of the 
+    "procedure_completed" message and returns to the beginning of
+    read-evaluate-print loop
+
+In a multi-user mode it never stops until it will be terminated by the service
+provider. Multi-user mode is intended to perform single quickly computed requests.
+Thus, on each iteration SCSCP server accepts next request from the queue. 
+
+In a single user mode for each client there is one copy of GAP. This can be 
+reduced to multi-user mode, if the client will be able to launch GAP SCSCP 
+wrapper which will create its personal SCSCP service (Can we do this???). 
+That SCSCP service will be stopped by the client's initiative or under some 
+other specified conditions to prevent forgotten jobs from infinite running.
+    
+3) GAP Client (to connect to SCSCP server):
+* establishes connection with the SCSCP server via the specified port 
+* performs an exchange of connection initionation messages with the server
+* requests, if necessary, the meta-information about provided services
+* starts exchange loop:
+  - sends OM message "procedure_call"
+  - waits for the result of computation, and while waiting it must be able
+    to send the interrupt sygnal in case of timeout
+  - analyze the returned result and continues in case of "procedure_completed" 
+    or leave the loop in case of "procedure_terminated"
+
+###########################################################################
+2.TODO
+###########################################################################
+
+* Think about authentication using private/public keys or another method
+
+* Parameter to regulate the queue length on the server
+
+* Allow to restrict the range of IP addresses from which it accepts request
+
+* CDs: matrix1, polynomial4, order1 (in openmath)
+
+* Is SCSCP version restored after session if it was altered?
+
+* Check more carefully examples and demo files, esp. upper/lowercasing etc.
+
+* Implement verification of arguments for procedures with non-trivial 
+  signatures 
+
+* Revise TerminateProcess, redo interrupts and check handling of other 
+  processing instructions
+
+* Extend test files with more examples
+
+* Log servers activity in some GAP-readable format for analysing: 
+  where incoming requests came from, when and when reply was sent?
+  Maybe we may even view them using EdenTV?
+  
+* Automatically glue trace files and start EdenTV (path to it should 
+  be in some config.file)  
+  
+* Automatic adjustments of the timeout (see Runtimes() record) in parlist.g
+
+* Par{Quick/List}WithSCSCP may accept option specifying the list of services 
+  to use if not coinciding with SCSCPservers
+
+* TODO (suggested by SL): A useful trick which Google uses is that they 
+  automatically restart the last 5% or so of the computations to finish, 
+  without actually knowing whether the servers have died or not. That way 
+  they also compensate for servers that are just running very slowly, 
+  and they lose nothing, since there are always idle servers by that point.  
+
+* Possible idea: if a list of procedure names is given, they are applied
+  recursively, e.g. 
+  EvaluateBySCSCP( [ "WS_Factorial", "WS_Phi" ], [ 10 ], ... );
+
+* An idea we might consider in the future: change the structure of 
+OMsymRecord to cd.symbol.method, cd.symbol.role etc, then transient 
+CD record could me merged with OMsymRecord. Storing cd.symbol.role 
+may be useful, for example, GetAllowedHeads then will be able to 
+select only OMA.
+
+* INTERRUPTS:
+
+Once we tried to do CloseStream(process![1]), but closing stream too 
+early (for example, when server writes to it) causes server crash 
+because of the broken pipe :( 
+We need to send a proper Ctrl-C signal to the server, then it
+will enter into a break loop and will send an error message from the
+break loop to the client - this happens when you press Ctrl-C in the
+server's window.
+
+Another possible scenarios:
+
+1) Multi-user service: the SCSCP server accepts A:1 incoming request and 
+starts another process B:2. The client communicates with B:2, and then 
+sends to A:1 request to interrupt the service B:2. Then A:1 performs 
+(in GAP) either "IO_kill(<pid>,15);" or Exec("kill -s SIGUSR2 <pid>");
+
+2) Single-user service: We start two parallel services, A:1 is the 
+production service, and B:1 is used to interrupt (and restart somehow?) 
+the service A:1
+
+3) Remote user executes (in GAP) Exec("ssh <hostname> kill -s SIGUSR2 <pid>");"
+(need have enough credentials to login into remote machine).
+
+(3) Works remotely. However, the user must be an owner of the process, 
+since only the super-user may send signals to other users' processes, 
+and there are other possible issues as well.
+
+(1) and (2) require some care of a register of users and their respective 
+pid so the request like
+
+    <OMS cd="scscp1" name="interrupt_computation" />
+    <OMSTR>call_identifier</OMSTR>
+
+should lead to terminate that session for which the client is authorised.
+This must be feasible.

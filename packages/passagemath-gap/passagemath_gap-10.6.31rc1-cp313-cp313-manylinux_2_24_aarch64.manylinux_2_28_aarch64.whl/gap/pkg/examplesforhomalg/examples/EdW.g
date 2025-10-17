@@ -1,0 +1,10 @@
+ReadPackage( "ExamplesForHomalg", "examples/ReducedBasisOfModule.g" );
+
+W := Hom( Qxyz, W );
+
+d := Resolution( W );
+dW := d * W;
+EdW := Ext( 1, dW, W );
+C := Cohomology( EdW );
+
+#Display( StringTime( homalgTime( Qxyz ) ) );
