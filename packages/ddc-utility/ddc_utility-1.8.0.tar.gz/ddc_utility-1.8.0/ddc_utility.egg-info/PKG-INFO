@@ -1,0 +1,119 @@
+Metadata-Version: 2.4
+Name: ddc-utility
+Version: 1.8.0
+Summary: Client package for the DDC API.
+Author-email: Balint Alfoldy <balint.alfoldy@cropom.com>, Peter Hazi <peter.hazi@cropom.com>, Marton Tolnai <marton.tolnai@cropom.com>
+License: The MIT License (MIT)
+        
+        Copyright (c) 2024 CropOM-Hungary Ltd.
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: dask>=2023.1.1
+Requires-Dist: Jinja2>=3.1.2
+Requires-Dist: matplotlib>=3.6.2
+Requires-Dist: numcodecs>=0.11.0
+Requires-Dist: pyproj>=3.4.1
+Requires-Dist: requests>=2.28.2
+Requires-Dist: xarray>=2023.1.0
+Requires-Dist: zarr>=2.13.6
+Requires-Dist: fsspec
+Requires-Dist: s3fs
+Requires-Dist: shapely
+Requires-Dist: pydantic>=2.8.0
+Dynamic: license-file
+
+# DDC Utility
+
+This is the Danube Data Cube Utility library, for interacting with the DDC API service.
+
+### Installation
+
+```bash
+pip install ddc-utility
+```
+
+### Usage
+
+Users must have a valid DDC registration.
+
+### Example #1 (using DdcClient with client ID and secret)
+This example walks you through the process of creating and opening an AOI cube.
+
+```
+$ python
+
+# Importing packages
+>>> import os
+>>> from ddc_utility.client import DdcClient
+
+# Setting DDC credentials
+>>> os.environ['DDC_CLIENT_ID'] = "<client id>"
+>>> os.environ['DDC_CLIENT_SECRET'] = "<client secret>"
+
+# Initialize DDC client 
+>>> client = DdcClient()
+
+# List available data layers
+>>> client.get_data_layers()
+
+# List user's AOIs
+>>> client.get_all_aoi()
+
+# Create an AOI
+>>>  res = client.create_aoi(name="My AOI",
+                  geometry="POLYGON ((19.021454 47.507925, 19.043941 47.489601, 19.047031 47.490181, 19.039478 47.506997, 19.021454 47.507925))",
+                  time_range=("2023-06-01", "2023-07-01"),
+                  layer_ids=[4, 8, 15, 48])
+>>> id = res.iloc[0]['id']
+                  
+# Check if AOI is 'ready'
+>>> info = client.get_aoi_by_id(id)
+>>> print(f"AOI status is: {info.iloc[0]['status']}")
+
+# If status is 'ready', open cube
+>>> ds = client.open_aoi_cube(aoi_id=id)
+
+```
+
+### Example #2 (using IntegrationClient with bearer token)
+This example shows how you can retrieve the dataset associated with a growing season if you have a valid OAuth2 bearer token.
+
+```
+$ python
+
+# Importing packages
+>>> from ddc_utility.client import IntegrationClient
+
+# Initialize Integration client 
+>>> client = IntegrationClient(
+    bearer_token="...",
+    expires_in=86400,
+)
+
+# Retrieve xarray Dataset for the specified growing season
+>>> ds = client.open_growing_season_cube(1234)
+
+```
