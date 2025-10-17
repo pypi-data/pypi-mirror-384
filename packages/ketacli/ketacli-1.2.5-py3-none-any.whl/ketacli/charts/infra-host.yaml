@@ -1,0 +1,200 @@
+layout:
+  rows: 1
+  columns: 1
+charts:
+  - spl: |
+      search2 repo="infrastructure_monitoring_metrics"
+      | stats latest(host_cpu_user_pct) as cpu_usage_pct,latest(host_memory_used_pct) as mem_usage_pct,latest(host_memory_total_bytes) as mem_total_bytes,latest(host_memory_used_bytes) as mem_used_bytes,latest(host_load1) as load1,latest(host_load5) as load5,latest(host_load15) as load15,latest(_time) as latest_time by metadata.agent.id
+      | eval status=if(now()-latest_time > 300000, "offline","online")
+      | join type="semi" metadata.agent.id [
+          search2 repo="infrastructure_monitoring_metrics" 
+      
+          | stats count() as c by metadata.agent.id
+          | fields - c 
+      ]
+      | join type="left" metadata.agent.id [
+          search2 start="-7d" repo="infrastructure_monitoring_meta"
+          | stats latest(host) as host,latest(host_ip) as host_ip, latest(arr_join(biz_system{}, ",")) as biz_system, latest(metadata.host.kernel) as os,latest(metadata.agent.version) as agent_version,latest(metadata.host.bootTime) as host_uptime,latest(metadata.cpu.cores) as cpu_cores, latest(metadata.cpu.count) as cpu_count  by metadata.agent.id
+          | eval os=if(os=="darwin","macOS",os)
+          | eval host_uptime=toNumber(host_uptime) * 1000,os=concat(upper(substr(os,1,1)),substr(os,2))
+          | eval duration=now() - host_uptime
+      ]
+      | join type="left" metadata.agent.id [
+        search2 repo="infrastructure_monitoring_metrics" AND name="disk"
+        | stats latest(host_disk_used_bytes) as disk_used_bytes, latest(host_disk_total_bytes) as disk_total_bytes by device,metadata.agent.id
+        | stats sum(disk_used_bytes) as disk_used_bytes,sum(disk_total_bytes) as disk_total_bytes by metadata.agent.id
+        | eval disk_used_pct=round(disk_used_bytes/disk_total_bytes, 4)
+      ]
+      | eval docker_deployed = false, k8s_deployed = false,cpu_load_pre_core=load1/(cpu_cores*cpu_count)
+      | rename metadata.agent.id as agent_id 
+      | fields - cpu_cores,cpu_count
+      | sort 1000 by cpu_usage_pct
+    type: table
+    title: 主机列表
+    position: row0-col0
+    transpose: false
+    simplify_show: true  # 精简显示，将不显示未在 columns 中定义的字段
+    line_childs:
+      - type: table
+        name: host_detail
+        page_size: 50
+        title: 主机详情
+        simplify_show: true
+        transpose: true  # 表格行列转置显示
+        spl: search2 start="-6h" repo="infrastructure_monitoring_meta" metadata.agent.id="{{ agent_id }}"| limit 1
+        columns:
+          host:
+            alias: 主机名
+            style: bold
+          host_ip:
+            alias: 主机IP
+          'metadata.cpu.model':
+            alias: CPU型号
+            style: bold magenta
+          'metadata.cpu.cache':
+            alias: CPU缓存
+          'metadata.cpu.cores':
+            alias: CPU核数
+          'metadata.cpu.count':
+            alias: CPU线程数
+          'metadata.cpu.mhz':
+            alias: CPU频率
+          'metadata.disk_size':
+            alias: 磁盘大小
+            format: bytes
+          'metadata.host.arch':
+            alias: 架构
+          'metadata.host.bootTime':
+            alias: 启动时间
+            format: duration_ms
+          'metadata.host.hostname':
+            alias: 主机名
+          'metadata.host.kernel':
+            alias: 操作系统
+          'metadata.host.kernel_version':
+            alias: 内核版本
+          'metadata.host.platform':
+            alias: 平台
+          'metadata.host.platform_version':
+            alias: 平台版本
+          'metadata.memory.size':
+            alias: 内存大小
+            format: bytes
+          'metadata.memory.swap_total':
+            alias: Swap大小
+            format: bytes
+          'metadata.memory.total':
+            alias: 内存总量
+            format: bytes
+      - type: table
+        name: host_log
+        title: 主机日志
+        page_size: 50
+        simplify_show: false
+        transpose: false  # 表格行列转置显示
+        spl: search2 start="-30m" _repo_type="EVENTS" not repo="infrastructure_monitoring_*" 'host'="{{ host }}" |fields _raw,_time
+        columns:
+          _time:
+            alias: 时间
+            format: timestamp_ms
+          _raw:
+            justify: left
+            alias: 日志
+
+
+    columns:
+      agent_id:
+        alias: Agent ID
+        style: bold magenta
+      host:
+        alias: 主机名
+        style: bold
+        identification: true
+      host_ip:
+        alias: 主机IP
+        style: blue
+      status:
+        alias: 状态
+        enum:
+          online:
+            alias: 在线
+            style: green
+          offline:
+            alias: 离线
+            style: red
+      cpu_usage_pct:
+        alias: CPU使用率
+        suffix: "%"
+        threshold:
+          green: [ 0, 50 ]
+          red: [ 50, 100 ]
+        format: percentage100
+      mem_usage_pct:
+        alias: 内存使用率
+        suffix: "%"
+        threshold:
+          green: [ 0, 60 ]
+          yellow: [ 60, 80 ]
+          red: [ 60, 100 ]
+        format: percentage100
+      mem_total_bytes:
+        alias: 内存总量
+        format: bytes
+      mem_used_bytes:
+        alias: 内存已用
+        format: bytes
+      disk_used_pct:
+        alias: 磁盘使用率
+        suffix: "%"
+        format: percentage
+        threshold:
+          green: [ 0, 0.6 ]
+          yellow: [ 0.6, 0.8 ]
+          red: [ 0.8, 1 ]
+      disk_used_bytes:
+        alias: 磁盘已用
+        format: bytes
+      disk_total_bytes:
+        alias: 磁盘总量
+        format: bytes
+      load1:
+        alias: 1分钟负载
+        format: float
+      load5:
+        alias: 5分钟负载
+        format: float
+      load15:
+        alias: 15分钟负载
+        format: float
+      cpu_load_pre_core:
+        alias: CPU负载/核
+        format: float
+        threshold:
+          green: [ 0, 0.5 ]
+          yellow: [ 0.5, 1 ]
+          red: [ 1, 100 ]
+      biz_system:
+        alias: 业务系统
+        is_show: false
+      os:
+        alias: 操作系统
+      agent_version:
+        alias: Agent版本
+        is_show: false
+#      host_uptime:
+#        alias: 启动时间
+#        format: timestamp_ms
+      duration:
+        alias: 运行时长
+        format: duration_ms
+#      docker_deployed:
+#        alias: 是否部署Docker
+#        is_show: false
+#      k8s_deployed:
+#        alias: 是否部署K8S
+#        is_show: false
+#      latest_time:
+#        is_show: false
+
+
+
