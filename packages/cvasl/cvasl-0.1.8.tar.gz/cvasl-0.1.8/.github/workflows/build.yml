@@ -1,0 +1,99 @@
+name: Build and test CVASL package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_single:
+    name: Build (${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ 'ubuntu-latest' ]
+        python-version: [ '3.11' ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+          auto-activate-base: false
+          activate-environment: cvasl-env
+          channels: conda-forge
+      - name: Install R and system dependencies
+        run: |
+          conda install r-base rpy2 -c conda-forge
+      - name: Install Python dependencies
+        run: |
+          pip install .[dev,docs]
+      - name: Run tests
+        run: |
+          pytest -v --tb=short
+        timeout-minutes: 10
+      - name: Verify that we can build the package
+        run: python -m build
+
+  build_all:
+    name: Build (${{ matrix.python-version }}, ${{ matrix.os }})
+    needs: build_single
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ 'ubuntu-latest', 'macos-latest', 'windows-latest' ]
+        python-version: [ '3.10', '3.11', '3.12' ]
+        exclude:
+          # already tested in build_single job
+          - python-version: 3.11
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+          auto-activate-base: false
+          activate-environment: cvasl-env
+          channels: conda-forge
+      - name: Install R and system dependencies
+        run: |
+          conda install r-base rpy2 -c conda-forge
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        run: |
+          conda install m2w64-toolchain -c msys2
+      - name: Configure R environment (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "R_HOME=$CONDA_PREFIX/lib/R" >> $GITHUB_ENV
+          echo "R_USER=$CONDA_PREFIX/lib/R/library" >> $GITHUB_ENV
+          echo "$CONDA_PREFIX/lib/R/bin" >> $GITHUB_PATH
+      - name: Install Python dependencies
+        run: |
+          pip install .[dev,docs]
+      - name: Run tests
+        run: |
+          pytest -v --tb=short
+        timeout-minutes: 10
+      - name: Verify that we can build the package
+        run: python -m build
