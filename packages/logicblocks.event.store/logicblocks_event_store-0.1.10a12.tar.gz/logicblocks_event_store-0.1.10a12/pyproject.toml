@@ -1,0 +1,206 @@
+[project]
+requires-python = ">=3.13,<4.0"
+name = "logicblocks.event.store"
+version = "0.1.10a12"
+description = "Eventing infrastructure for event sourced architectures."
+authors = [
+    { name = "Toby Clemson", email = "tobyclemson@gmail.com" },
+    { name= "Jonas Svalin", email = "jonassvalin@gmail.com" }
+]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry]
+packages = [
+    { include = "logicblocks", from = "src" },
+]
+
+[tool.poetry.dependencies]
+python = ">=3.13,<4.0"
+psycopg = { extras = ["binary", "pool"], version = "^3.2.3" }
+uvloop = "^0.21.0"
+pyheck = "^0.1.5"
+structlog = "^25.1.0"
+rich = "^14.0.0"
+aiologic = "^0.14.0"
+
+[tool.poetry.group.dev.dependencies]
+coverage = "^7.6.10"
+junitparser = "^3.2.0"
+poethepoet = "^0.34.0"
+pyright = { extras = ["nodejs"], version = "^1.1.391" }
+pytest = "^8.3.4"
+pytest-asyncio = "^0.26.0"
+pytest-cov = "^6.0.0"
+pytest-diff = "^0.1.14"
+pytest-pretty = "^1.2.0"
+pytest-repeat = "^0.9.3"
+pytest-unordered = "^0.6.1"
+ruff = "^0.11.0"
+
+[tool.poetry.group.changelog.dependencies]
+scriv = "^1.5.1"
+
+[tool.poetry.group.docs.dependencies]
+mkdocs-material = "^9.5.47"
+mkdocstrings = { extras = ["python"], version = "^0.29.0" }
+black = "^25.1.0"
+
+[tool.poe.tasks]
+lint-check = "ruff check src tests"
+lint-fix = "ruff check --fix src tests"
+format-check = "ruff format --diff src tests"
+format-fix = "ruff format src tests"
+type-check = "pyright src tests"
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build"
+changelog-fragment-create = "scriv create"
+changelog-assemble = "scriv collect"
+
+[tool.poe.tasks.test-unit]
+args = [{ name = "filter", options = ["--filter"], default = "" }]
+shell = """
+  mkdir -p reports/coverage/unit
+  pytest -vv tests/unit \
+    --junitxml=./reports/unit.junit.xml \
+    --cov-report=xml:./reports/coverage/unit/coverage.xml \
+    --cov-report=html:./reports/coverage/unit \
+    ${filter:+-k ${filter}}
+"""
+
+[tool.poe.tasks.test-unit.env]
+COVERAGE_FILE = "./reports/coverage/unit/.coverage"
+PYTHONDEVMODE = "1"
+
+[tool.poe.tasks.test-integration]
+args = [{ name = "filter", options = ["--filter"], default = "" }]
+envfile = "config/test.env"
+shell = """
+  mkdir -p reports/coverage/integration
+  pytest -vv tests/integration \
+    --junitxml=./reports/integration.junit.xml \
+    --cov-report=xml:./reports/coverage/integration/coverage.xml \
+    --cov-report=html:./reports/coverage/integration \
+    ${filter:+-k ${filter}}
+"""
+
+[tool.poe.tasks.test-integration.env]
+COVERAGE_FILE = "./reports/coverage/integration/.coverage"
+PYTHONDEVMODE = "1"
+
+[tool.poe.tasks.test-component]
+args = [{ name = "filter", options = ["--filter"], default = "" }]
+envfile = "config/test.env"
+shell = """
+  mkdir -p reports/coverage/component
+  pytest -vv tests/component \
+    --junitxml=./reports/component.junit.xml \
+    --cov-report=xml:./reports/coverage/component/coverage.xml \
+    --cov-report=html:./reports/coverage/component \
+    ${filter:+-k ${filter}}
+"""
+
+[tool.poe.tasks.test-component.env]
+COVERAGE_FILE = "./reports/coverage/component/.coverage"
+PYTHONDEVMODE = "1"
+
+[tool.poe.tasks.test-report]
+shell = """
+  junitparser merge \
+    reports/*.junit.xml \
+    reports/all.junit.xml
+  coverage combine \
+    --data-file=./reports/coverage/.coverage \
+    reports/coverage/unit/.coverage \
+    reports/coverage/integration/.coverage \
+    reports/coverage/component/.coverage
+  coverage html \
+    --data-file=./reports/coverage/.coverage \
+    --directory=./reports/coverage/all
+  coverage xml \
+    --data-file=./reports/coverage/.coverage \
+    -o ./reports/coverage/all/coverage.xml
+  coverage report \
+    --data-file=./reports/coverage/.coverage
+"""
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests/shared"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "--import-mode=importlib",
+    "--strict-markers",
+    "--capture=no",
+    "--cov=./src"
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ["@abstract"]
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.pylint]
+max-args = 7
+allow-magic-value-types = ["str", "bytes", "int"]
+
+[tool.pyright]
+include = ["src", "tests/shared", "tests/unit", "tests/integration"]
+extraPaths = ["src", "tests/shared"]
+
+[[tool.pyright.executionEnvironments]]
+root = "src"
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+deprecateTypingAliases = true
+reportMissingTypeStubs = "error"
+reportAssertAlwaysTrue = "error"
+reportInvalidStringEscapeSequence = "error"
+reportInvalidTypeVarUse = "error"
+reportSelfClsParameterName = "error"
+reportUnsupportedDunderAll = "error"
+reportUnusedExpression = "error"
+reportWildcardImportFromLibrary = "error"
+reportDuplicateImport = "error"
+reportIncompleteStub = "error"
+reportInconsistentConstructor = "error"
+reportInvalidStubStatement = "error"
+reportMatchNotExhaustive = "error"
+reportMissingParameterType = "error"
+reportMissingTypeArgument = "error"
+reportPrivateUsage = "error"
+reportTypeCommentUsage = "error"
+reportUnknownArgumentType = "error"
+reportUnknownLambdaType = "error"
+reportUnknownMemberType = "error"
+reportUnknownParameterType = "error"
+reportUnknownVariableType = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryComparison = "error"
+reportUnnecessaryContains = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnusedClass = "error"
+reportUnusedImport = "error"
+reportUnusedFunction = "error"
+reportUnusedVariable = "error"
+reportUntypedBaseClass = "error"
+reportUntypedClassDecorator = "error"
+reportUntypedFunctionDecorator = "error"
+reportUntypedNamedTuple = "error"
+
+[tool.scriv]
+version = "literal: pyproject.toml: tool.poetry.version"
+format = "md"
+
+[build-system]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
