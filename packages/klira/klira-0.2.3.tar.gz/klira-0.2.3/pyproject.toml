@@ -1,0 +1,149 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "klira"
+version = "0.2.3"
+description = "Klira AI SDK for LLM observability and policy enforcement"
+authors = [{name = "Klira AI Team", email = "hello@getklira.com"}]
+license = {text = "Proprietary"}
+readme = "README.md"
+keywords = ["llm", "observability", "policy", "governance", "tracing", "opentelemetry"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10,<4"
+dependencies = [
+    "traceloop-sdk>=0.38.12",
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.28.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.28.0",
+    "colorama>=0.4.6",
+    "pydantic>=1",
+    "rapidfuzz>=3.14.1",
+]
+
+[project.urls]
+Repository = "https://github.com/kliraai/kliraai-sdk"
+Documentation = "https://docs.getklira.com"
+
+[tool.poetry]
+packages = [{ include = "klira" }]
+include = ["NOTICE", "klira/sdk/guardrails/default_policies.yaml"]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+black = "^24.3.0"
+flake8 = "^7.0.0"
+# Added for testing/linting/typing in CI/pre-commit
+ruff = "^0.4.4"
+mypy = "^1.10.0" 
+pytest-asyncio = "^0.23.7"
+pre-commit = "^3.7.1"
+# Type stubs for mypy
+types-PyYAML = "^6.0.12"
+# Added for release automation (Python Semantic Release)
+python-semantic-release = "^9.7.0"
+pytest-forked = "^1.6.0"
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312", "py313"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["klira"]
+
+[tool.mypy]
+# Gradual typing approach - start strict but allow some flexibility
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Allow during transition
+disallow_incomplete_defs = false  # Allow during transition
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+
+# Import handling
+ignore_missing_imports = true  # For external libraries without stubs
+follow_imports = "normal"
+
+# Specific modules to be more strict with (our core types)
+[[tool.mypy.overrides]]
+module = [
+    "klira.sdk.types",
+    "klira.sdk.utils.type_validator",
+]
+strict = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "test_agents"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+    "--disable-warnings"
+]
+markers = [
+    "asyncio: marks tests as async",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "forked: marks tests that need process isolation (run with --forked)"
+]
+
+# --- Start: Python Semantic Release (PSR) configuration ---
+[tool.semantic_release]
+# Version management
+version_toml = ["pyproject.toml:project.version"]
+
+# Version strategy
+major_on_zero = false
+allow_zero_version = true
+
+# Tag format
+tag_format = "v{version}"
+
+# Changelog
+changelog_file = "CHANGELOG.md"
+upload_to_vcs_release = true
+
+# PyPI publishing - DISABLED (using official pypa/gh-action-pypi-publish instead)
+upload_to_pypi = false
+
+# Branch configuration
+[tool.semantic_release.branches.main]
+match = "(main|master)"
+prerelease = false
+
+# VCS (GitHub) configuration
+[tool.semantic_release.remote]
+name = "origin" 
+type = "github"
+
+# Commit parsing
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "style", "refactor", "test"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+# --- End: Python Semantic Release (PSR) configuration ---
