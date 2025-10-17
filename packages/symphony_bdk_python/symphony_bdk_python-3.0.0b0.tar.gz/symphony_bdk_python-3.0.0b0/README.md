@@ -1,0 +1,120 @@
+[![FINOS - Active](https://cdn.jsdelivr.net/gh/finos/contrib-toolbox@master/images/badge-active.svg)](https://community.finos.org/docs/governance/Software-Projects/stages/active)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/downloads/)
+[![Pypi](https://img.shields.io/pypi/v/symphony-bdk-python)](https://pypi.org/project/symphony-bdk-python/)
+![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/finos/symphony-bdk-python/build/main)
+
+# Symphony BDK for Python
+
+This is the Symphony BDK for Python to help develop bots and interact with the [Symphony REST APIs](https://rest-api.symphony.com).
+
+## Project Overview
+
+Symphony BDK for Python provides tools for building bots and integrating with Symphony APIs. This document outlines its usage, installation, and contribution guidelines.
+
+## Prerequisites
+
+- Python 3.9 or higher
+- [Poetry](https://python-poetry.org/docs/#installation)
+
+## Installation Steps
+
+### Option 1: Build from Source
+- Install dependencies: `poetry install`
+- Build the package: `poetry build`
+- Run tests: `poetry run pytest`
+- Perform a lint scan locally: `poetry run ruff check .`
+- Format code locally: `poetry run ruff format .`
+- Generate documentation locally: `cd docsrc && make html`
+
+### Setting Up Git Hooks
+This project uses `pre-commit` with `ruff` to automatically format and lint code. This is the recommended setup for contributors to ensure code style consistency.
+
+1. **Install development dependencies** (this will also install `pre--commit` and `ruff`):
+   ```bash
+   poetry install
+   ```
+2. **Install the git hooks**:
+   ```bash
+   poetry run pre-commit install
+   ```
+Now, `ruff` will automatically run on every commit, formatting your code and checking for linting errors.
+
+### Verification
+Verify the successful installation by running any of the following commands:
+```
+poetry --version
+```
+
+## External Documents
+
+Refer to the following for additional guidance:
+- [Reference Documentation](https://symphony-bdk-python.finos.org/)
+- [Getting Started Guide](https://symphony-bdk-python.finos.org/markdown/getting_started.html)
+
+## Roadmap
+
+The next milestone is the [2.5.x](https://github.com/finos/symphony-bdk-python/milestone/6), focused on delivering improvements and bug fixes.
+
+## Contributing
+
+To contribute:
+1. Fork the repository.
+2. Create a feature branch: `git checkout -b feature/fooBar`
+3. Read the [Contribution Guidelines](CONTRIBUTING.md) and [Community Code of Conduct](https://www.finos.org/code-of-conduct)
+4. Commit changes: `git commit -am 'Add some fooBar'`
+5. Push changes: `git push origin feature/fooBar`
+6. Open a Pull Request.
+
+_NOTE:_ Ensure you have an active Individual Contributor License Agreement (ICLA) or Corporate Contribution License Agreement (CCLA) with FINOS.
+
+For further inquiries, email [help@finos.org](mailto:help@finos.org).
+
+### Updating Generated Code
+
+Python BDK uses [OpenAPITools/openapi-generator](https://github.com/OpenAPITools/openapi-generator/) to generate code. 
+To update the generated code, follow these steps:
+
+1. Download desired version of openapi generator.
+     ```bash
+     cd api_client_generation
+     curl -L https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.14.0/openapi-generator-cli-7.14.0.jar      -o openapi-generator-cli.jar
+     ```
+2. Adjust the commit for which the code is generated(inside generate.sh script)
+3. Execute the generation script: 
+   ```bash
+   ./generate.sh
+   ```
+4. Commit and push the newly generated code along with the updated JAR file.
+
+Note: There are a few files that are not replaced(EX. api_client.py), those files require some modifications after code is generated.
+
+
+### OLD Updating Generated Code (Deprecated)
+
+Python BDK uses [OpenAPITools/openapi-generator](https://github.com/OpenAPITools/openapi-generator/) to generate code. 
+To update the generated code, follow these steps:
+
+1. Checkout the latest branch of the fork (e.g., [sym-python-5.5.0](https://github.com/SymphonyPlatformSolutions/openapi-generator/tree/sym-python-5.5.0)).
+2. Update the fork source code, review, and merge it.
+3. Generate the JAR file in `openapi-generatormodules/openapi-generator-cli/target/openapi-generator-cli.jar`:
+   - Use Maven: 
+     ```bash
+     mvn clean install -Dmaven.test.skip=true && mvn clean package -Dmaven.test.skip=true
+     ```
+   - Alternatively, use IntelliJ's build button to build the project and generate the JAR file.
+4. Copy the JAR file to the Python BDK repository: `symphony-api-client-python/api_client_generation/openapi-generator-cli.jar`.
+5. Execute the generation script: 
+   ```bash
+   ./generate.sh
+   ```
+6. Commit and push the newly generated code along with the updated JAR file.
+
+
+## License
+
+Copyright 2021 Symphony LLC
+
+Distributed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+
+SPDX-License-Identifier: [Apache-2.0](https://spdx.org/licenses/Apache-2.0).
