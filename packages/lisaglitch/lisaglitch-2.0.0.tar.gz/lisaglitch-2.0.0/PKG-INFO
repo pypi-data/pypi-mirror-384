@@ -1,0 +1,293 @@
+Metadata-Version: 2.4
+Name: lisaglitch
+Version: 2.0.0
+Summary: Generate realistic glitches and data gaps for LISA gravitational wave detector simulations
+License: BSD 3-Clause
+License-File: LICENSE
+Keywords: LISA,simulation
+Author: Jean-Baptiste Bayle
+Author-email: j2b.bayle@gmail.com
+Maintainer: Jean-Baptiste Bayle
+Maintainer-email: j2b.bayle@gmail.com
+Requires-Python: >=3.10,<4
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Astronomy
+Classifier: Topic :: Scientific/Engineering :: Physics
+Requires-Dist: h5py (>=3.12.1,<4.0.0)
+Requires-Dist: lisaconstants (>=2.0.0,<3.0.0)
+Requires-Dist: matplotlib (>=3.9.2,<4.0.0)
+Requires-Dist: numpy (>=2.1.2,<3.0.0)
+Requires-Dist: scipy (>=1.14.1,<2.0.0)
+Requires-Dist: torch (>=2.5.0,<3.0.0)
+Project-URL: Documentation, https://lisa-simulation.pages.in2p3.fr/glitch
+Project-URL: Download, https://gitlab.in2p3.fr/lisa-simulation/glitch/-/releases
+Project-URL: Repository, https://gitlab.in2p3.fr/lisa-simulation/glitch
+Project-URL: Tracker, https://gitlab.in2p3.fr/lisa-simulation/glitch/-/issues
+Description-Content-Type: text/markdown
+
+# LISA Glitch
+
+LISA Glitch is a Python package that generates realistic instrumental artefacts for the [LISA (Laser Interferometer Space Antenna)](https://www.elisascience.org/) gravitational wave detector. The package includes:
+
+## Features
+
+### **Glitch Generation** (`glitch` submodule)
+- **LPF-based models**: Realistic glitches based on LISA Pathfinder data
+- **Mathematical models**: Simple analytical glitch shapes
+- **Machine learning**: Neural network-based parameter distributions
+- **Compatibility with lisainstrument**: Ability to write glitch files to be read by `lisainstrument`
+
+### **Gap Mask Generation** (`gap` submodule)
+- **Planned gaps**: Regular maintenance and calibration windows
+- **Unplanned gaps**: Stochastic outages and communication losses
+- **Configurable rates**: User-defined gap frequencies and durations
+- **Construction of binary mask**: Create binary masks for gap regions
+- **HDF5 I/O**: Save and load gap configurations
+- **Quality flags**: Generate data quality indicators (0 for valid data, 1 for missing data)
+
+## Online Documentation
+
+Full documentation for the LISA Glitch package is available at: [https://lisa-simulation.pages.in2p3.fr/glitch](https://lisa-simulation.pages.in2p3.fr/glitch)
+## Package Structure
+
+```
+lisaglitch/
+├── glitch/              # Glitch generation (former lisaglitch)
+│   ├── base.py          # Base glitch classes
+│   ├── lpf.py           # LPF-based models
+│   ├── math.py          # Mathematical models
+│   ├── read.py          # File I/O utilities
+│   └── ...
+└── gap/                 # Gap mask generation (former lisagap)
+    ├── __init__.py
+    └── gap_mask_generator.py
+```
+
+## Quick Start
+
+```python
+from lisaglitch import ShapeletGlitch, GapMaskGenerator
+import numpy as np
+
+# Generate time array
+t = np.arange(0, 60*60, 0.25)  # 1 hour at 4 Hz
+
+# Create a glitch injected at test mass inteferometer 12 [tmi_12]
+# with some amlitude [level] and damping time [beta] injected at the
+# 1800 second mark
+
+glitch = ShapeletGlitch(level=1e-10, beta=100, inj_point="tm_12", t_inj=1800)
+signal = glitch.compute_signal(t)
+
+# Create gap mask
+# Define gap configuration with planned and unplanned gaps
+# treated as dictionary of dictionaries defining rates and durations.
+gap_config = {
+    "planned": {"maintenance": {"rate_per_year": 52, "duration_hr": 1}},
+    "unplanned": {"outage": {"rate_per_year": 10, "duration_hr": 0.5}}
+}
+
+# Initialise class with time array, time step, and gap definitions
+# treating missing data with NaNs.
+gap_gen = GapMaskGenerator(t, treat_as_nans=True, gap_definitions=gap_config)
+mask = gap_gen.generate_mask(include_planned=True, include_unplanned=True)
+
+# Apply gaps to signal
+masked_signal = signal * mask
+```
+
+
+## Installation
+
+### For Users
+
+Install the latest release from PyPI:
+
+```shell
+pip install lisaglitch
+```
+
+### For Developers
+
+This project uses [Poetry](https://python-poetry.org/) for dependency management and packaging. Poetry automatically creates and manages virtual environments, eliminating the need for manual `virtualenv` or `conda` environment management.
+
+⚠️ **Important**: This project requires **Poetry 2.0 or higher**.  If you have an older version, please upgrade.
+
+#### Installation Steps
+
+**Step 1: Install Poetry** (one-time setup)
+
+Poetry works on Windows, macOS, and Linux. Choose your method:
+
+**Option A: Official installer (recommended)**
+```shell
+curl -sSL https://install.python-poetry.org | python3 -
+```
+
+**Option B: Using pip** (if you already have Python)
+```shell
+pip install poetry
+```
+
+**Option C: Using package managers**
+```shell
+# macOS with Homebrew
+brew install poetry
+
+# Ubuntu/Debian
+sudo apt install python3-poetry
+
+# Windows with Chocolatey
+choco install poetry
+```
+
+**Verification: Check Poetry installation**
+```shell
+poetry --version  # Must show Poetry 2.0 or higher
+```
+**Step 2: Clone and Setup the Project**
+
+```shell
+# Clone the repository
+git clone git@gitlab.in2p3.fr:lisa-simulation/glitch.git
+cd glitch
+
+# Install all dependencies including development tools
+poetry install --with dev,test,doc
+```
+
+**Step 3: Activate the Environment**
+
+Poetry provides two ways to work with your environment:
+
+**Option A: Activate shell (similar to conda/virtualenv)**
+```shell
+# Enter Poetry shell (recommended for interactive work)
+source $(poetry env info --path)/bin/activate
+
+# Your prompt will change to show: (lisaglitch-py3.12)
+# Now you can use python, pytest, etc. directly
+python -c "import lisaglitch; print('✅ Ready to go!')"
+```
+
+**Option B: Run commands through Poetry** (no activation needed)
+```shell
+# Run Python scripts
+poetry run python your_script.py
+
+# Run tests
+poetry run pytest
+
+# Install new packages
+poetry add numpy matplotlib  # Runtime dependencies
+poetry add --group dev black  # Development dependencies
+```
+
+### [Development Purposes] Building Documentation Locally
+
+**For developers and contributors working on branches:** The online documentation at [https://lisa-simulation.pages.in2p3.fr/glitch](https://lisa-simulation.pages.in2p3.fr/glitch) only reflects the main branch. If you're working on a development branch or want to view documentation with your local changes, build it locally:
+
+```bash
+make -C docs html
+```
+
+The built documentation will be available at:
+- **File path**: `docs/_build/html/index.html` (open directly in browser)
+- **Local server**: `http://localhost:8000` (if using the server option)
+
+This is especially useful when:
+- Working on documentation updates
+- Testing new features before merging to main
+- Reviewing documentation changes in pull/merge requests
+
+### Documentation Structure
+
+- **Getting started**: Basic usage examples
+- **Tutorials**: Interactive Jupyter notebooks on gaps and glitches
+- **Glitch Documentation**: Detailed documentation on glitches
+- **API Reference**: Complete class and method documentation
+
+### GitLab Pages Deployment
+
+Documentation is automatically built and deployed to GitLab Pages on tagged releases. The CI/CD pipeline:
+
+1. **Build Stage**: Generates HTML documentation using Sphinx
+2. **Deploy Stage**: Publishes to GitLab Pages (on tags only)
+
+The live documentation is available at: `https://lisa-simulation.pages.in2p3.fr/glitch`
+
+### Pushing Changes to Branches
+
+When pushing changes to branches, ensure you follow the project's development workflow. This includes running quality checks and tests before pushing to avoid CI failures.
+
+#### Automated Quality Checks with VSCode
+
+Developers can use VSCode tasks to automate the quality check process, mirroring the CI/CD pipeline:
+
+1. **Open Command Palette**: `Cmd + Shift + P` (macOS) or `Ctrl + Shift + P` (Windows/Linux)
+2. **Select Task**: Choose "Run Task" from the dropdown
+3. **Choose Quality Check**: Select from available tasks:
+    - `Run Mypy` - Type checking
+    - `Check Black Formatting` - Code formatting
+    - `Run Pre-Commit Hooks` - Comprehensive linting
+    - `Run Tests with Coverage` - Unit tests with coverage report
+    - `Full CI Pipeline (Without PyPI publish)` - Complete validation suite
+
+#### Manual Quality Checks using console
+You can run them manually with Poetry:
+
+```shell
+# Type checking
+poetry run mypy lisaglitch
+
+# Code quality
+poetry run pylint lisaglitch
+
+# Unit tests
+poetry run python -m pytest tests/
+
+# Pre-commit hooks (formatting, linting, etc.)
+poetry run pre-commit run --all-files
+
+./build_docs.sh  # Build documentation
+```
+
+## Contributing
+
+### Report an issue
+
+We use the issue-tracking management system associated with the project provided by Gitlab. If you want to report a bug or request a feature, open an issue at <https://gitlab.in2p3.fr/lisa-simulation/glitch/-/issues>. You may also thumb-up or comment on existing issues.
+
+### Workflow
+
+The project's development workflow is based on the issue-tracking system provided by Gitlab, as well as peer-reviewed merge requests.
+
+Issues are solved by creating branches and opening merge requests. Only the assignee of the related issue and merge request can push commits on the branch. Once all the changes have been pushed, the "draft" specifier on the merge request is removed, and the merge request is assigned to a reviewer. He can push new changes to the branch, or request changes to the original author by re-assigning the merge request to them. When the merge request is accepted, the branch is merged onto master, deleted, and the associated issue is closed.
+
+### Code Quality and Testing
+
+We enforce [PEP 8 (Style Guide for Python Code)](https://www.python.org/dev/peps/pep-0008/) with Pylint syntax checking, static type checking with mypy, and correction of the code using the [pytest](https://docs.pytest.org/) testing framework. All are implemented in the continuous integration system.
+
+
+## Acknowledgements
+
+The implementation of the flow, which is used for learning and sampling from the LISA Pathfinder distribution, is heavily based on the [neural spline flows](https://arxiv.org/abs/1906.04032) implementation provided by the authors: [nsflows](https://github.com/bayesiains/nflows) and also its orignal implentation: [nsf](https://github.com/bayesiains/nsf).
+With some simplifications borrowed from [here](https://github.com/karpathy/pytorch-normalizing-flows) and [here](https://github.com/tonyduan/normalizing-flows/blob/master/nf/flows.py).
+
+## Use policy
+
+The project is distributed under the 3-Clause BSD open-source license to foster open science in our community and share common tools. Please keep in mind that developing and maintaining such a tool takes time and effort. Therefore, we kindly ask you to
+
+* Cite the DOI (see badge above) in any publication
+* Acknowledge the authors (below)
+* Acknowledge the LISA Simulation Expert Group in any publication
+
+Do not hesitate to send an email to the authors for support. We always appreciate being associated with research projects.
+
+## Contact
+
+* Jean-Baptiste Bayle (<j2b.bayle@gmail.com>)
+* Ollie Burke (<ollie.burke@glasgow.ac.uk>)
+* Eleonora Castelli (<eleonora.castelli@nasa.gov>)
+* Natalia Korsakova (<korsakova@apc.in2p3.fr>)
+
