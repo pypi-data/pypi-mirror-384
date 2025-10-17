@@ -1,0 +1,36 @@
+-- fill partition {dataset_id} images
+INSERT INTO {{ partition_name }} (
+    SELECT
+        images.image_uri,
+        images.id image_id,
+        images.metadata,
+        images.original_uri,
+        NULL::int[] as bounding_box,
+        images_to_similarity_clusters.image_id image_or_object_id,
+        images_to_similarity_clusters.cluster_id,
+        images_to_similarity_clusters.dataset_id,
+        preview_order,
+        similarity_clusters.display_name,
+        similarity_clusters.cluster_type,
+        similarity_clusters.n_images,
+        similarity_clusters.n_objects,
+        similarity_clusters.size_bytes,
+        similarity_clusters.similarity_threshold,
+        flat_image_labels.labels,
+        flat_image_issues.issue_type_ids,
+        media_to_captions.caption,
+        rank() OVER (PARTITION BY images_to_similarity_clusters.cluster_id ORDER BY preview_order) rank,
+        similarity_clusters.formed_by,
+        dir_path,
+        flat_image_labels.vl_labels
+    FROM
+        images_to_similarity_clusters
+        JOIN images ON images.id = images_to_similarity_clusters.image_id
+        JOIN similarity_clusters ON images_to_similarity_clusters.cluster_id = similarity_clusters.id
+        LEFT JOIN flat_image_issues ON images_to_similarity_clusters.image_id = flat_image_issues.media_id
+        LEFT JOIN flat_image_labels ON images_to_similarity_clusters.image_id = flat_image_labels.media_id
+        LEFT JOIN media_to_captions ON images_to_similarity_clusters.image_id = media_to_captions.media_id
+    WHERE
+        images.dataset_id = :dataset_id
+        AND images_to_similarity_clusters.dataset_id = :dataset_id
+);

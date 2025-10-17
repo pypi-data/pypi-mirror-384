@@ -1,0 +1,31 @@
+SELECT
+flat_similarity_clusters.*,
+page_of_clusters.n_frames_filtered,
+page_of_clusters.n_images_filtered,
+page_of_clusters.n_objects_filtered,
+page_of_clusters.n_media_filtered,
+page_of_clusters.cluster_rn,
+--{% if similarity_using_vector_db and anchor_media_id and cosine_similarity %}
+image_vector_filtered.similarity_distance_ as cosine_similarity,
+row_number() OVER (PARTITION BY flat_similarity_clusters.cluster_id ORDER BY (image_vector_filtered.similarity_distance_) DESC) as rn
+--{% elif similarity_using_vector_db and anchor_media_id %}
+image_vector_filtered.similarity_distance_ as cosine_distance,
+row_number() OVER (PARTITION BY flat_similarity_clusters.cluster_id ORDER BY (image_vector_filtered.similarity_distance_) ASC) as rn
+--{% elif anchor_media_id %}
+distance as cosine_similarity,
+row_number() OVER (PARTITION BY flat_similarity_clusters.cluster_id ORDER BY distance DESC) as rn
+--{% elif is_textual_search %}
+{% include "_text_img_relevance.jinja2" %} AS textual_search_relevance,
+row_number() OVER (PARTITION BY flat_similarity_clusters.cluster_id ORDER BY {% include "_text_img_relevance.jinja2" %} DESC) as rn
+--{% else %}
+preview_order,
+row_number() OVER (PARTITION BY flat_similarity_clusters.cluster_id ORDER BY preview_order) as rn
+--{% endif %}
+FROM
+    flat_similarity_clusters
+JOIN
+    page_of_clusters ON flat_similarity_clusters.cluster_id = page_of_clusters.cluster_id
+    {% include "_similarity_join_filtering.jinja2" %}
+WHERE
+true
+{% include "_composite_filter.jinja2" %}

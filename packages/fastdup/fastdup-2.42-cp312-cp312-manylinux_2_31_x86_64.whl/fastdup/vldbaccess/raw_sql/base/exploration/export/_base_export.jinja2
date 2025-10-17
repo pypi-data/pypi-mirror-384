@@ -1,0 +1,45 @@
+WITH
+{% include "_similarity_filtering_cte.jinja2" %},
+media_context_ AS (
+    SELECT DISTINCT on ( dataset_id,  image_id, image_or_object_id )
+        flat_similarity_clusters.image_id,
+        flat_similarity_clusters.image_or_object_id,
+        flat_similarity_clusters.dataset_id,
+        flat_similarity_clusters.similarity_threshold,
+        array_agg(flat_similarity_clusters."cluster_type") over (
+            partition by flat_similarity_clusters.image_id, flat_similarity_clusters.dataset_id
+        ) as cluster_type_arr
+	FROM flat_similarity_clusters
+    {% include "_similarity_join_filtering.jinja2" %}
+	WHERE
+        True
+        {% include "_composite_filter.jinja2" %}
+        {% if cluster_ids and media_ids %}
+        AND (cluster_id = ANY(:cluster_ids) OR image_or_object_id = ANY(:media_ids))
+        {% elif cluster_ids %}
+        AND (cluster_id = ANY(:cluster_ids))
+        {% elif media_ids %}
+        AND (image_or_object_id = ANY(:media_ids))
+        {% endif %}
+),
+media_context AS (
+    SELECT
+        flat_similarity_clusters.image_or_object_id,
+        flat_similarity_clusters.image_id,
+        flat_similarity_clusters.dataset_id,
+        flat_similarity_clusters.image_uri,
+        flat_similarity_clusters.original_uri,
+        flat_similarity_clusters.metadata,
+        flat_similarity_clusters.bounding_box,
+        flat_similarity_clusters.cluster_type,
+        flat_similarity_clusters.cluster_id,
+        media_context_.cluster_type_arr
+    FROM flat_similarity_clusters
+    JOIN media_context_ ON flat_similarity_clusters.dataset_id = media_context_.dataset_id
+        AND flat_similarity_clusters.similarity_threshold = media_context_.similarity_threshold
+        AND flat_similarity_clusters.image_id = media_context_.image_id
+        {% if expend_selection is not defined or not expend_selection %}
+        AND ('IMAGES' = ANY(media_context_.cluster_type_arr) OR flat_similarity_clusters.image_or_object_id = media_context_.image_or_object_id)
+        {% endif %}
+    WHERE flat_similarity_clusters.dataset_id = :dataset_id
+)

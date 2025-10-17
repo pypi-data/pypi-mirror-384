@@ -1,0 +1,35 @@
+-- fill partition {dataset_id} objects
+INSERT INTO {{ partition_name }} (
+    SELECT
+        images.image_uri,
+        images.id image_id,
+        images.metadata,
+        images.original_uri,
+        objects_to_images.bounding_box,
+        objects_to_similarity_clusters.object_id image_or_object_id,
+        objects_to_similarity_clusters.cluster_id,
+        objects_to_similarity_clusters.dataset_id,
+        objects_to_similarity_clusters.preview_order,
+        similarity_clusters.display_name,
+        similarity_clusters.cluster_type,
+        similarity_clusters.n_images,
+        similarity_clusters.n_objects,
+        similarity_clusters.size_bytes,
+        similarity_clusters.similarity_threshold,
+        flat_image_labels.labels,
+        flat_image_issues.issue_type_ids,
+        media_to_captions.caption,
+        rank() OVER (PARTITION BY cluster_id ORDER BY preview_order) rank,
+        similarity_clusters.formed_by,
+        objects_to_images.dir_path,
+        flat_image_labels.vl_labels
+    FROM
+        objects_to_similarity_clusters
+        JOIN objects_to_images ON objects_to_similarity_clusters.object_id = objects_to_images.object_id
+        JOIN images ON objects_to_images.image_id = images.id
+        JOIN similarity_clusters ON objects_to_similarity_clusters.cluster_id = similarity_clusters.id
+        LEFT JOIN flat_image_issues ON objects_to_similarity_clusters.object_id = flat_image_issues.media_id
+        LEFT JOIN flat_image_labels ON objects_to_similarity_clusters.object_id = flat_image_labels.media_id
+        LEFT JOIN media_to_captions ON objects_to_similarity_clusters.object_id = media_to_captions.media_id
+    WHERE objects_to_similarity_clusters.dataset_id = :dataset_id
+);
