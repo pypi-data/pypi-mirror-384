@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  schedule:
+    # run every day at 4am UTC
+    - cron: '0 4 * * *'
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  tests:
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@28e947497bed4d6ec3fa1d66d198e95a1d17bc63  # v2.2.1
+    with:
+      envs: |
+        - macos: py311-test-oldestdeps
+        - macos: py312-test
+        - macos: py313-test
+        - linux: py311-test-oldestdeps
+        - linux: py312-test
+          runs-on: ubuntu-24.04-arm
+        - linux: py313-test-devdeps
+        - windows: py311-test-oldestdeps
+        - windows: py312-test
+        - windows: py313-test
+      libraries: |
+        apt:
+          - libopenblas-dev
+      coverage: 'codecov'
+
+  publish:
+    needs: tests
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish.yml@28e947497bed4d6ec3fa1d66d198e95a1d17bc63  # v2.2.1
+    with:
+      test_extras: test
+      test_command: pytest -p no:warnings --pyargs reproject --log-cli-level=INFO
+      targets: |
+        - cp*-manylinux_x86_64
+        - target: cp*-manylinux_aarch64
+          runs-on: ubuntu-24.04-arm
+        - cp*-macosx_x86_64
+        - cp*-macosx_arm64
+        - cp*-win_amd64
+
+      # Developer wheels
+      upload_to_anaconda: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+      anaconda_user: astropy
+      anaconda_package: reproject
+      anaconda_keep_n_latest: 10
+
+    secrets:
+      pypi_token: ${{ secrets.pypi_token }}
+      anaconda_token: ${{ secrets.anaconda_token }}
