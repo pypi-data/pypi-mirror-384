@@ -1,0 +1,9 @@
+- 单元测试放到 tests 目录下
+- 使用 git +  uvx -n 进行开发工作
+- 先测试再发布，测试时一定使用 uvx -n 进行测试
+- windows 不使用 cmd/powershell运行命令，使用git去运行命令
+- 注意命令行程序在windows中的编码问题
+- 所有命令行示例都使用 uvx --from .qcc 或远程下载 uvx qcc
+- 所有命令行示例都保证格式正确，换行这些，不能出现错乱
+- 发布版本时 docs\releases
+- 需求到开发到测试阶段对阶段功能整个生命周期的记录时 docs\tasks 
