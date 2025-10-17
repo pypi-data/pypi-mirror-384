@@ -1,0 +1,138 @@
+Metadata-Version: 2.4
+Name: discrete-distribution-network
+Version: 0.1.16
+Summary: Discrete Distribution Network
+Project-URL: Homepage, https://pypi.org/project/discrete-distribution-network/
+Project-URL: Repository, https://github.com/lucidrains/discrete-distribution-network
+Author-email: Phil Wang <lucidrains@gmail.com>
+License: MIT License
+        
+        Copyright (c) 2025 Phil Wang
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+License-File: LICENSE
+Keywords: artificial intelligence,deep learning,generative modeling
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.9
+Requires-Dist: accelerate
+Requires-Dist: einops>=0.8.1
+Requires-Dist: ema-pytorch
+Requires-Dist: torch>=2.4
+Requires-Dist: torchvision
+Requires-Dist: x-mlps-pytorch>=0.1.0
+Provides-Extra: examples
+Provides-Extra: test
+Requires-Dist: pytest; extra == 'test'
+Description-Content-Type: text/markdown
+
+<img src="./ddn.png" width="400px"></img>
+
+## Discrete Distribution Network
+
+Exploration into [Discrete Distribution Network](https://discrete-distribution-networks.github.io/), by Lei Yang out of Beijing
+
+Besides the split-and-prune, may also throw in an option for crossover (mixing of top 2 nodes to replace the pruned)
+
+## Install
+
+```bash
+$ discrete-distribution-network
+```
+
+## Usage
+
+```python
+import torch
+from discrete_distribution_network import DDN
+
+ddn = DDN(
+    dim = 32,
+    image_size = 256
+)
+
+images = torch.randn(2, 3, 256, 256)
+
+loss = ddn(images)
+loss.backward()
+
+# after much training
+
+sampled = ddn.sample(batch_size = 1)
+
+assert sampled.shape == (1, 3, 256, 256)
+```
+
+The proposed `GuidedSampler` in the paper
+
+```python
+import torch
+from discrete_distribution_network import GuidedSampler
+
+sampler = GuidedSampler(
+    dim = 16,              # feature dimension
+    dim_query = 3,         # the query image dimension
+    codebook_size = 10,    # the codebook size K in the paper, which is K separate projections of the features, which is then measured distance wise to the query image guide
+)
+
+features = torch.randn(20, 16, 32, 32)
+query_image = torch.randn(20, 3, 32, 32)
+
+out, codes, commit_loss = sampler(features, query_image)
+
+# (20, 3, 32, 32), (20,), ()
+
+assert torch.allclose(sampler.forward_for_codes(features, codes), out, atol = 1e-5)
+
+# after optimizer step, this needs to be called
+# there is also a helper function by the same name that can take in your module and will invoke all of the guided samplers
+
+sampler.split_and_prune_()
+```
+
+## Oxford flowers
+
+Install `uv`, which will probably become the default in the near future
+
+```shell
+$ pip install uv
+```
+
+Then
+
+```shell
+$ uv run train_oxford_flowers.py
+```
+
+## Citations
+
+```bibtex
+@misc{yang2025discretedistributionnetworks,
+    title   = {Discrete Distribution Networks}, 
+    author  = {Lei Yang},
+    year    = {2025},
+    eprint  = {2401.00036},
+    archivePrefix = {arXiv},
+    primaryClass = {cs.CV},
+    url     = {https://arxiv.org/abs/2401.00036}, 
+}
+```
