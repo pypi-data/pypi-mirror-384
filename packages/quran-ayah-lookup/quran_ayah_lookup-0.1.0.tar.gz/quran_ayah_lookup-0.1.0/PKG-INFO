@@ -1,0 +1,591 @@
+Metadata-Version: 2.4
+Name: quran-ayah-lookup
+Version: 0.1.0
+Summary: A Python package for looking up Quranic ayahs by their number or Arabic text. Uses Quran corpus from Tanzil.net. Arabic only, no translations supported.
+Author-email: Sayed Mahmoud <foss-support@sayedmahmoud266.website>
+Maintainer-email: Sayed Mahmoud <foss-support@sayedmahmoud266.website>
+License: MIT
+Project-URL: Homepage, https://github.com/sayedmahmoud266/quran-ayah-lookup
+Project-URL: Repository, https://github.com/sayedmahmoud266/quran-ayah-lookup
+Project-URL: Documentation, https://github.com/sayedmahmoud266/quran-ayah-lookup/blob/main/README.md
+Project-URL: Bug Tracker, https://github.com/sayedmahmoud266/quran-ayah-lookup/issues
+Keywords: quran,ayah,lookup,islamic,search,text
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Religion
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Religion
+Classifier: Topic :: Text Processing :: Linguistic
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: rapidfuzz>=3.0.0
+Requires-Dist: numpy>=2.0.0
+Requires-Dist: click>=8.0.0
+Provides-Extra: api
+Requires-Dist: fastapi>=0.104.0; extra == "api"
+Requires-Dist: uvicorn[standard]>=0.24.0; extra == "api"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: httpx>=0.25.0; extra == "dev"
+Requires-Dist: black>=22.0; extra == "dev"
+Requires-Dist: flake8>=5.0; extra == "dev"
+Requires-Dist: mypy>=1.0; extra == "dev"
+Requires-Dist: build>=0.8; extra == "dev"
+Requires-Dist: twine>=4.0; extra == "dev"
+Dynamic: license-file
+
+# Quran Ayah Lookup
+
+[![PyPI version](https://badge.fury.io/py/quran-ayah-lookup.svg)](https://badge.fury.io/py/quran-ayah-lookup)
+[![Python Support](https://img.shields.io/pypi/pyversions/quran-ayah-lookup.svg)](https://pypi.org/project/quran-ayah-lookup/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A high-performance Python package for Quranic ayah lookup with **O(1) verse access** and Arabic text normalization. **Arabic only** - translations are not supported at this time.
+
+**Quran Corpus Source**: This package uses the Quran text corpus from [Tanzil.net](https://tanzil.net/), a trusted source for accurate Quranic text.
+
+## Features
+
+- 🚀 **O(1) Performance**: Lightning-fast verse lookup (956x faster than linear search!)
+- 📖 **Ayah Lookup**: Direct access with `db[surah][ayah]` syntax
+- 🔍 **Arabic Text Search**: Search for ayahs using Arabic text
+- 🎯 **Fuzzy Search**: Advanced partial text matching with similarity scoring
+- 🔄 **Multi-Ayah Search**: Sliding window search for text spanning multiple verses
+- 🧠 **Smart Search**: Automatic method selection for optimal results
+- 📏 **Word-level Positioning**: Precise match locations within verses
+- 🎚️ **Smart Basmala Handling**: Automatic Basmala extraction and organization
+- 🔤 **Text Normalization**: Advanced Arabic diacritics removal and Alif normalization
+- 🏗️ **Chapter-based Structure**: Efficient QuranChapter organization
+- 💻 **CLI Interface**: Command-line tool with interactive REPL mode (`qal` command)
+- 🌐 **REST API**: HTTP endpoints with Swagger documentation (`qal serve`)
+- 🕌 **Arabic Only**: Focused on Arabic Quranic text (no translations supported)
+- 📚 **Tanzil.net Corpus**: Uses trusted Quran text from Tanzil.net
+- ✨ **Complete Coverage**: Full Quran with 6,348 verses including Basmalas
+
+## Installation
+
+### From PyPI (Recommended)
+
+```bash
+pip install quran-ayah-lookup
+```
+
+### From Source
+
+```bash
+git clone https://github.com/sayedmahmoud266/quran-ayah-lookup.git
+cd quran-ayah-lookup
+pip install -e .
+```
+
+## Quick Start
+
+### Python API
+
+```python
+import quran_ayah_lookup as qal
+
+# Database loads automatically on import
+# ✓ Quran database loaded successfully:
+#   - Total verses: 6348
+#   - Total surahs: 114
+#   - Source: Tanzil.net
+
+# O(1) Direct verse access
+verse = qal.get_verse(3, 35)  # Surah Al-Imran, Ayah 35
+print(verse.text)  # Original Arabic text with diacritics
+print(verse.text_normalized)  # Normalized text without diacritics
+
+# Even faster: Direct database access
+db = qal.get_quran_database()
+verse = db[3][35]  # O(1) lookup!
+
+# Get entire surah/chapter
+surah = qal.get_surah(3)  # Al-Imran
+basmala = surah[0]        # Basmala (ayah 0)
+first_ayah = surah[1]     # First ayah
+print(f"Surah has {len(surah)} verses")
+
+# Search Arabic text
+results = qal.search_text("الله")
+print(f"Found {len(results)} verses containing 'الله'")
+
+# Fuzzy search with partial matching
+fuzzy_results = qal.fuzzy_search("كذلك يجتبيك ربك ويعلمك", threshold=0.8)
+for result in fuzzy_results[:3]:
+    print(f"Surah {result.verse.surah_number}:{result.verse.ayah_number} (similarity: {result.similarity:.3f})")
+
+# Multi-ayah sliding window search (for text spanning multiple verses)
+multi_results = qal.search_sliding_window("الرحمن علم القران خلق الانسان علمه البيان", threshold=80.0)
+for match in multi_results[:3]:
+    print(f"{match.get_reference()}: {match.similarity:.1f}% similarity")
+
+# Smart search (automatically selects best method)
+smart_result = qal.smart_search("الرحمن الرحيم")
+print(f"Used {smart_result['method']} search, found {smart_result['count']} results")
+
+# Find repeated phrases
+repeated = qal.fuzzy_search("فبأي الاء ربكما تكذبان")
+print(f"Found {len(repeated)} occurrences of this repeated phrase")
+
+# Check verse existence (O(1))
+if 35 in surah:
+    verse = surah[35]
+
+# Get all verses from a surah
+all_verses = surah.get_all_verses()
+```
+
+### Command Line Interface (CLI)
+
+The package includes a powerful CLI accessible via `quran-ayah-lookup` or `qal` for quick lookups and searches:
+
+#### Get a Specific Verse
+
+```bash
+# Get verse 35 from Surah 3 (Al-Imran)
+qal verse 3 35
+
+# Show only normalized text
+qal verse 3 35 --normalized
+
+# Show only original text with diacritics
+qal verse 3 35 --original
+```
+
+#### Get Surah Information
+
+```bash
+# Show surah information
+qal surah 3
+
+# Show verse count only
+qal surah 3 --count
+
+# List all verses in the surah
+qal surah 3 --list
+```
+
+#### Search for Text
+
+```bash
+# Search for verses containing "الله"
+qal search "الله"
+
+# Limit results to 5
+qal search "الله" --limit 5
+
+# Search in original text (with diacritics)
+qal search "بِسْمِ" --original
+```
+
+#### Fuzzy Search
+
+```bash
+# Fuzzy search with default threshold (0.7)
+qal fuzzy "كذلك يجتبيك ربك ويعلمك"
+
+# Use custom similarity threshold
+qal fuzzy "بسم الله" --threshold 0.9
+
+# Limit fuzzy search results
+# Limit fuzzy search results
+qal fuzzy "الله" --limit 10
+```
+
+#### Sliding Window Search (Multi-Ayah)
+
+```bash
+# Search for text spanning multiple ayahs
+qal sliding-window "الرحمن علم القران خلق الانسان علمه البيان"
+
+# Use custom similarity threshold (0.0-100.0)
+qal sliding-window "بسم الله الرحمن الرحيم الحمد لله" --threshold 85.0
+
+# Limit results
+qal sliding-window "الرحمن علم القران" --limit 5
+```
+
+#### Smart Search (Automatic Method Selection)
+
+```bash
+# Let the package choose the best search method
+qal smart-search "الرحمن الرحيم"
+
+# Configure thresholds for each method
+qal smart-search "الحمد لله" --fuzzy-threshold 0.8 --sliding-threshold 85.0
+
+# Limit results
+qal smart-search "بسم الله" --limit 10
+```
+
+#### List All Verses in a Surah
+
+```bash
+# List all verses in Surah 1 (Al-Fatiha)
+qal list-verses 1
+
+# List all verses in Surah 114 (An-Nas)
+qal list-verses 114
+```
+
+#### Show Database Statistics
+
+```bash
+# Display Quran database statistics
+qal stats
+```
+
+#### Interactive REPL Mode
+
+Start an interactive Read-Eval-Print Loop session by running the command without any arguments:
+
+```bash
+# Start interactive REPL mode
+qal
+
+# Or use the full command
+quran-ayah-lookup
+```
+
+In REPL mode, you can run commands interactively:
+
+```
+============================================================
+Quran Ayah Lookup - Interactive REPL Mode
+============================================================
+Commands:
+  verse <surah> <ayah>       - Get a specific verse
+  surah <number>             - Get surah information
+  search <query>             - Search for text
+  fuzzy <query>              - Fuzzy search
+  sliding-window <query>     - Multi-ayah sliding window search
+  smart-search <query>       - Smart search (auto-selects method)
+  stats                      - Show database stats
+  help                       - Show this help
+  exit / quit / Ctrl+C       - Exit REPL
+============================================================
+
+qal> verse 1 1
+Ayah 1:1
+----------------------------------------
+Original: بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ
+Normalized: بسم الله الرحمن الرحيم
+
+qal> search الله
+Found 2851 verse(s)
+
+qal> stats
+Total surahs: 114
+Total verses: 6348
+
+qal> exit
+Goodbye!
+```
+
+#### Get Help
+
+```bash
+# Show all available commands
+qal --help
+
+# Show help for a specific command
+qal verse --help
+qal search --help
+qal fuzzy --help
+
+# Show version
+qal --version
+```
+
+## REST API
+
+The package includes a REST API server that exposes all functionalities via HTTP endpoints with automatic Swagger documentation.
+
+### Starting the API Server
+
+```bash
+# Start server (default: http://127.0.0.1:8000)
+qal serve
+
+# Custom host and port
+qal serve --host 0.0.0.0 --port 8080
+
+# Development mode with auto-reload
+qal serve --reload
+```
+
+### Installation
+
+Install with API support:
+
+```bash
+pip install "quran-ayah-lookup[api]"
+```
+
+Or install dependencies separately:
+
+```bash
+pip install fastapi uvicorn[standard]
+```
+
+### API Documentation
+
+Once the server is running, access the interactive documentation:
+- **Swagger UI**: http://127.0.0.1:8000/docs
+- **ReDoc**: http://127.0.0.1:8000/redoc
+
+### Available Endpoints
+
+- `GET /verses/{surah}/{ayah}` - Get a specific verse
+- `GET /surahs/{surah}` - Get surah information
+- `GET /surahs/{surah}/verses` - Get all verses in a surah
+- `GET /search?query={text}` - Search for verses
+- `GET /fuzzy-search?query={text}&threshold={0.7}` - Fuzzy search
+- `GET /sliding-window?query={text}&threshold={80.0}` - Multi-ayah sliding window search
+- `GET /smart-search?query={text}` - Smart search (auto-selects method)
+- `GET /stats` - Database statistics
+- `GET /health` - Health check
+
+### Quick API Example
+
+```bash
+# Get a verse
+curl http://127.0.0.1:8000/verses/1/1
+
+# Search (URL-encoded)
+curl "http://127.0.0.1:8000/search?query=%D8%A7%D9%84%D9%84%D9%87&limit=5"
+
+# Fuzzy search
+curl "http://127.0.0.1:8000/fuzzy-search?query=%D8%A8%D8%B3%D9%85%20%D8%A7%D9%84%D9%84%D9%87&threshold=0.8"
+
+# Sliding window search
+curl "http://127.0.0.1:8000/sliding-window?query=%D8%A7%D9%84%D8%B1%D8%AD%D9%85%D9%86%20%D8%B9%D9%84%D9%85%20%D8%A7%D9%84%D9%82%D8%B1%D8%A7%D9%86&threshold=80.0"
+
+# Smart search
+curl "http://127.0.0.1:8000/smart-search?query=%D8%A7%D9%84%D8%B1%D8%AD%D9%85%D9%86%20%D8%A7%D9%84%D8%B1%D8%AD%D9%8A%D9%85"
+
+# Get stats
+curl http://127.0.0.1:8000/stats
+```
+
+Using Python:
+
+```python
+import requests
+
+# Get verse
+response = requests.get("http://127.0.0.1:8000/verses/1/1")
+verse = response.json()
+
+# Search
+response = requests.get("http://127.0.0.1:8000/search", 
+                       params={"query": "الله", "limit": 5})
+results = response.json()
+
+# Fuzzy search
+response = requests.get("http://127.0.0.1:8000/fuzzy-search",
+                       params={"query": "بسم الله", "threshold": 0.8})
+fuzzy_results = response.json()
+
+# Sliding window search
+response = requests.get("http://127.0.0.1:8000/sliding-window",
+                       params={"query": "الرحمن علم القران", "threshold": 80.0})
+sliding_results = response.json()
+
+# Smart search
+response = requests.get("http://127.0.0.1:8000/smart-search",
+                       params={"query": "الرحمن الرحيم"})
+smart_result = response.json()
+print(f"Used {smart_result['method']} search")
+```
+
+For complete API documentation, see [docs/api.md](docs/api.md#rest-api-reference).
+
+## Performance
+
+### O(1) Lookup Performance
+```
+O(1) lookup (1000x): 0.0006s
+O(n) lookup (1000x): 0.5725s
+Speedup: 956x faster! 🚀
+```
+
+### Database Structure
+- **6,348 total verses** (6,236 original + 112 Basmalas)
+- **114 surahs** with chapter-based organization
+- **Hashmap-based storage** for O(1) access
+- **Smart Basmala handling** for surahs 2-114 (except At-Tawbah)
+
+## API Reference
+
+### Core Functions
+
+```python
+# Verse lookup
+verse = qal.get_verse(surah_number, ayah_number)
+db[surah_number][ayah_number]  # Direct O(1) access
+
+# Surah/Chapter access
+surah = qal.get_surah(surah_number)
+surah[ayah_number]  # O(1) verse access
+len(surah)  # Verse count
+surah.has_basmala()  # Check for Basmala
+
+# Search and utility
+results = qal.search_text(query, normalized=True)
+fuzzy_results = qal.fuzzy_search(query, threshold=0.7, max_results=10)
+verses = qal.get_surah_verses(surah_number)
+normalized = qal.normalize_arabic_text(text)
+```
+
+### Data Models
+
+- **`QuranVerse`**: Individual verse with original and normalized text
+- **`QuranChapter`**: Surah container with O(1) verse access
+- **`QuranDatabase`**: Main database with chapter organization
+- **`FuzzySearchResult`**: Fuzzy search result with similarity and position data
+
+## Requirements
+
+### Core Requirements
+- Python 3.8 or higher
+- rapidfuzz >= 3.0.0
+- click >= 8.0.0
+
+### Optional (for REST API)
+- fastapi >= 0.104.0
+- uvicorn[standard] >= 0.24.0
+
+Install with: `pip install "quran-ayah-lookup[api]"`
+
+## Development
+
+### Setting up Development Environment
+
+1. Clone the repository:
+```bash
+git clone https://github.com/sayedmahmoud266/quran-ayah-lookup.git
+cd quran-ayah-lookup
+```
+
+2. Initialize development environment:
+```bash
+make init                # Initialize virtual environment
+make install-deps        # Install production dependencies
+make install-deps-dev    # Install development dependencies
+```
+
+3. Run tests:
+```bash
+make test                # Run unit tests
+make test-coverage       # Run tests with coverage report
+```
+
+### Available Make Commands
+
+Use `make help` to see all available commands:
+
+```bash
+make help               # Show all available commands
+make init               # Initialize virtual environment  
+make install-deps       # Install production dependencies
+make install-deps-dev   # Install development dependencies
+make install-dev        # Install package in development mode
+make test               # Run unit tests
+make test-coverage      # Run tests with coverage report
+make format             # Format code with black
+make lint               # Lint code with flake8  
+make typecheck          # Type check with mypy
+make check              # Run all checks (format, lint, typecheck, test)
+make build              # Build the package
+make clean              # Clean build artifacts
+make clean-all          # Clean everything including virtual environment
+make setup-dev          # Complete development setup (init + install-deps-dev)
+make publish-test       # Publish to test PyPI
+make publish            # Publish to PyPI
+```
+
+### Quick Development Setup
+
+For a complete development environment setup:
+```bash
+make setup-dev          # Does: init + install-deps-dev
+```
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Development Workflow
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Add tests for your changes
+5. Ensure all tests pass (`pytest`)
+6. Format your code (`black src/`)
+7. Commit your changes (`git commit -m 'Add amazing feature'`)
+8. Push to the branch (`git push origin feature/amazing-feature`)
+9. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+- **Sayed Mahmoud** - [sayedmahmoud266](https://github.com/sayedmahmoud266)
+- Email: foss-support@sayedmahmoud266.website
+
+## Roadmap
+
+### ✅ Completed
+- [x] **O(1) Verse Lookup**: Lightning-fast `db[surah][ayah]` access
+- [x] **Arabic Text Search**: Full-text search across all verses
+- [x] **Fuzzy matching for Arabic text searches**: Partial text matching with similarity scoring
+- [x] **Smart Basmala Handling**: Automatic extraction and organization
+- [x] **Text Normalization**: Advanced Arabic diacritics removal
+- [x] **Chapter Organization**: Efficient QuranChapter structure
+- [x] **Complete Database**: 6,348 verses with proper indexing
+- [x] **CLI Interface**: Full-featured command-line tool with REPL mode
+
+### 🚧 In Progress
+- [ ] Advanced search with filters (surah range, verse types)
+- [ ] Performance optimizations and caching
+
+### 📋 Planned
+- [ ] Web API endpoint support
+- [ ] Export functionality (JSON, CSV)
+- [ ] Enhanced documentation and examples
+- [ ] Future: Consider translation support (not currently planned)
+
+## Support
+
+If you encounter any issues or have questions, please:
+
+1. Check the [documentation](docs/)
+2. Search existing [issues](https://github.com/sayedmahmoud266/quran-ayah-lookup/issues)
+3. Create a [new issue](https://github.com/sayedmahmoud266/quran-ayah-lookup/issues/new) if needed
+
+## Acknowledgments
+
+- **Tanzil.net**: For providing the accurate and trusted Quran text corpus
+- Thanks to all contributors who help improve this package
+- Special thanks to the maintainers of the RapidFuzz library
+- Inspired by the need for accessible Arabic Quranic text search tools
+
+---
+
+*May this tool be beneficial for those seeking to engage with the Quran.* 🤲
