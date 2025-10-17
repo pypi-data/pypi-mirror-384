@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-widgets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build widgets
+        run: pnpm build
+
+      - name: Check for uncommitted changes
+        run: |
+          git diff --exit-code widgets/dist || (
+            echo "ERROR: widgets/dist has uncommitted changes after build"
+            echo "Please run 'pnpm build' locally and commit the changes"
+            exit 1
+          )
+
+      - name: Run linting
+        run: pnpm lint
+
+      - name: Run tests with coverage
+        run: pnpm --filter @t-prompts/widgets test:coverage
+
+      - name: Generate TypeScript Coverage Badge
+        if: github.ref == 'refs/heads/main'
+        working-directory: widgets
+        run: |
+          # Extract coverage percentage from coverage-summary.json
+          COVERAGE=$(node -p "
+            const summary = require('./coverage/coverage-summary.json');
+            const total = summary.total;
+            const statements = total.statements.pct;
+            const branches = total.branches.pct;
+            const functions = total.functions.pct;
+            const lines = total.lines.pct;
+            Math.round((statements + branches + functions + lines) / 4);
+          ")
+
+          echo "TypeScript Coverage: ${COVERAGE}%"
+
+          # Determine badge color
+          if [ "$COVERAGE" -ge 80 ]; then
+            COLOR="brightgreen"
+          elif [ "$COVERAGE" -ge 70 ]; then
+            COLOR="orange"
+          else
+            COLOR="red"
+          fi
+
+          # Create badge directory
+          mkdir -p ../badges
+
+          # Generate badge SVG using shields.io
+          curl -o ../badges/typescript-coverage.svg \
+            "https://img.shields.io/badge/TypeScript_Coverage-${COVERAGE}%25-${COLOR}"
+
+          echo "Generated badge with coverage ${COVERAGE}% and color ${COLOR}"
+
+      - name: Deploy TypeScript Coverage Badge
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./badges
+          publish_branch: typescript-coverage-badge
+          keep_files: false
+
+  test:
+    needs: build-widgets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Create Virtual Environment
+        run: uv sync --frozen --all-extras
+
+      - name: Install Playwright Browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run Linting
+        run: uv run ruff check .
+
+      - name: Run All Tests with Coverage (including visual tests)
+        run: uv run pytest --cov=src/t_prompts --cov-report=xml --cov-report=term
+
+      - name: Run Notebook Tests
+        run: ./test_notebooks.sh --no-inplace
+
+      - name: Build Documentation
+        run: uv run mkdocs build
+
+      - name: Coverage Comment
+        id: coverage_comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          MINIMUM_GREEN: 80
+          MINIMUM_ORANGE: 70
+
+      - name: Store Pull Request comment to be posted
+        uses: actions/upload-artifact@v4
+        if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
+        with:
+          name: python-coverage-comment-action
+          path: python-coverage-comment-action.txt
