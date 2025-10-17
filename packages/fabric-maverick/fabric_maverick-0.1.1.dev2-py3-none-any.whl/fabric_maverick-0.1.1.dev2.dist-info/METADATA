@@ -1,0 +1,335 @@
+Metadata-Version: 2.4
+Name: fabric_maverick
+Version: 0.1.1.dev2
+Summary: A Fabric Package for Semantic/Dataset validation
+Author: MAQ Software
+Author-email: Nisarg Patel <nisargp@maqsoftware.com>
+Maintainer-email: Nisarg Patel <nisargp@maqsoftware.com>, Kunal Sarda <kunals@maqsoftware.com>, Milankumar Nakum <nakumm@maqsoftware.com>
+License: MIT License
+        
+        Copyright (c) MAQ Software.
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE
+Keywords: Fabric,Microsoft Fabric,Sempy,Semantic Model,Report,Report Compare
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Framework :: Jupyter
+Requires-Python: >=3.10,<3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+License-File: AUTHORS.md
+Requires-Dist: thefuzz
+Requires-Dist: semantic-link-sempy>=0.11.0
+Provides-Extra: test
+Requires-Dist: pytest>=8.2.1; extra == "test"
+Dynamic: license-file
+Dynamic: requires-python
+
+# Fabric Maverick
+
+![Python Version](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+
+## Table of Contents
+
+* [Overview](#overview)
+* [Features](#features)
+* [Installation](#installation)
+* [Usage](#usage)
+    * [Configuration](#configuration)
+    * [Comparing Models](#comparing-models)
+    * [Authentication](#authentication)
+    * [Validation Results](#validation-results)
+    * [Export Functionality](#export-functionality)
+* [License](#license)
+* [Contact](#contact)
+
+## Overview
+
+`fabric_maverick` is a Python package designed for **semantic level validation and comparison of Power BI reports across different workspaces**. It provides a robust framework to programmatically compare the metadata and structure of your Fabric Analytics Models to ensure consistency and identify discrepancies.
+
+This package is particularly useful for:
+* **CI/CD pipelines:** Automating report validation as part of your deployment process.
+* **Regression testing:** Ensuring that changes to reports or underlying data models do not introduce unintended breaking changes.
+* **Maintaining consistency:** Verifying that reports deployed to different environments (Dev, UAT, Prod) are structurally identical or conform to expected variations.
+
+## Features
+
+* **Model Comparison:** Easily compare the structure (tables, columns, measures, Relationships) of two Fabric Analytics Models from different workspaces.
+* **Flexible Input:** Supports comparing reports by providing individual report/workspace names or a consolidated dictionary structure.
+* **Authentication Management:** Integrates with a flexible token provider for seamless authentication with Fabric/Power BI services.
+* **Extensible:** Built with a modular design to allow for future expansion of comparison metrics and validation rules.
+* **Detailed Validation:** Table, column, measure, and relationship validation with clear pass/fail results.
+* **Rich Output:** Results are returned as pandas DataFrames for easy analysis and reporting.
+* **Export Functionality:** Export validation results to Microsoft Fabric Lakehouse for persistent storage and further analysis.
+
+## Installation
+
+`fabric_maverick` can be installed directly from PyPI using `pip`:
+```bash
+pip install fabric_maverick
+```
+
+## Usage
+
+### Configuration
+
+You can configure various settings for validation and export operations using the global configuration object:
+
+```python
+from knnpy import config
+
+# Set validation parameters
+config.threshold = 80                   # Fuzzy matching threshold (0-100), Default is 80.
+config.margin_of_error = 5              # Default margin of error for numeric comparisons, Default is 5.
+config.max_workers = 20                 # Maximum worker threads for parallel processing,  Default is 20.
+config.distinct_value_limit = 50        # Limit for distinct value comparison in columns,  Default is 50.
+
+# Set lakehouse configuration for exports
+config.lakehouse_id = "your_lakehouse_id"
+config.workspace_id = "your_workspace_id"
+
+# Or set lakehouse config in one call
+config.set_lakehouse_config("your_lakehouse_id", "your_workspace_id")
+
+# Get current lakehouse configuration
+lakehouse_config = config.get_lakehouse_config()
+print(lakehouse_config)  # {'lakehouse_id': 'your_lakehouse_id', 'workspace_id': 'your_workspace_id'}
+```
+
+### Comparing Models
+The primary function for comparing reports is ModelCompare. It offers two ways to specify the reports:
+
+```python
+import knnpy
+
+Compare = knnpy.ModelCompare(
+    OldModel="MySalesDashboard_V1",  #old semantic Model name
+    OldModelWorkspace="Development", #old semantic Model Workspace name
+    NewModel="MySalesDashboard_V2",  #new semantic Model name
+    NewModelWorkspace="Production",  #new semantic Model Workspace name
+    Stream="SalesDashboard_Deployment", #Stream name
+    Threshold=60 # Optional, defaults to 80.
+    # Threshold controls the minimum similarity score (0-100) for fuzzy matching of all items (table names, column names, measure names). 
+    # Lower the threshold if your item names differ more between models and you want to allow more flexible matching.
+)
+
+# Use the Compare object to run all validations and view results
+Compare.run_all_validations() # Runs all validations: Measure, Table, Column, and Relationship.
+
+# After running the above function, you can also view individual validation results from the variables below.
+# You can also run individual validations as needed.
+
+# Measure Validation
+Compare.run_measure_validation()
+# To view the Measure Validation result
+display(Compare.MeasureValidationResults)
+
+# Table Validation
+Compare.run_table_validation()
+# To view the Table Validation result
+display(Compare.TableValidationResults)
+
+# Column Validation
+Compare.run_column_validation()
+# To view the Column Validation result
+display(Compare.ColumnValidationResults)
+
+# Relationship Validation
+Compare.run_relationship_validation()
+# To view the Relationship Validation result
+display(Compare.RelationshipValidationResults)
+```
+
+You can also change the margin of error for the `is_value_similar` check, which shows the difference from the old value in percentage.
+
+By default, the optional parameter `margin_of_error` is set to 5.0.
+
+```python
+Compare.run_all_validations(margin_of_error=10)
+
+Compare.run_table_validation(margin_of_error=15)
+```
+
+### Authentication
+
+By default, fabric_maverick will use token from fabric enviornment. However, you can explicitly provide an authentication token using the ExplicitToken parameter in ModelCompare:
+
+```python
+import knnpy
+
+# Obtain your Power BI/Fabric access token
+my_token = "eyJ..." # Replace with your actual token
+
+comparison_result = knnpy.ModelCompare(
+    # ... report details ...
+    Stream="MyStream",
+    ExplicitToken=my_token
+)
+```
+Alternatively, you can initialize a token globally for the session using initializeToken:
+
+```python
+import knnpy
+
+# Initialize token globally (this affects all subsequent calls without ExplicitToken)
+knnpy.initializeToken("YOUR_GLOBAL_ACCESS_TOKEN")
+
+# Now, ModelCompare calls can omit ExplicitToken
+comparison_result = knnpy.ModelCompare(
+    OldModel="ModelA",
+    OldModelWorkspace="WS_A",
+    NewModel="ModelB",
+    NewModelWorkspace="WS_B",
+    Stream="AnotherStream"
+)
+```
+
+### Validation Results
+
+After running `Compare.run_all_validations()`, you can access the following DataFrames:
+
+- `Compare.TableValidationResults`
+- `Compare.ColumnValidationResults`
+- `Compare.MeasureValidationResults`
+- `Compare.RelationshipValidationResults`
+
+These DataFrames contain detailed pass/fail results and can be displayed or exported as needed.
+
+### Export Functionality
+
+You can export validation results to a Microsoft Fabric Lakehouse for persistent storage and further analysis. The export functionality supports both attached lakehouses and specific lakehouse configurations.
+
+#### Basic Export Usage
+
+```python
+# Export results using attached lakehouse (if available)
+Compare.run_all_validations(export=True)
+
+# Export individual validation results
+Compare.run_table_validation(export=True)
+Compare.run_column_validation(export=True)
+Compare.run_measure_validation(export=True)
+Compare.run_relationship_validation(export=True)
+```
+
+#### Export with Custom Lakehouse Configuration
+
+```python
+# Define specific lakehouse configuration
+lakehouse_config = {
+    "lakehouse_id": "your_lakehouse_id",
+    "workspace_id": "your_workspace_id"
+}
+
+# Export to specific lakehouse
+Compare.run_all_validations(export=True, lakehouse_config=lakehouse_config)
+```
+
+#### Export Using Global Configuration
+
+```python
+# Set global lakehouse configuration once
+from knnpy import config
+config.set_lakehouse_config("your_lakehouse_id", "your_workspace_id")
+
+# Now all exports will use the global configuration
+Compare.run_all_validations(export=True)
+Compare.run_table_validation(export=True)
+```
+
+#### Direct Export Function
+
+```python
+# Import the export function directly
+from knnpy import export_validation_results
+
+# Prepare results for export
+results = [
+    ("Table Validation Results", Compare.TableValidationResults),
+    ("Column Validation Results", Compare.ColumnValidationResults),
+    ("Measure Validation Results", Compare.MeasureValidationResults),
+    ("Relationship Validation Results", Compare.RelationshipValidationResults)
+]
+
+# Export to default attached lakehouse
+export_validation_results(results)
+
+# Or export to specific lakehouse
+export_validation_results(results, lakehouse_config)
+```
+
+#### Export Details
+
+- **Format**: Results are exported as Delta tables in your Fabric Lakehouse
+- **Location**: Tables are created under `/Tables/` in your lakehouse
+- **Table Names**: Automatically generated based on validation type (e.g., `table_validation_results`, `measure_validation_results`)
+- **Mode**: Overwrite mode - each export replaces the previous data
+- **Schema**: Automatically inferred from the validation results DataFrame
+
+#### Export Priority and Configuration Notes
+
+**Export Priority:**
+1. If both attached lakehouse and configured lakehouse exist, the **configured lakehouse takes priority**
+2. To export to attached lakehouse when configuration exists, set lakehouse configuration to None:
+   ```python
+   from knnpy import config
+   config.lakehouse_id = None
+   config.workspace_id = None
+   # Now exports will use attached lakehouse
+   ```
+
+**Re-running for Export Only:**
+If you have already run validations without export, you can re-run any validation function with `export=True` to export the existing results without re-executing the validation logic:
+
+```python
+# Initial run without export
+Compare.run_all_validations()
+
+# Later, export the same results without re-running validations
+Compare.run_all_validations(export=True)  # Just exports, doesn't re-validate
+
+# Same applies to individual validations
+Compare.run_table_validation(export=True)  # Exports existing table results
+Compare.run_measure_validation(export=True)  # Exports existing measure results
+```
+
+#### Export Requirements
+
+- Access to Microsoft Fabric Lakehouse
+- Proper authentication and permissions
+- Either an attached lakehouse or explicit lakehouse configuration
+
+#### Troubleshooting Export Issues
+
+If export fails, the validation will still complete and display results normally. Check:
+1. Lakehouse is properly attached or configured
+2. You have write permissions to the lakehouse
+3. The lakehouse IDs and workspace IDs are correct
+4. Your authentication token has the necessary permissions
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contact
+For questions or feedback, please reach out to the maintainers.
