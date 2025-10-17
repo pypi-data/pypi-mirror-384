@@ -1,0 +1,223 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Demo MCP servers on Amazon Bedrock AgentCore Runtime
+
+Parameters:
+  StatelessContainerImageURI:
+    Type: String
+    Description: ECR image URI for the stateless MCP server container (e.g., 123456789012.dkr.ecr.us-west-2.amazonaws.com/bedrock-weather:sha256-<digest>)
+  StatelessAgentRuntimeName:
+    Type: String
+    Default: agentcore_proxy_stateless
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]{0,47}"
+    Description: Name for the Bedrock AgentCore Runtime endpoint serving the stateless demo
+  StatelessProtocolConfiguration:
+    Type: String
+    AllowedValues:
+      - MCP
+    Default: MCP
+    Description: Protocol exposed by the stateless runtime
+  StatelessDescription:
+    Type: String
+    Default: MCP demo server hosted on Bedrock AgentCore Runtime
+  StatefulContainerImageURI:
+    Type: String
+    Description: ECR image URI for the stateful bridge runtime container
+  StatefulAgentRuntimeName:
+    Type: String
+    Default: agentcore_proxy_stateful
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]{0,47}"
+    Description: Name for the Bedrock AgentCore Runtime endpoint serving the stateful bridge
+  StatefulProtocolConfiguration:
+    Type: String
+    AllowedValues:
+      - HTTP
+    Default: HTTP
+    Description: Protocol exposed by the stateful runtime
+  StatefulDescription:
+    Type: String
+    Default: HTTP bridge runtime hosting the MCP subprocess
+  NetworkMode:
+    Type: String
+    AllowedValues:
+      - PUBLIC
+    Default: PUBLIC
+    Description: Network mode for both runtime endpoints
+  LogLevel:
+    Type: String
+    AllowedValues:
+      - DEBUG
+      - INFO
+      - WARNING
+      - ERROR
+      - CRITICAL
+    Default: INFO
+    Description: Log level for the runtime containers
+    
+Resources:
+  RuntimeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Description: Execution role for Bedrock AgentCore runtime container
+      Policies:
+        - PolicyName: AgentCoreRuntimeInlinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ECRImageAccess
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*
+              - Sid: ECRAuthToken
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - '*'
+              - Sid: XRay
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: '*'
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+              - Sid: WorkloadToken
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                Resource:
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/${StatelessAgentRuntimeName}-*
+                  - !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/${StatefulAgentRuntimeName}-*
+              - Sid: BedrockInvoke
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*
+
+  StatelessAgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref StatelessAgentRuntimeName
+      Description: !Ref StatelessDescription
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref StatelessContainerImageURI
+      RoleArn: !GetAtt RuntimeExecutionRole.Arn
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+      ProtocolConfiguration: !Ref StatelessProtocolConfiguration
+      Tags:
+        Project: agentcore-demo
+        Environment: demo
+      EnvironmentVariables:
+        LOG_LEVEL: !Ref LogLevel
+        AGENT_RUNTIME_NAME: !Ref StatelessAgentRuntimeName
+
+  StatefulAgentRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeName: !Ref StatefulAgentRuntimeName
+      Description: !Ref StatefulDescription
+      AgentRuntimeArtifact:
+        ContainerConfiguration:
+          ContainerUri: !Ref StatefulContainerImageURI
+      RoleArn: !GetAtt RuntimeExecutionRole.Arn
+      NetworkConfiguration:
+        NetworkMode: !Ref NetworkMode
+      ProtocolConfiguration: !Ref StatefulProtocolConfiguration
+      Tags:
+        Project: agentcore-demo
+        Environment: demo
+      EnvironmentVariables:
+        LOG_LEVEL: !Ref LogLevel
+        AGENT_RUNTIME_NAME: !Ref StatefulAgentRuntimeName
+
+  # Role that can be assumed to invoke the runtime for cross-account access
+  # for testing purposes, we are just trusting the same account
+  ProxyInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Test role assumed by the MCP proxy to invoke AgentCore runtime
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AgentCoreInvokePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: InvokeAgentRuntime
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeAgentRuntime
+                Resource:
+                  - !GetAtt StatelessAgentRuntime.AgentRuntimeArn
+                  - !Sub '${StatelessAgentRuntime.AgentRuntimeArn}/runtime-endpoint/*'
+                  - !GetAtt StatefulAgentRuntime.AgentRuntimeArn
+                  - !Sub '${StatefulAgentRuntime.AgentRuntimeArn}/runtime-endpoint/*'
+Outputs:
+  StatelessAgentRuntimeArn:
+    Description: ARN of the stateless Bedrock AgentCore runtime
+    Value: !GetAtt StatelessAgentRuntime.AgentRuntimeArn
+  StatelessAgentRuntimeId:
+    Description: ID of the stateless runtime
+    Value: !GetAtt StatelessAgentRuntime.AgentRuntimeId
+  StatelessAgentRuntimeVersion:
+    Description: Version of the stateless runtime
+    Value: !GetAtt StatelessAgentRuntime.AgentRuntimeVersion
+  StatefulAgentRuntimeArn:
+    Description: ARN of the stateful Bedrock AgentCore runtime
+    Value: !GetAtt StatefulAgentRuntime.AgentRuntimeArn
+  StatefulAgentRuntimeId:
+    Description: ID of the stateful runtime
+    Value: !GetAtt StatefulAgentRuntime.AgentRuntimeId
+  StatefulAgentRuntimeVersion:
+    Description: Version of the stateful runtime
+    Value: !GetAtt StatefulAgentRuntime.AgentRuntimeVersion
+  AgentRuntimeRoleArn:
+    Description: Execution role ARN used by the runtime containers
+    Value: !GetAtt RuntimeExecutionRole.Arn
+  ProxyInvokeRoleArn:
+    Description: ARN of the test role that can be assumed to invoke either runtime
+    Value: !GetAtt ProxyInvokeRole.Arn
