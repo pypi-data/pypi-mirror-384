@@ -1,0 +1,75 @@
+from typing import Any, TypeVar, Union, cast
+
+from attrs import define as _attrs_define
+
+from ..models.update_incident_role_task_data_attributes_priority import UpdateIncidentRoleTaskDataAttributesPriority
+from ..types import UNSET, Unset
+
+T = TypeVar("T", bound="UpdateIncidentRoleTaskDataAttributes")
+
+
+@_attrs_define
+class UpdateIncidentRoleTaskDataAttributes:
+    """
+    Attributes:
+        task (Union[Unset, str]): The task of the incident task
+        description (Union[None, Unset, str]): The description of the incident task
+        priority (Union[Unset, UpdateIncidentRoleTaskDataAttributesPriority]): The priority of the incident task
+    """
+
+    task: Union[Unset, str] = UNSET
+    description: Union[None, Unset, str] = UNSET
+    priority: Union[Unset, UpdateIncidentRoleTaskDataAttributesPriority] = UNSET
+
+    def to_dict(self) -> dict[str, Any]:
+        task = self.task
+
+        description: Union[None, Unset, str]
+        if isinstance(self.description, Unset):
+            description = UNSET
+        else:
+            description = self.description
+
+        priority: Union[Unset, str] = UNSET
+        if not isinstance(self.priority, Unset):
+            priority = self.priority.value
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update({})
+        if task is not UNSET:
+            field_dict["task"] = task
+        if description is not UNSET:
+            field_dict["description"] = description
+        if priority is not UNSET:
+            field_dict["priority"] = priority
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: dict[str, Any]) -> T:
+        d = src_dict.copy()
+        task = d.pop("task", UNSET)
+
+        def _parse_description(data: object) -> Union[None, Unset, str]:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(Union[None, Unset, str], data)
+
+        description = _parse_description(d.pop("description", UNSET))
+
+        _priority = d.pop("priority", UNSET)
+        priority: Union[Unset, UpdateIncidentRoleTaskDataAttributesPriority]
+        if isinstance(_priority, Unset):
+            priority = UNSET
+        else:
+            priority = UpdateIncidentRoleTaskDataAttributesPriority(_priority)
+
+        update_incident_role_task_data_attributes = cls(
+            task=task,
+            description=description,
+            priority=priority,
+        )
+
+        return update_incident_role_task_data_attributes
