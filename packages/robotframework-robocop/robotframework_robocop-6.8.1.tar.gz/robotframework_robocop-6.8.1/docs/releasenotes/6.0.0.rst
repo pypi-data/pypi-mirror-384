@@ -1,0 +1,1130 @@
+=============
+Robocop 6.0
+=============
+
+Robocop 6.0 is major release of both Robocop and Robotidy (!) tools.
+
+Although this is the 6th major version of Robocop, the scope of changes is larger than ever before.
+Nearly all core functionality has been rewritten, refactored, or replaced. Please make sure to review all the breaking
+changes, as most of the previous commands or configuration files will be compatible with this release.
+
+Merging the tools
+==================
+
+We have decided to merge both Robocop and Robotidy tools. This challenging decision was made for the following reasons:
+
+* It's more efficient to maintain a single tool rather than two, as there was some code overlap between them
+* Robotidy was developed after Robocop and used entirely different libraries and architecture for CLI and
+  configuration management. Implementing the same feature in both tools resulted in duplicate effort
+* This migration requires us to rewrite much of the code, providing a opportunity to redefine some of our core
+  architecture
+* We believe the merged tool will offer a significantly better user experience
+
+Merging the tools means that:
+
+* Robotidy is no longer developed and will now exist as 'Formatter' part of the Robocop
+* Robocop is now split into two modes, 'Formatter' and 'Linter'
+
+The basic usage is::
+
+    robocop check
+    robocop format
+
+There are several breaking changes to the configurations. You can migrate old toml configuration files with the
+following command::
+
+    robocop migrate <config_path>
+
+It will create new file named <config_path>_migrated.toml with translated option names and their structure.
+Rule ids are also converted to new format, but patterns are not migrated (such as ``02*``).
+
+.. contents::
+   :depth: 2
+   :local:
+
+Breaking changes
+=================
+
+Command line options changes
+----------------------------
+
+Most of the options were renamed to normalize naming between two tools or to make it more user friendly.
+Some of the old options (like ``--exclude``) are now used for something else.
+
+Rule selection options are now renamed:
+
+- ``-i/--include`` became ``-s/--select``
+- ``-e/--exclude`` became ``-i/--ignore``
+
+---
+
+File inclusion changes:
+
+Previously, Robocop used ``paths`` argument and Robotidy ``src`` for selecting paths. It was then additionally
+configured using options for filtering based on directory names or file types.
+
+Now the role of ``paths`` was taken by ``include`` and ``--default--include`` (``*.robot`` and ``.resource``) options.
+It is recommended to use cli for selecting directory and leave it to robocop to find and filter out files.
+If nothing is configured (we only run ``robocop check`` / ``robocop format``) then it will start from the current
+directory. List of new or deprecated options:
+
+- ``paths`` became ``--include``
+- ``-ft/--filetypes`` is now deprecated in favour of using ``--include`` or ``--default-include`` option
+- ``-g/--ignore`` became ``-e/--exclude`` (additionally excluded paths)
+- ``-gd/--ignore-default`` became ``--default-exclude`` (paths excluded by default)
+
+More on how to configure file paths in the
+`file discovery <https://robocop.readthedocs.io/en/stable/configuration/file_discovery.html>`_ section in
+the documentation.
+
+---
+
+``--list`` options were overhauled and became commands:
+
+- Robocop ``--list`` used to list available rules became ``list rules`` command::
+
+    robocop list rules
+
+- Robocop ``-lr/--list-reports`` used to list available reports became ``list reports command::
+
+    robocop list reports
+
+- Robocop ``-lc / --list-configurables`` was overhauled and was incorporated to ``docs`` command::
+
+    robocop docs line-too-long
+
+  This command will print rule documentation and possible parameters.
+
+- Robotidy ``--list`` used to list available formatters became ``list formatters`` command::
+
+    robocop list formatters
+
+Describe options (``--desc``) are now replaced by ``docs`` command which can print rule, report or formatter
+documentation.
+
+---
+
+Issue format ``--format`` is now renamed to ``--issue-format``.
+
+Formatting options from Robotidy:
+
+- ``--lineseparator`` became ``--line-ending``
+- ``--spacecount`` became ``--space-count``
+- ``-sl/--startline`` became ``--start-line``
+- ``-el/--endline`` became ``--end-line``
+
+
+``-rules / --ext-rules`` can be now only used under ``--custom-rules`` name.
+
+``--load-transformers / --custom-transformers`` is now renamed to ``--custom-formatters``.
+
+---
+
+``-nr / --no-recursive`` is now deprecated. Similar behaviour can be attained by passing file paths to robocop or
+configuring ``--exclude`` option.
+
+(Robotidy) Formatter deprecated --transform option
+--------------------------------------------------
+
+``--transform`` option used to select formatters is now deprecated. It has been replaced by ``--select`` which function
+in a similar way but has one key difference: it does not support configuration. Configuration can be now passed only
+to dedicated ``--configure`` option.
+
+Previous command::
+
+    robotidy --transform YourTransformer:parameter=value --configure DefaultTransformer:other_parameter=value
+
+Can be now achieved by::
+
+    robocop format --select YourTransformer --configure YourTransformer.parameter=value --configure DefaultTransformer.other_parameter=value
+
+All other ``transform`` mentions were also deprecated, for example:
+
+- ``TRANSFORMERS`` list inside custom formatters to indicate order of the formatting should be now named ``FORMATTERS``
+- ``Transformer`` class was renamed to ``Formatter``
+
+(Robocop) linter deprecated argument file
+-----------------------------------------
+
+Linter alternative configuration file format - ``--argumentfile`` / ``.robocop`` file is now deprecated.
+From now on we will only support one configuration file format (``toml`` based).
+
+More information on current configuration file syntax at
+`file discovery <https://robocop.readthedocs.io/en/stable/configuration/configuration.html>`_.
+
+Linter and formatter configuration syntax change
+------------------------------------------------
+
+Robocop used two ``:`` to separate param and value in ``--config`` option. Robotidy used ``:`` and ``=``.
+New Robocop now uses ``.`` and ``=``. Previous configuration changed from::
+
+    robocop --configure rule_or_report:param:value
+    robotidy --configure transformer:param=value
+
+to::
+
+    robocop check --configure rule_or_report.param=value
+    robocop format --configure formatter.param=value
+
+---
+
+It is also no longer possible to chain multiple configurations in one configure call. Following example::
+
+    robotidy --configure formatter:param=value:param2=value
+
+For readability reasons it can be now done only using separate options::
+
+    robocop format --configure formatter:param=value --configure formatter:param2=value
+
+---
+
+Passing configuration through file names that contains formatter is also deprecated::
+
+    robotidy --configure MyFormatter.py:param=2
+
+Use implicit name of the formatter instead::
+
+    robocop format --configure MyFormatter.param=2
+
+Configuration file syntax changes
+---------------------------------
+
+Due to merge of the tool, syntax of the configuration file has changed. Most of the changes originate from the
+changes to option names etc. Some of the changes are however dictated by the merge itself.
+
+General settings are now available under ``tool.robocop`` section::
+
+    [tool.robocop]
+    exclude = ["excluded_dir/"]
+
+Linter or formatter specific settings are avaiable under ``lint`` or ``format`` sections::
+
+    [tool.robocop.lint]
+    configure = [
+        "line-too-long.line_length=110"
+    ]
+    [tool.robocop.format]
+    skip = ["documentation"]
+    configure = [
+        "NormalizeSeparators.skip_documentation=False"
+    ]
+
+Documentation describes with examples where particular options should be configured.
+
+--target-version different input syntax
+---------------------------------------
+
+Formatter ``--target-version`` can now only accept numbers. Previous configuration such as ``--target-version RF5``
+should be now ``--target-version 5``.
+
+Issue source is now relative by default
+---------------------------------------
+
+Relative path to source is now used by default when printing the linter issues.
+
+Previous output, if run from ``robot_project`` directory::
+
+    D:/code/robot_project/tests/test.robot:19:59 [W] 0601 Tag '${var} space' should not contain spaces (tag-with-space)
+
+New output::
+
+    robot_project/tests/test.robot:19:59 [W] 0601 Tag '${var} space' should not contain spaces (tag-with-space)
+
+Previous issue format keyword ``source_rel`` is deprecated and ``source`` is used instead. It is still possible to use
+absolute paths in output by configuring issue format to ``source_abs``::
+
+    robocop check --issue-format "{source_abs}:{line}:{col} [{severity}] {rule_id} {desc} ({name})"
+
+Replaced --output option with text_file report
+----------------------------------------------
+
+As part of the improved and safer design, linter option ``--output`` is now deprecated.
+
+Instead, ``text_file`` report can be used::
+
+     robocop check --reports text_file --configure text_file.output_path=output/robocop.txt
+
+``text_file`` report supports only ``simple`` issue output format.
+
+Deprecated singular global skip options in formatter (Robotidy)
+---------------------------------------------------------------
+
+Robotidy offered multiple options to skip formatting of different statement types, if the formatter allows it::
+
+    --skip-documentation
+    --skip-return-values
+    --skip-keyword-call
+    --skip-keyword-call-pattern
+    --skip-settings
+    --skip-arguments
+    --skip-setup
+    --skip-teardown
+    --skip-timeout
+    --skip-template
+    --skip-return
+    --skip-tags
+    --skip-comments
+    --skip-block-comments
+    --skip-sections
+
+Several options were combined under single option named ``skip``::
+
+    --skip documentation
+    --skip return-values
+    --skip settings
+    --skip arguments
+    --skip setup
+    --skip teardown
+    --skip timeout
+    --skip template
+    --skip return
+    --skip tags
+    --skip comments
+    --skip block-comments
+    --skip-sections
+    --skip-keyword-call
+    --skip-keyword-call-pattern
+
+``skip`` accept multiple values from the cli or the configuration files.
+
+Overriding skip on the formatter level still uses previous syntax::
+
+    robocop format --configure AlignKeywordsSection.skip_arguments=True
+
+return_status report is now optional
+-------------------------------------
+
+Return status (exit code) of Robocop depended on internal, always enabled `return_status` report. It was calculated
+based on parameter `quality_gate`. Default configuration::
+
+    quality_gate = {
+        'E': 0,
+        'W': 0,
+        'I': -1
+    }
+
+It means that any error or warning will count towards exit code. Information messages by default were not counted
+towards exit code. Actual exit code is number of issues over set limit, up to 255 (for example with 'W': 100 and 105
+warnings, exit code will be 5).
+
+This behaviour wasn't clear to most, and makes Robocop unpredictable when run in CI/CD pipelines. That's why we are
+now making `return_status` report optional. It means that now exit code follows different logic:
+
+- 0, if no rule violations were found
+- 1, if violations were found
+- 2, if Robocop terminated abnormally
+
+It is possible to always return 0, ignoring any violations, with new ``--exit-zero`` flag. The previous behaviour
+can be reproduced by simply enabling ``return_status`` report again::
+
+    robocop check --reports return_status
+
+compare_runs report is replaced with --compare
+-----------------------------------------------
+
+``compare_runs`` was special report that had to be enabled in order to compare reports results from current run
+with previous runs. It was bit of a workaround, that's why it was removed.
+
+To compare results, use ``--compare`` flag::
+
+    robocop check --compare
+
+Remember that you still need results from previous run (saved with ``--persistent``) and comparison is done on results
+from the reports. Full example::
+
+    robocop check --persistent --compare --reports all
+
+Community rules are now simply 'non-default' rules
+--------------------------------------------------
+
+We have introduced non-default, 'community' rules in effort to increase contributions from the community.
+However we noticed that it does not make sense to split our rules into 'internal' and 'community' ones -
+the rules contributed from the users are often added as the default rules. For rules that should be optional it is
+enough to set them as non-default rules.
+
+For that reason we are deprecating term 'community' rules and all options related to it, such as filtering list of
+rules by community rules.
+
+Rule severity is now separate from the rule id
+----------------------------------------------
+
+Robocop previously allowed to select / ignore / configure rules using rule id with rule severity. For example::
+
+    robocop check --select W1010 --select 1011
+
+Since rule severity is configurable, it could be potentially confusing. Additionally it caused unindented issues when
+using rule id with non-numeric characters (for example ``ERR001`` could be interpreted as ``RR001`` instead).
+For those reasons it's not possible anymore to refer to rule using rule id with its severity. Use rule id without
+severity or rule name instead::
+
+    robocop check --select DOC01 --select missing-doc-test-case
+
+Rules changes
+-------------
+
+We have reviewed all the rules to improve rule ids, names, documentation, messages and overall design.
+It would be too much to list of all the changes, but we will list all changes that have impact on the users.
+
+**Renamed messages**
+
+Multiple rules messages were updated to avoid words such as ``should be`` or suggestions for fixes and to simply
+state what's the actual issue. For example ``bad-block-indent`` message:
+
+``Indent expected. Provide 2 or more spaces of indentation for statements inside block``
+
+became:
+
+``Not enough indentation inside block``
+
+The goal was to have clear and shorter messages. Actual issue is well described thanks to the rule documentation
+and new output format (which displays source around the issue).
+
+**Rule id changes**
+
+Previous rule ids consisted of group id and unique rule number. For example ``0201`` - ``02`` was documentation group
+id while ``01`` was unique rule number. This naming scheme wasn't clear and made it harder to categorize rule on first
+glance. That's why we have switched to alphanumeric group names (for example ``DOC`` instead of ``02``).
+Various groups are also additionally split into smaller sub-groups. This change leads to backward incompatible
+changes to all rule ids.
+
+Documentation rules are now grouped under 'DOC' group:
+
+- ``0201`` became ``DOC01`` (``missing-doc-keyword``)
+- ``0202`` became ``DOC02`` (``missing-doc-test-case``)
+- ``0203`` became ``DOC03`` (``missing-doc-suite``)
+- ``0204`` became ``DOC04`` (``missing-doc-resource-file``)
+
+Tags rules are now grouped under 'TAG' group:
+
+- ``0601`` became ``TAG01`` (``tag-with-space``)
+- ``0602`` became ``TAG02`` (``tag-with-or-and``)
+- ``0603`` became ``TAG03`` (``tag-with-reserved-word``)
+- ``0605`` became ``TAG05`` (``could-be-test-tags``)
+- ``0606`` became ``TAG06`` (``tag-already-set-in-test-tags``)
+- ``0607`` became ``TAG07`` (``unnecessary-default-tags``)
+- ``0608`` became ``TAG08`` (``empty-tags``)
+- ``0609`` became ``TAG09`` (``duplicated-tags``)
+- ``0610`` became ``TAG10`` (``could-be-keyword-tags``)
+- ``0611`` became ``TAG11`` (``tag-already-set-in-keyword-tags``)
+
+Comments rules are now grouped under 'COM' group:
+
+- ``0701`` became ``COM01`` (``todo-in-comment``)
+- ``0702`` became ``COM02`` (``missing-space-after-comment``)
+- ``0703`` became ``COM03`` (``invalid-comment``)
+- ``0704`` became ``COM04`` (``ignored-data``)
+- ``0705`` became ``COM05`` (``bom-encoding-in-file``)
+
+Import related rules are now grouped under 'IMP' group:
+
+- ``0911`` became ``IMP01`` (``wrong-import-order``)
+- ``0926`` became ``IMP02`` (``builtin-imports-not-sorted``)
+- ``10101`` became ``IMP03`` (``non-builtin-imports-not-sorted``)
+- ``10102`` became ``IMP04`` (``resources-imports-not-sorted``)
+
+Spacing and whitespace related rules are now grouped under 'SPC' group:
+
+- ``1001`` became ``SPC01`` (``trailing-whitespace``)
+- ``1002`` became ``SPC02`` (``missing-trailing-blank-line``)
+- ``1003`` became ``SPC03`` (``empty-lines-between-sections``)
+- ``1004`` became ``SPC04`` (``empty-lines-between-test-cases``)
+- ``1005`` became ``SPC05`` (``empty-lines-between-keywords``)
+- ``1006`` became ``SPC06`` (``mixed-tabs-and-spaces``)
+- ``1008`` became ``SPC08`` (``bad-indent``)
+- ``1009`` became ``SPC09`` (``empty-line-after-section``)
+- ``1010`` became ``SPC10`` (``too-many-trailing-blank-lines``)
+- ``1011`` became ``SPC11`` (``misaligned-continuation``)
+- ``1012`` became ``SPC12`` (``consecutive-empty-lines``)
+- ``1013`` became ``SPC13`` (``empty-lines-in-statement``)
+- ``1014`` became ``SPC14`` (``variable-should-be-left-aligned`` -> ``variable-not-left-aligned``)
+- ``1015`` became ``SPC15`` (``misaligned-continuation-row``)
+- ``1016`` became ``SPC16`` (``suite-setting-should-be-left-aligned`` -> ``suite-setting-not-left-aligned``)
+- ``1017`` became ``SPC17`` (``bad-block-indent``)
+- ``1018`` became ``SPC18`` (``first-argument-in-new-line``)
+- ``0402`` became ``SPC19`` (``not-enough-whitespace-after-setting``)
+- ``0406`` became ``SPC20`` (``not-enough-whitespace-after-newline-marker``)
+- ``0410`` became ``SPC21`` (``not-enough-whitespace-after-variable``)
+- ``0411`` became ``SPC22`` (``not-enough-whitespace-after-suite-setting``)
+
+Duplications related rules are now grouped under 'DUP' group:
+
+- ``0801`` became ``DUP01`` (``duplicated-test-case"``)
+- ``0802`` became ``DUP02`` (``duplicated-keyword``)
+- ``0803`` became ``DUP03`` (``duplicated-variable``)
+- ``0804`` became ``DUP04`` (``duplicated-resource``)
+- ``0805`` became ``DUP05`` (``duplicated-library``)
+- ``0806`` became ``DUP06`` (``duplicated-metadata``)
+- ``0807`` became ``DUP07`` (``duplicated-variables-import``)
+- ``0808`` became ``DUP08`` (``section-already-defined``)
+- ``0810`` became ``DUP09`` (``both-tests-and-tasks``)
+- ``0813`` became ``DUP10`` (``duplicated-setting``)
+
+Length related rules are now grouped under 'LEN' group:
+
+- ``0501`` became ``LEN01`` (``too-long-keyword``)
+- ``0502`` became ``LEN02`` (``too-few-calls-in-keyword``)
+- ``0503`` became ``LEN03`` (``too-many-calls-in-keyword``)
+- ``0504`` became ``LEN04`` (``too-long-test-case``)
+- ``0528`` became ``LEN05`` (``too-few-calls-in-test-case``)
+- ``0505`` became ``LEN06`` (``too-many-calls-in-test-case``)
+- ``0507`` became ``LEN07`` (``too-many-arguments``)
+- ``0508`` became ``LEN08`` (``line-too-long``)
+- ``0509`` became ``LEN09`` (``empty-section``)
+- ``0510`` became ``LEN10`` (``number-of-returned-values``)
+- ``0511`` became ``LEN11`` (``empty-metadata``)
+- ``0512`` became ``LEN12`` (``empty-documentation``)
+- ``0513`` became ``LEN13`` (``empty-force-tags``)
+- ``0514`` became ``LEN14`` (``empty-default-tags``)
+- ``0515`` became ``LEN15`` (``empty-variables-import``)
+- ``0516`` became ``LEN16`` (``empty-resource-import``)
+- ``0517`` became ``LEN17`` (``empty-library-import``)
+- ``0518`` became ``LEN18`` (``empty-setup``)
+- ``0519`` became ``LEN19`` (``empty-suite-setup``)
+- ``0520`` became ``LEN20`` (``empty-test-setup``)
+- ``0521`` became ``LEN21`` (``empty-teardown``)
+- ``0522`` became ``LEN22`` (``empty-suite-teardown``)
+- ``0523`` became ``LEN23`` (``empty-test-teardown``)
+- ``0524`` became ``LEN24`` (``empty-timeout``)
+- ``0525`` became ``LEN25`` (``empty-test-timeout``)
+- ``0526`` became ``LEN26`` (``empty-arguments``)
+- ``0527`` became ``LEN27`` (``too-many-test-cases``)
+- ``0506`` became ``LEN28`` (``file-too-long``)
+- ``0529`` became ``LEN29`` (``empty-test-template``)
+- ``0530`` became ``LEN30`` (``empty-template``)
+- ``0531`` became ``LEN31`` (``empty-keyword-tags``)
+
+Variable related rules are now grouped under 'VAR' group:
+
+- ``0912`` became ``VAR01`` (``empty-variable``)
+- ``0920`` became ``VAR02`` (``unused-variable``)
+- ``0922`` became ``VAR03`` (``variable-overwritten-before-usage``)
+- ``0929`` became ``VAR04`` (``no-global-variable``)
+- ``0930`` became ``VAR05`` (``no-suite-variable``)
+- ``0931`` became ``VAR06`` (``no-test-variable``)
+- ``0310`` became ``VAR07`` (``non-local-variables-should-be-uppercase``)
+- ``0316`` became ``VAR08`` (``possible-variable-overwriting``)
+- ``0317`` became ``VAR09`` (``hyphen-in-variable-name``)
+- ``0323`` became ``VAR10`` (``inconsistent-variable-name``)
+- ``0324`` became ``VAR11`` (``overwriting-reserved-variable``)
+- ``0812`` became ``VAR12`` (``duplicated-assigned-var-name``)
+
+Argument related rules are now grouped under 'ARG' group:
+
+- ``0919`` became ``ARG01`` (``unused-argument``)
+- ``0921`` became ``ARG02`` (``argument-overwritten-before-usage``)
+- ``0932`` became ``ARG03`` (``undefined-argument-default``)
+- ``0933`` became ``ARG04`` (``undefined-argument-value``)
+- ``0407`` became ``ARG05`` (``invalid-argument``)
+- ``0811`` became ``ARG06`` (``duplicated-argument-name``)
+- ``0532`` became ``ARG07`` (``arguments-per-line``)
+
+Deprecated syntax or code replacement recommendations are now grouped under 'DEPR' group:
+
+- ``0908`` became ``DEPR01`` (``if-can-be-used``)
+- ``0319`` became ``DEPR02`` (``deprecated-statement``)
+- ``0321`` became ``DEPR03`` (``deprecated-with-name``)
+- ``0322`` became ``DEPR04`` (``deprecated-singular-header``)
+- ``0327`` became ``DEPR05`` (``replace-set-variable-with-var``)
+- ``0328`` became ``DEPR06`` (``replace-create-with-var``)
+
+Naming rules are now grouped under 'NAME' group:
+
+- ``0301`` became ``NAME01`` (``not-allowed-char-in-name``)
+- ``0302`` became ``NAME02`` (``wrong-case-in-keyword-name``)
+- ``0303`` became ``NAME03`` (``keyword-name-is-reserved-word``)
+- ``0305`` became ``NAME04`` (``underscore-in-keyword-name``)
+- ``0306`` became ``NAME05`` (``setting-name-not-in-title-case``)
+- ``0307`` became ``NAME06`` (``section-name-invalid``)
+- ``0308`` became ``NAME07`` (``not-capitalized-test-case-title``)
+- ``0309`` became ``NAME08`` (``section-variable-not-uppercase``)
+- ``0311`` became ``NAME09`` (``else-not-upper-case``)
+- ``0312`` became ``NAME10`` (``keyword-name-is-empty``)
+- ``0313`` became ``NAME11`` (``test-case-name-is-empty``)
+- ``0314`` became ``NAME12`` (``empty-library-alias``)
+- ``0315`` became ``NAME13`` (``duplicated-library-alias``)
+- ``0318`` became ``NAME14`` (``bdd-without-keyword-call``)
+- ``0320`` became ``NAME15`` (``not-allowed-char-in-filename``)
+- ``0325`` became ``NAME16`` (``invalid-section``)
+- ``0326`` became ``NAME17`` (``mixed-task-test-settings``)
+
+Other rules are now grouped under 'MISC' group:
+
+- ``0901`` became ``MISC01`` (``keyword-after-return``)
+- ``0903`` became ``MISC02`` (``empty-return``)
+- ``0907`` became ``MISC03`` (``nested-for-loop``)
+- ``0909`` became ``MISC04`` (``inconsistent-assignment``)
+- ``0910`` became ``MISC05`` (``inconsistent-assignment-in-variables``)
+- ``0913`` became ``MISC06`` (``can-be-resource-file``)
+- ``0914`` became ``MISC07`` (``if-can-be-merged``)
+- ``0915`` became ``MISC08`` (``statement-outside-loop``)
+- ``0916`` became ``MISC09`` (``inline-if-can-be-used``)
+- ``0917`` became ``MISC10`` (``unreachable-code``)
+- ``0918`` became ``MISC11`` (``multiline-inline-if``)
+- ``0923`` became ``MISC12`` (``unnecessary-string-conversion``)
+- ``0924`` became ``MISC13`` (``expression-can-be-simplified``)
+- ``0925`` became ``MISC14`` (``misplaced-negative-condition``)
+
+Miscellaneous keyword related rules are now grouped under 'KW' group:
+
+- ``10001`` became ``KW01`` (``sleep-keyword-used``)
+- ``10002`` became ``KW02`` (``not-allowed-keyword``)
+- ``10003`` became ``KW03`` (``no-embedded-keyword-arguments``)
+- ``10101`` became ``KW04`` (``unused-keyword``)
+
+Order related rules (except imports) are now grouped under 'ORD' group:
+
+- ``0927`` became ``ORD01`` (``test-case-section-out-of-order``)
+- ``0928`` became ``ORD02`` (``keyword-section-out-of-order``)
+
+New syntax for custom rules
+---------------------------
+
+Previous rule design is deprecated in favour of new, more OOP-like design.
+
+Example of the old syntax::
+
+    from robocop.checkers import VisitorChecker
+    from robocop.rules import Rule, RuleSeverity
+
+    rules = {
+        "1101": Rule(rule_id="1101", name="smth", msg="Keyword call after [Return] statement", severity=RuleSeverity.ERROR)
+    }
+
+
+    class SmthChecker(VisitorChecker):
+        """Checker for keyword calls after [Return] statement."""
+
+        reports = ("smth",)
+
+        def visit_Keyword(self, node):  # noqa: N802
+            (...)
+            self.report("smth", node=node)
+
+Rules are no longer defined in a global dictionaries. Each rule should be defined in their own class::
+
+    from robocop.linter.rules import Rule, RuleSeverity, VisitorChecker
+
+
+    class ExternalRule(Rule):
+        """
+        Keyword call after ``[Return]`` statement.
+
+        ``[Return]`` setting does not return from keyword and only set which variables will be returned.
+        To avoid confusion it is better to define it at the end of keyword.
+        """
+        name = "smth"
+        rule_id = "EXT01"
+        message = "Keyword call after [Return] statement"
+        severity = RuleSeverity.ERROR
+
+
+    class SmthChecker(VisitorChecker):
+        """Checker for keyword calls after [Return] statement."""
+
+        smth: ExternalRule
+
+        def visit_Keyword(self, node):  # noqa: N802
+            (...)
+            self.report(self.smth, node=node)
+
+Rules can be 'attached' to checkers that will be using them by using class attribute together with type hint::
+
+    smth: ExternalRule
+
+Robocop will find and instantiate such attributes.
+
+Rule params should use now refer directly to such attribute instead of previous
+``self.param("rule_name", "param_name")`` calls::
+
+    self.rule_name.param_name
+
+Thanks for this design it's also possible to move part of the implementation inside rule class, with less rule-specific
+code in the visitor.
+
+Note that various import paths also changed - for example from::
+
+    from robocop.checkers import VisitorChecker
+    from robocop.rules import Rule, RuleSeverity
+
+to::
+
+    from robocop.linter.rules import Rule, RuleSeverity, VisitorChecker
+
+New disabler syntax (#1313)
+---------------------------
+
+We have normalized Robocop and Robotidy disablers several releases ago, but old syntax was still allowed. We are now
+deprecating it for good. Due to merge and deprecation of Robotidy, we also deprecate ``robotidy`` directive.
+
+Currently supported syntax for linter::
+
+    # noqa
+    # robocop: off
+    # robocop: on
+
+And formatter::
+
+    # fmt: off
+    # fmt: on
+    # robocop: fmt: off
+    # robocop: fmt: on
+
+Deprecated syntax:
+
+    # robotidy: on
+    # robotidy: off
+    # robocop: enable
+    # robocop: disable
+
+New syntax still supports disabling selected rules or formatters (``# robocop: off=rule_name``).
+
+Dropped support for Jinja templates in rule message
+---------------------------------------------------
+
+Rule messages used Jinja templates::
+
+    "Keyword argument '{{ name }}' is not used"
+
+It was unnecessary complex as we only used it for value substitution - there is no need for using any other Jinja
+features. It is now replaced with Python format syntax::
+
+    "Keyword argument '{name}' is not used"
+
+It's important only for users who have custom rules using templates in messages.
+
+Dropped support for Robot Framework 3.2
+---------------------------------------
+
+Since Robocop supported Robot Framework >=3.2.2 and Robotidy >=4.0 we had to use 4.0 as baseline version.
+However Robocop can still be used to lint code written for RF 3 - but you need environment with at least RF 4 to run
+Robocop.
+
+Dropped support for Python 3.8
+------------------------------
+
+Python 3.8 is no longer supported by Python foundation - we are also dropping support for it.
+
+Normalized output path configuration in json and sarif reports
+--------------------------------------------------------------
+
+In this release we have added several new reports, that are file-based (such as gitlab, sonarqube etc reports).
+To make it simpler and more logical, I have standardized  how the output path can be configured for such reports.
+
+Following configuration parameters are now deprecated in json and sarif reports:
+
+- output_dir
+- report_filename
+
+Instead, we can use ``output_path`` to configure both directory and filename::
+
+    robocop check --reports sarif --configure sarif.output_path=reports/sarif.json
+    robocop check --reports gitlab --configure gitlab.output_path=reports/gitlab.json
+
+New features & other changes
+============================
+
+Multiple configuration files
+-----------------------------
+
+Robocop can now use multiple configuration files. With the following example::
+
+    project/
+        file1.robot
+        pyproject.toml  # config1
+        subdir/
+            file1.robot
+            file2.robot
+            pyproject.toml  # config2, excludes file1.robot
+
+We will end up with the following files:
+
+- project/file1.robot, using config1 configuration
+- project/file2.robot, using config2 configuration
+
+This feature allow to apply different configuration (for example exclude specific rules in the directory) for all
+directories in your project.
+
+Note that settings that affect whole run (reports or flags such as ``--persistent`` or ``--exit-zero``) are only
+loaded from the file which is closest to the current working directory or from the cli. Multiple configuration files
+are usually best to use for rules and formatters configuration.
+
+Print Issues report
+--------------------
+
+Reporting linter issues is now handled by ``print_issues`` report. It's an internal report, enabled by default.
+Thanks for this change it is easier to handle different types of outputs or even completely silence linter output.
+
+There are 3 different output formats supported by ``print_issues``:
+
+- extended, new default. It prints source code alongside the issue::
+
+    test.robot:10:10 ARG03 Undefined argument default, use ${baz}=${EMPTY} instead
+        |
+      8 |     ...  ${foo}
+      9 |     ...  ${bar}=123
+     10 |     ...  ${baz}=
+        |          ^^^^^^^ ARG03
+     11 |     ...  ${lorum}=${ipsum}
+     12 |     No Operation
+        |
+
+- grouped. It groups issues for each source file::
+
+    tests\linter\rules\tags\unnecessary_default_tags\test.robot:
+      3:1 0607 Tags defined in Default Tags are always overwritten (unnecessary-default-tags)
+      4:1 1003 Invalid number of empty lines between sections (1/2) (empty-lines-between-sections)
+
+    tests\linter\rules\tags\tag_already_set_in_test_tags\keyword_tag.robot:
+      3:1 0319 'Force Tags' is deprecated since Robot Framework version 6.0, use 'Test Tags' instead (deprecated-statement)
+
+- simple, previous default. It print issue location and message in one line::
+
+    test.robot:3:30 [E] ARG03 Undefined argument default, use ${bar}=${EMPTY} instead
+    test.robot:10:10 [E] ARG03 Undefined argument default, use ${baz}=${EMPTY} instead
+
+You can change output format by configuring ``print_issues`` report::
+
+    robocop check --configure print_issues.output_format=grouped
+
+Official style guide support
+----------------------------
+
+Support for Robot Framework official style guide: https://docs.robotframework.org/docs/style_guide .
+
+It includes updating our rules and formatters to align with recommendations from the style guide, cross referencing
+between Robocop and Style Guide documentation and adding missing rules.
+
+You can list all rules that refer to official style guide rule::
+
+    robocop list rules --filter STYLE_GUIDE
+
+It is ongoing process and there will be more updates in upcoming versions of Robocop.
+
+Integrations with other platforms
+---------------------------------
+
+Robocop could be already integrated with some CI/CD platforms. We made an active effort of documenting existing
+integrations and implementing it for missing, popular platforms such as Gitlab or Sonar Qube.
+
+We are now supporting following integrations:
+
+- Gitlab Code Quality (with ``gitlab`` report) (#1116)
+- SonarQube (with ``sonarqube`` report) (#759)
+- pre-commit
+- ... and more - see the `Integrations` documentation
+
+Note that due to changes to how Robocop is used, previous ``pre-commit`` configuration will not work. For Robocop 6.0+
+use configuration proposed in the documentation.
+
+Select all rules with ALL (#1316)
+---------------------------------
+
+We have growing number of non-default (disabled by default) rules. This requires period checking of the release
+notes if there is new rule that may be worth to be enabled.
+If you want instead to always enable all rules and chose what to disable (rather than selecting all rules that
+you want to enable one by one) you can now use special keyword ``ALL``::
+
+    robocop check --select ALL
+
+::
+
+    [tool.robocop.lint]
+    select = [
+        "ALL"
+    ]
+    ignore = [
+        "rules-you-want-to-disable"
+    ]
+
+Shell autocompletion
+---------------------
+
+You can now use shell autocompletion by installing it for the current shell::
+
+    robocop --install-completion
+
+Filter rules by target version (#1296)
+--------------------------------------
+
+You can now filter out rules using ``--target-version`` same as formatter (robotidy) previously.
+
+With following command::
+
+    robocop check --target-version 5
+
+Only rules compatible with Robot Framework 5 or lower will be enabled.
+
+Since target version is now shared option, it needs to be configured in common section::
+
+    [tool.robocop]
+    target_version = 5
+
+    [tool.robocop.lint]
+    [tool.robocop.format]
+    # previously it could be only configured in format
+
+Adjusted order of settings in OrderSettings formatter to match Robocop rules
+----------------------------------------------------------------------------
+
+Robocop and Robotidy followed different recommended order of keyword and test case settings. Adjusted formatted
+to follow Robocop order, which is also recommended order by the Robot Framework Style Guide::
+
+    *** Test Cases ***
+    Test Case
+        [Documentation]
+        [Tags]
+        [Timeout]
+        [Setup]
+        [Template]
+        Static Variable Assignments
+        Keyword Calls
+        Verification Keyword Call
+        [Teardown]
+
+
+    *** Keywords ***
+    Keyword
+        [Documentation]
+        [Tags]
+        [Arguments]
+        [Timeout]
+        [Setup]
+        Static Variable Assignments
+        Keyword Calls
+        [Teardown]
+
+
+New rules and rule updates
+===========================
+
+Ignore built in tags in tag rules (#1166)
+-----------------------------------------
+
+TAG05 ``could-be-test-tags`` and TAG10 ``could-be-keyword-tags`` will now ignore builtin tags.
+Following code will not warn anymore that builtin tag (robot:private) should be set in Keyword or Test Tags::
+
+    *** Keywords ***
+    Keyword
+        [Tags]  robot:flatten    robot:private
+        No Operation
+
+    Keyword 2
+        [Tags]  robot:flatten    robot:private
+        No Operation
+
+Known issues
+============
+
+Project-level checks
+--------------------
+
+Project-level checks are temporarily disabled. It will be later migrated to separate command that will scan whole
+project.
+
+Linting and formatting stdin
+----------------------------
+
+Using stdin (``robocop check -``) is temporarily disabled for linting and formating. It will be enabled again in the
+future releases.
+
+Fixes
+=====
+
+Missing conditions cause parsing exception
+-------------------------------------------
+
+Missing condition caused Robocop to throw an exception when ``expression_can_be_simplified`` rule was enabled.
+
+Example of code that is now properly handled::
+
+    *** Keywords ***
+    Keyword
+        ${variable}    Set Variable If
+        IF
+        END
+
+
+Not all settings used in invalid scope are reported (#1284)
+-----------------------------------------------------------
+
+Following code will now report invalid ``[Metadata]`` setting use::
+
+    *** Keywords ***
+        [Invalid]    reported before
+        [Metadata]    not reported
+        Keyword
+
+Not enough whitespace error is reported instead of invalid setting (#1286)
+--------------------------------------------------------------------------
+
+Following code will now report ``invalid-setting`` instead off ``not-enough-whitespace-after-suite-setting``::
+
+    *** Test Cases ***
+    Keyword
+        [Doc Umentation]
+
+Hyphen in variable name rule not reported for Variables section (#1086)
+-----------------------------------------------------------------------
+
+VAR09 ``hyphen-in-variable-name`` is now reported also inside ``*** Variables ***`` sections and settings.
+
+Arguments overwritten in a conditional statement raised argument-overwritten-before-usage (#1109)
+-------------------------------------------------------------------------------------------------
+
+Following code will now not report ARG02 ``argument-overwritten-before-usage``::
+
+    Argument Conditionally Overwritten
+        [Documentation]    It should be ignored as it's not always overwritten.
+        [Arguments]    ${to_print}    ${another_arg}
+        IF    ${another_arg} != "KEEP"
+            VAR    ${to_print}    "overwrite"
+        END
+        Log To Console    ${to_print}
+
+Unused arguments / variable rules not detecting extended variable syntax (#1111)
+--------------------------------------------------------------------------------
+
+ARG01 ``unused-argument`` and VAR02 ``unused-variable`` rules will now properly detect usage of variables in following
+cases::
+
+    *** Keywords ***
+    Extended Variable Syntax
+        [Arguments]    ${arg1}    ${arg2}    ${arg3}    ${arg4}    ${arg5}    ${arg6}
+        Log    ${arg1 + "test"}
+        Log    ${arg2 * 3}
+        Log    ${arg3[1]}
+        Log    ${arg4 == "test"}
+        Log    ${arg5 == arg6}
+        ${var1}    ${var2}    ${var3}    ${var4}    ${var5}    ${var6}    ${var7}    ${vaR8}    ${var9}    Keyword Call
+        Log    ${var1 + "test"}
+        Log    ${var2 * 3}
+        Log    ${var3[1]}
+        Log    ${var4 == "test"}
+        Log    ${var5 == var6}
+        Log    ${VAR7[1]}
+        Log    ${var5 == var8}
+        Log    ${var9.attribute}
+
+Unused arguments / variable rules not detecting usage in EXCEPT branch (#1280)
+------------------------------------------------------------------------------
+
+ARG01 ``unused-argument`` and VAR02 ``unused-variable`` rules will now properly detect usage of variables in EXCEPT
+branch::
+
+    Used in EXCEPT branch
+        [Arguments]    ${arg1}    ${arg2}    ${arg3}    ${arg4}    ${arg5}    ${arg6}    ${arg7}
+        TRY
+            May Fail    ${arg1}
+        EXCEPT    ${arg2}
+            No Operation
+        EXCEPT    ${arg3}    ${arg4}
+            No Operation
+        EXCEPT    Error    AS    ${arg5}  # used variable, overwrites, should raise overwrite of unused
+            Use    ${arg5}
+        EXCEPT    Error    AS    ${arg6}  # unused variable, overwrites, should raise overwrite of unused
+            No Operation
+        END
+        TRY
+            Some Keyword
+        EXCEPT    ValueError: .*    type=${arg7}
+            No Operation
+        END
+
+Variable usage falsely marked for IF headers and other branches (#1304)
+-----------------------------------------------------------------------
+
+If the variable was declared inside IF branch and the same variable name was used as the IF header, it would be marked
+as used. Similarly if any of the IF branches used variable, all instances of this variable inside IF were marked as
+used.
+
+Following code will now properly raise issues::
+
+    *** Keywords ***
+    Used in one branch and header
+        IF    condition
+            ${var}    Keyword  # not used
+        ELSE IF    ${var}
+            ${var}    Keyword
+            Log    ${var}
+        END
+        IF    condition
+            ${var2}    Keyword
+            Log    ${var2}
+        ELSE IF    ${var2}
+            ${var2}    Keyword  # not used
+        END
+
+Variable usage in nested FOR loops (#1148)
+------------------------------------------
+
+If FOR/WHILE loop contained another loop, variables used before it were not marked as used.
+
+Following code will now not raise an issue::
+
+    *** Keywords ***
+    Double FOR loops
+        VAR    ${continuation_token}    value
+        FOR    ${i}    IN RANGE    ${{ int($retries)+1 }}
+            ${response}    Get Events    ${continuation_token}
+            FOR    ${_}    IN    @{response}[events]
+                No Operation
+            END
+            VAR    ${continuation_token}    ${response}[continuationToken]
+        END
+
+non-local-variables-should-be-uppercase with variable in name (#1139)
+---------------------------------------------------------------------
+
+If non-local variable used another variable as name, it was incorrectly reported as non-local.
+
+Following code will now not raise an issue::
+
+    *** Keywords ***
+    ${name}    "MY UPPERCASE VARIABLE NAME"
+    Set Global Variable     ${${name}}      "My variable value"
+    Set Global Variable     ${${name}_VAR}      "My variable value"  # non variable parts still needs to be upper case
+
+Since we don't track variable values in linting, we do not check if ``${name}`` use upper case or not - such cases
+are ignored.
+
+bad-indent raised for templates suites (#808)
+---------------------------------------------
+
+Templated suites (with the use of ``Test Template`` setting) allows to use different styles of alignment. It doesn't
+work well with ``bad-indent`` rule and caused false positive warnings. It is now disabled for templated suites.
+Instead we will implement separate rule for templated suites alignment.
+
+RenameVariables capitalized arguments in [Template]
+---------------------------------------------------
+
+``RenameVariables`` formatter from now on will rename arguments in ``[Template]`` to lower-case instead of upper-case::
+
+    Template arguments are local scope
+        [Template]    My Keyword ${embedded_arg}
+        value1
+        value2
+
+RenameVariables ignores variables in EXCEPT and WHILE
+-----------------------------------------------------
+
+``RenameVariables`` will no longer ignore variables in TRY EXCEPT header and WHILE limit option::
+
+    EXCEPT With Dynamic Error
+    [Arguments]  ${expected_error}
+    TRY
+        No Operation
+    EXCEPT  ${expected_error}
+        No Operation
+    END
+
+    WHILE With Limit
+        [Arguments]    ${limit}
+        WHILE    ${CONDITION}    limit=${limit}
+            No Operation
+        END
+
+Comments section header is preserved when merging multiple sections
+-------------------------------------------------------------------
+
+When merging duplicated sections, formatter uses header of the first encountered header. In case of comments section
+it led to removing header from sections that had it. It should be fixed now.
