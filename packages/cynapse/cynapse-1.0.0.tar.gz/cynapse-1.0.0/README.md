@@ -1,0 +1,271 @@
+# Cynapse 🛡️
+
+**Real-time Memory Integrity Monitor for Python**
+
+Cynapse is a pure Python security library that detects and responds to code tampering in running Python applications. Think of it as a security guard that watches your code while it's running to make sure nobody is messing with it.
+
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+## ✨ Features
+
+- **🔍 Bytecode Verification** - Detects modifications to function bytecode at runtime
+- **📦 Module Tracking** - Monitors loaded modules for injection and modification
+- **🔌 Import Hook Monitoring** - Watches for manipulation of Python's import system
+- **🐵 Monkey Patch Detection** - Catches runtime function and attribute modifications
+- **🔄 Auto-Healing** - Automatically restore tampered code to baseline state
+- **⚡ Zero Dependencies** - Pure Python with only stdlib (optional accelerators available)
+- **🌐 Cross-Platform** - Works on Linux, Windows, and macOS
+- **🚀 Framework Integration** - Built-in support for Flask, Django, and FastAPI
+- **⚙️ Async Support** - Full asyncio compatibility
+
+## 📦 Installation
+
+```bash
+pip install cynapse
+```
+
+### Optional Dependencies
+
+```bash
+# For faster hashing
+pip install cynapse[blake3]
+
+# For web framework integrations
+pip install cynapse[flask]
+pip install cynapse[django]
+pip install cynapse[fastapi]
+
+# For everything
+pip install cynapse[all]
+```
+
+## 🚀 Quick Start
+
+### Basic Usage
+
+```python
+from cynapse import Monitor
+
+# Create and start monitor
+monitor = Monitor(interval=3.0)
+monitor.start()
+
+# Your application code runs here
+# Cynapse monitors in the background
+
+monitor.stop()
+```
+
+### Using Decorators
+
+```python
+from cynapse import protect_function, protect_class
+
+# Protect a single function
+@protect_function
+def sensitive_operation(data):
+    return process_payment(data)
+
+# Protect all methods in a class
+@protect_class
+class SecureAPI:
+    def authenticate(self, credentials):
+        return verify_credentials(credentials)
+```
+
+### Context Manager
+
+```python
+from cynapse import Monitor
+
+# Automatic start and stop
+with Monitor(interval=5.0) as monitor:
+    run_secure_operation()
+```
+
+### Advanced Configuration
+
+```python
+from cynapse import Monitor, TamperResponse, ProtectionLevel
+
+def handle_tamper(event):
+    print(f"Tampering detected: {event.type}")
+    if event.can_restore:
+        return TamperResponse.RESTORE
+    return TamperResponse.TERMINATE
+
+monitor = Monitor.builder() \
+    .interval(2.0) \
+    .protection_level(ProtectionLevel.HIGH) \
+    .enable_bytecode_verification(True) \
+    .enable_module_tracking(True) \
+    .enable_import_hooks(True) \
+    .enable_auto_healing(True) \
+    .whitelist_modules(['pytest', 'debugpy']) \
+    .on_tamper(handle_tamper) \
+    .build()
+
+monitor.start()
+```
+
+## 🌐 Framework Integrations
+
+### Flask
+
+```python
+from flask import Flask
+from cynapse.integrations import FlaskMonitor
+
+app = Flask(__name__)
+monitor = FlaskMonitor(app, interval=5.0, protect_routes=['admin', 'api/payment'])
+
+@app.route('/secure')
+@monitor.protect_endpoint
+def secure_endpoint():
+    return "protected"
+```
+
+### Django
+
+```python
+# settings.py
+MIDDLEWARE = [
+    'cynapse.integrations.django.CynapseMiddleware',
+    # other middleware...
+]
+
+CYNAPSE_CONFIG = {
+    'interval': 3.0,
+    'protection_level': 'high',
+    'enable_auto_healing': True,
+}
+```
+
+### FastAPI
+
+```python
+from fastapi import FastAPI
+from cynapse.integrations import FastAPIMonitor
+
+app = FastAPI()
+monitor = FastAPIMonitor(app, interval=5.0)
+
+@app.get("/secure")
+@monitor.protect_endpoint
+async def secure_endpoint():
+    return {"status": "protected"}
+```
+
+## 🎯 What Does It Detect?
+
+Cynapse can detect various types of runtime tampering:
+
+| Threat | Detection Method |
+|--------|-----------------|
+| **Bytecode Modification** | Hash `__code__.co_code` and compare to baseline |
+| **Function Replacement** | Track function object IDs and `__dict__` |
+| **Module Injection** | Monitor `sys.modules` for new entries |
+| **Import Hook Manipulation** | Watch `sys.meta_path` for changes |
+| **Monkey Patching** | Detect attribute modifications at runtime |
+| **Pickle Exploits** | Monitor deserialization operations |
+
+## ⚙️ Configuration Options
+
+```python
+from cynapse import MonitorConfig, ProtectionLevel
+
+config = MonitorConfig(
+    # basic settings
+    interval=3.0,  # check every 3 seconds
+    protection_level=ProtectionLevel.HIGH,
+    hash_algorithm='sha256',  # or 'blake3'
+    
+    # feature toggles
+    enable_bytecode_verification=True,
+    enable_module_tracking=True,
+    enable_import_hooks=True,
+    enable_auto_healing=False,
+    enable_forensics=False,
+    
+    # whitelisting
+    whitelist_modules=['pytest', 'debugpy', '_pytest'],
+    protect_modules=['myapp.auth', 'myapp.payment'],
+    
+    # response
+    tamper_response=TamperResponse.ALERT,
+)
+
+monitor = Monitor(config=config)
+```
+
+## 📊 Performance
+
+Cynapse is designed to have minimal impact on your application:
+
+- **CPU Usage**: < 2% when idle
+- **Memory Overhead**: < 20MB per GB of monitored code
+- **Hash Throughput**: 500 MB/sec (pure Python with hashlib)
+- **Bytecode Scan**: < 10ms per 1000 functions
+- **Startup Time**: < 500ms for baseline creation
+
+## 🔒 Security Model
+
+Cynapse follows a defense-in-depth approach:
+
+1. **Baseline Creation** - Capture initial state of all code
+2. **Continuous Monitoring** - Periodically verify against baseline
+3. **Event Detection** - Identify tampering attempts
+4. **Response Execution** - Alert, restore, or terminate
+5. **Forensic Capture** - Save evidence for investigation
+
+## 🧪 Testing
+
+```bash
+# Run tests
+pytest
+
+# With coverage
+pytest --cov=cynapse --cov-report=html
+
+# Run specific test
+pytest tests/test_monitor.py -v
+```
+
+## 📚 Documentation
+
+Full documentation is available at [cynapse.readthedocs.io](https://cynapse.readthedocs.io)
+
+- [Getting Started Guide](https://cynapse.readthedocs.io/en/latest/getting-started/)
+- [API Reference](https://cynapse.readthedocs.io/en/latest/api/)
+- [Integration Guides](https://cynapse.readthedocs.io/en/latest/integrations/)
+- [Architecture Overview](https://cynapse.readthedocs.io/en/latest/architecture/)
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## 📄 License
+
+Cynapse is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## ⚠️ Security Considerations
+
+- **Baseline Poisoning**: Ensure initial state is trusted
+- **Time-of-Check-Time-of-Use**: Small window between check and use
+- **Whitelist Carefully**: Only whitelist truly safe modules
+- **Test Thoroughly**: Test detection in your specific environment
+
+## 🙏 Acknowledgments
+
+Built with ❤️ by Tonmoy Infrastructure & Vision OSS
+
+## 📞 Support
+
+- **Issues**: [GitLab Issues](https://gitlab.com/TIVisionOSS/python/cynapse/-/issues)
+- **Discussions**: [GitLab Issues](https://gitlab.com/TIVisionOSS/python/cynapse/-/issues)
+- **Email**: oss@tivision.dev
+
+---
+
+**Remember**: Cynapse is a detection and response tool. It's most effective as part of a comprehensive security strategy that includes secure coding practices, regular updates, and proper access controls.
