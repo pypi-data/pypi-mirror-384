@@ -1,0 +1,39 @@
+{% if False %}
+    SELECT * FROM flat_similarity_clusters WHERE true -- this line is ignored,
+    -- and is here only to let pycharm to know how to validate query below
+    {% endif %}
+{% include "_base_filter.jinja2" %}
+{% if label_filter and label_filter|length == 1 and label_filter[0] == 'unlabeled' %}
+    AND IFNULL(len(list_concat(labels, vl_labels)), 0) = 0
+    {% elif label_filter and Settings.LABEL_FILTER__BEHAVIOR_OF_AND %}
+    AND :label_filter <@ array_cat(labels, vl_labels) -- contained
+    {% elif label_filter %}
+    AND :label_filter && array_cat(labels, vl_labels) -- overlaps
+    {% endif %}
+{% if issue_type_filter %}
+    AND issue_type_ids && :issue_type_filter ::int[]
+    --{% endif %}
+{% if date_from_filter %}
+    AND (metadata->>'creation_time')::float >= :date_from_filter
+    --{% endif %}
+{% if date_to_filter %}
+    AND (metadata->>'creation_time')::float <= :date_to_filter
+    {% endif %}
+{% if origin_filter %}
+    AND coalesce(metadata->>'origin', 'N/A') = ANY(:origin_filter ::text[])
+    {% endif %}
+{% if path_filter %}
+    AND coalesce(metadata ->> 'video', metadata ->> 'original_filename', original_uri) like :path_filter
+    {% endif %}
+{% if untagged and tags is not none and tags|length > 0 %} {# untagged is on and specific tags selected #}
+    AND (
+        NOT EXISTS (SELECT 1 FROM media_to_tags WHERE media_id = image_or_object_id AND media_to_tags.dataset_id = :dataset_id)
+        OR
+        EXISTS (SELECT 1 FROM media_to_tags WHERE media_id = image_or_object_id and tag_id = ANY(:tags))
+    )
+    {% elif untagged %} {# untagged is on and specific tags selected #}
+    AND NOT EXISTS (SELECT 1 FROM media_to_tags WHERE media_id = image_or_object_id AND media_to_tags.dataset_id = :dataset_id)
+    {% elif tags is not none and tags|length > 0 %}
+    AND EXISTS (SELECT 1 FROM media_to_tags WHERE media_id = image_or_object_id and tag_id = ANY(:tags))
+    {% endif %}
+{% include "_full_text_search_filter.jinja2" %}
