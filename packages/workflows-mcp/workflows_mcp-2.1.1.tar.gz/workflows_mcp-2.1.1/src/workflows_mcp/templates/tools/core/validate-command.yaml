@@ -1,0 +1,264 @@
+name: validate-command
+description: Check if a command is available in PATH and validate version constraints
+version: "1.0"
+author: Workflows MCP Team
+tags: [tools, validation, command, version, core]
+
+inputs:
+  command:
+    type: string
+    description: Command name to validate (e.g., "pytest", "git", "ruff")
+    required: true
+
+  version_check_command:
+    type: string
+    description: Command to check version (e.g., "pytest --version", "git --version")
+    default: ""
+
+  version_pattern:
+    type: string
+    description: Regex pattern to extract version from output (e.g., '(\d+\.\d+\.\d+)')
+    default: '(\d+\.\d+\.\d+)'
+
+  required_version:
+    type: string
+    description: Version constraint (e.g., ">=7.0.0", "~=7.4", "==7.4.3")
+    default: ""
+
+blocks:
+  # Check if command exists in PATH
+  - id: check_command
+    type: Shell
+    inputs:
+      command: "command -v ${inputs.command} >/dev/null 2>&1"
+      timeout: 5
+      continue-on-error: true
+
+  # Get full path to command
+  - id: get_command_path
+    type: Shell
+    inputs:
+      command: "command -v ${inputs.command} 2>/dev/null || echo ''"
+      timeout: 5
+      continue-on-error: true
+    condition: "${blocks.check_command.outputs.exit_code} == 0"
+    depends_on:
+      - check_command
+
+  # Check version if version_check_command provided
+  - id: get_version
+    type: Shell
+    inputs:
+      command: |
+        # Execute version check command and extract version using pattern
+        VERSION_OUTPUT=$(${inputs.version_check_command} 2>&1 || echo "")
+
+        # Extract version using grep with pattern
+        if [ -n "$VERSION_OUTPUT" ] && [ -n "${inputs.version_pattern}" ]; then
+          VERSION=$(echo "$VERSION_OUTPUT" | grep -oE "${inputs.version_pattern}" | head -n1 || echo "")
+          if [ -n "$VERSION" ]; then
+            echo "$VERSION"
+          else
+            echo "unknown"
+          fi
+        else
+          echo "unknown"
+        fi
+      timeout: 30
+      continue-on-error: true
+    condition: "${blocks.check_command.outputs.exit_code} == 0 and ${inputs.version_check_command} != ''"
+    depends_on:
+      - check_command
+
+  # Validate version constraint if required_version provided
+  - id: validate_version_constraint
+    type: Shell
+    inputs:
+      command: |
+        # Clean up version value
+        VERSION=$(echo "${blocks.get_version.outputs.stdout}" | tr -d '\n')
+
+        # Skip if version is unknown (exit 0 = success)
+        if [ "$VERSION" = "unknown" ] || [ -z "$VERSION" ]; then
+          exit 0
+        fi
+
+        CONSTRAINT="${inputs.required_version}"
+
+        # Parse version into major.minor.patch
+        VERSION_MAJOR=$(echo "$VERSION" | cut -d. -f1)
+        VERSION_MINOR=$(echo "$VERSION" | cut -d. -f2)
+        VERSION_PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+        # Helper function to compare versions
+        compare_versions() {
+          local v1_major=$1
+          local v1_minor=$2
+          local v1_patch=$3
+          local v2_major=$4
+          local v2_minor=$5
+          local v2_patch=$6
+
+          if [ "$v1_major" -gt "$v2_major" ]; then echo "1"; return; fi
+          if [ "$v1_major" -lt "$v2_major" ]; then echo "-1"; return; fi
+
+          if [ "$v1_minor" -gt "$v2_minor" ]; then echo "1"; return; fi
+          if [ "$v1_minor" -lt "$v2_minor" ]; then echo "-1"; return; fi
+
+          if [ "$v1_patch" -gt "$v2_patch" ]; then echo "1"; return; fi
+          if [ "$v1_patch" -lt "$v2_patch" ]; then echo "-1"; return; fi
+
+          echo "0"
+        }
+
+        # Parse constraint
+        OPERATOR=""
+        CONSTRAINT_VERSION=""
+
+        if echo "$CONSTRAINT" | grep -q "^>="; then
+          OPERATOR=">="
+          CONSTRAINT_VERSION=$(echo "$CONSTRAINT" | sed 's/^>=//')
+        elif echo "$CONSTRAINT" | grep -q "^>"; then
+          OPERATOR=">"
+          CONSTRAINT_VERSION=$(echo "$CONSTRAINT" | sed 's/^>//')
+        elif echo "$CONSTRAINT" | grep -q "^<="; then
+          OPERATOR="<="
+          CONSTRAINT_VERSION=$(echo "$CONSTRAINT" | sed 's/^<=//')
+        elif echo "$CONSTRAINT" | grep -q "^<"; then
+          OPERATOR="<"
+          CONSTRAINT_VERSION=$(echo "$CONSTRAINT" | sed 's/^<//')
+        elif echo "$CONSTRAINT" | grep -q "^=="; then
+          OPERATOR="=="
+          CONSTRAINT_VERSION=$(echo "$CONSTRAINT" | sed 's/^==//')
+        elif echo "$CONSTRAINT" | grep -q "^~="; then
+          # ~= means compatible release (same major.minor, any patch)
+          OPERATOR="~="
+          CONSTRAINT_VERSION=$(echo "$CONSTRAINT" | sed 's/^~=//')
+        else
+          # No operator, assume exact match
+          OPERATOR="=="
+          CONSTRAINT_VERSION="$CONSTRAINT"
+        fi
+
+        # Parse constraint version
+        CONSTRAINT_MAJOR=$(echo "$CONSTRAINT_VERSION" | cut -d. -f1)
+        CONSTRAINT_MINOR=$(echo "$CONSTRAINT_VERSION" | cut -d. -f2)
+        CONSTRAINT_PATCH=$(echo "$CONSTRAINT_VERSION" | cut -d. -f3)
+
+        # Compare versions
+        COMPARISON=$(compare_versions "$VERSION_MAJOR" "$VERSION_MINOR" "$VERSION_PATCH" \
+                                      "$CONSTRAINT_MAJOR" "$CONSTRAINT_MINOR" "$CONSTRAINT_PATCH")
+
+        # Evaluate constraint - exit 0 for success, exit 1 for failure
+        case "$OPERATOR" in
+          ">=")
+            if [ "$COMPARISON" -ge 0 ]; then exit 0; else exit 1; fi
+            ;;
+          ">")
+            if [ "$COMPARISON" -gt 0 ]; then exit 0; else exit 1; fi
+            ;;
+          "<=")
+            if [ "$COMPARISON" -le 0 ]; then exit 0; else exit 1; fi
+            ;;
+          "<")
+            if [ "$COMPARISON" -lt 0 ]; then exit 0; else exit 1; fi
+            ;;
+          "==")
+            if [ "$COMPARISON" -eq 0 ]; then exit 0; else exit 1; fi
+            ;;
+          "~=")
+            # Compatible release: same major.minor
+            if [ "$VERSION_MAJOR" -eq "$CONSTRAINT_MAJOR" ] && [ "$VERSION_MINOR" -eq "$CONSTRAINT_MINOR" ]; then
+              exit 0
+            else
+              exit 1
+            fi
+            ;;
+          *)
+            exit 1
+            ;;
+        esac
+      timeout: 5
+      continue-on-error: true
+    condition: "${inputs.required_version} != ''"
+    depends_on:
+      - get_version
+
+  # Determine constraint status for display (no constraint)
+  - id: get_constraint_status_no_constraint
+    type: Shell
+    inputs:
+      command: echo "N/A (no constraint)"
+      timeout: 5
+      continue-on-error: true
+    condition: "${inputs.required_version} == ''"
+
+  # Determine constraint status for display (passed)
+  - id: get_constraint_status_passed
+    type: Shell
+    inputs:
+      command: echo "✓ PASSED"
+      timeout: 5
+      continue-on-error: true
+    condition: "${inputs.required_version} != '' and ${blocks.validate_version_constraint.outputs.exit_code} == 0"
+    depends_on:
+      - validate_version_constraint
+
+  # Determine constraint status for display (failed)
+  - id: get_constraint_status_failed
+    type: Shell
+    inputs:
+      command: echo "✗ FAILED"
+      timeout: 5
+      continue-on-error: true
+    condition: "${inputs.required_version} != '' and ${blocks.validate_version_constraint.outputs.exit_code} != 0"
+    depends_on:
+      - validate_version_constraint
+
+  # Consolidate constraint status
+  - id: get_constraint_status
+    type: Shell
+    inputs:
+      command: |
+        STATUS_NO_CONSTRAINT="${blocks.get_constraint_status_no_constraint.outputs.stdout}"
+        STATUS_PASSED="${blocks.get_constraint_status_passed.outputs.stdout}"
+        STATUS_FAILED="${blocks.get_constraint_status_failed.outputs.stdout}"
+        if [ -n "$STATUS_NO_CONSTRAINT" ]; then
+          echo "$STATUS_NO_CONSTRAINT"
+        elif [ -n "$STATUS_PASSED" ]; then
+          echo "$STATUS_PASSED"
+        else
+          echo "$STATUS_FAILED"
+        fi
+      timeout: 5
+      continue-on-error: true
+    depends_on:
+      - get_constraint_status_no_constraint
+      - get_constraint_status_passed
+      - get_constraint_status_failed
+
+  # Generate validation summary
+  - id: validation_summary
+    type: EchoBlock
+    inputs:
+      message: |
+        Command Validation Summary:
+        - Command: ${inputs.command}
+        - Found: ${blocks.check_command.outputs.exit_code} == 0
+        - Path: ${blocks.get_command_path.outputs.stdout}
+        - Version: ${blocks.get_version.outputs.stdout}
+        - Required Version: ${inputs.required_version}
+        - Meets Constraints: ${blocks.get_constraint_status.outputs.stdout}
+    depends_on:
+      - check_command
+      - get_command_path
+      - get_version
+      - get_constraint_status
+
+outputs:
+  found: "${blocks.check_command.outputs.exit_code} == 0"
+  version: "${blocks.get_version.outputs.stdout}"
+  path: "${blocks.get_command_path.outputs.stdout}"
+  meets_constraints: "${inputs.required_version} == '' or ${blocks.validate_version_constraint.outputs.exit_code} == 0"
+  exit_code: "${blocks.check_command.outputs.exit_code}"
+  summary: "${blocks.validation_summary.outputs.echoed}"

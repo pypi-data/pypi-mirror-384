@@ -1,0 +1,79 @@
+name: git-status
+description: Check git repository status and information
+version: "1.0"
+author: "mcp-workflows"
+tags: [git, "git", "status", "version-control"]
+inputs:
+  repo_path:
+    type: string
+    description: "Path to git repository"
+    default: "."
+
+blocks:
+  - id: check_git_status
+    type: Shell
+    inputs:
+      command: "git status --short --branch"
+      working_dir: "${inputs.repo_path}"
+      timeout: 30
+
+  - id: check_git_branch
+    type: Shell
+    inputs:
+      command: "git rev-parse --abbrev-ref HEAD"
+      working_dir: "${inputs.repo_path}"
+      timeout: 30
+    depends_on:
+      - check_git_status
+
+  - id: check_uncommitted_changes
+    type: Shell
+    inputs:
+      command: "git diff --stat"
+      working_dir: "${inputs.repo_path}"
+      timeout: 30
+      continue-on-error: true
+    depends_on:
+      - check_git_branch
+
+  - id: check_recent_commits
+    type: Shell
+    inputs:
+      command: "git log --oneline -5"
+      working_dir: "${inputs.repo_path}"
+      timeout: 30
+    depends_on:
+      - check_uncommitted_changes
+
+  - id: get_changes_status
+    type: Shell
+    inputs:
+      command: "test -n '${blocks.check_uncommitted_changes.outputs.stdout}' && echo 'Yes' || echo 'No'"
+      timeout: 5
+      continue-on-error: true
+    depends_on:
+      - check_uncommitted_changes
+
+  - id: summary
+    type: EchoBlock
+    inputs:
+      message: |
+        Git Repository Status:
+        Branch: ${blocks.check_git_branch.outputs.stdout}
+        Status: ${blocks.check_git_status.outputs.stdout}
+        Uncommitted Changes: ${blocks.get_changes_status.outputs.stdout}
+        Recent Commits:
+        ${blocks.check_recent_commits.outputs.stdout}
+    depends_on:
+      - check_git_status
+      - check_git_branch
+      - get_changes_status
+      - check_recent_commits
+
+outputs:
+  current_branch: "${blocks.check_git_branch.outputs.stdout}"
+  status: "${blocks.check_git_status.outputs.stdout}"
+  uncommitted_changes: "${blocks.check_uncommitted_changes.outputs.stdout}"
+  recent_commits: "${blocks.check_recent_commits.outputs.stdout}"
+  summary: "${blocks.summary.outputs.echoed}"
+  execution_time_ms: "${blocks.check_recent_commits.metadata.execution_time_ms}"

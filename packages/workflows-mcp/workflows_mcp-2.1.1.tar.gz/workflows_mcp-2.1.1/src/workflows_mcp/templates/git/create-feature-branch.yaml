@@ -1,0 +1,130 @@
+name: create-feature-branch
+description: Create and checkout a new feature branch from base branch
+version: "2.0"
+author: Workflows MCP Team
+tags: [git, branch, feature, workflow, optimized]
+
+inputs:
+  branch_name:
+    type: string
+    description: Name of the feature branch to create
+    default: "feature/new-feature"
+    required: true
+
+  base_branch:
+    type: string
+    description: Base branch to branch from (main, master, develop)
+    default: "main"
+    required: false
+
+  working_dir:
+    type: string
+    description: Git repository directory
+    default: "."
+    required: false
+
+  fetch_first:
+    type: boolean
+    description: Fetch from remote before creating branch
+    default: true
+    required: false
+
+  push_to_remote:
+    type: boolean
+    description: Push new branch to remote repository
+    default: false
+    required: false
+
+blocks:
+  # Fetch latest changes if requested
+  - id: fetch_remote
+    type: Shell
+    inputs:
+      command: "git fetch origin"
+      working_dir: "${inputs.working_dir}"
+      timeout: 60
+    condition: "${inputs.fetch_first}"
+
+  # Checkout base branch (independent of conditional fetch)
+  - id: checkout_base
+    type: Shell
+    inputs:
+      command: "git checkout ${inputs.base_branch}"
+      working_dir: "${inputs.working_dir}"
+      timeout: 30
+      continue-on-error: true
+
+  # Pull latest changes on base branch (only if fetch was requested)
+  - id: pull_base
+    type: Shell
+    inputs:
+      command: "git pull origin ${inputs.base_branch}"
+      working_dir: "${inputs.working_dir}"
+      timeout: 60
+      continue-on-error: true
+    depends_on:
+      - fetch_remote
+      - checkout_base
+    condition: "${inputs.fetch_first} and ${blocks.checkout_base.outputs.exit_code} == 0"
+
+  # Create new feature branch (depends only on checkout, not conditional pull)
+  - id: create_branch
+    type: Shell
+    inputs:
+      command: "git checkout -b ${inputs.branch_name}"
+      working_dir: "${inputs.working_dir}"
+      timeout: 30
+    depends_on:
+      - checkout_base
+    condition: "${blocks.checkout_base.outputs.exit_code} == 0"
+
+  # Get current branch name to verify
+  - id: verify_branch
+    type: Shell
+    inputs:
+      command: "git branch --show-current"
+      working_dir: "${inputs.working_dir}"
+      timeout: 10
+    depends_on:
+      - create_branch
+
+  # Push to remote if requested
+  - id: push_branch
+    type: Shell
+    inputs:
+      command: "git push -u origin ${inputs.branch_name}"
+      working_dir: "${inputs.working_dir}"
+      timeout: 60
+      continue-on-error: true
+    depends_on:
+      - verify_branch
+    condition: "${inputs.push_to_remote} and ${blocks.create_branch.outputs.exit_code} == 0"
+
+  # Generate summary using PopulateTemplate
+  - id: summary
+    type: PopulateTemplate
+    inputs:
+      template: |
+        Feature Branch Created:
+        - Branch: {{ branch_name }}
+        - Base: {{ base_branch }}
+        - Current branch: {{ current_branch }}
+        - Pushed to remote: {{ push_status }}
+      variables:
+        branch_name: "${inputs.branch_name}"
+        base_branch: "${inputs.base_branch}"
+        current_branch: "${blocks.verify_branch.outputs.stdout}"
+        push_status: "{{ 'Yes' if pushed else ('Failed' if push_attempted else 'No') }}"
+        pushed: "${inputs.push_to_remote} and ${blocks.push_branch.outputs.exit_code} == 0"
+        push_attempted: "${inputs.push_to_remote}"
+    depends_on:
+      - verify_branch
+      - push_branch
+
+outputs:
+  success: "${blocks.create_branch.outputs.exit_code} == 0"
+  branch_name: "${inputs.branch_name}"
+  current_branch: "${blocks.verify_branch.outputs.stdout}"
+  base_branch: "${inputs.base_branch}"
+  pushed_to_remote: "${inputs.push_to_remote} and ${blocks.push_branch.outputs.exit_code} == 0"
+  summary: "${blocks.summary.rendered}"

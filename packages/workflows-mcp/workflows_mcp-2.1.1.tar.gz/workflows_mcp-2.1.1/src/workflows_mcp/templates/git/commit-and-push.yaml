@@ -1,0 +1,142 @@
+name: commit-and-push
+description: Stage changes, create commit, and push to remote repository
+version: "2.0"
+author: Workflows MCP Team
+tags: [git, commit, push, workflow, optimized]
+
+inputs:
+  commit_message:
+    type: string
+    description: Semantic commit message (can be multiline)
+    default: "chore: update files"
+    required: true
+
+  working_dir:
+    type: string
+    description: Git repository directory
+    default: "."
+    required: false
+
+  add_files:
+    type: string
+    description: Files to stage (use '.' for all, or specific paths)
+    default: "."
+    required: false
+
+  push_to_remote:
+    type: boolean
+    description: Push commit to remote repository
+    default: true
+    required: false
+
+  remote_name:
+    type: string
+    description: Remote name (origin, upstream, etc.)
+    default: "origin"
+    required: false
+
+  allow_empty:
+    type: boolean
+    description: Allow empty commits (no changes)
+    default: false
+    required: false
+
+blocks:
+  # Get current branch
+  - id: get_branch
+    type: Shell
+    inputs:
+      command: "git branch --show-current"
+      working_dir: "${inputs.working_dir}"
+      timeout: 10
+
+  # Stage files
+  - id: stage_files
+    type: Shell
+    inputs:
+      command: "git add ${inputs.add_files}"
+      working_dir: "${inputs.working_dir}"
+      timeout: 60
+    depends_on:
+      - get_branch
+
+  # Check if there are staged changes (returns count)
+  - id: check_staged
+    type: Shell
+    inputs:
+      command: "git diff --cached --name-only | wc -l | tr -d ' '"
+      working_dir: "${inputs.working_dir}"
+      timeout: 30
+    depends_on:
+      - stage_files
+
+  # Create commit (simplified - uses inline conditional for --allow-empty flag)
+  - id: create_commit
+    type: Shell
+    inputs:
+      command: "git commit $([ '${inputs.allow_empty}' = 'true' ] && echo '--allow-empty' || echo '') -m '${inputs.commit_message}'"
+      working_dir: "${inputs.working_dir}"
+      timeout: 60
+      continue-on-error: true
+    depends_on:
+      - check_staged
+    condition: "${inputs.allow_empty} or (${blocks.check_staged.outputs.stdout} != '0')"
+
+  # Get commit hash (only if commit succeeded)
+  - id: get_commit_hash
+    type: Shell
+    inputs:
+      command: "git rev-parse HEAD"
+      working_dir: "${inputs.working_dir}"
+      timeout: 10
+    depends_on:
+      - create_commit
+    condition: "${blocks.create_commit.outputs.exit_code} == 0"
+
+  # Push to remote (only if commit succeeded and push requested)
+  - id: push_to_remote_repo
+    type: Shell
+    inputs:
+      command: "git push ${inputs.remote_name} ${blocks.get_branch.outputs.stdout}"
+      working_dir: "${inputs.working_dir}"
+      timeout: 120
+      continue-on-error: true
+    depends_on:
+      - get_commit_hash
+    condition: "${inputs.push_to_remote} and ${blocks.create_commit.outputs.exit_code} == 0"
+
+  # Generate summary using PopulateTemplate
+  - id: summary
+    type: PopulateTemplate
+    inputs:
+      template: |
+        Commit Summary:
+        - Branch: {{ branch }}
+        - Commit: {{ commit_hash }}
+        - Message: {{ message }}
+        - Staged files: {{ staged_count }}
+        - Push status: {{ push_status }}
+      variables:
+        branch: "${blocks.get_branch.outputs.stdout}"
+        commit_hash: "${blocks.get_commit_hash.outputs.stdout}"
+        message: "${inputs.commit_message}"
+        staged_count: "${blocks.check_staged.outputs.stdout}"
+        push_status: "{{ 'Success' if pushed else ('Failed' if push_attempted else 'Not requested') }}"
+        pushed: "${blocks.push_to_remote_repo.outputs.exit_code} == 0"
+        push_attempted: "${inputs.push_to_remote}"
+    depends_on:
+      - get_branch
+      - check_staged
+      - create_commit
+      - get_commit_hash
+      - push_to_remote_repo
+
+outputs:
+  success: "${blocks.create_commit.outputs.exit_code} == 0"
+  commit_created: "${blocks.create_commit.outputs.exit_code} == 0"
+  commit_hash: "${blocks.get_commit_hash.outputs.stdout}"
+  branch: "${blocks.get_branch.outputs.stdout}"
+  files_staged: "${blocks.check_staged.outputs.stdout}"
+  pushed: "${inputs.push_to_remote} and ${blocks.push_to_remote_repo.outputs.exit_code} == 0"
+  summary: "${blocks.summary.outputs.rendered}"
+  commit_message: "${inputs.commit_message}"

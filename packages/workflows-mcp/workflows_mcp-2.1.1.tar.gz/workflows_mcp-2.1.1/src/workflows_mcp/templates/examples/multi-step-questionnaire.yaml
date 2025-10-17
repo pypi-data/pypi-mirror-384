@@ -1,0 +1,266 @@
+# Multi-Step Questionnaire Workflow
+#
+# Demonstrates multiple interactive blocks with context accumulation:
+# - Multiple pause/resume cycles in a single workflow
+# - Context preservation across pauses
+# - Different interactive block types (ConfirmOperation, AskChoice, GetInput)
+# - Variable references to previous interactive responses
+# - Progressive data collection from LLM
+#
+# This workflow simulates a project setup wizard that collects
+# configuration through multiple interactive questions.
+#
+# Workflow steps:
+# 1. Confirm project creation (ConfirmOperation)
+# 2. Select project type (AskChoice)
+# 3. Enter project name (GetInput with validation)
+# 4. Select deployment target (AskChoice)
+# 5. Generate configuration based on responses
+# 6. Confirm final setup (ConfirmOperation)
+# 7. Create project files
+#
+# Each interactive block pauses the workflow, creates a checkpoint,
+# and waits for LLM response before continuing.
+#
+# Usage:
+#   # Start workflow
+#   result = execute_workflow("multi-step-questionnaire")
+#
+#   # Will pause 4 times for user input
+#   # Each pause returns checkpoint_id and prompt
+#   # Resume with: resume_workflow(checkpoint_id, response)
+
+name: multi-step-questionnaire
+description: Interactive project setup wizard with multiple input steps
+version: "1.0"
+author: MCP Workflows Team
+tags: [interactive, questionnaire, wizard, multi-step, example, tutorial]
+
+inputs:
+  workspace:
+    type: string
+    description: Workspace directory for project creation
+    default: "/tmp/projects"
+
+blocks:
+  # ===== STEP 1: Initial confirmation =====
+  - id: confirm_start
+    type: ConfirmOperation
+    inputs:
+      message: "Start interactive project setup wizard?"
+      operation: "start_project_wizard"
+      details:
+        workspace: "${inputs.workspace}"
+
+  # ===== STEP 2: Select project type =====
+  - id: select_project_type
+    type: AskChoice
+    inputs:
+      question: "What type of project do you want to create?"
+      choices:
+        - "python-fastapi"
+        - "python-django"
+        - "node-express"
+        - "react-app"
+        - "rust-actix"
+    depends_on:
+      - confirm_start
+    condition: "${blocks.confirm_start.confirmed}"
+
+  # ===== STEP 3: Get project name =====
+  - id: get_project_name
+    type: GetInput
+    inputs:
+      prompt: |
+        Enter a project name (lowercase letters, numbers, hyphens only):
+        Example: my-awesome-project
+      validation_pattern: "^[a-z0-9-]+$"
+    depends_on:
+      - select_project_type
+
+  # ===== STEP 4: Select deployment target =====
+  - id: select_deployment
+    type: AskChoice
+    inputs:
+      question: "Where will you deploy ${blocks.get_project_name.input_value}?"
+      choices:
+        - "AWS Lambda"
+        - "Google Cloud Run"
+        - "Azure Functions"
+        - "Docker Container"
+        - "Kubernetes"
+        - "Traditional Server"
+    depends_on:
+      - get_project_name
+
+  # ===== STEP 5: Generate configuration summary =====
+  - id: generate_config
+    type: Shell
+    inputs:
+      command: |
+        echo "=== Project Configuration ==="
+        echo "Project Name: ${blocks.get_project_name.input_value}"
+        echo "Project Type: ${blocks.select_project_type.choice}"
+        echo "Deployment: ${blocks.select_deployment.choice}"
+        echo "Workspace: ${inputs.workspace}"
+        echo ""
+        echo "Configuration generated successfully"
+      timeout: 30
+    depends_on:
+      - select_deployment
+
+  # ===== STEP 6: Final confirmation before creation =====
+  - id: confirm_creation
+    type: ConfirmOperation
+    inputs:
+      message: |
+        Create project with these settings?
+        - Name: ${blocks.get_project_name.input_value}
+        - Type: ${blocks.select_project_type.choice}
+        - Deploy: ${blocks.select_deployment.choice}
+      operation: "create_project_${blocks.get_project_name.input_value}"
+      details:
+        project_name: "${blocks.get_project_name.input_value}"
+        project_type: "${blocks.select_project_type.choice}"
+        deployment: "${blocks.select_deployment.choice}"
+        workspace: "${inputs.workspace}"
+    depends_on:
+      - generate_config
+
+  # ===== STEP 7: Create project structure =====
+  - id: create_project
+    type: Shell
+    inputs:
+      command: |
+        PROJECT_DIR="${inputs.workspace}/${blocks.get_project_name.input_value}"
+
+        echo "Creating project directory: $PROJECT_DIR"
+        mkdir -p "$PROJECT_DIR"
+
+        # Create README
+        cat > "$PROJECT_DIR/README.md" <<EOF
+        # ${blocks.get_project_name.input_value}
+
+        Project Type: ${blocks.select_project_type.choice}
+        Deployment Target: ${blocks.select_deployment.choice}
+
+        ## Setup
+
+        This project was created using the MCP Workflows interactive wizard.
+
+        ## Deployment
+
+        Target platform: ${blocks.select_deployment.choice}
+
+        Generated on: $(date)
+        EOF
+
+        # Create config file
+        cat > "$PROJECT_DIR/project.json" <<EOF
+        {
+          "name": "${blocks.get_project_name.input_value}",
+          "type": "${blocks.select_project_type.choice}",
+          "deployment": "${blocks.select_deployment.choice}",
+          "workspace": "${inputs.workspace}",
+          "created": "$(date -Iseconds)"
+        }
+        EOF
+
+        echo "✅ Project created successfully at: $PROJECT_DIR"
+        echo "project_path=$PROJECT_DIR"
+      timeout: 60
+    depends_on:
+      - confirm_creation
+    condition: "${blocks.confirm_creation.confirmed}"
+
+  # ===== STEP 8: Success notification =====
+  - id: notify_success
+    type: Shell
+    inputs:
+      command: |
+        echo "🎉 Project setup complete!"
+        echo ""
+        echo "Project: ${blocks.get_project_name.input_value}"
+        echo "Type: ${blocks.select_project_type.choice}"
+        echo "Deployment: ${blocks.select_deployment.choice}"
+        echo "Location: ${inputs.workspace}/${blocks.get_project_name.input_value}"
+        echo ""
+        echo "All interactive steps completed successfully."
+      timeout: 30
+    depends_on:
+      - create_project
+    condition: "${blocks.create_project.outputs.success}"
+
+  # ===== STEP 9: Cancellation notification =====
+  - id: notify_cancelled
+    type: Shell
+    inputs:
+      command: |
+        echo "❌ Project creation cancelled"
+        echo "User did not confirm final setup"
+      timeout: 30
+    depends_on:
+      - confirm_creation
+    condition: "not ${blocks.confirm_creation.confirmed}"
+
+# Workflow outputs
+outputs:
+  wizard_completed: "${blocks.confirm_start.confirmed}"
+  project_name: "${blocks.get_project_name.input_value}"
+  project_type: "${blocks.select_project_type.choice}"
+  deployment_target: "${blocks.select_deployment.choice}"
+  project_created: "${blocks.create_project.outputs.success}"
+  project_path: "${inputs.workspace}/${blocks.get_project_name.input_value}"
+
+  # Individual response fields (flattened from previous nested structure)
+  start_confirmed: "${blocks.confirm_start.confirmed}"
+  response_project_type: "${blocks.select_project_type.choice}"
+  project_type_index: "${blocks.select_project_type.choice_index}"
+  response_project_name: "${blocks.get_project_name.input_value}"
+  response_deployment: "${blocks.select_deployment.choice}"
+  deployment_index: "${blocks.select_deployment.choice_index}"
+  creation_confirmed: "${blocks.confirm_creation.confirmed}"
+
+# How to use this workflow:
+#
+# This workflow demonstrates multiple pause/resume cycles:
+#
+# 1. First execution - pauses at confirm_start:
+#    execute_workflow("multi-step-questionnaire")
+#    → {"status": "paused", "checkpoint_id": "pause_001", "prompt": "Start wizard?"}
+#
+# 2. Resume with "yes" - pauses at select_project_type:
+#    resume_workflow("pause_001", "yes")
+#    → {"status": "paused", "checkpoint_id": "pause_002", "prompt": "Select project type..."}
+#
+# 3. Resume with choice number - pauses at get_project_name:
+#    resume_workflow("pause_002", "1")
+#    → {"status": "paused", "checkpoint_id": "pause_003", "prompt": "Enter project name..."}
+#
+# 4. Resume with project name - pauses at select_deployment:
+#    resume_workflow("pause_003", "my-awesome-app")
+#    → {"status": "paused", "checkpoint_id": "pause_004", "prompt": "Select deployment..."}
+#
+# 5. Resume with deployment choice - pauses at confirm_creation:
+#    resume_workflow("pause_004", "Docker Container")
+#    → {"status": "paused", "checkpoint_id": "pause_005", "prompt": "Create project?"}
+#
+# 6. Resume with final confirmation - completes workflow:
+#    resume_workflow("pause_005", "yes")
+#    → {"status": "success", "outputs": {...}}
+#
+# Key features demonstrated:
+# - Multiple pause/resume cycles in single workflow
+# - Context accumulation across pauses
+# - Variable references to previous responses
+# - Different interactive block types
+# - Conditional execution based on responses
+# - Validation of user input (project name regex)
+# - Final confirmation before side effects
+#
+# Checkpoint management:
+# - Each pause creates a new checkpoint
+# - Old checkpoints remain valid (can go back)
+# - Use list_checkpoints() to see all paused states
+# - Use delete_checkpoint() to clean up
+# - Paused checkpoints don't auto-expire
