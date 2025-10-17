@@ -1,0 +1,81 @@
+# Scrapy settings for $project_name project
+#
+# For simplicity, this file contains only settings considered important or
+# commonly used. You can find more settings consulting the documentation:
+#
+#     https://docs.scrapy.org/en/latest/topics/settings.html
+#     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
+#     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+
+import logging
+from pathlib import Path
+
+from gzspidertools.common.multiplexing import ReuseOperation
+from gzspidertools.config import get_cfg, logger
+
+logging.getLogger('pymongo').setLevel(logging.WARNING)
+
+BOT_NAME = "$project_name"
+
+SPIDER_MODULES = ["$project_name.spiders"]
+NEWSPIDER_MODULE = "$project_name.spiders"
+
+# Obey robots.txt rules
+ROBOTSTXT_OBEY = False
+
+# Set settings whose default value is deprecated to a future-proof value
+FEED_EXPORT_ENCODING = "utf-8"
+
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+
+RETRY_TIMES = 10
+RETRY_ENABLED = True
+RETRY_HTTP_CODES = [500, 502, 503, 504, 408, 429, 403]  # add 403
+REDIRECT_ENABLED = True
+MEDIA_ALLOW_REDIRECTS = True
+
+# RETRY Error Type
+RETRY_EXCEPTIONS = [
+    'twisted.internet.defer.TimeoutError',
+    'twisted.internet.error.TimeoutError',
+    'twisted.internet.error.DNSLookupError',
+    'twisted.internet.error.ConnectionRefusedError',
+    'twisted.internet.error.ConnectionDone',
+    'twisted.internet.error.ConnectError',
+    'twisted.internet.error.ConnectionLost',
+    'twisted.internet.error.TCPTimedOutError',
+    'twisted.web.client.ResponseFailed',
+    OSError,
+    'scrapy.core.downloader.handlers.http11.TunnelError',
+    IOError
+]
+
+REFERER_ENABLED = False  # disable referer
+TELNETCONSOLE_ENABLED = False  # disable Telnet
+HTTPCACHE_ENABLED = False
+
+# Set .conf file path. Same as library default, commentable
+_ = Path(__file__).parent
+VIT_DIR = _ / "VIT"
+
+# Log configuration example
+LOG_LEVEL = "ERROR"
+LOG_FILE = _ / "logs/$project_name.log"
+logger.remove()
+logger.add(
+    _ / "logs/error.log",
+    level="ERROR",
+    rotation="1 week",
+    retention="7 days",
+    enqueue=True,
+)
+
+# scrapy-redis REDIS_URL redis:uri
+_my_cfg = get_cfg()
+redis_host = _my_cfg["my_add_redis"].get("host", "localhost")
+redis_port = _my_cfg["my_add_redis"].getint("port", 6379)
+redis_password = _my_cfg["my_add_redis"].get("password", None)
+REDIS_URL = f"redis://:{redis_password}@{redis_host}:{redis_port}/7"
+
+_conf = ReuseOperation.fetch_local_conf(VIT_DIR, {})
+MongoDB_CONFIG = _conf.get('MONGODB_CONFIG')
