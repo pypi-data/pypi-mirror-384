@@ -1,0 +1,185 @@
+[build-system]
+build-backend = "hatchling.build"
+
+requires = [
+  "hatch-vcs",
+  "hatchling",
+]
+
+[project]
+name = "virtual_tiff"
+description = "A parser intended for use with VirtualiZarr to create virtual Zarr stores from TIFFs"
+dynamic = ["version"]
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.11"
+license = "MIT"
+keywords = ["Python", "compressed", "ndimensional-arrays", "zarr", "tiff", "COG", "cloud-native"]
+authors = [
+  { name = "Max Jones", email = "14077947+maxrjones@users.noreply.github.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "obstore",
+    "async_tiff",
+    "virtualizarr>=2.0",
+    "imagecodecs",
+    "imagecodecs-numcodecs",
+    "zarr",
+]
+
+# Dependency sets under dependencies-groups are NOT available via PyPI
+[dependency-groups]
+dev = [
+  "codecov",
+  "mypy",
+  "pandas-stubs",
+  "pooch",
+  "pre-commit",
+  "pytest",
+  "pytest-asyncio",
+  "pytest-cov",
+  "pytest-mypy",
+  "pytest-xdist",
+  "ruff",
+  "s3fs",
+  "earthaccess",
+  "dvc[s3]>=3.59.1",
+  "xarray==2025.6.0",
+  # docs
+  "mkdocs-material[imaging]>=9.6.14",
+  "mkdocs>=1.6.1",
+  "mkdocstrings>=0.29.1",
+  "mkdocstrings-python>=1.16.10",
+]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "osx-arm64"]
+
+# Add the editable project pip install to the default group
+[tool.pixi.pypi-dependencies]
+virtual_tiff = { path = ".", editable = true }
+
+# Define a feature set for Python 3.11
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+
+# Define a feature set for Python 3.12
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+# Define a feature set for Python 3.12
+[tool.pixi.feature.test.dependencies]
+rioxarray = "*"
+rasterio = "*"
+xarray = "==2025.6.0"
+virtualizarr = "==2.0.0"
+
+# Define commands to run within the test environments
+[tool.pixi.feature.test.tasks]
+run-mypy = { cmd = "mypy src" }
+run-tests = { cmd = "pytest --verbose --durations=10" }
+run-tests-cov = { cmd = "pytest --verbose --cov=src --cov=term-missing" }
+run-tests-xml-cov = { cmd = "pytest --verbose --cov=src --cov-report=xml" }
+run-tests-html-cov = { cmd = "pytest --verbose --cov=src --cov-report=html" }
+download-test-images = { cmd = "dvc pull" }
+
+# Define commands to run within the test environments
+[tool.pixi.feature.docs.tasks]
+serve-docs = { cmd = "mkdocs serve" }
+build-docs = { cmd = "mkdocs build" }
+readthedocs = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r site $READTHEDOCS_OUTPUT/html"
+
+
+# Define which features and groups to include in different pixi (similar to conda) environments)
+[tool.pixi.environments]
+test = ["dev", "test"]
+docs = ["dev", "docs"]
+test-py311 = ["dev", "test", "py311"] # test against python 3.11
+test-py312 = ["dev", "test","py312"] # test against python 3.12
+
+[tool.coverage.run]
+source_pkgs = [""]
+branch = true
+parallel = true
+omit = []
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "src/virtual_tiff",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project.entry-points."zarr.codecs"]
+"imagecodecs_deflate" = "virtual_tiff.imagecodecs:DeflateCodec"
+"imagecodecs_delta" = "virtual_tiff.imagecodecs:DeltaCodec"
+"imagecodecs_floatpred" = "virtual_tiff.imagecodecs:FloatPredCodec"
+"imagecodecs_jetraw" = "virtual_tiff.imagecodecs:JetRawCodec"
+"imagecodecs_jpeg" = "virtual_tiff.imagecodecs:JpegCodec"
+"imagecodecs_jpeg8" = "virtual_tiff.imagecodecs:Jpeg8Codec"
+"imagecodecs_jpeg2k" = "virtual_tiff.imagecodecs:Jpeg2KCodec"
+"imagecodecs_jpegxl" = "virtual_tiff.imagecodecs:JpegXLCodec"
+"imagecodecs_jpegxr" = "virtual_tiff.imagecodecs:JpegXRCodec"
+"imagecodecs_lerc" = "virtual_tiff.imagecodecs:LercCodec"
+"imagecodecs_lzw" = "virtual_tiff.imagecodecs:LZWCodec"
+"imagecodecs_packbits" = "virtual_tiff.imagecodecs:PackBitsCodec"
+"imagecodecs_png" = "virtual_tiff.imagecodecs:PngCodec"
+"imagecodecs_webp" = "virtual_tiff.imagecodecs:WebpCodec"
+"imagecodecs_zstd" = "virtual_tiff.imagecodecs:ZstdCodec"
+"virtual_tiff.ChunkyCodec" = "virtual_tiff.codecs:ChunkyCodec"
+"virtual_tiff.HorizontalDeltaCodec" = "virtual_tiff.codecs:HorizontalDeltaCodec"
+
+[tool.codespell]
+skip = 'pixi.lock'
+
+[tool.ruff]
+# Same as Black.
+line-length = 88
+indent-width = 4
+target-version = "py311"
+
+exclude = [
+    "docs",
+    ".eggs"
+]
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`) codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+select = ["E4", "E7", "E9", "F", "I"]
+per-file-ignores = {}
+
+# E402: module level import not at top of file
+# E731: do not assign a lambda expression, use a def
+# W503: line break before binary operator - not implimeted by ruff due to conflict with PEP8.
+
+ignore = ["E402", "E731"]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+# Indent with spaces, rather than tabs.
+indent-style = "space"
+# Respect magic trailing commas.
+skip-magic-trailing-comma = false
+# Automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+known-first-party = ["src/virtual_tiff"]
