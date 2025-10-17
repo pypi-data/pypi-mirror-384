@@ -1,0 +1,3 @@
+"""
+Mapping Agent package initialization.
+"""
