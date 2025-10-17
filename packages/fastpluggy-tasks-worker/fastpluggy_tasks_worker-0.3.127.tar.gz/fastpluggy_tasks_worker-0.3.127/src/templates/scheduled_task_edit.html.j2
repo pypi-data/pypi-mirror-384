@@ -1,0 +1,225 @@
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Edit Scheduled Task</h3>
+    </div>
+    <div class="card-body">
+        <form id="taskForm">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label required">Task Name</label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ widget.task.name }}" required>
+                    <small class="form-hint">A descriptive name for this task</small>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label required">Function</label>
+                    <input type="text" class="form-control" id="function" name="function" value="{{ widget.task.function }}" required>
+                    <small class="form-hint">Python function path (e.g., module.function_name)</small>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-12">
+                    <label class="form-label">Schedule Type</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="schedule_type" value="cron" id="schedule_type_cron" autocomplete="off" {% if widget.task.cron %}checked{% endif %}>
+                        <label class="btn" for="schedule_type_cron">
+                            <i class="ti ti-clock"></i> Cron Expression
+                        </label>
+
+                        <input type="radio" class="btn-check" name="schedule_type" value="interval" id="schedule_type_interval" autocomplete="off" {% if not widget.task.cron %}checked{% endif %}>
+                        <label class="btn" for="schedule_type_interval">
+                            <i class="ti ti-refresh"></i> Interval
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-3" id="cron_section" style="display: {% if widget.task.cron %}block{% else %}none{% endif %};">
+                <div class="col-12">
+                    <label class="form-label">Cron Expression</label>
+                    <input type="text" class="form-control" id="cron" name="cron" placeholder="*/5 * * * *" value="{{ widget.task.cron or '' }}">
+                    <small class="form-hint">Examples: <code>*/5 * * * *</code> (every 5 minutes), <code>0 9 * * *</code> (daily at 9 AM)</small>
+                </div>
+            </div>
+
+            <div class="row mb-3" id="interval_section" style="display: {% if not widget.task.cron %}block{% else %}none{% endif %};">
+                <div class="col-12">
+                    <label class="form-label">Interval (seconds)</label>
+                    <input type="number" class="form-control" id="interval" name="interval" min="1" placeholder="300" value="{{ widget.task.interval or '' }}">
+                    <small class="form-hint">Run every N seconds (e.g., 300 = 5 minutes, 3600 = 1 hour)</small>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-12">
+                    <label class="form-label">Task Arguments (JSON)</label>
+                    <textarea class="form-control" id="kwargs" name="kwargs" rows="4">{{ widget.task.kwargs or '{}' }}</textarea>
+                    <small class="form-hint">JSON-encoded kwargs for the function</small>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="form-label">Task Options</div>
+                    <div>
+                        <label class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {% if widget.task.enabled %}checked{% endif %}>
+                            <span class="form-check-label">Task Enabled</span>
+                        </label>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="allow_concurrent" name="allow_concurrent" {% if widget.task.allow_concurrent %}checked{% endif %}>
+                            <span class="form-check-label">Allow Concurrent Execution</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-3">
+                <div class="col-12">
+                    <div class="card bg-light">
+                        <div class="card-header">
+                            <h4 class="card-title">Task Status Information</h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-2">
+                                        <strong>Last Attempt:</strong>
+                                        <div class="text-muted">
+                                            {% if widget.task.last_attempt %}
+                                                {{ widget.task.last_attempt }}
+                                            {% else %}
+                                                Never run
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-2">
+                                        <strong>Last Task ID:</strong>
+                                        <div class="text-muted">{{ widget.task.last_task_id or 'N/A' }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-2">
+                                        <strong>Last Status:</strong>
+                                        <div class="{% if widget.task.last_status == 'success' %}text-success{% else %}text-muted{% endif %}">
+                                            {{ widget.task.last_status or 'N/A' }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-footer text-end">
+                <a href="{{ widget.cancel_url }}" class="btn btn-link">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="ti ti-device-floppy"></i>
+                    Save Task
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Handle schedule type changes
+    function updateScheduleDisplay() {
+        const scheduleType = document.querySelector('input[name="schedule_type"]:checked')?.value;
+
+        document.getElementById('cron_section').style.display = scheduleType === 'cron' ? 'block' : 'none';
+        document.getElementById('interval_section').style.display = scheduleType === 'interval' ? 'block' : 'none';
+
+        // Clear the other field when switching
+        if (scheduleType === 'cron') {
+            document.getElementById('interval').value = '';
+        } else if (scheduleType === 'interval') {
+            document.getElementById('cron').value = '';
+        }
+    }
+
+    // Validate JSON fields
+    function validateJSON(fieldId) {
+        const field = document.getElementById(fieldId);
+        const value = field.value.trim();
+
+        if (!value) return true;
+
+        try {
+            JSON.parse(value);
+            field.classList.remove('is-invalid');
+            return true;
+        } catch (e) {
+            field.classList.add('is-invalid');
+            return false;
+        }
+    }
+
+    // Form submission
+    document.getElementById('taskForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        // Validate JSON fields
+        const kwargsValid = validateJSON('kwargs');
+
+        if (!kwargsValid) {
+            alert('Please fix JSON formatting errors before saving.');
+            return;
+        }
+
+        // Collect form data
+        const scheduleType = document.querySelector('input[name="schedule_type"]:checked')?.value;
+
+        // Parse kwargs JSON
+        let kwargsObj = {};
+        try {
+            kwargsObj = JSON.parse(document.getElementById('kwargs').value);
+        } catch (e) {
+            alert('Invalid JSON in kwargs field');
+            return;
+        }
+
+        const formData = {
+            name: document.getElementById('name').value,
+            function: document.getElementById('function').value,
+            cron: scheduleType === 'cron' ? document.getElementById('cron').value : null,
+            interval: scheduleType === 'interval' ? parseInt(document.getElementById('interval').value) : null,
+            enabled: document.getElementById('enabled').checked,
+            allow_concurrent: document.getElementById('allow_concurrent').checked,
+            kwargs: kwargsObj
+        };
+
+        try {
+            const response = await fetch('{{ widget.submit_url }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            if (response.ok) {
+                // Redirect to list page on success
+                window.location.href = '{{ widget.cancel_url }}';
+            } else {
+                const error = await response.json();
+                alert('Error saving task: ' + (error.message || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Error saving task: ' + error.message);
+        }
+    });
+
+    // Add JSON validation on blur
+    document.getElementById('kwargs').addEventListener('blur', () => validateJSON('kwargs'));
+
+    // Add schedule type change listeners
+    document.querySelectorAll('input[name="schedule_type"]').forEach(radio => {
+        radio.addEventListener('change', updateScheduleDisplay);
+    });
+</script>
