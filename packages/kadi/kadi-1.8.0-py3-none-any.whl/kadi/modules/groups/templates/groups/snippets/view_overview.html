@@ -1,0 +1,61 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% set can_update_group = has_permission(current_user, "update", "group", group.id) %}
+{% set can_manage_members = has_permission(current_user, "members", "group", group.id) %}
+
+<div class="d-flex justify-content-between">
+  <div class="d-md-inline d-flex flex-column">
+    <a href="{{ url_for('groups.edit_group', id=group.id) }}"
+       class="btn btn-sm btn-primary my-1{% if not can_update_group %} disabled{% endif %}">
+      <i class="fa-solid fa-pencil"></i> {% trans %}Edit group{% endtrans %}
+    </a>
+    <a href="{{ url_for('groups.manage_members', id=group.id) }}"
+       class="btn btn-sm btn-primary my-1{% if not can_manage_members %} disabled{% endif %}">
+      <i class="fa-solid fa-users"></i> {% trans %}Manage members{% endtrans %}
+    </a>
+  </div>
+  <div>
+    <favorite-resource favorite-endpoint="{{ url_for('api.toggle_favorite_group', id=group.id) }}"
+                       :is-favorite="{{ group.is_favorite() | tojson_escaped }}">
+    </favorite-resource>
+  </div>
+</div>
+<hr>
+
+{{ template_hook("kadi_get_resource_overview_templates", resource=group) }}
+
+{% if group.image_name %}
+  <div class="float-sm-right ml-sm-3 mb-3 mb-sm-0">
+    <a href="{{ url_for('api.preview_group_image', id=group.id) }}" target="_blank" rel="noopener noreferrer">
+      <img class="img-max-115 img-thumbnail" src="{{ url_for('api.preview_group_image', id=group.id) }}">
+    </a>
+  </div>
+{% endif %}
+
+{% snippet "snippets/resources/basic_info.html", resource=group %}
+
+<hr>
+<resource-roles-view title="{% trans %}Members{% endtrans %}"
+                     placeholder="{% trans %}No members.{% endtrans %}"
+                     endpoint="{{ url_for('api.get_group_members', id=group.id) }}"
+                     :creator="{{ group.user_id }}"
+                     :per-page="9">
+  <template #default="props">
+    <div class="col-md-8 d-flex justify-content-md-end mb-4 mb-md-0">
+      <roles-popover :small-layout="true" :roles="{{ get_object_roles('group') | tojson_escaped }}">
+      </roles-popover>
+    </div>
+  </template>
+</resource-roles-view>

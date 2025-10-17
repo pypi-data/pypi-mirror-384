@@ -1,0 +1,100 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="card">
+    <div class="card-header">{% trans %}Login failed due to missing user attributes{% endtrans %}</div>
+    <div class="card-body">
+      <p>
+        {% trans strong_open="<strong>" | safe, strong_close="</strong>" | safe %}
+          Your home organization {{ strong_open }}{{ idp_displayname }}{{ strong_close }} ({{ idp_entity_id}}) did not
+          provide all information about you that is required to log in to Kadi4Mat.
+        {% endtrans %}
+      </p>
+      <p>
+        {% trans %}The following user information in form of SAML attributes is required by this service:{% endtrans %}
+      </p>
+      <ul class="list-group">
+        <li class="list-group-item bg-light py-2">
+          <div class="row">
+            <span class="col-6">
+              <strong>{% trans %}Attribute{% endtrans %}</strong>
+            </span>
+            <span class="col-6">
+              <strong>{% trans %}Provided value{% endtrans %}</strong>
+            </span>
+          </div>
+        </li>
+        {% for attr, val in required_attrs.items() %}
+          <li class="list-group-item py-2">
+            <div class="row">
+              <span class="col-6">{{ attr }}</span>
+              <span class="col-6">{{ val if val is not none else "-" }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+      <hr>
+      <p>
+        {% trans a_open='<a href="mailto:{}"><strong>'.format(idp_support_contact) | safe,
+                 a_close="</strong></a>" | safe %}
+          Please contact your home organization's help desk at {{ a_open }}{{ idp_support_contact }}{{ a_close }} and
+          request release for the missing attributes. To do this, click on the button below. This will open your mail
+          program with the needed technical information to resolve this issue. You can add additional information and
+          review the email before sending it. Alternatively, you can manually copy and paste the text from the following
+          template:
+        {% endtrans %}
+      </p>
+<textarea ref="template" class="form-control" spellcheck="false" rows="8">{% trans notrimmed %}Dear administrator of the Shibboleth Identity Provider &quot;{{ idp_displayname }}&quot;,
+
+I tried to log in to a service with the entityID &quot;{{ sp_entity_id }}&quot;. Unfortunately, the login failed because the Identity Provider &quot;{{ idp_displayname }}&quot; did not release the requested user attributes to this service. To be able to access this service, I kindly ask you to ensure that your Identity Provider releases my user attributes to &quot;{{ sp_entity_id }}&quot;.
+
+The attributes that were not released to the service are:{% endtrans %}
+{% for attr, val in required_attrs.items() %}{% if val is none %}* {{ attr + "\n" }}{% endif %}{% endfor %}
+{% trans notrimmed %}Connection summary:
+* IdP: {{ idp_entity_id }} ({{ idp_displayname }})
+* SP: {{ sp_entity_id }}
+* Time: {{ timestamp }} (UTC)
+
+Kind regards{% endtrans %}</textarea>
+      <br>
+      <a class="btn btn-primary" :href="mailto">
+        {% trans %}Report problem to your home organization's help desk{% endtrans %}
+      </a>
+      <hr>
+      <a href="{{ url_for('main.index') }}">
+        <strong>{% trans %}Return to the homepage.{% endtrans %}</strong>
+      </a>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          mailto: '',
+        };
+      },
+      mounted() {
+        const subject = $t('Missing attributes for Shibboleth authentication');
+        const body = window.encodeURIComponent(this.$refs.template.value);
+        this.mailto = `mailto:{{ idp_support_contact }}?subject=${subject}&body=${body}`;
+      },
+    });
+  </script>
+{% endblock %}

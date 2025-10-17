@@ -1,0 +1,100 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "settings/base.html" %}
+
+{% block breadcrumbs %}
+  {{ super() }}
+  {% snippet "snippets/breadcrumb.html", url=url_for("settings.manage_services"), title=title %}
+{% endblock %}
+
+{% block content %}
+  <confirm-dialog ref="dialog"></confirm-dialog>
+
+  <div class="card">
+    {% include "settings/snippets/menu.html" %}
+
+    <div class="card-body">
+      <p>
+        <small class="text-muted">
+          <i class="fa-solid fa-circle-info"></i>
+          {% trans %}
+            Note that to completely disconnect a previously connected service, access must also be revoked on the
+            service's website.
+          {% endtrans %}
+        </small>
+      </p>
+      {% for provider in providers %}
+        <div class="d-flex justify-content-between">
+          <span class="h5 font-weight-bold">{{ provider.title }}</span>
+          {% if provider.is_connected %}
+            <span>
+              <span class="badge badge-primary font-weight-normal">
+                {% trans %}Connected{% endtrans %}
+              </span>
+            </span>
+          {% endif %}
+        </div>
+        <p>
+          {% if provider.description %}
+            {{ provider.description }}
+          {% else %}
+            <em class="text-muted">{% trans %}No description.{% endtrans %}</em>
+          {% endif %}
+        </p>
+        <div class="d-flex justify-content-between">
+          {% if provider.is_connected %}
+            <submission-form action="?disconnect={{ provider.name }}" @submit="disconnectService">
+              {{ render_csrf() }}
+              <input type="submit" class="btn btn-sm btn-danger" value="{% trans %}Disconnect service{% endtrans %}">
+            </submission-form>
+          {% else %}
+            <a href="{{ url_for('settings.oauth2_provider_login', provider=provider.name) }}"
+               class="btn btn-sm btn-primary">
+              {% trans %}Connect service{% endtrans %}
+            </a>
+          {% endif %}
+
+          {% if provider.website %}
+            <a href="{{ provider.website }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-light">
+              <i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> {% trans %}Visit website{% endtrans %}
+            </a>
+          {% endif %}
+        </div>
+
+        {% if not loop.last %}
+          <hr>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      methods: {
+        async disconnectService(e) {
+          e.preventDefault();
+
+          const input = await this.$refs.dialog.open($t('Are you sure you want to disconnect this service?'));
+
+          if (input.status) {
+            e.target.submit();
+          }
+        },
+      },
+    });
+  </script>
+{% endblock %}

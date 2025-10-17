@@ -1,0 +1,158 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% from "macros.html" import render_csrf, render_js %}
+
+{% set user_active = current_user.is_authenticated
+                     and current_user.state == UserState.ACTIVE
+                     and not current_user.identity.needs_email_confirmation
+                     and not current_user.needs_legals_acceptance %}
+
+{% set show_broadcast = get_sys_config(const.SYS_CONFIG_BROADCAST_MESSAGE_PUBLIC) or user_active %}
+
+{% if user_active %}
+  {% set can_create_records = has_permission(current_user, "create", "record", None) %}
+  {% set can_create_collections = has_permission(current_user, "create", "collection", None) %}
+  {% set can_create_templates = has_permission(current_user, "create", "template", None) %}
+  {% set can_create_groups = has_permission(current_user, "create", "group", None) %}
+{% endif %}
+
+<!DOCTYPE html>
+<html>
+  <head>
+    {% include "snippets/base/meta.html" %}
+
+    <title>
+      {% block title %}
+        {% if title %}{{ title }} &middot; Kadi4Mat{% else %}Kadi4Mat{% endif %}
+      {% endblock %}
+    </title>
+  </head>
+  <body>
+    <header>
+      {% include "snippets/base/header.html" %}
+    </header>
+
+    <main>
+      <script nonce="{{ csp_nonce() }}">
+        {# Namespace for global data. #}
+        window.kadi = {
+          {# Namespace for contextual data that is passed directly from the backend via "js_context". #}
+          context: {{ (js_context or {}) | tojson }},
+          {# Namespace for global variables. #}
+          globals: {
+            canCreateRecords: {{ (can_create_records or False) | tojson }},
+            csrfToken: {{ csrf_token() | tojson }},
+            environment: {{ environment | tojson }},
+            locale: {{ get_locale() | tojson }},
+            showBroadcast: {{ show_broadcast | tojson }},
+            userActive: {{ user_active | tojson }},
+            version: {{ (version if user_active else None) | tojson }},
+          },
+        };
+      </script>
+
+      {{ render_js("vendor.js") }}
+
+      {# Plugin frontend translations. #}
+      <script nonce="{{ csp_nonce() }}">
+        {% for locale, bundle in get_plugin_frontend_translations().items() %}
+          i18next.addResourceBundle({{ locale | tojson }}, 'translation', {{ bundle | tojson }}, true, false);
+        {% endfor %}
+      </script>
+
+      <div v-cloak id="base-flash-messages">
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+          <flash-message message="{{ message }}" type="{{ category }}"></flash-message>
+        {% endfor %}
+        <flash-messages ref="component"></flash-messages>
+      </div>
+
+      <div class="container-fluid px-2 mb-4">
+        <div class="form-row">
+          <div class="col-xl-2 order-1 order-xl-1">
+            <div class="container-fluid pr-xl-0">
+              <div v-cloak id="base-recently-visited">
+                <recently-visited ref="component" class="mb-4"></recently-visited>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-xl-8 order-3 order-xl-2">
+            <div class="container-fluid">
+              <noscript>
+                <div class="alert alert-info mb-4">Please enable JavaScript in order to use Kadi4Mat.</div>
+              </noscript>
+
+              {% if show_broadcast %}
+                {% set broadcast_message = get_sys_config(const.SYS_CONFIG_BROADCAST_MESSAGE) %}
+
+                <div v-cloak id="base-broadcast-message">
+                  <broadcast-message class="mb-4"
+                                     message="{{ broadcast_message }}"
+                                     hash="{{ hash_value(broadcast_message, alg='md5') }}">
+                  </broadcast-message>
+                </div>
+              {% endif %}
+
+              {# Only show the breadcrumbs container if the respective block is actually used. #}
+              {% if self.breadcrumbs() %}
+                <nav class="mb-4">
+                  <ol class="breadcrumb d-block d-sm-flex">
+                    {% block breadcrumbs %}{% endblock %}
+                  </ol>
+                </nav>
+              {% endif %}
+
+              {# Container for the main content. #}
+              <div v-cloak id="base-content">
+                {% block content %}{% endblock %}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-xl-2 order-2 order-xl-3">
+            <div v-cloak id="base-notification-manager" class="container-fluid pl-xl-0">
+              <notification-manager ref="component" endpoint="{{ url_for('api.get_notifications') }}">
+              </notification-manager>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer data-tour="footer">
+      {% include "snippets/base/footer.html" %}
+    </footer>
+
+    {{ render_js("app/main.js") }}
+
+    {% block scripts %}
+      <script nonce="{{ csp_nonce() }}">
+        kadi.base.newVue();
+      </script>
+    {% endblock %}
+
+    {# Plugin scripts, loaded before the main app is mounted. #}
+    {% for script in get_plugin_scripts() %}
+      <script src="{{ script }}"></script>
+    {% endfor %}
+
+    <script nonce="{{ csp_nonce() }}">
+      if (kadi.app) {
+        kadi.app.mount('#base-content');
+      }
+    </script>
+  </body>
+</html>

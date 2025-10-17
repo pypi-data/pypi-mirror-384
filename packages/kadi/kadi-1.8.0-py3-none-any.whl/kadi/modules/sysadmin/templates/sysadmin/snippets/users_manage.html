@@ -1,0 +1,161 @@
+{# Copyright 2023 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+<dynamic-pagination ref="pagination"
+                    endpoint="{{ url_for('api.get_users') }}"
+                    placeholder="{% trans %}No users.{% endtrans %}"
+                    :args="{inactive: !active}"
+                    :per-page="5"
+                    :enable-filter="true">
+  <template #default="props">
+    <div class="mb-2 d-flex justify-content-between align-items-center">
+      <div>
+        <strong>{% trans %}Users{% endtrans %}</strong>
+        <span class="badge-total">{$ props.total $}</span>
+      </div>
+      <popover-toggle title="{% trans %}System roles{% endtrans %}" toggle-class="btn btn-sm btn-light">
+        <template #toggle>
+          <i class="fa-solid fa-circle-info"></i> {% trans %}System roles{% endtrans %}
+        </template>
+        <template #content>
+          <div class="row">
+            <div class="col-3">
+              <strong>Admin</strong>
+            </div>
+            <div class="col-9">{% trans %}Can manage any resource.{% endtrans %}</div>
+          </div>
+          <div class="row">
+            <div class="col-3">
+              <strong>Member</strong>
+            </div>
+            <div class="col-9">{% trans %}Can create new resources.{% endtrans %}</div>
+          </div>
+          <div class="row">
+            <div class="col-3">
+              <strong>Guest</strong>
+            </div>
+            <div class="col-9">{% trans %}Read only access.{% endtrans %}</div>
+          </div>
+        </template>
+      </popover-toggle>
+    </div>
+    <div v-if="props.total > 0">
+      <div class="card bg-light my-3">
+        <div class="card-body py-1">
+          <div class="row align-items-center">
+            <div class="col-xl-4">
+              <div class="form-check">
+                <input id="active" v-model="active" type="checkbox" class="form-check-input">
+                <label class="form-check-label" for="active">{% trans %}Show active users only{% endtrans %}</label>
+              </div>
+            </div>
+            <div class="col-xl-8 d-xl-flex justify-content-end">
+              <small class="text-muted">
+                <i class="fa-solid fa-circle-info"></i>
+                {% trans %}Note that it may take some time for a user to be completely deleted.{% endtrans %}
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-for="user in props.items" :key="user.id" class="card mb-3">
+        <div class="card-body py-2">
+          <div class="row align-items-center">
+            <div class="col-xl-3 mb-2 mb-xl-0">
+              <identity-popover :user="user"></identity-popover>
+            </div>
+            <div class="col-xl-3 mb-2 mb-xl-0">
+              @{$ user.identity.username $}
+              <br>
+              <small class="text-muted">
+                {% trans %}Account type{% endtrans %}: {$ user.identity.name $}
+              </small>
+            </div>
+            <div class="col-xl-3 mb-2 mb-xl-0">
+              <a :href="`mailto:${user.identity.email}`">
+                <strong>{$ user.identity.email $}</strong>
+              </a>
+              <span v-if="user.identity.email_confirmed" class="badge badge-light border font-weight-normal">
+                {% trans %}Confirmed{% endtrans %}
+              </span>
+            </div>
+            <div class="col-xl-3">
+              <small>
+                {% trans %}Member since{% endtrans %}
+                <local-timestamp :timestamp="user.created_at"></local-timestamp>
+                <span class="text-muted">
+                  (<from-now :timestamp="user.created_at"></from-now>)
+                </span>
+              </small>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer py-2">
+          <div class="row align-items-center">
+            <div class="col-xl-3 mb-2 mb-xl-0">
+              <div class="form-check">
+                <input :id="`${user.id}_state`"
+                       type="checkbox"
+                       class="form-check-input"
+                       :checked="user.state === 'active' || null"
+                       :disabled="user.disabled || user.id === {{ current_user.id }}"
+                       @change="toggleUserProperty(user, 'state')">
+                <label class="form-check-label" :for="`${user.id}_state`">
+                  {% trans %}Active{% endtrans %}
+                </label>
+              </div>
+            </div>
+            <div class="col-xl-3 mb-2 mb-xl-0">
+              <div class="form-check">
+                <input :id="`${user.id}_sysadmin`"
+                       v-model="user.is_sysadmin"
+                       type="checkbox"
+                       class="form-check-input"
+                       :disabled="user.disabled || user.id === {{ current_user.id }}"
+                       @change="toggleUserProperty(user, 'sysadmin')">
+                <label class="form-check-label" :for="`${user.id}_sysadmin`">
+                  {% trans %}Sysadmin{% endtrans %}
+                </label>
+              </div>
+            </div>
+            <div class="col-xl-4 mb-2 mb-xl-0">
+              <div class="input-group input-group-sm">
+                <div class="input-group-prepend">
+                  <span class="input-group-text">{% trans %}System role{% endtrans %}</span>
+                </div>
+                <select v-model="user.system_role"
+                        class="custom-select"
+                        :disabled="user.disabled"
+                        @change="changeRole(user)">
+                  {% for role in sorted(list(const.SYSTEM_ROLES)) %}
+                    <option value="{{ role }}">{{ role | capitalize }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="col-xl-2 d-xl-flex justify-content-end">
+              <button type="button"
+                      class="btn btn-sm btn-danger"
+                      title="{% trans %}Delete user{% endtrans %}"
+                      :disabled="user.disabled || user.id === {{ current_user.id }}"
+                      @click="deleteUser(user)">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+</dynamic-pagination>

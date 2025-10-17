@@ -1,0 +1,89 @@
+{# Copyright 2022 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+<div class="row">
+  {% for key, value in sorted(template.data.items()) %}
+    {% if key != "extras" %}
+      <div class="col-lg-3 mb-2">
+        <strong>{{ ' '.join(key.split('_')) | capitalize }}</strong>
+      </div>
+      <div class="col-lg-9 mb-2">
+        {% if not value %}
+          -
+        {% elif key == "collections" %}
+          {% for collection in value %}
+            <span class="badge badge-light border font-weight-normal">Collection ID: {{ collection }}</span>
+          {% endfor %}
+        {% elif key == "description" %}
+          <div class="card">
+            <div class="card-body">
+              <markdown-renderer input="{{ value }}"></markdown-renderer>
+            </div>
+          </div>
+        {% elif key == "record_links" %}
+          {% for link in value %}
+            <span class="badge badge-light border font-weight-normal">
+              {% if link["direction"] == "out" %}
+                <i class="fa-solid fa-minus"></i>
+              {% else %}
+                <i class="fa-solid fa-arrow-left"></i>
+              {% endif %}
+
+              {{ link["name"] | truncate(50) }}
+
+              {% if link["direction"] == "out" %}
+                <i class="fa-solid fa-arrow-right mr-1"></i>
+              {% else %}
+                <i class="fa-solid fa-minus mr-1"></i>
+              {% endif %}
+
+              Record ID: {{ link["record"] }}
+            </span>
+          {% endfor %}
+        {% elif key == "roles" %}
+          {% for role in value %}
+            <span class="badge badge-light border font-weight-normal">
+              {% if role["subject_type"] == "user" %}User ID:{% else %}Group ID:{% endif %}
+              {{ role["subject_id"] }} ({{ role["role"] | capitalize }})
+            </span>
+          {% endfor %}
+        {% elif key == "tags" %}
+          {% for tag in sorted(value) %}
+            <span class="badge badge-light border font-weight-normal">{{ tag }}</span>
+          {% endfor %}
+        {% elif key == "type" %}
+          <span class="badge badge-primary font-weight-normal">{{ value }}</span>
+        {% else %}
+          {{ value }}
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endfor %}
+
+  {% if not template.data.get("extras") %}
+    <div class="col-lg-3">
+      <strong>Extras</strong>
+    </div>
+    <div class="col-lg-9">-</div>
+  {% endif %}
+</div>
+
+{% if template.data.get("extras") %}
+  <extras-viewer {% if can_update_template %}
+                 edit-endpoint="{{ url_for('templates.edit_template', id=template.id) }}"
+                 {% endif %}
+                 :extras="{{ template.data['extras'] | tojson_escaped }}">
+    <strong>Extras</strong>
+  </extras-viewer>
+{% endif %}

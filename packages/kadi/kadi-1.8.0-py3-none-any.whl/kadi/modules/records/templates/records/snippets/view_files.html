@@ -1,0 +1,123 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% set can_update_record = has_permission(current_user, "update", "record", record.id) %}
+
+<div class="d-flex justify-content-between">
+  <a href="{{ url_for('records.add_files', id=record.id) }}"
+     class="btn btn-sm btn-primary my-1{% if not can_update_record %} disabled{% endif %}">
+    <i class="fa-solid fa-file"></i> {% trans %}Add files{% endtrans %}
+  </a>
+  <a href="{{ url_for('api.download_files', id=record.id) }}"
+     class="btn btn-sm btn-light my-1{% if record.active_files.count() == 0 %} disabled{% endif %}">
+    <i class="fa-solid fa-download"></i> {% trans %}Download all{% endtrans %}
+  </a>
+</div>
+<hr>
+<dynamic-pagination ref="filesPagination"
+                    endpoint="{{ url_for('api.get_files', id=record.id) }}"
+                    placeholder="{% trans %}No files.{% endtrans %}"
+                    :args="{sort: sortFilesAscending ? sortFiles : `-${sortFiles}`}"
+                    :enable-filter="true"
+                    :per-page="5">
+  <template #default="props">
+    <div class="row align-items-center">
+      <div class="col-md-6 col-xl-8">
+        <p>
+          <strong>{% trans %}Files{% endtrans %}</strong>
+          <span class="badge-total">{$ props.total $}</span>
+        </p>
+      </div>
+      <div v-if="props.totalUnfiltered > 0" class="col-md-6 col-xl-4 mb-3 mb-md-2">
+        <div class="input-group input-group-sm">
+          <div class="input-group-prepend">
+            <label class="input-group-text" for="sort-files">{% trans %}Sort by{% endtrans %}</label>
+          </div>
+          <select id="sort-files"
+                  class="custom-select"
+                  :value="sortFiles"
+                  @input="changeSortFilesOption($event.target.value)">
+            <option v-for="option in sortFilesOptions" :key="option.name" :value="option.name">
+              {$ option.title $}
+            </option>
+          </select>
+          <div class="input-group-append">
+            <button type="button"
+                    class="btn btn-light"
+                    :title="sortFilesAscending ? $t('Ascending') : $t('Descending')"
+                    @click="sortFilesAscending = !sortFilesAscending">
+              <i v-if="sortFilesAscending" class="fa-solid fa-arrow-down-short-wide"></i>
+              <i v-else class="fa-solid fa-arrow-down-wide-short"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-for="(file, index) in props.items" :key="file.id" class="card card-action mb-3">
+      <a :href="file._links.view">
+        <div class="card-body py-3">
+          <div class="form-row align-items-center">
+            <div class="col-md-9">
+              <strong class="mr-2">{$ file.name $}</strong>
+              <span class="badge badge-light badge-mt-minus border font-weight-normal" :title="file.mimetype">
+                {$ kadi.utils.truncate(file.mimetype, 50) $}
+              </span>
+            </div>
+            <div class="col-md-3 d-md-flex justify-content-end">
+              <small class="text-muted" :title="`${kadi.utils.formatNumber(file.size)} Bytes`">
+                <strong>{$ kadi.utils.filesize(file.size) $}</strong>
+              </small>
+            </div>
+          </div>
+        </div>
+      </a>
+      <div class="card-footer py-1">
+        <div class="form-row align-items-end align-items-center">
+          <div class="col-lg-5 mb-2 mb-lg-0">
+            <small class="text-muted">
+              {% trans %}Last modified{% endtrans %} <from-now :timestamp="file.last_modified"></from-now>
+            </small>
+          </div>
+          <div class="col-lg-7 d-lg-flex justify-content-end">
+            <span v-if="file._links.edit_metadata">
+              <a class="btn btn-sm btn-link text-primary p-0 mr-0 mr-lg-5 my-1 my-lg-0"
+                 :href="file._links.edit_metadata">
+                <i class="fa-solid fa-pencil"></i> {% trans %}Edit file{% endtrans %}
+              </a>
+              <br>
+            </span>
+            <span v-if="file._links.edit_data">
+              <a class="btn btn-sm btn-link text-primary p-0 mr-0 mr-lg-5 my-1 my-lg-0" :href="file._links.edit_data">
+                <i class="fa-solid fa-upload"></i> {% trans %}Update data{% endtrans %}
+              </a>
+              <br>
+            </span>
+            <span v-if="file._actions.delete">
+              <button type="button"
+                      class="btn btn-sm btn-link text-primary p-0 mr-0 mr-lg-5 my-1 my-lg-0"
+                      :disabled="file.disabled"
+                      @click="deleteFile(file)">
+                <i class="fa-solid fa-trash"></i> {% trans %}Delete{% endtrans %}
+              </button>
+              <br>
+            </span>
+            <a class="btn btn-sm btn-link text-primary p-0 my-1 my-lg-0" :href="file._links.download">
+              <i class="fa-solid fa-download"></i> {% trans %}Download{% endtrans %}
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+</dynamic-pagination>

@@ -1,0 +1,86 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "groups/manage_group_base.html" %}
+
+{% block breadcrumbs %}
+  {{ super() }}
+  {% snippet "snippets/breadcrumb.html", url=url_for("groups.view_group", id=group.id), title=group.title %}
+  {% snippet "snippets/breadcrumb.html", url=url_for("groups.edit_group", id=group.id), title=title %}
+{% endblock %}
+
+{% block content %}
+  <confirm-dialog ref="dialog"></confirm-dialog>
+
+  {% snippet "groups/snippets/back_to_group.html", group=group, tab="overview" %}
+
+  <submission-form enctype="{{ const.MIMETYPE_FORMDATA }}">
+    {{ render_csrf() }}
+
+    {% snippet "snippets/resources/submit_edit.html",
+               resource=group,
+               form=form,
+               delete_text=_("Delete group"),
+               small=True %}
+
+    <div class="card my-4">
+      <div class="card-body">
+        {% include "groups/snippets/base_group_form.html" %}
+
+        <file-field {% if not group.image_name %}class="mb-0"{% endif %}
+                    :field="{{ form.image }}"
+                    :mimetypes="{{ const.IMAGE_MIMETYPES | tojson_escaped }}"
+                    :max-size="{{ const.IMAGE_MAX_SIZE }}"
+                    :disabled="removeImage">
+        </file-field>
+
+        {% if group.image_name %}
+          <checkbox-field class="mb-0" :field="{{ form.remove_image }}" @change="removeImage = $event"></checkbox-field>
+        {% endif %}
+      </div>
+    </div>
+
+    {% snippet "snippets/resources/submit_edit.html", resource=group, form=form, delete_text=_("Delete group") %}
+  </submission-form>
+  <submission-form ref="delete" action="{{ url_for('groups.delete_group', id=group.id) }}">
+    {{ render_csrf() }}
+  </submission-form>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          title: '',
+          titleField: kadi.context.title_field,
+          removeImage: false,
+        };
+      },
+      mounted() {
+        this.title = this.titleField.data;
+      },
+      methods: {
+        async deleteResource() {
+          const msg = $t('Are you sure you want to move this group to the trash?');
+          const input = await this.$refs.dialog.open(msg);
+
+          if (input.status) {
+            this.$refs.delete.submit();
+          }
+        },
+      },
+    });
+  </script>
+{% endblock %}

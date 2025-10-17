@@ -1,0 +1,165 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "base.html" %}
+
+{% block content %}
+  <hungry-serpent></hungry-serpent>
+  <language-prompt class="mb-4"
+                   preferred-locale="{{ preferred_locale }}"
+                   cookie-name="{{ const.LOCALE_COOKIE_NAME }}"
+                   :cookie-secure="{{ config['LOCALE_COOKIE_SECURE'] | tojson_escaped }}">
+  </language-prompt>
+  <div class="card text-white border-0 mb-4 banner-gradient">
+    <div class="row align-items-center">
+      <div class="col-lg-5 d-none d-lg-block">
+        <img class="img-fluid rounded" width="425" src="{{ static_url('images/kadi_bg.png') }}">
+      </div>
+      <div class="col-lg-7 text-center py-3 py-lg-0 mx-3 mx-lg-0">
+        <h5>
+          <strong>{% trans %}Welcome to Kadi4Mat.{% endtrans %}</strong>
+        </h5>
+        {% trans %}You are currently logged in as{% endtrans %}
+        <identity-popover :user="{{ json_user(current_user) }}">
+          <template #default="props">
+            <strong class="text-white">{$ kadi.utils.truncate(props.user.displayname, 25) $}</strong>
+          </template>
+        </identity-popover>.
+      </div>
+    </div>
+  </div>
+
+  {% if not current_user.get_config(const.USER_CONFIG_HIDE_INTRODUCTION) %}
+    <div class="d-flex justify-content-between">
+      <h4 class="mb-3">
+        <strong>{% trans %}Get started{% endtrans %}</strong>
+      </h4>
+      <a href="{{ url_for('settings.manage_preferences') }}">
+        <strong>{% trans %}Hide{% endtrans %}</strong>
+      </a>
+    </div>
+    <div class="card mb-4 bg-light">
+      <div class="card-body">
+        <div class="row align-items-center">
+          <div class="col-lg-5 mb-2 mb-lg-0">
+            <div class="form-row mb-2">
+              <div :class="{'col-xl-6': tourActive, 'col-xl-12': !tourActive}">
+                <button v-if="!tourActive" type="button" class="btn btn-sm btn-block btn-primary" @click="startTour">
+                  <i class="fa-solid fa-lightbulb"></i> {% trans %}Start interactive tour{% endtrans %}
+                </button>
+                <button v-else type="button" class="btn btn-sm btn-block btn-primary" @click="continueTour">
+                  <i class="fa-solid fa-play"></i> {% trans %}Continue tour{% endtrans %}
+                </button>
+              </div>
+              <div v-if="tourActive" class="col-xl-6">
+                <button type="button" class="btn btn-sm btn-block btn-white mt-2 mt-xl-0" @click="startTour">
+                  <i class="fa-solid fa-rotate"></i> {% trans %}Restart tour{% endtrans %}
+                </button>
+              </div>
+            </div>
+            <a href="{{ url_for('main.help') }}" class="btn btn-sm btn-white btn-block">
+              <i class="fa-regular fa-circle-question"></i> {% trans %}Check out the help page{% endtrans %}
+            </a>
+          </div>
+          <div class="col-lg-7">
+            {% trans %}
+              The interactive tour will introduce the most important features of Kadi4Mat and is recommended in order
+              to get started. More details and additional information can be found on the help page at any time.
+            {% endtrans %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div v-if="kadi.context.favorite_resources.length > 0"
+       :class="{'mb-4': kadi.context.saved_searches.length > 0 || kadi.context.latest_resources.length > 0}">
+    <div class="d-flex justify-content-between">
+      <h4 class="mb-3">
+        <strong>{% trans %}Favorites{% endtrans %}</strong>
+      </h4>
+      <a href="{{ url_for('accounts.view_resources', id=current_user.id) }}">
+        <strong>{% trans %}View all{% endtrans %}</strong>
+      </a>
+    </div>
+    <resource-index-view :resources="kadi.context.favorite_resources"></resource-index-view>
+  </div>
+
+  <div v-if="kadi.context.saved_searches.length > 0" :class="{'mb-4': kadi.context.latest_resources.length > 0}">
+    <div class="d-flex justify-content-between">
+      <h4 class="mb-3">
+        <strong>{% trans %}Saved searches{% endtrans %}</strong>
+      </h4>
+    </div>
+    <card-deck :items="kadi.context.saved_searches" :max-cards="4">
+      <template #default="props">
+        <div class="card-header py-1">
+          <strong>{$ props.item.pretty_type $}</strong>
+        </div>
+        <div class="card-body d-flex align-items-center py-2">
+          <a class="text-default stretched-link" :href="props.item._links.view">
+            <i class="fa-solid fa-magnifying-glass"></i> {$ props.item.name $}
+          </a>
+        </div>
+      </template>
+    </card-deck>
+  </div>
+
+  <div v-if="kadi.context.latest_resources.length > 0">
+    <div class="d-flex justify-content-between">
+      <h4 class="mb-3">
+        <strong>{% trans %}Latest updates{% endtrans %}</strong>
+      </h4>
+      <a href="{{ url_for('settings.manage_preferences') }}">
+        <strong>{% trans %}Configure{% endtrans %}</strong>
+      </a>
+    </div>
+    <div v-for="(resource, index) in kadi.context.latest_resources">
+      <div class="d-flex justify-content-between">
+        <h5>
+          <strong>{$ resource.title $}</strong>
+        </h5>
+        <a :href="resource.url">
+          <strong>{% trans %}View all{% endtrans %}</strong>
+        </a>
+      </div>
+      <resource-index-view :resources="resource.items"></resource-index-view>
+      <br v-if="index < kadi.context.latest_resources.length - 1">
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          tourActive: false,
+        };
+      },
+      mounted() {
+        this.tourActive = kadi.base.tour.hasProgress('basic');
+      },
+      methods: {
+        startTour() {
+          kadi.base.tour.start('basic');
+          this.tourActive = true;
+        },
+        continueTour() {
+          kadi.base.tour.continue();
+        },
+      },
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,130 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "base.html" %}
+
+{% block breadcrumbs %}
+  {% include "snippets/breadcrumb_home.html" %}
+  {% snippet "snippets/breadcrumb.html", url=url_for("accounts.login"), title=title %}
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <div class="card-body">
+      {% if len(forms) > 0 %}
+        <div class="row">
+          <div class="col-xl-6 d-flex justify-content-between">
+            <div class="nav nav-pills nav-vertical flex-column w-75">
+              {% for form in forms %}
+                <span ref="{{ form._provider }}-trigger"
+                      data-target="#{{ form._provider }}-tab"
+                      class="nav-link"
+                      @click="changeTab('{{ form._provider }}')">
+                  {{ config["AUTH_PROVIDERS"][form._provider]["title"] }}
+                </span>
+              {% endfor %}
+            </div>
+            <span>
+              <a href="{{ url_for('main.help', _anchor='login') }}"
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 class="text-muted">
+                <i class="fa-regular fa-circle-question"></i> {% trans %}Help{% endtrans %}
+              </a>
+            </span>
+          </div>
+          <div class="col-xl-6 border-top border-xl-top-0 border-xl-left mt-4 mt-xl-0">
+            <div class="tab-content mt-4 mt-xl-0">
+              {% for form in forms %}
+                <div id="{{ form._provider }}-tab" class="tab-pane">
+                  {% include "accounts/snippets/login_{}.html".format(form._provider) %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <span class="text-muted">
+          {% trans %}No authentication providers have been configured.{% endtrans %}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          tabs: kadi.context.auth_providers,
+          loadedTabs: [],
+          tabParam: 'tab',
+          oidcProvider: '',
+          shibStorageKey: 'shib_idp',
+          shibSaveIdp: false,
+          shibSelectedIdp: null,
+        };
+      },
+      unmounted() {
+        for (const tab of this.loadedTabs) {
+          tab.tab('dispose');
+        }
+      },
+      mounted() {
+        let currentTab = this.tabs[0];
+        const currentParam = kadi.utils.getSearchParam(this.tabParam);
+
+        for (const tab of this.tabs) {
+          if (tab === currentParam) {
+            currentTab = tab;
+          }
+        }
+
+        this.showTab(currentTab);
+
+        // Restore the saved IdP, if applicable.
+        const idp = window.localStorage.getItem(this.shibStorageKey);
+
+        if (idp && this.$refs.idpSelection) {
+          this.$nextTick(() => this.$refs.idpSelection.selectValue(idp));
+          this.shibSaveIdp = true;
+        }
+      },
+      methods: {
+        showTab(tab) {
+          this.loadedTabs.push($(this.$refs[`${tab}-trigger`]).tab('show'));
+        },
+        changeTab(tab) {
+          const url = kadi.utils.setSearchParam(this.tabParam, tab);
+          kadi.utils.replaceState(url);
+
+          this.showTab(tab);
+        },
+        async submitOIDC(e) {
+          this.oidcProvider = e.currentTarget.dataset.provider;
+          await this.$nextTick();
+          this.$refs.oidcForm.submit();
+        },
+        submitShib() {
+          if (this.shibSaveIdp && this.shibSelectedIdp) {
+            window.localStorage.setItem(this.shibStorageKey, this.shibSelectedIdp);
+          } else {
+            window.localStorage.removeItem(this.shibStorageKey);
+          }
+        },
+      },
+    });
+  </script>
+{% endblock %}

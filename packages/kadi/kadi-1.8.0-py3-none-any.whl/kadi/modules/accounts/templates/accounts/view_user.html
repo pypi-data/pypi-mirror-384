@@ -1,0 +1,152 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "accounts/view_user_base.html" %}
+
+{% block content %}
+  <div class="card">
+    {% include "accounts/snippets/view_user_menu.html" %}
+
+    {% if user.state in [UserState.INACTIVE, UserState.DELETED] %}
+      <div class="card-header py-2">
+        <h5 class="mb-0">
+          <span class="badge badge-danger">
+            {% if user.state == UserState.INACTIVE %}
+              {% trans %}Inactive{% endtrans %}
+            {% else %}
+              {% trans %}Deleted{% endtrans %}
+            {% endif %}
+          </span>
+        </h5>
+      </div>
+    {% endif %}
+
+    <div class="card-body">
+      {% if user == current_user %}
+        <a href="{{ url_for('settings.edit_profile') }}" class="btn btn-sm btn-primary">
+          <i class="fa-solid fa-pencil"></i> {% trans %}Edit profile{% endtrans %}
+        </a>
+        <hr>
+      {% endif %}
+
+      {% if user.image_name %}
+        <div class="float-sm-right ml-sm-3 mb-3 mb-sm-0">
+          <a href="{{ url_for('api.preview_user_image', id=user.id) }}" target="_blank" rel="noopener noreferrer">
+            <img class="img-max-115 img-thumbnail" src="{{ url_for('api.preview_user_image', id=user.id) }}">
+          </a>
+        </div>
+      {% endif %}
+
+      <div class="d-flow-root">
+        <p>
+          <span class="h5 font-weight-bold">{{ user.displayname }}</span>
+        </p>
+        <p>
+          <span>@{{ user.identity.username }}</span>
+          <br>
+          <small class="text-muted">
+            {% trans %}Account type{% endtrans %}: {{ user.identity.Meta.identity_type["name"] }} &middot;
+            {% trans %}Persistent ID{% endtrans %}: {{ user.id }}
+          </small>
+        </p>
+      </div>
+      <br>
+      <div class="mt-1">
+        {% if user.about %}
+          <markdown-renderer input="{{ user.about }}"></markdown-renderer>
+        {% else %}
+          <em class="text-muted">{% trans %}No information provided.{% endtrans %}</em>
+        {% endif %}
+      </div>
+
+      {% set email_visible = current_user.is_sysadmin or user == current_user or not user.email_is_private %}
+      {% set timestamp_visible = current_user.is_sysadmin or user == current_user %}
+
+      {% if email_visible or timestamp_visible or user.orcid %}
+        <hr>
+        <div class="d-md-flex justify-content-between align-items-center">
+          {% if email_visible or user.orcid %}
+            <div class="mb-2 mb-md-0">
+              {% snippet "accounts/snippets/view_user_email.html",
+                         user=user,
+                         identity=user.identity,
+                         email_visible=email_visible %}
+
+              {% if user.orcid %}
+                <div class="{% if email_visible %}mt-2{% endif %}">
+                  <a href="{{ const.URL_ORCID }}/{{ user.orcid }}" target="_blank" rel="noopener noreferrer">
+                    <i class="fa-brands fa-orcid fa-lg color-orcid"></i>
+                    <strong>{{ user.orcid }}</strong>
+                  </a>
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+
+          {% if timestamp_visible %}
+            <div>
+              <small>
+                {% if user == current_user %}
+                  <tooltip-item title="{% trans %}Only visible to you.{% endtrans %}">
+                    <i class="fa-solid fa-circle-info"></i>
+                  </tooltip-item>
+                {% endif %}
+                {% trans %}Member since{% endtrans %}
+                <local-timestamp timestamp="{{ user.created_at }}"></local-timestamp>
+                <span class="text-muted">
+                  (<from-now timestamp="{{ user.created_at }}"></from-now>)
+                </span>
+              </small>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+
+    {% if user.identities.count() > 1 %}
+      <div class="card-footer pb-3">
+        <div class="mb-2">
+          <strong>{% trans %}Also known as{% endtrans %}:</strong>
+        </div>
+        <ul class="list-group">
+          {% for identity in user.identities.order_by("created_at") %}
+            {% if identity != user.identity %}
+              <li class="list-group-item py-2">
+                <div class="row align-items-center">
+                  <div class="col-md-4 mb-2 mb-md-0">@{{ identity.username }}</div>
+                  <div class="{% if email_visible %}
+                                col-md-4 mb-2 mb-md-0
+                              {% else %}
+                                col-md-8 d-md-flex justify-content-end
+                              {% endif %}">
+                    <span class="text-muted">
+                      {% trans %}Account type{% endtrans %}: {{ identity.Meta.identity_type["name"] }}
+                    </span>
+                  </div>
+                  {% if email_visible %}
+                    <div class="col-md-4 d-md-flex justify-content-end">
+                      <span>
+                        {% include "accounts/snippets/view_user_email.html" %}
+                      </span>
+                    </div>
+                  {% endif %}
+                </div>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

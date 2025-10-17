@@ -1,0 +1,111 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "collections/base.html" %}
+
+{% block content %}
+  <search-form class="mb-4" @search="search"></search-form>
+  <div class="row">
+    <div class="col-xl-4">
+      {% if can_create_collections %}
+        <a href="{{ url_for('collections.new_collection') }}" class="btn btn-primary btn-block mb-4">
+          <i class="fa-solid fa-square-plus"></i> {% trans %}Create new collection{% endtrans %}
+        </a>
+      {% endif %}
+
+      <saved-search class="mb-4"
+                    object-type="collection"
+                    select-endpoint="{{ url_for('api.select_saved_searches') }}"
+                    create-endpoint="{{ url_for('api.new_saved_search') }}"
+                    load-base-endpoint="{{ url_for('api.get_saved_search', id=0)[:-2] }}">
+      </saved-search>
+      <search-instances class="mb-4"
+                        :instances="kadi.context.instances"
+                        @search="search"
+                        @instance="isExternal = $event">
+      </search-instances>
+      <div class="mb-4">
+        <collapse-item id="filter-toggle" class="btn btn-sm btn-block btn-light text-left px-4">
+          {% trans %}Toggle filters{% endtrans %}
+        </collapse-item>
+      </div>
+      <div id="filter-toggle">
+        <search-per-page class="mb-4" @search="search"></search-per-page>
+        <search-selection class="mb-4"
+                          param="visibility"
+                          title="{% trans %}Filter by visibility{% endtrans %}"
+                          :choices="[['', '{% trans %}All{% endtrans %}'],
+                                     ['private', '{% trans %}Private{% endtrans %}'],
+                                     ['public', '{% trans %}Public{% endtrans %}']]"
+                          @search="search">
+          <div class="card-footer py-2 px-3">
+            <search-toggle label="{% trans %}Only consider explicit permissions{% endtrans %}"
+                           param="explicit_permissions"
+                           :show-border="false"
+                           @search="search">
+            </search-toggle>
+          </div>
+        </search-selection>
+        <search-filter v-show="!isExternal"
+                       class="mb-4"
+                       param="user"
+                       endpoint="{{ url_for('api.select_users') }}"
+                       title="{% trans %}Filter by creator{% endtrans %}"
+                       placeholder="{% trans %}Select users{% endtrans %}"
+                       :initial-values="kadi.context.users"
+                       @search="search">
+        </search-filter>
+        <search-filter class="mb-4"
+                       param="tag"
+                       title="{% trans %}Filter by tag{% endtrans %}"
+                       :endpoint="isExternal ? null : '{{ url_for('api.select_tags', type='collection') }}'"
+                       :placeholder="isExternal ? '{% trans %}Enter tags{% endtrans %}'
+                                                : '{% trans %}Select tags{% endtrans %}'"
+                       @search="search">
+          <div class="card-footer py-2 px-3">
+            <search-selection param="tag_operator"
+                              :show-border="false"
+                              :choices="[['or', '{% trans %}OR{% endtrans %}'],
+                                         ['and', '{% trans %}AND{% endtrans %}']]"
+                              @search="search">
+            </search-selection>
+          </div>
+        </search-filter>
+      </div>
+    </div>
+    <div class="col-xl-8">
+      <search-results ref="search"
+                      endpoint="{{ url_for('api.get_collections') }}"
+                      manage-services-endpoint="{{ url_for('settings.manage_services') }}">
+      </search-results>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          isExternal: false,
+        };
+      },
+      methods: {
+        search() {
+          this.$refs.search.search();
+        },
+      },
+    });
+  </script>
+{% endblock %}

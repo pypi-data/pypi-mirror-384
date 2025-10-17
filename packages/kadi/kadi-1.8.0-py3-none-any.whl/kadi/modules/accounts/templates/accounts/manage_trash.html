@@ -1,0 +1,185 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "accounts/view_user_base.html" %}
+
+{% block breadcrumbs %}
+  {{ super() }}
+  {% snippet "snippets/breadcrumb.html", url=url_for("accounts.manage_trash"), title=title %}
+{% endblock %}
+
+{% block content %}
+  <confirm-dialog ref="dialog"></confirm-dialog>
+  <div class="card">
+    {% include "accounts/snippets/view_user_menu.html" %}
+
+    <div class="card-body">
+      <dynamic-pagination v-if="!trashEmptied"
+                          ref="pagination"
+                          endpoint="{{ url_for('api.get_trash') }}"
+                          placeholder="{% trans %}No deleted resources.{% endtrans %}"
+                          :per-page="5"
+                          :enable-filter="true">
+        <template #default="props">
+          <div class="row">
+            <div class="col-md-6">
+              <p>
+                <strong>{% trans %}Deleted resources{% endtrans %}</strong>
+                <span class="badge-total">{$ props.total $}</span>
+              </p>
+            </div>
+            <div v-if="props.totalUnfiltered > 0" class="col-md-6 mb-3 mb-md-0 d-md-flex justify-content-end">
+              <div>
+                <button type="button" class="btn btn-sm btn-danger" @click="emptyTrash">
+                  {% trans %}Empty trash{% endtrans %}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-if="props.total > 0" class="mb-1">
+            <small class="text-muted">
+              <i class="fa-solid fa-circle-info"></i>
+              {% trans duration=const.DELETED_RESOURCES_MAX_AGE | duration %}
+                Note that resources will be deleted automatically after {{ duration }} and that manually emptying the
+                trash may take some time.
+              {% endtrans %}
+            </small>
+          </div>
+          <ul v-if="props.total > 0" class="list-group">
+            <li class="list-group-item bg-light py-2">
+              <div class="row">
+                <span class="col-md-3">{% trans %}Identifier{% endtrans %}</span>
+                <span class="col-md-2">{% trans %}Type{% endtrans %}</span>
+                <span class="col-md-4">{% trans %}Deleted at{% endtrans %}</span>
+              </div>
+            </li>
+            <li v-for="resource in props.items" :key="`${resource.type}${resource.id}`" class="list-group-item py-2">
+              <div class="row align-items-center">
+                <span class="col-md-3 mb-2 mb-md-0">@{$ resource.identifier $}</span>
+                <div class="col-md-2 mb-2 mb-md-0">
+                  <span class="badge badge-light border font-weight-normal">{$ resource.pretty_type $}</span>
+                </div>
+                <div class="col-md-4 mb-2 mb-md-0">
+                  <local-timestamp :timestamp="resource.deleted_at"></local-timestamp>
+                  <br>
+                  <small class="text-muted">
+                    (<from-now :timestamp="resource.deleted_at"></from-now>)
+                  </small>
+                </div>
+                <div class="col-md-3 mb-2 mb-md-0 d-md-flex justify-content-end">
+                  <div class="btn-group">
+                    <button type="button"
+                            class="btn btn-sm btn-light"
+                            title="{% trans %}Restore{% endtrans %}"
+                            :disabled="resource.disabled"
+                            @click="restoreResource(resource)">
+                      {% trans %}Restore{% endtrans %}
+                    </button>
+                    <button type="button"
+                            class="btn btn-sm btn-danger"
+                            title="{% trans %}Delete{% endtrans %}"
+                            :disabled="resource.disabled"
+                            @click="purgeResource(resource)">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </template>
+      </dynamic-pagination>
+      <em v-else class="text-muted">
+        {% trans %}No deleted resources.{% endtrans %}
+      </em>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          trashEmptied: false,
+        };
+      },
+      methods: {
+        async emptyTrash() {
+          // Refresh the data once again in case additional resources were deleted since the last load.
+          this.$refs.pagination.resetFilter();
+          await this.$refs.pagination.update();
+
+          const msg = $t('Are you sure you want to permanently delete all resources in the trash?');
+          const input = await this.$refs.dialog.open(msg);
+
+          if (!input.status) {
+            return;
+          }
+
+          try {
+            await axios.delete(kadi.context.empty_trash_endpoint);
+
+            this.trashEmptied = true;
+            kadi.base.flashSuccess($t('Trash emptied successfully.'));
+          } catch (error) {
+            if (error.request.status === 429) {
+              kadi.base.flashInfo($t('A cleanup task is already in progress.'));
+            } else {
+              kadi.base.flashDanger($t('Error emptying trash.'), error.request);
+            }
+          }
+        },
+        async restoreResource(resource) {
+          const input = await this.$refs.dialog.open($t('Are you sure you want to restore this resource?'));
+
+          if (!input.status) {
+            return;
+          }
+
+          resource.disabled = true;
+
+          try {
+            await axios.post(resource._actions.restore);
+
+            this.$refs.pagination.update();
+            kadi.base.flashSuccess($t('Resource restored successfully.'));
+          } catch (error) {
+            kadi.base.flashDanger($t('Error restoring resource.'), error.request);
+            resource.disabled = false;
+          }
+        },
+        async purgeResource(resource) {
+          const input = await this.$refs.dialog.open($t('Are you sure you want to permanently delete this resource?'));
+
+          if (!input.status) {
+            return;
+          }
+
+          resource.disabled = true;
+
+          try {
+            await axios.post(resource._actions.purge);
+
+            this.$refs.pagination.update();
+            kadi.base.flashSuccess($t('Resource deleted successfully.'));
+          } catch (error) {
+            kadi.base.flashDanger($t('Error deleting resource.'), error.request);
+            resource.disabled = false;
+          }
+        },
+      },
+    });
+  </script>
+{% endblock %}

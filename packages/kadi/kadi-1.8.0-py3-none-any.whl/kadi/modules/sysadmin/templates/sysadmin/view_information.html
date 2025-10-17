@@ -1,0 +1,142 @@
+{# Copyright 2021 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% extends "sysadmin/base.html" %}
+
+{% block content %}
+  <div class="card">
+    {% include "sysadmin/snippets/menu.html" %}
+
+    <div class="card-body">
+      <div class="mb-2">
+        <strong>{% trans %}Kadi4Mat version{% endtrans %}</strong>
+      </div>
+      <ul class="list-group mb-4">
+        <li class="list-group-item py-1">
+          <div class="row">
+            <div class="col-md-7">
+              <a href="{{ const.URL_RTD_STABLE }}/HISTORY.html" target="_blank" rel="noopener noreferrer">
+                <strong>v{{ version }}</strong>
+              </a>
+            </div>
+            <div class="col-md-5 d-md-flex justify-content-end">
+              <div v-if="initialized">
+                <div v-if="latestVersion !== null">
+                  <div v-if="latestVersion === '{{ version }}'">
+                    <i class="fa-solid fa-check"></i>
+                    <strong>{% trans %}Latest version{% endtrans %}</strong>
+                  </div>
+                  <div v-else>
+                    <a href="{{ const.URL_RTD_STABLE }}/installation/production/updating.html"
+                       target="_blank"
+                       rel="noopener noreferrer">
+                      <i class="fa-solid fa-circle-info"></i>
+                      <strong>{% trans %}Update available{% endtrans %} (v{$ latestVersion $})</strong>
+                    </a>
+                  </div>
+                </div>
+                <div v-else>
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                  <strong>{% trans %}Could not retrieve latest version{% endtrans %}</strong>
+                </div>
+              </div>
+              <div v-else>
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ul>
+      <div class="mb-2">
+        <strong>{% trans %}System information{% endtrans %}</strong>
+      </div>
+      <ul class="list-group mb-4">
+        <li class="list-group-item py-1">
+          <div class="row">
+            <div class="col-md-7">{% trans %}Current server time{% endtrans %}</div>
+            <div class="col-md-5 d-md-flex justify-content-end">
+              <strong>
+                <local-timestamp :timestamp="kadi.context.system_time"></local-timestamp>
+              </strong>
+            </div>
+          </div>
+        </li>
+
+        {% for var, title in [("celeryStatus", _("Celery status")), ("esStatus", _("Elasticsearch status"))] %}
+          <li class="list-group-item py-1">
+            <div class="row">
+              <div class="col-md-7">{{ title }}</div>
+              <div class="col-md-5 d-md-flex justify-content-end">
+                <div v-if="initialized">
+                  <div v-if="{{ var }}">
+                    <i class="fa-solid fa-check"></i>
+                    <strong>OK</strong>
+                  </div>
+                  <div v-else>
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <strong>{% trans %}Unreachable{% endtrans %}</strong>
+                  </div>
+                </div>
+                <div v-if="!initialized">
+                  <i class="fa-solid fa-circle-notch fa-spin"></i>
+                </div>
+              </div>
+            </div>
+          </li>
+        {% endfor %}
+
+        {% snippet "snippets/stat.html", title=_("Size of database"), value=stats["db_size"] %}
+      </ul>
+      <div class="mb-2">
+        <strong>{% trans %}Usage statistics{% endtrans %}</strong>
+      </div>
+      <ul class="list-group">
+        {% snippet "snippets/stat.html", title=_("Amount of active users"), value=stats["num_users"] %}
+        {% snippet "snippets/stat.html", title=_("Amount of active records"), value=stats["num_records"] %}
+        {% snippet "snippets/stat.html", title=_("Amount of active collections"), value=stats["num_collections"] %}
+        {% snippet "snippets/stat.html", title=_("Amount of active templates"), value=stats["num_templates"] %}
+        {% snippet "snippets/stat.html", title=_("Amount of active groups"), value=stats["num_groups"] %}
+        {% snippet "snippets/stat.html", title=_("Amount of active files"), value=stats["num_files"] %}
+        {% snippet "snippets/stat.html", title=_("Size of active files"), value=stats["file_size"] %}
+      </ul>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script nonce="{{ csp_nonce() }}">
+    kadi.base.newVue({
+      data() {
+        return {
+          latestVersion: null,
+          celeryStatus: false,
+          esStatus: false,
+          initialized: false,
+        };
+      },
+      async mounted() {
+        try {
+          const response = await axios.get(kadi.context.get_system_information_endpoint);
+          const data = response.data;
+
+          this.latestVersion = data.latest_version;
+          this.celeryStatus = data.celery_status;
+          this.esStatus = data.es_status;
+        } finally {
+          this.initialized = true;
+        }
+      },
+    });
+  </script>
+{% endblock %}

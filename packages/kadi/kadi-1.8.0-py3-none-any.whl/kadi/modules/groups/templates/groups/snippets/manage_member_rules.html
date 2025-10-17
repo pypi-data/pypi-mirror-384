@@ -1,0 +1,104 @@
+{# Copyright 2021 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+<popover-toggle class="float-right" toggle-class="btn btn-sm btn-light text-muted">
+  <template #toggle>
+    <i class="fa-regular fa-circle-question"></i> {% trans %}Help{% endtrans %}
+  </template>
+  <template #content>
+    {% trans %}
+      This view allows the automated assignment of roles within this group using rules with different conditions.
+      Currently, only username conditions can be specified. The selected role is applied to all users of the selected
+      account type whose username matches the specified one. Wildcards are supported in the username by using asterisks
+      (*), each corresponding to a sequence of zero or more arbitrary characters.
+    {% endtrans %}
+    <hr>
+    {% trans %}
+      Each rule is applied when a new user registers, but it can also be applied retroactively to all existing users.
+    {% endtrans %}
+  </template>
+</popover-toggle>
+<submission-form>
+  {{ render_csrf() }}
+
+  <select-field class="pt-2" :field="{{ rules_form.role }}"></select-field>
+  <div class="row">
+    <div class="col-lg">
+      <select-field :field="{{ rules_form.identity_type }}"></select-field>
+    </div>
+    <div class="col-lg">
+      <text-field :field="{{ rules_form.username }}">
+        <template #prepend>
+          <div class="input-group-prepend">
+            <span class="input-group-text">
+              <strong>@</strong>
+            </span>
+          </div>
+        </template>
+      </text-field>
+    </div>
+  </div>
+  <checkbox-field :field="{{ rules_form.retroactive }}"></checkbox-field>
+  <div class="d-flex justify-content-between">
+    <submit-field :field="{{ rules_form.submit }}"></submit-field>
+    <roles-popover :roles="{{ get_object_roles('group') | tojson_escaped }}"></roles-popover>
+  </div>
+</submission-form>
+<hr>
+<dynamic-pagination ref="pagination"
+                    endpoint="{{ url_for('api.get_group_role_rules', id=group.id) }}"
+                    placeholder="{% trans %}No rules.{% endtrans %}"
+                    :per-page="5">
+  <template #default="props">
+    <p>
+      <strong>{% trans %}Rules{% endtrans %}</strong>
+      <span class="badge-total">{$ props.total $}</span>
+    </p>
+    <ul v-if="props.total > 0" class="list-group">
+      <li class="list-group-item py-2 bg-light">
+        <div class="row">
+          <div class="col-md-4">{% trans %}Condition{% endtrans %}</div>
+          <div class="col-md-3">{% trans %}Role{% endtrans %}</div>
+          <div class="col-md-3">{% trans %}Created at{% endtrans %}</div>
+        </div>
+      </li>
+      <li v-for="rule in props.items" :key="rule.id" class="list-group-item">
+        <div class="row align-items-center">
+          <div class="col-md-4 mb-2 mb-md-0">
+            <div v-if="rule.type === 'username'">
+              <pre class="ws-pre-wrap mb-0">{$ `${rule.condition.identity_type}:${rule.condition.pattern}` $}</pre>
+            </div>
+          </div>
+          <div class="col-md-3 mb-2 mb-md-0">{$ kadi.utils.capitalize(rule.role.name) $}</div>
+          <div class="col-md-3 mb-2 mb-md-0">
+            <local-timestamp :timestamp="rule.created_at"></local-timestamp>
+            <br>
+            <small class="text-muted">
+              (<from-now :timestamp="rule.created_at"></from-now>)
+            </small>
+          </div>
+          <div class="col-md-2 d-md-flex justify-content-end">
+            <button type="button"
+                    class="btn btn-sm btn-danger"
+                    title="{% trans %}Remove rule{% endtrans %}"
+                    :disabled="rule.disabled"
+                    @click="removeRule(rule)">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </li>
+    </ul>
+  </template>
+</dynamic-pagination>

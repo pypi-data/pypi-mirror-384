@@ -1,0 +1,163 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% set can_update_collection = has_permission(current_user, "update", "collection", collection.id) %}
+{% set can_link_collection = has_permission(current_user, "link", "collection", collection.id) %}
+
+<div class="d-flex justify-content-between">
+  <div class="d-lg-inline d-flex flex-column">
+    <a href="{{ url_for('collections.edit_collection', id=collection.id) }}"
+       class="btn btn-sm btn-primary my-1{% if not can_update_collection %} disabled{% endif %}">
+      <i class="fa-solid fa-pencil"></i> {% trans %}Edit collection{% endtrans %}
+    </a>
+    <a href="{{ url_for('collections.new_collection', collection=collection.id) }}"
+       class="btn btn-sm btn-primary my-1{% if not can_create_collections %} disabled{% endif %}">
+      <i class="fa-solid fa-copy"></i> {% trans %}Copy collection{% endtrans %}
+    </a>
+    <div class="btn-group my-1">
+      <button data-toggle="dropdown"
+              type="button"
+              class="btn btn-sm btn-primary dropdown-toggle"
+              {% if not can_link_collection %}disabled{% endif %}>
+        {% trans %}Link record{% endtrans %}
+      </button>
+      <div class="dropdown-menu">
+        {% if record_template %}
+          <div class="dropdown-header">
+            <strong>{% trans %}New record{% endtrans %}</strong>
+          </div>
+          <a href="{{ url_for('records.new_record', collection=collection.id, template=record_template.id) }}"
+             class="dropdown-item{% if not can_create_records %} disabled{% endif %}">
+            {% trans %}Default template{% endtrans %}
+          </a>
+        {% endif %}
+
+        <a href="{{ url_for('records.new_record', collection=collection.id) }}"
+           class="dropdown-item{% if not can_create_records %} disabled{% endif %}">
+          {% if record_template %}
+            {% trans %}No template{% endtrans %}
+          {% else %}
+            {% trans %}New record{% endtrans %}
+          {% endif %}
+        </a>
+
+        {% if record_template %}
+          <div class="dropdown-divider"></div>
+        {% endif %}
+
+        <a href="{{ url_for('collections.manage_links', id=collection.id) }}" class="dropdown-item">
+          {% trans %}Existing record{% endtrans %}
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="d-lg-inline d-flex flex-column">
+    <div class="btn-group">
+      <button data-toggle="dropdown" type="button" class="btn btn-sm btn-light dropdown-toggle my-1">
+        {% trans %}Export as{% endtrans %}
+      </button>
+      <div class="dropdown-menu dropdown-menu-right">
+        {% for export_type, export_meta in const.EXPORT_TYPES["collection"].items() %}
+          <a href="{{ url_for('collections.export_collection', id=collection.id, export_type=export_type) }}"
+             class="dropdown-item">
+            {{ export_meta["title"] }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if publication_providers %}
+      <div class="btn-group">
+        <button data-toggle="dropdown" type="button" class="btn btn-sm btn-light dropdown-toggle my-1">
+          {% trans %}Publish via{% endtrans %}
+        </button>
+        <div class="dropdown-menu dropdown-menu-right">
+          {% for provider in publication_providers %}
+            <a href="{{ url_for('collections.publish_collection', id=collection.id, provider=provider.name) }}"
+               class="dropdown-item">
+              {{ provider.title }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <favorite-resource favorite-endpoint="{{ url_for('api.toggle_favorite_collection', id=collection.id) }}"
+                       :is-favorite="{{ collection.is_favorite() | tojson_escaped }}">
+    </favorite-resource>
+  </div>
+</div>
+<hr>
+
+{% if record_template %}
+  <div class="card bg-light mt-2 mb-3">
+    <div class="card-body py-2">
+      <div class="d-flex justify-content-between align-items-center">
+        <div class="mr-2">
+          {% trans %}Default record template{% endtrans %}:
+          <a href="{{ url_for('templates.view_template', id=record_template.id) }}"
+             target="_blank"
+             rel="noopener noreferrer">
+            <strong>{{ record_template.title }}</strong>
+          </a>
+        </div>
+        <popover-toggle toggle-class="btn btn-sm btn-light text-muted">
+          <template #toggle>
+            <i class="fa-regular fa-circle-question"></i> {% trans %}Help{% endtrans %}
+          </template>
+          <template #content>
+            {% trans em_open="<em>" | safe, em_close="</em>" | safe %}
+              This record template will be applied automatically when selecting {{ em_open }}Default template{{ em_close
+              }} when linking new records to this collection via {{ em_open }}Link record{{ em_close }}.
+            {% endtrans %}
+          </template>
+        </popover-toggle>
+      </div>
+    </div>
+  </div>
+  <hr>
+{% endif %}
+
+{{ template_hook("kadi_get_resource_overview_templates", resource=collection) }}
+
+{% snippet "snippets/resources/basic_info.html", resource=collection %}
+
+{% if collection.tags.count() > 0 %}
+  <hr>
+  <strong class="mr-3">{% trans %}Tags{% endtrans %}</strong>
+  {% for tag in collection.tags.order_by("name") %}
+    <h5 class="d-inline">
+      <a href="{{ url_for('collections.collections', tag=tag.name) }}"
+         class="badge badge-light border font-weight-normal m-1"
+         title="{{ tag.name }}">
+        {{ tag.name | truncate(25) }}
+      </a>
+    </h5>
+  {% endfor %}
+{% endif %}
+
+<hr>
+<resource-view title="{% trans %}Records{% endtrans %}"
+               placeholder="{% trans %}No records.{% endtrans %}"
+               :endpoint="kadi.context.get_records_endpoint"
+               :per-page="9"
+               :show-description="false">
+</resource-view>
+<hr>
+<resource-view title="{% trans %}Child collections{% endtrans %}"
+               placeholder="{% trans %}No collections.{% endtrans %}"
+               endpoint="{{ url_for('api.get_child_collections', id=collection.id) }}"
+               :per-page="9"
+               :show-description="false">
+</resource-view>

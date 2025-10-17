@@ -1,0 +1,82 @@
+{# Copyright 2023 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+<dynamic-pagination ref="pagination"
+                    endpoint="{{ url_for('api.get_personal_tokens') }}"
+                    placeholder="{% trans %}No personal access tokens.{% endtrans %}"
+                    :per-page="5">
+  <template #default="props">
+    <p>
+      <strong>{% trans %}Personal access tokens{% endtrans %}</strong>
+      <span class="badge-total">{$ props.total $}</span>
+    </p>
+    <ul v-if="props.total > 0" class="list-group">
+      <li class="list-group-item py-2 bg-light">
+        <div class="row">
+          <div class="col-md-2">{% trans %}Name{% endtrans %}</div>
+          <div class="col-md-3">{% trans %}Created at{% endtrans %}</div>
+          <div class="col-md-3">{% trans %}Expires at{% endtrans %}</div>
+          <div class="col-md-3">{% trans %}Scopes{% endtrans %}</div>
+        </div>
+      </li>
+      <li v-for="token in props.items" :key="token.id" class="list-group-item">
+        <div class="row align-items-center mb-2">
+          <div class="col-md-2 mb-2 mb-md-0">
+            <strong :class="{'crossed': token.is_expired}">{$ token.name $}</strong>
+            <br>
+            <span v-if="token.is_expired" class="text-danger">{% trans %}Expired{% endtrans %}</span>
+          </div>
+          <div class="col-md-3 mb-2 mb-md-0">
+            <local-timestamp :timestamp="token.created_at"></local-timestamp>
+            <br>
+            <small class="text-muted">
+              (<from-now :timestamp="token.created_at"></from-now>)
+            </small>
+          </div>
+          <div class="col-md-3 mb-2 mb-md-0">
+            <div v-if="token.expires_at">
+              <local-timestamp :timestamp="token.expires_at"></local-timestamp>
+              <br>
+              <small class="text-muted">
+                (<from-now :timestamp="token.expires_at"></from-now>)
+              </small>
+            </div>
+            <em v-else>{% trans %}Never{% endtrans %}</em>
+          </div>
+          <div class="col-md-3 mb-2 mb-md-0">
+            <scopes-viewer :scope="token.scope"></scopes-viewer>
+          </div>
+          <div class="col-md-1 d-md-flex justify-content-end">
+            <button type="button"
+                    class="btn btn-sm btn-danger"
+                    title="{% trans %}Remove token{% endtrans %}"
+                    :disabled="token.disabled"
+                    @click="removeToken(token)">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <small class="text-muted">
+          <i class="fa-solid fa-circle-info"></i>
+          <strong>{% trans %}Last used{% endtrans %}:</strong>
+          <em v-if="token.last_used === null">{% trans %}Never{% endtrans %}</em>
+          <span v-else>
+            <local-timestamp :timestamp="token.last_used"></local-timestamp>
+            (<from-now :timestamp="token.last_used"></from-now>)
+          </span>
+        </small>
+      </li>
+    </ul>
+  </template>
+</dynamic-pagination>

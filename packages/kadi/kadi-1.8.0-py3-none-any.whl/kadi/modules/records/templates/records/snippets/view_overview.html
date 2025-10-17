@@ -1,0 +1,149 @@
+{# Copyright 2020 Karlsruhe Institute of Technology
+ #
+ # Licensed under the Apache License, Version 2.0 (the "License");
+ # you may not use this file except in compliance with the License.
+ # You may obtain a copy of the License at
+ #
+ #     http://www.apache.org/licenses/LICENSE-2.0
+ #
+ # Unless required by applicable law or agreed to in writing, software
+ # distributed under the License is distributed on an "AS IS" BASIS,
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ # See the License for the specific language governing permissions and
+ # limitations under the License. #}
+
+{% set can_update_record = has_permission(current_user, "update", "record", record.id) %}
+
+<div class="d-flex justify-content-between">
+  <div class="d-lg-inline d-flex flex-column">
+    <a href="{{ url_for('records.edit_record', id=record.id) }}"
+       class="btn btn-sm btn-primary my-1{% if not can_update_record %} disabled{% endif %}">
+      <i class="fa-solid fa-pencil"></i> {% trans %}Edit record{% endtrans %}
+    </a>
+    <a href="{{ url_for('records.new_record', record=record.id) }}"
+       class="btn btn-sm btn-primary my-1{% if not can_create_records %} disabled{% endif %}">
+      <i class="fa-solid fa-copy"></i> {% trans %}Copy record{% endtrans %}
+    </a>
+    <div class="btn-group my-1">
+      <button data-toggle="dropdown"
+              type="button"
+              class="btn btn-sm btn-primary dropdown-toggle"
+              {% if not can_create_templates %}disabled{% endif %}>
+        {% trans %}As template{% endtrans %}
+      </button>
+      <div class="dropdown-menu">
+        <a href="{{ url_for('templates.new_template', type='record', record=record.id) }}" class="dropdown-item">
+          {% trans %}Record{% endtrans %}
+        </a>
+        <a href="{{ url_for('templates.new_template', type='extras', record=record.id) }}" class="dropdown-item">
+          {% trans %}Extras{% endtrans %}
+        </a>
+      </div>
+    </div>
+  </div>
+  <div class="d-lg-inline d-flex flex-column">
+    <div class="btn-group my-1">
+      <button data-toggle="dropdown" type="button" class="btn btn-sm btn-light dropdown-toggle">
+        {% trans %}Export as{% endtrans %}
+      </button>
+      <div class="dropdown-menu dropdown-menu-right">
+        <div class="dropdown-header">
+          <strong>{% trans %}Record{% endtrans %}</strong>
+        </div>
+        {% for export_type, export_meta in const.EXPORT_TYPES["record"].items() %}
+          <a href="{{ url_for('records.export_record', id=record.id, export_type=export_type) }}" class="dropdown-item">
+            {{ export_meta["title"] }}
+          </a>
+        {% endfor %}
+        <div class="dropdown-header">
+          <strong>{% trans %}Extras{% endtrans %}</strong>
+        </div>
+        {% for export_type, export_meta in const.EXPORT_TYPES["extras"].items() %}
+          <a href="{{ url_for('records.export_extras', id=record.id, export_type=export_type) }}" class="dropdown-item">
+            {{ export_meta["title"] }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if publication_providers %}
+      <div class="btn-group my-1">
+        <button data-toggle="dropdown" type="button" class="btn btn-sm btn-light dropdown-toggle">
+          {% trans %}Publish via{% endtrans %}
+        </button>
+        <div class="dropdown-menu dropdown-menu-right">
+          {% for provider in publication_providers %}
+            <a href="{{ url_for('records.publish_record', id=record.id, provider=provider.name) }}"
+               class="dropdown-item">
+              {{ provider.title }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <favorite-resource favorite-endpoint="{{ url_for('api.toggle_favorite_record', id=record.id) }}"
+                       :is-favorite="{{ record.is_favorite() | tojson_escaped }}">
+    </favorite-resource>
+  </div>
+</div>
+<hr>
+
+{{ template_hook("kadi_get_resource_overview_templates", resource=record) }}
+
+{% if record.type %}
+  <h5 class="float-sm-right ml-sm-3">
+    <a href="{{ url_for('records.records', type=record.type) }}"
+       class="badge badge-primary badge-mt-minus font-weight-normal">
+      {{ record.type }}
+    </a>
+  </h5>
+{% endif %}
+
+{% snippet "snippets/resources/basic_info.html", resource=record %}
+
+{% set num_tags = record.tags.count() %}
+
+{% if record.license or num_tags > 0 %}
+  <hr>
+{% endif %}
+
+{% if record.license %}
+  <p>
+    <strong class="mr-2">{% trans %}License{% endtrans %}:</strong>
+
+    {% if record.license.url %}
+      <a href="{{ record.license.url }}" target="_blank" rel="noopener noreferrer">
+        <i class="fa-solid fa-arrow-up-right-from-square fa-sm mr-1"></i>
+    {% endif %}
+        <strong>{{ record.license.title }}</strong>
+    {% if record.license.url %}
+      </a>
+    {% endif %}
+
+    <small class="text-muted">({{ record.license.name }})</small>
+  </p>
+{% endif %}
+
+{% if num_tags > 0 %}
+  <strong class="mr-2">{% trans %}Tags{% endtrans %}:</strong>
+  {% for tag in record.tags.order_by("name") %}
+    <h5 class="d-inline">
+      <a href="{{ url_for('records.records', tag=tag.name) }}"
+         class="badge badge-light border font-weight-normal m-1"
+         title="{{ tag.name }}">
+        {{ tag.name | truncate(25) }}
+      </a>
+    </h5>
+  {% endfor %}
+{% endif %}
+
+{% if record.extras %}
+  <hr>
+  <extras-viewer {% if can_update_record %}
+                 edit-endpoint="{{ url_for('records.edit_record', id=record.id) }}"
+                 {% endif %}
+                 :extras="{{ record.extras | tojson_escaped }}">
+    <strong>{% trans %}Extra metadata{% endtrans %}</strong>
+  </extras-viewer>
+{% endif %}
