@@ -1,0 +1,5 @@
+__author__ = "Jan Krupa"
+__email__ = "jan.krupa@cesnet.cz"
+__version__ = "1.2.0"
+__description__ = "NetBox plugin to store Authorized Keys"
+__name__ = "netbox_authorized_keys"

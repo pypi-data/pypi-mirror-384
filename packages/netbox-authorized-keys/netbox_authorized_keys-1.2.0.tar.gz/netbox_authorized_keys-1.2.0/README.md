@@ -1,0 +1,74 @@
+# NetBox Authorized Keys Plugin
+
+NetBox Authorized Keys is a plugin for NetBox that allows you to store and manage SSH authorized keys.
+
+## Features
+
+- Store SSH authorized keys
+- Assign keys to devices or virtual machines
+- Manage keys through the NetBox UI
+- API support for managing keys
+
+## Installation
+
+### From PyPI (when available)
+```sh
+pip install netbox-authorized-keys
+```
+
+### From Source
+
+1. Clone the repository:
+    ```sh
+    git clone https://github.com/CESNET/netbox_authorized_keys.git
+    ```
+
+2. Navigate to the project directory:
+    ```sh
+    cd netbox_authorized_keys
+    ```
+
+3. Install the plugin:
+    ```sh
+    pip install .
+    ```
+
+4. Add the plugin to your NetBox configuration:
+    ```python
+    PLUGINS = ["netbox_authorized_keys"]
+    PLUGINS_CONFIG = {
+        "netbox_authorized_keys": {
+            # Add any plugin-specific configuration here
+        }
+    }
+    ```
+
+5. Run the migrations:
+    ```sh
+    python manage.py migrate
+    ```
+
+### Importing Keys through the GUI
+- Visit `<NETBOX_URL>plugins/authorized-keys/authorized-keys/import/`
+- Paste the authorized keys into the text area as YAML
+- Example:
+```yaml
+- public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDQq ... user@host"
+  username: "admin"
+  full_name: "System Administrator"
+  description: "Admin SSH key"
+  devices: R121,R119,DEVICE_NAME3
+  virtual_machines: krupa.vm.cesnet.cz, VM_NAME2
+  comments: "Primary admin access key"
+
+
+- public_key: "ssh-ed25519 AAAAC3aaNzaC1lZDI1NTE5AAAAIJEj2f9jQS3zGOVKUtEtQXFvFJ6YyB4hjQvQEXEsEZGk developer@laptop"
+  username: "developer"
+  full_name: "Jane Developer"
+  description: "Developer access key"
+  comments: "Development environment access"
+  tags: "tag_slug1,tag_slug2"
+```
+- Notes:
+   - Tags slug need to be encased in quotes and separated by commas
+   - Devices and virtual machines need to be specified by their name, enclosed in quotes, and separated by commas
