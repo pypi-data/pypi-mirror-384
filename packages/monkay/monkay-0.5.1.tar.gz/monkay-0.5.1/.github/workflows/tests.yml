@@ -1,0 +1,50 @@
+---
+name: Test Suite
+
+on:
+  push:
+    branches:
+      - "**"
+    paths-ignore:
+      - "docs/**"
+  pull_request:
+    branches: ["main", "develop", "release"]
+    paths-ignore:
+      - "docs/**"
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  tests:
+    name: "Python ${{ matrix.python-version }}"
+    runs-on: "ubuntu-latest"
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: "actions/checkout@v5"
+      - uses: "actions/setup-python@v6"
+        with:
+          python-version: "${{ matrix.python-version }}"
+          allow-prereleases: true
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ${{ env.pythonLocation }}
+          key: ${{ runner.os }}-python-${{ env.pythonLocation }}-${{ hashFiles('pyproject.toml') }}-hatch
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: "Install dependencies"
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install go-task-bin
+          pip install hatch
+          scripts/install
+      - name: "Run linting"
+        if: steps.filters.outputs.src == 'true' || steps.filters.outputs.workflows == 'true'
+        run: "hatch fmt"
+      - name: "Run mypy"
+        run: "hatch run types:check"
+      - name: "Run tests"
+        run: "hatch test"
