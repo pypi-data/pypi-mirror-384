@@ -1,0 +1,124 @@
+name: Package and Deploy
+
+on:
+  pull_request:
+  release:
+    types: [created, edited, published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event.action == 'published' }}
+
+defaults:
+  run:
+    shell: bash -l {0}
+
+jobs:
+  source:
+    name: Build Source distribution
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+    - run: pipx run build --sdist
+    - run: pipx run twine check dist/*
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/*.tar.gz
+
+  cibuildwheel:
+    name: "Build wheels for ${{ matrix.variant.platform }} on ${{ matrix.variant.os }}"
+    runs-on: ${{ matrix.variant.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - { os: ubuntu-24.04, platform: 'manylinux' }
+          - { os: ubuntu-24.04, platform: 'musllinux' }
+          - { os: macos-15-intel, platform: 'macosx' }  # Intel support
+          - { os: macos-15, platform: 'macosx' }  # Apple silicon support
+          - { os: windows-2025, platform: "win" }
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: pypa/cibuildwheel@v3.1.4
+        env:
+          CIBW_BUILD: "*-${{ matrix.variant.platform }}*"
+          MACOSX_DEPLOYMENT_TARGET: "14"  # CIBW complains if lower
+
+      - name: Verify clean directory
+        run: git diff --exit-code
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "cibw-wheels-${{ matrix.variant.platform }}-${{ matrix.variant.os }}"
+          path: wheelhouse/*.whl
+
+  draft:
+    name: Deploy packages
+    needs: [source, cibuildwheel]
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'release'
+    permissions:
+      id-token: write
+      contents: write
+    environment: release
+
+    steps:
+    - uses: actions/download-artifact@v4
+      id: download
+      with:
+        path: artifacts
+    - name: Move artifacts into a single folder
+      run: |
+        mkdir dist
+        find ${{ steps.download.outputs.download-path }} -type f -regex ".*\.\(tar\.gz\|whl\)" -exec mv {} dist/. \;
+    - name: Attach artifacts to GitHub tagged draft release
+      uses: ncipollo/release-action@v1
+      with:
+        allowUpdates: true
+        draft: ${{ github.event.action != 'published' }}
+        artifacts: "dist/*.whl,dist/*.tar.gz"
+    - name: Publish artifacts to PyPI
+      if: ${{ github.event.action == 'published' }}
+      uses: pypa/gh-action-pypi-publish@release/v1
+
+  sphinx:
+    runs-on: ubuntu-latest
+    needs: [cibuildwheel]
+    steps:
+    - name: Checkout brille repository
+      uses: actions/checkout@v5
+      with:
+        path: repository
+    - name: Checkout brille.github.io repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        repository: brille/brille.github.io
+        token: ${{ secrets.BRILLE_GITHUB_IO_TOKEN }}
+        path: io
+    - name: Download musl libc musllinux wheels
+      uses: actions/download-artifact@v4
+      id: path
+      with:
+        name: cibw-wheels-musllinux-ubuntu-24.04
+        path: wheelhouse
+
+    - name: Sphinx Docker build
+      uses: g5t/sphinxer@v3.0.1
+      with:
+        source_dir: repository
+        pages_dir: io
+        is_release: ${{ contains(github.event_name, 'release') }}
+        create_readme: true
+        wheelhouse: wheelhouse
+        package: brille
+        html_dir: ${{ github.head_ref }}
