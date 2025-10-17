@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Execução - AutoDBLoader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #fdfdfd;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #007187;
+            color: white;
+            padding: 8px 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .header  p {
+            font-size: 13px;
+            font-weight: normal; 
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        .title {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .instructions {
+            background-color: #fff;
+            padding: 15px;
+            border-left: 4px solid orange;
+            margin-bottom: 20px;
+        }
+
+        .instructions p {
+            color: #c0392b;
+            margin-top: 5px;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 9px 20px;
+            border: none;
+            cursor: pointer;
+            font-weight: normal;
+            border-radius: 5px;
+        }
+
+        .btn-voltar {
+            background-color: #007187;
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-executar {
+            background-color: #008000;
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-voltar:hover {
+            background-color: #006a80;
+        }
+
+        .btn-executar:hover {
+            background-color: #146c43;
+        }
+
+        .json-box {
+            background: white;
+            border: 2px solid #d1d1d1;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-x: auto;
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .json-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 6px;
+            margin-bottom: 10px;
+        }
+
+        .copy-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .copiado-msg {
+            color: black;
+            font-weight: normal;
+            font-size: 14px;
+            display: none;
+            align-items: center;
+        }
+
+        .copy-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .copy-btn img {
+            width: 28px;
+            height: 28px;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: monospace;
+            font-size: 14px;
+            color: #000;
+        }
+
+        /* Estilo claro para JSON formatado */
+        .string {
+            color: #008000;
+        }
+
+        /* verde */
+        .number {
+            color: #800080;
+        }
+
+        /* roxo */
+        .boolean {
+            color: #0000ff;
+        }
+
+        /* azul */
+        .null {
+            color: #999;
+        }
+
+        /* cinza */
+        .key {
+            color: #c0392b;
+        }
+
+        /* vermelho escuro */
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <div class="logo">AutoDBLoader</div>
+        <div class="logo"><p>Desenvolvido por Lucas Rodrigues</p></div>
+    </header>
+
+    <main class="container">
+        <h1 class="title" id="titulo-execucao">Executar</h1>
+
+        <div class="instructions">
+            <strong>Instruções:</strong>
+            <p>
+                É possível executar o código clicando no botão <strong>Executar</strong> abaixo ou criando um arquivo
+                Python <code>(.py)</code>, importar a biblioteca e configurar usando o dicionário abaixo.
+            </p>
+        </div>
+
+        <div class="buttons">
+            <button class="btn btn-voltar" onclick="voltar()">Voltar</button>
+            <button class="btn btn-executar" id="btnExec" onclick="">Executar</button>
+        </div>
+
+        <div id="mensagem-execucao" style="display: none; background-color: #d9edf7; color: #31708f; border-left: 5px solid #31708f; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+            Execução iniciada. Verifique o terminal para acompanhar os logs.
+        </div>
+
+        <div id="mensagem-erro" style="display: none; background-color: #f2dede; color: #a94442; border-left: 5px solid #a94442; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+            ❌ Erro na configuração ou execução. Verifique o terminal para mais detalhes.
+        </div>
+
+        <div id="mensagem-sucesso"
+            style="display: none; background-color: #dff0d8; color: #3c763d; border-left: 5px solid #3c763d; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+            ✅ Execução finalizada com sucesso.
+        </div>
+
+        <div class="json-box">
+            <div class="json-header">
+                <h3>Dicionário de configuração</h3>
+                <div class="copy-container">
+                    <span class="copiado-msg" id="copiado-msg">Copiado</span>
+                    <button class="copy-btn" onclick="copiarJson()">
+                        <img id="copy-icon" src="img/copiar.png" alt="Copiar JSON" />
+                    </button>
+                </div>
+            </div>
+            <pre id="json-output"></pre>
+        </div>
+    </main>
+    <script>
+
+        document.getElementById("btnExec").onclick = async () => {
+            const params = {
+                func: localStorage.getItem("funcaoExecucao"),
+                config: JSON.parse(localStorage.getItem("configExecucao") || "{}")
+            };
+            const msgBox = document.getElementById("mensagem-execucao");
+            const msgError = document.getElementById("mensagem-erro");
+            const msgSucess = document.getElementById("mensagem-sucesso");
+            msgError.style.display = "none";
+            msgSucess.style.display = "none";
+            msgBox.style.display = "block"; // mostrar a mensagem
+
+
+            try {
+                const output = await window.pywebview.api.run(params);
+                msgBox.style.display = "none";
+                msgSucess.style.display = "block";
+            } catch (e) {
+                console.error("Erro na execução:", e);
+                // alert("Erro na configuração/execução: " + (e.message || e));
+                msgBox.style.display = "none";
+                msgError.style.display = "block";
+            }
+        };
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const jsonOutput = document.getElementById("json-output");
+
+            const jsonString = localStorage.getItem("configExecucao");
+            let jsonData;
+
+            try {
+                jsonData = JSON.parse(jsonString);
+            } catch (e) {
+                jsonData = { erro: "JSON inválido ou não encontrado." };
+            }
+
+            jsonOutput.innerHTML = syntaxHighlight(jsonData);
+
+            // ATUALIZA O H1 COM BASE NA FUNÇÃO
+            const funcao = localStorage.getItem("funcaoExecucao");
+            const titulo = document.getElementById("titulo-execucao");
+
+            if (funcao === "insert") {
+                titulo.textContent = "Inserção de Dados";
+            } else if (funcao === "extract") {
+                titulo.textContent = "Extração de Dados";
+            } else {
+                titulo.textContent = "Executar";
+            }
+        });
+
+
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const jsonOutput = document.getElementById("json-output");
+
+            const jsonString = localStorage.getItem("configExecucao");
+            let jsonData;
+
+            try {
+                jsonData = JSON.parse(jsonString);
+            } catch (e) {
+                jsonData = { erro: "JSON inválido ou não encontrado." };
+            }
+
+            jsonOutput.innerHTML = syntaxHighlight(jsonData);
+        });
+
+
+        function syntaxHighlight(json) {
+            if (typeof json != 'string') {
+                json = JSON.stringify(json, undefined, 2);
+            }
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'key';
+                    } else {
+                        cls = 'string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const jsonOutput = document.getElementById("json-output");
+            jsonOutput.innerHTML = syntaxHighlight(jsonDeConfiguracao);
+        });
+
+        function copiarJson() {
+            const jsonString = localStorage.getItem("configExecucao") || "{}";
+            const msg = document.getElementById("copiado-msg");
+            const icon = document.getElementById("copy-icon");
+
+            navigator.clipboard.writeText(jsonString).then(() => {
+                msg.style.display = "inline";
+                icon.src = "img/verificar.png";
+
+                setTimeout(() => {
+                    msg.style.display = "none";
+                    icon.src = "img/copiar.png";
+                }, 4000);
+            });
+        }
+
+
+        function voltar() {
+            window.location.href = "configuracao.html";
+        }
+    </script>
+</body>
+
+</html>
