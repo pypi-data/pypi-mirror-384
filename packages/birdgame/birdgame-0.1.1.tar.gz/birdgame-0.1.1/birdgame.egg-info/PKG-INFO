@@ -1,0 +1,211 @@
+Metadata-Version: 2.4
+Name: birdgame
+Version: 0.1.1
+Summary: Utilities to help play the Bird Game at crunchdao.com
+Home-page: https://github.com/microprediction/birdgame
+Author: microprediction
+Author-email: peter.cotton@microprediction.com
+License: MIT
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pandas
+Requires-Dist: river
+Requires-Dist: density
+Requires-Dist: densitypdf>=0.1.4
+Requires-Dist: matplotlib
+Requires-Dist: redis
+Requires-Dist: orjson
+Requires-Dist: tqdm
+Requires-Dist: numpy
+Requires-Dist: IPython
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary
+
+# birdgame  ![tests_312](https://github.com/microprediction/birdgame/workflows/tests_312/badge.svg)
+
+Utilities for the Bird Game at [crunchdao.com](https://crunchdao.com). Your task is to track the dove location.  
+
+## Install
+
+```bash
+pip install birdgame
+```
+
+## Visualize the challenge
+Run [animatebirds.py](https://github.com/microprediction/birdgame/blob/main/birdgame/animation/animatebirds.py) to get a quick sense. 
+
+![](https://github.com/microprediction/birdgame/blob/main/docs/assets/bird_animation.png)
+
+
+## Create your Tracker
+
+To create your tracker, you need to define a class that implements the `TrackerBase` interface. Specifically, your class must implement the following methods:
+
+1. **`tick(self, payload, performance_metrics)`**  
+   This method is called at every time step to process new payloads. Use this method to update your internal state or logic as needed.
+
+   Payload Example:
+     ```python
+      {
+        "falcon_location": 21.179864629354732,
+        "time": 230.96231205799998,
+        "dove_location": 19.164986723324326,
+        "falcon_wingspan": 0.28467,
+        "falcon_id": 1
+      }
+     ```
+2. **`predict(self)`**  
+   This method should return your prediction of the dove's location at a future time step. Ensure that the return format complies with the [density_pdf](https://github.com/microprediction/densitypdf/blob/main/densitypdf/__init__.py) specification.
+
+You can refer to the [Tracker examples](https://github.com/microprediction/birdgame/tree/main/birdgame/examples) for guidance.
+
+## Check your Tracker performance
+
+Add in an optional parameter called performance_metrics to your tick method to obtain a dictionary of your performance metrics at each tick. This dictionary contains your wealth, likelihood_ewa, and recent_likelihood_ewa at the time of the current tick.
+
+### Usage Example
+
+```python
+def tick(self, payload, performance_metrics):
+    print(f"performance_metrics: {performance_metrics}")
+```
+
+You can find this implemented in the [Quickstarter Notebooks](https://github.com/microprediction/birdgame/tree/main/birdgame/examples/quickstarters) and in the [Example Models](https://github.com/microprediction/birdgame/tree/main/birdgame/models)
+
+## Warm up your Tracker
+
+You can implement a warm up period for your Tracker. During this period, your model is trained on the data without changing wealth. 
+
+The warm up period can also be triggered by checking a field in the performance metrics as shown below:
+
+### Usage Example:
+```python
+class MyTracker(TrackerBase):
+
+    def __init__(self, warmup=0):
+        self.warmup_cutoff = warmup
+        self.tick_count = 0
+    
+    def tick(self, payload, performance_metrics):
+        # Process the payload and update internal state
+
+        # To trigger a warm up based on a specific performance metric:
+        recent_likelihood_ewa = performance_metrics['recent_likelihood_ewa']
+        total_wealth = performance_metrics['wealth']
+        if (recent_likelihood_ewa < 1.1 or total_wealth < 1000):
+            self.tick_count = 0
+
+        self.tick_count += 1
+    
+    def predict(self):
+        # Return the predicted dove location
+        if self.tick_count < self.warmup_cutoff:
+            return None
+        pass
+```
+
+To see this integrated into the example models, you can refer to the (commented out code in) [Quickstarter Notebooks](https://github.com/microprediction/birdgame/tree/main/birdgame/examples/quickstarters) and the [Example Models](https://github.com/microprediction/birdgame/tree/main/birdgame/models).
+
+## Challenge your Tracker against the benchmark
+
+To compare your Tracker's performance against the benchmark Tracker, use the `test_run` method provided in the `TrackerBase` class. This method evaluates your Tracker's efficiency over a series of time steps using [density_pdf](https://github.com/microprediction/densitypdf/blob/main/densitypdf/__init__.py) scoring. **A higher score reflects more accurate predictions.**
+
+### Usage Example:
+```python
+from birdgame.tracker import TrackerBase
+
+class MyTracker(TrackerBase):
+    def tick(self, payload, performance_metrics):
+        # Process the payload and update internal state
+        pass
+   
+    def predict(self):
+        # Return the predicted dove location
+        pass
+   
+# Instantiate your Tracker
+tracker = MyTracker()
+
+# Run the test to compare against the benchmark Tracker
+tracker.test_run(
+    live=True, # Set to True to use live streaming data; set to False to use data from a CSV file
+    step_print=1000 # Print the score and progress every 1000 steps
+)
+```
+
+
+## Tracker examples 
+See [Tracker examples](https://github.com/microprediction/birdgame/tree/main/birdgame/examples). There are:
+
+- Quickstarter Notebooks
+- Self-contained examples
+- Examples that build on provided classes
+
+or [Trackers](https://github.com/microprediction/birdgame/tree/main/birdgame/models) (Self-contained trackers)
+
+Take your pick! 
+
+## General Bird Game Advice 
+
+The Bird Game challenges you to predict the dove's location using probabilistic forecasting.
+
+### Probabilistic Forecasting
+
+Probabilistic forecasting provides **a distribution of possible future values** rather than a single point estimate, allowing for uncertainty quantification. Instead of predicting only the most likely outcome, it estimates a range of potential outcomes along with their probabilities by outputting a **probability distribution**.
+
+A probabilistic forecast models the conditional probability distribution of a future value $(Y_t)$ given past observations $(\mathcal{H}_{t-1})$. This can be expressed as:  
+
+$$P(Y_t \mid \mathcal{H}_{t-1})$$
+
+where $(\mathcal{H}_{t-1})$ represents the historical data up to time $(t-1)$. Instead of a single prediction $(\hat{Y}_t)$, the model estimates a full probability distribution $(f(Y_t \mid \mathcal{H}_{t-1}))$, which can take different parametric forms, such as a Gaussian:
+
+$$Y_t \mid \mathcal{H}_{t-1} \sim \mathcal{N}(\mu_t, \sigma_t^2)$$
+
+where $(\mu_t)$ is the predicted mean and $(\sigma_t^2)$ represents the uncertainty in the forecast.
+
+Probabilistic forecasting can be handled through various approaches, including **variance forecasters**, **quantile forecasters**, **interval forecasters** or **distribution forecasters**, each capturing uncertainty differently.
+
+For example, you can try to forecast the target location by a gaussian density function (or a mixture), thus the model output follows the form:
+
+```python
+{"density": {
+                "name": "normal",
+                "params": {"loc": y_mean, "scale": y_var}
+            },
+ "weight": weight
+}
+```
+
+A **mixture density**, such as the gaussion mixture $\sum_{i=1}^{K} w_i \mathcal{N}(Y_t | \mu_i, \sigma_i^2)$ allows for capturing multi-modal distributions and approximate more complex distributions.
+
+![](https://github.com/microprediction/birdgame/blob/main/docs/assets/proba_forecast.png)
+
+### Additional Resources
+
+- [Literature](https://github.com/microprediction/birdgame/blob/main/LITERATURE.md) 
+- Useful Python [packages](https://github.com/microprediction/birdgame/blob/main/PACKAGES.md)
+
+
+
+## Column Names and Tool Tips
+
+| **Column**           | **Description**                                                                                              |
+|----------------------|--------------------------------------------------------------------------------------------------------------|
+| **Model**            |                                                         |
+| **Active Wealth**    | The wealth that is currently at risk.                                                                        |
+| **Cumulative Prize** | Active Wealth is prevented from growing too large by withdrawals (prizes).                                   |
+| **Total Wealth**     | The sum of cumulative prizes and active wealth, and thus a measure of overall success.                       |
+| **Longevity**        | The number of observations since a player entered the game.                                                  |
+| **Log Likelihood**   | An exponentially weighted average of ex-post log-likelihood.                                                 |
+
