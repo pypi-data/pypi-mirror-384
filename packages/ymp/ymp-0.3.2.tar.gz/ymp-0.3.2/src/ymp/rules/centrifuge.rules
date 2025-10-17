@@ -1,0 +1,39 @@
+Env(name="centrifuge", base="bioconda", packages="centrifuge")
+
+with Stage("profile_centrifuge") as S:
+    S.doc("""
+    Classify reads using centrifuge
+    """)
+    EXTS = "1.cf 2.cf 3.cf".split()
+    rule centrifuge:
+        message:
+            "Centrifuge: Classifying reads in {wildcards.sample}"
+        input:
+            db     = ["{params.dbbase}." + ext for ext in EXTS],
+            reads  = "{:prev:}/{sample}.{:pairnames:}.fq.gz"
+        params:
+            dbbase = "{:dir.references:}/centrifuge/{params.dbname}",
+            dbname = "p+h+v"
+        output:
+            hits   = "{:this:}/{sample}.hits.tsv",
+            report = "{:this:}/{sample}.report.tsv",
+        log:
+                     "{:this:}/{sample}.log",
+        threads:
+            16
+        conda:
+            "centrifuge"
+        resources:
+            mem = "32g",
+        shell:
+            "centrifuge"
+            " -x {params.dbbase}"
+            " -1 {input.reads[0]}"
+            " -2 {input.reads[1]}"
+            " --report-file {output.report}"
+            " -S {output.hits}"
+            " --threads {threads}"
+            " --time" # print timings
+            " --mm" # use mmap so that multiple instances share idx
+            " >{log} 2>&1"
+

@@ -1,0 +1,67 @@
+Env(name="fastqc", base="bioconda", packages=["fastqc"])
+
+
+with Stage("qc_fastqc") as S:
+    S.doc("""
+    Quality screen reads using FastQC
+
+    >>> ymp make toy.qc_fastqc
+    """)
+
+    rule qc_fastqc:
+        """Run FastQC on read files"""
+        message:
+            "{:name:}: Creating QC report for {input}"
+        input:
+            "{:prev:}/{:target:}.{:pairnames:}.fq.gz"
+        output:
+            "{:this:}/{target}.{:pairnames:}_fastqc.html",
+            "{:this:}/{target}.{:pairnames:}_fastqc.zip"
+        log:
+            "{:this:}/{target}_fastqc.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads:
+            2  # fastqc cannot use more than 1 thread per file
+        params:
+            k=7,
+        resources:
+            mem = "4g",
+        conda:
+            "fastqc"
+        shell:
+            "exec >{log} 2>&1;"
+            "echo Launching fastqc on $HOSTNAME;"
+            "set -x;"
+            "fastqc"
+            " -t {threads}"
+            " -o $(dirname {output[0]})"
+            " {input}"
+            " -k {params.k}"
+
+    localrules: fastqc_multiqc
+    rule fastqc_multiqc:
+        message:
+            "{:name:}: Writing MultiQC config"
+        input:
+            "{:this:}/{:targets:}.{:pairnames:}_fastqc.zip"
+        output:
+            "{:this:}/multiqc_config.yaml"
+        params:
+            this = "{:this:}"
+        run:
+            from ruamel.yaml import YAML
+            yaml = YAML(typ="rt")
+            data = {
+                "run_modules": [ "fastqc" ],
+                "module_order": [{
+                    "fastqc": {
+                        "name": f"FastQC ({params.this})",
+                        "path_filters": [f"{params.this}/*_fastqc.zip"]
+                    }
+                }],
+                "sample_names_replace": {"(.*)\\.R1": "\\1"},
+            }
+
+            with open(output[0], "w") as out:
+                yaml.dump(data, out)

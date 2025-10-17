@@ -1,0 +1,217 @@
+Env(name="samtools", base="bioconda", packages=["samtools", "htslib"])
+
+with Stage("extract_reads") as S:
+    S.doc("""
+    Extract reads from BAM file using ``samtools fastq``.
+
+    Parameters ``fn``, ``Fn`` and ``Gn`` are passed through to
+    ``samtools view``. Reads are output *only* if all bits in ``f`` are
+    set, *none* of the bits in ``F`` are set, and *any* of the bits in
+    ``G`` is *unset*.
+
+    1: paired
+    2: proper pair (both aligned in right orientation)
+    4: unmapped
+    8: other read unmapped
+
+    Some options include:
+
+    - f2: correctly mapped (only proper pairs)
+    - F12: both ends mapped (but potentially "improper")
+    - G12: either end mapped
+    - F2: not correctly mapped (not proper pair, could also be unmapped)
+    - f12: not mapped (neither read mapped)
+    """)
+    S.add_param("f", typ="int", name="f", default=0)
+    S.add_param("F", typ="int", name="F", default=0x900)
+    S.add_param("G", typ="int", name="G", default=0)
+    rule samtools_fastq:
+        message:
+            "{:name:}: {output.pairs[0]}"
+        input:
+            bam =  "{:prev:}/{target}.bam"
+        output:
+            pairs = "{:this:}/{target}.{:pairnames:}.fq.gz"
+        log:
+                    "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads:
+            4
+        conda:
+            "samtools"
+        shell:
+            "samtools fastq"
+            #" -0 /dev/null"
+            #" -s /dev/null"
+            " -1 {output.pairs[0]}"
+            " -2 {output.pairs[1]}"
+            " --threads {threads}"
+            " -f {params.f}"
+            " -F {params.F}"
+            " -G {params.G}"
+            " {input}"
+            " 2>&1 >{log}"
+
+
+with Stage("extract_seqs") as S:
+    S.doc("""
+    Extract sequences from ``.fasta.gz`` file using ``samtools faidx``
+
+    Currently requires a ``.blast7`` file as input.
+
+    Use parameter ``Nomatch`` to instead keep unmatched sequences.
+    """)
+    S.add_param("Nomatch", typ="flag", name="match",
+                value="-13", default="-12")
+
+    rule samtools_select_blast:
+        message:
+            "{:name:}: IDs from blast {output.regions)"
+        input:
+            fasta = "{:prev:}/{:target:}.fasta.gz",
+            blast7 = "{:prev:}/{:target:}.blast7.gz"
+        output:
+            regions = temp("{:this:}/{target}.ids")
+        log:
+            "{:this:}/{target}.ids_from_blast.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.ids_from_blast.txt"
+        threads:
+            1
+        shell:
+            r"exec >{log} 2>&1;"
+            r"comm {params.match}"
+            r" <(gzip -dc {input.blast7} | grep -v '^#' | cut -f1 -d $'\t' | sort | uniq)"
+            r" <(gzip -dc {input.fasta} | grep '^>' | "
+            r"   sed -n '/^>/ s/>\([^[:space:]]*\).*/\1/p' | sort)"
+            r" >{output.regions}"
+
+    rule samtools_faidx:
+        message:
+            "{:name:}: {output.fasta}"
+        input:
+            fasta = "{:prev:}/{:target:}.fasta.gz",
+            regions = "{:this:}/{target}.ids"
+        output:
+            fasta = "{:this:}/{target}.fasta.gz"
+        log:
+                    "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads:
+            2
+        conda:
+            "samtools"
+        shadow:
+            "minimal"
+        shell:
+            'if [ 0 -eq $(wc -l < {input.regions}) ]; then'
+            '  echo "YMP: no sequences" >{log};'
+            '  echo -n;'
+            'else'
+            '  samtools faidx'
+            '   --length 99999999'
+            '   --region-file {input.regions}'
+            '   {input.fasta}'
+            '   2>{log};'
+            'fi | '
+            'bgzip '
+            ' --stdout'
+            ' --threads {threads}'
+            ' >{output.fasta}'
+
+
+with Stage("coverage_samtools") as S:
+    S.doc("""
+    Computes coverage from a sorted bam file using ``samtools coverage``
+    """)
+    rule samtools_coverage:
+        message:
+            "{:name:} {output}"
+        input:
+            "{:prev:}/{target}.sorted.bam"
+        output:
+            "{:this:}/{target}.coverage"
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        conda:
+            "samtools"
+        resources:
+            mem = "4g",
+        threads:
+            1
+        shell:
+            'samtools coverage'
+            ' {input}'
+            ' -o {output}'
+            ' >{log} 2>&1'
+
+
+with Stage("index_txfa") as S:
+    rule fai_index:
+        message:
+            "{:name:}: Re-compressing with bgzip and indexing {output.txfa}"
+        input:
+            txfa = "{:prev:}/{:target:}.tx.fasta.gz",
+        output:
+            txfa = "{:this:}/{target}.tx.fasta.gz",
+            gzi = "{:this:}/{target}.tx.fasta.gz.gzi",
+            fai = "{:this:}/{target}.tx.fasta.gz.fai",
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        conda:
+            "samtools"
+        resources:
+            mem = "4g",
+        threads:
+            8
+        shell:
+            'exec >{log} 2>&1;'
+            'bgzip'
+            ' --threads {threads}'
+            ' --decompress'
+            ' --stdout'
+            ' {input.txfa}'
+            '|'
+            'bgzip'
+            ' --threads {threads}'
+            ' --index --index-name {output.gzi}'
+            ' --compress'
+            ' --stdout'
+            ' >{output.txfa};'
+            ''
+            'samtools faidx {output.txfa}'
+
+
+with Stage("collate_txbam") as S:
+    rule samtools_collate:
+        message:
+            "{:name:}: Collating BAM file by read name"
+        input:
+            bam = "{:prev:}/{:target:}.sorted.tx.bam",
+        output:
+            bam = temp("{:this:}/{target}.tx.bam"),
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        conda:
+            "samtools"
+        params:
+            compression_level = 3,
+        resources:
+            mem = "4g",
+        threads:
+            8
+        shell:
+            'exec >{log} 2>&1;'
+            'samtools collate'
+            ' -o {output.bam}'
+            ' -l {params.compression_level}'
+            ' --threads {threads}'
+            ' {input.bam}'

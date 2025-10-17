@@ -1,0 +1,129 @@
+localrules: download_file_ftp
+rule download_file_ftp:
+    """
+    Downloads remote file using *wget*
+    """
+    message:
+        "Downloading {params.url}"
+    output:
+        "{:dir.downloads:}/{protocol}/{server}/{path}"
+    log:
+        "{:dir.downloads:}/{protocol}/{server}/{path}.log"
+    wildcard_constraints:
+        protocol="(ftp|ftps)",
+        server="[^/]+"
+    params:
+        url="{protocol}://{server}/{path}"
+    conda: "wget.yml"
+    shell: """
+    wget  "{params.url}" -O "{output[0]}" > {log} 2>&1
+    """
+
+rule download_file_http:
+    """
+    Downloads remote file using internal downloader
+    """
+    message:
+        "Downloading {params.url}"
+    output:
+        "{:dir.downloads:}/{protocol}/{server}/{path}"
+    log:
+        "{:dir.downloads:}/{protocol}/{server}/{path}.log"
+    wildcard_constraints:
+        protocol="(http|https)",
+        server="[^/]+"
+    params:
+        url="{protocol}://{server}/{path}"
+    run:
+        from ymp.download import FileDownloader
+        FileDownloader(loglevel=0).get(params.url, output[0])
+
+
+with Stage("references") as S:
+    S.doc("""
+    This is a "virtual" stage. It does not process read data, but comprises
+    rules used for reference provisioning.
+    """)
+    localrules: prepare_reference
+    rule prepare_reference:
+        """
+        Provisions files in ``<reference_dir>/<reference_name>``
+
+        - Creates symlinks to downloaded references
+        - Compresses references provided uncompressed upstream
+        - Connects files requested by stages with downloaded files and unpacked archives
+        """
+        message:
+            "Preparing {output}"
+        input:
+            files = lambda wc: ymp.get_config().ref[wc.refname].get_file(wc.path, isdir=False)
+        output:
+            "{:dir.references:}/{refname}/{path}"
+        wildcard_constraints:
+            path = "(?!_unpacked_).*",
+            refname = str("({})".format("|".join(ymp.get_config().ref)))
+        run:
+            if isinstance(input.files, str):
+                infile = input.files
+            else:
+                infiles = [fn for fn in input.files if fn.endswith(wildcards.path)]
+                if len(infiles) == 1:
+                    infile = infiles[0]
+                elif not infiles:
+                    raise RuleException(
+                        "No reference file found matching path '{}' in reference '{}'"
+                        "\nCandidates: {}"
+                        "".format(wildcards.path, wildcards.refname, input.files)
+                    )
+                else:
+                    raise RuleException(
+                        "Ambiguous reference file in reference '{}' for path '{}': '{}'"
+                        "".format(wildcards.refname, wildcards.path, infiles)
+                    )
+
+            if (wildcards.path.endswith(".gz")
+                and not infile.endswith(".gz")):
+                    shell("gzip -c '{infile}' > '{output}'")
+            elif (not wildcards.path.endswith(".gz")
+                  and infile.endswith(".gz")):
+                    shell("gunzip -c '{infile}' > '{output}'")
+            else:
+                outdir = os.path.dirname(output[0])
+                input_relpath = os.path.relpath(infile, outdir)
+                os.symlink(input_relpath, output[0])
+
+
+    localrules: prepare_reference_dir
+    rule prepare_reference_dir:  # ymp: extends prepare_reference
+        input:
+            files = lambda wc: ymp.get_config().ref[wc.refname].get_file(wc.path, isdir=True)
+        output:
+            directory("{:dir.references:}/{refname}/{path}")
+
+    localrules: unpack_archive
+    rule unpack_archive:
+        """
+        Template rule for unpacking references provisioned upstream as archive.
+        """
+        input:
+            tar = "dummy.in"
+        output:
+            files = "dummy.out"
+        params:
+            strip = 0,
+            prefix = ""
+        message:
+            "Unpacking {input.tar} into {params.prefix}"
+        shell: """
+        rm -rf {params.prefix}
+        mkdir -p {params.prefix}
+        tar -xf '{input.tar}' --strip-components {params.strip} -C '{params.prefix}'
+        """
+    ruleorder: unpack_archive > prepare_reference
+
+    for ref in ymp.get_config().ref.values():
+        for unpack_rule in ref.generate_rules(
+                unpack_archive=workflow._rules['unpack_archive'],
+        ):
+            unpack_rule
+

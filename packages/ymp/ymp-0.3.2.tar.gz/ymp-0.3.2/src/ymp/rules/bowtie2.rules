@@ -1,0 +1,148 @@
+from ymp.util import filter_input, check_input
+
+Env(name="bowtie2", base="bioconda", packages=["bowtie2", "samtools"])
+
+BT2IDX_SUFFIXES = "1.bt2 2.bt2 3.bt2 4.bt2 rev.1.bt2 rev.2.bt2".split()
+
+with Stage("index_bowtie2") as S:
+    S.doc("""
+    >>> ymp make toy.ref_genome.index_bowtie2
+    """)
+    rule bowtie2_index:
+        message:
+            "{:name:}: {output[0]}"
+        input:
+            fasta = "{:prev:}/{target}.fasta.gz"
+        output:
+            expand("{{:this:}}/{{target}}.{ext}", ext=BT2IDX_SUFFIXES)
+        params:
+            bt2_base="{:this:}/{target}",
+            nonempty = check_input(['fasta'], minlines=2)
+        threads:
+            8
+        log:
+            "{:this:}/{target}.btbuild.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        conda:
+            "bowtie2"
+        shell:
+            "if [ '{params.nonempty}' = 'False' ]; then"
+            "  touch {output};"
+            "  exit 0;"
+            "fi;"
+            "bowtie2-build-s"
+            " {input}"
+            " {params.bt2_base}"
+            " --threads {threads}"
+            " >& {log}"
+
+
+with Stage("map_bowtie2") as S:
+    S.doc("""
+    Map reads using Bowtie2
+
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2VF
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2F
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2S
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2VS
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2X800
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2I5
+    >>> ymp make toy.ref_genome.index_bowtie2.map_bowtie2L
+    >>> ymp make toy.assemble_megahit.index_bowtie2.map_bowtie2
+    >>> ymp make toy.group_Subject.assemble_megahit.index_bowtie2.map_bowtie2
+    >>> ymp make mpic.ref_ssu.index_bowtie2.map_bowtie2
+    """)
+    S.add_param("", typ="choice", name="sensitivity",
+                value=['VF', 'F', 'S', 'VS'], default='S')
+    S.add_param("L", typ="flag", name="local", value="local")
+    S.add_param("I", typ="int", name="minins", default="0")
+    S.add_param("X", typ="int", name="maxins", default="500")
+
+    rule bowtie2_map:
+        message:
+            "{:name:}: Mapping {input.r1}... to {params.bt2_base}"
+        input:
+            r1 = "{:prev:}/{:target:}.{:pairnames[0]:}.fq.gz",
+            r2 = "{:prev:}/{:target:}.{:pairnames[1]:}.fq.gz",
+            index = expand("{{:prev:}}/{{:target:}}.{ext}", ext=BT2IDX_SUFFIXES)
+        output:
+            bam   = temp(  "{:this:}/{target}.bam")
+        log:
+                           "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        params:
+            bt2_base = lambda wc, input: input.index[0][:-len(BT2IDX_SUFFIXES[0])-1],
+            r1 = filter_input("r1", also="r2", join=","),
+            r2 = filter_input("r2", also="r1", join=","),
+            index_nonempty = check_input(["index"], minbytes=1)
+        resources:
+            mem = "80g",
+        threads:
+            12
+        conda:
+            "bowtie2"
+        shell:
+            'if [ "{params.index_nonempty}" = "False" ]; then'
+            ' echo -e "@HD\tVN:1.0" | samtools view -b -o {output.bam} -;'
+            ' echo YMP: empty index >{log};'
+            ' exit 0;'
+            'fi;'
+            'case {params.sensitivity} in'
+            ' VF) MODE=very-fast ;;'
+            ' F) MODE=fast ;;'
+            ' S) MODE=sensitive ;;'
+            ' VS) MODE=very-sensitive ;;'
+            'esac;'
+            'if [ -n "{params.local}" ]; then'
+            ' MODE="$MODE-local";'
+            'fi;'
+            'if [ -n "{params.r2}" ]; then'
+            ' READS="-1 {params.r1} -2 {params.r2}";'
+            'else'
+            ' READS="-U {params.r1}";'
+            'fi;'
+            'bowtie2'
+            ' --$MODE'
+            ' -x {params.bt2_base}'
+            ' $READS'
+            ' -X {params.maxins} '
+            ' -I {params.minins} '
+            ' -p {threads} '
+            ' 2>{log} '
+            ' | samtools view -b -o {output.bam} -'
+
+    rule bowtie2_map_SE: # ymp: extends bowtie2_map
+        input:
+            r2    = []
+        params:
+            r1 = filter_input("r1", join=","),
+            r2 = ""
+
+    localrules: bowtie2_map_multiqc_cfg
+    rule bowtie2_map_multiqc_cfg:
+        message:
+            "{:name:}: Writing MultiQC config"
+        input:
+            "{:this:}/{:targets:}.log"
+        output:
+            "{:this:}/multiqc_config.yaml"
+        params:
+            this = "{:this:}"
+        run:
+            from ruamel.yaml import YAML
+            yaml = YAML(typ="rt")
+            data = {
+                "run_modules": [ "bowtie2" ],
+                "module_order": [{
+                    "bowtie2": {
+                        "name": f"Bowtie2 ({params.this})",
+                        "path_filters": [f"{params.this}/*.log"]
+                    }
+                }]
+            }
+            with open(output[0], "w") as out:
+                yaml.dump(data, out)
+

@@ -1,0 +1,611 @@
+"""
+Rules using tools from the BBTools / BBMap suite by Brian Bushnell
+"""
+
+Env(name="bbmap", base="bioconda", packages=[
+    "bbmap",
+    "pigz",
+    "pbgzip",
+    "htslib",
+    "samtools",
+    "coreutils"  # for readlink -f
+])
+
+bbstats  = "bhist qhist aqhist bqhist lhist ihist ehist qahist "
+bbstats += "indelhist mhist gchist idhist statsfile"
+bbstats  = bbstats.split()
+
+bbduk_stats = "bhist qhist qchist aqhist bqhist lhist gchist".split()
+
+
+with Stage("index_bbmap") as S:
+    S.doc("""
+    Creates `BBMap <bioconda:bbmap>` index
+
+    >>> ymp make toy.ref_genome.index_bbmap
+    """)
+    rule bbmap_makedb:
+        """
+        Precomputes BBMap index
+        """
+        message:
+            "{:name:}: Indexing {input}"
+        input:
+            "{:prev:}/{target}.fasta.gz"
+        output:
+            directory("{:this:}/{target}")
+        log:
+            "{:this:}/{target}.log"
+        resources:
+            mem = "80g",
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads: 8
+        conda:
+            "bbmap"
+        shell: """
+        bbmap.sh \
+            path={output} \
+            ref={input} \
+            threads={threads} \
+            pigz unpigz \
+            -Xmx{resources.mem_mb}m \
+            >{log} 2>&1
+        """
+
+
+with Stage("correct_bbmap") as S:
+    S.doc("""
+    Correct read errors by overlapping inside tails
+
+    Applies `BBMap's <bioconda:bbmap>` "bbmerge.sh ecco" mode. This will overlap the inside of
+    read pairs and choose the base with the higher quality where the alignment
+    contains mismatches and increase the quality score as indicated by the double
+    observation where the alignment contains matches.
+
+    >>> ymp make toy.correct_bbmap
+    >>> ymp make mpic.correct_bbmap
+    """)
+    rule bbmap_error_correction:
+        """Error correction with BBMerge overlapping"""
+        message: "{:name:}: applying error correction to {input[0]}"
+        input:
+            "{:prev:}/{:target:}.{:pairnames:}.fq.gz"
+        output:
+            "{:this:}/{target}.{:pairnames:}.fq.gz",
+            adapter = "{:this:}/{target}.adapter.fq"
+        log:
+            "{:this:}/{target}.log"
+        threads: 16
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        params:
+            inout  = "in={input[0]} out={output[0]}",
+            inout2 = "in2={input[1]} out2={output[1]}",
+        resources:
+            mem = "80g",
+        conda:
+            "bbmap"
+        shell: """
+        bbmerge.sh {params.inout} {params.inout2} \
+                   outadapter={output.adapter} \
+                   ecco ecctadpole mix vstrict\
+                   threads={threads} -Xmx{resources.mem_mb}m \
+                   > {log} 2>&1
+        """
+
+    # FIXME: Is this applicable?
+    rule bbmap_error_correction_se:  # ymp: extends bbmap_error_correction
+        input:
+            ["{:prev:}/{target}.{:pairnames[0]:}.fq.gz"],
+        output:
+            ["{:this:}/{target}.{:pairnames[0]:}.fq.gz"],
+        params:
+            inout2 = ""
+
+    rule bbmap_error_correction_all:
+        message:
+            "BBMap: error correction complete"
+        output:
+            touch("{:this:}/all_targets.stamp")
+        input:
+            "{:this:}/{:fq_names:}.fq.gz"
+
+
+with Stage("trim_bbmap") as S:
+    S.doc("""
+    Trim adapters and low quality bases from reads
+
+    Applies `BBMap's <bioconda:bbmap>` "bbduk.sh".
+
+    Parameters:
+      A: append to enable adapter trimming
+      Q20: append to select phred score cutoff (default 20)
+      L20: append to select minimum read length (default 20)
+
+    >>> ymp make toy.trim_bbmap
+    >>> ymp make toy.trim_bbmapA
+    >>> ymp make toy.trim_bbmapAQ10L10
+    >>> ymp make mpic.trim_bbmap
+    """)
+    S.add_param("A", typ="flag", name="adapt", value="ref=$BB_RSRC/adapters.fa ")
+    S.add_param("Q", typ="int", name="qual", default=20)
+    S.add_param("L", typ="int", name="length", default=20)
+    S.add_param("E", typ="int", name="entropy", default=0)
+    S.add_param("Pa", typ="int", name="trimpolya", default=0)
+    S.add_param("Ftr", typ="int", name="forcetrimright", default=0)
+    rule bbmap_trim:
+        """Trimming and Adapter Removal using BBTools BBDuk"""
+        message:
+            "{:name:}: Trimming {input[0]} "
+        input:
+            "{:prev:}/{target}.{:pairnames:}.fq.gz"
+        output:
+            temp("{:this:}/{target}.{:pairnames[0]:}.fq.gz"),
+            temp("{:this:}/{target}.{:pairnames[1]:}.fq.gz")
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        params:
+            k      = 23,
+            mink   = 11,
+            hdist  = 1,
+            entropy_window = 50,
+            entropy_k = 5,
+            flags  = "pigz unpigz",
+            inout  = "in={input[0]} out={output[0]}",
+            inout2 = "in2={input[1]} out2={output[1]}" # overriden by child rule
+        resources:
+            mem = "80g",
+        threads: 16
+        conda:
+            "bbmap"
+        shell:
+            # find adapter dir:
+            'BB_RSRC="$(dirname $(readlink -f $(command -v bbduk.sh)))/resources";'
+            # run bbduk:
+            'bbduk.sh'
+            ' {params.inout} {params.inout2}'
+            ' trimq={params.qual} qtrim=r'         # quality trimming
+            ' minlength={params.length}'           # length filtering
+            ' {params.adapt} '                     # adapter trimming
+            ' ktrim=r'                             # 3' side only
+            ' k={params.k}'                        # k for adapter matching
+            ' mink={params.mink}'                  # k at read end
+            ' hdist={params.hdist}'                # hamming distance, allow 1 mismatch
+            ' tpe' # trimpairsevenly -- in case adapter detected in only one read
+            ' tbo' # trimbyoverlap -- trim if read runs over other reads' end
+            ' trimpolya={params.trimpolya}'
+            ' forcetrimright={params.forcetrimright}'
+            ' entropy=0.{params.entropy}'
+            ' entropywindow={params.entropy_window}'
+            ' entropyk={params.entropy_k}'
+            ' {params.flags}'                      # processing settings
+            ' threads={threads}'
+            ' -Xmx{resources.mem_mb}m'
+            ' >{log} 2>&1'
+
+    rule bbmap_trim_se:  # ymp: extends bbmap_trim
+        input:
+            ["{:prev:}/{target}.{:pairnames[0]:}.fq.gz"]
+        output:
+            ["{:this:}/{target}.{:pairnames[0]:}.fq.gz"]
+        params:
+            inout2 = ""
+
+    localrules: bbmap_trim_all
+    rule bbmap_trim_all:
+        message:
+            "BBMap: finished {output}"
+        input:
+            "{:this:}/{:fq_names:}.fq.gz"
+        output:
+            touch("{:this:}/all_targets.stamp")
+
+
+with Stage("dedup_bbmap") as S:
+    S.doc("""
+    Remove duplicate reads
+
+    Applies `BBMap's <bioconda:bbmap>` "dedupe.sh"
+
+    >>> ymp make toy.dedup_bbmap
+    >>> ymp make mpic.dedup_bbmap
+    """)
+    rule bbmap_dedupe:
+        """
+        Deduplicate reads using BBMap's dedupe.sh
+        """
+        message:
+            "{:name:}: Processing {input[0]}"
+        input:
+            "{:prev:}/{:target:}.{:pairnames:}.fq.gz"
+        output:
+            "{:this:}/{target}.{:pairnames:}.fq.gz"
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        resources:
+            mem = "80g",
+        threads: 4
+        conda:
+            "bbmap"
+        shell:
+            "dedupe.sh"
+            " unpigz"
+            " threads={threads}"
+            " in={input[0]}"
+            " in2={input[1]}"
+            " out=stdout"
+            " -Xmx{resources.mem_mb}m"
+            " 2>{log}"
+            " |"
+            " paste - - - -  - - - - | "
+            " tee >(cut -f 1-4 | tr \"\t\" \"\\n\" | pigz -p {threads} > {output[0]}) | "
+            " cut -f 5-8 | tr \"\t\" \"\\n\" | "
+            " pigz -p {threads} > {output[1]}"
+
+
+    rule bbmap_dedupe_se:
+        """
+        Deduplicate reads using `BBMap's <bioconda:bbmap>` dedupe.sh
+        """
+        message:
+            "{:name:}: Processing {input}"
+        input:
+            "{:prev:}/{:target:}.{:pairnames[0]:}.fq.gz"
+        output:
+            "{:this:}/{target}.{:pairnames[0]:}.fq.gz"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        log:
+            "{:this:}/{target}.log"
+        resources:
+            mem = "80g",
+        threads: 4
+        conda:
+            "bbmap"
+        shell:
+            "dedupe.sh"
+            " unpigz"
+            " threads={threads}"
+            " in={input[0]}"
+            " out=stdout"
+            " -Xmx{resources.mem_mb}m"
+            " 2>{log}"
+            " |"
+            " pigz -p {threads} > {output[0]}"
+
+    rule bbmap_dedupe_all:
+        message:
+            "BBMap: dedupe done"
+        output:
+            touch("{:this:}/all_targets.stamp")
+        input:
+            "{:this:}/{:fq_names:}.fq.gz"
+
+
+ruleorder: bbmap_dedupe > bbmap_dedupe_se
+
+
+with Stage("remove_bbmap", "filter_bbmap") as S:
+    S.doc("""
+    Filter reads by reference
+
+    This stage aligns the reads with a given reference using `BBMap <bioconda:bbmap>` in fast mode.
+    Matching reads are collected in the stage *filter_bbmap* and remaining reads
+    are collectec in the stage *remove_bbmap*.
+
+    >>> ymp make toy.ref_phiX.index_bbmap.remove_bbmap
+    >>> ymp make toy.ref_phiX.index_bbmap.filter_bbmap
+    >>> ymp make mpic.ref_phiX.index_bbmap.remove_bbmap
+    """)
+    rule bbmap_split:
+        message:
+            "{:name:}: {input[0]}"
+        input:
+            fq    = "{:prev:}/{target}.{:pairnames:}.fq.gz",
+            ref   = "{:prev:}/{:target:}"
+        output:
+            clean = "{:this:}/{target}.{:pairnames:}.fq.gz",
+            human = "{:that:}/{target}.{:pairnames:}.fq.gz",
+            stats = expand("{{:this:}}/{{target}}.{x}", x=bbstats)
+        log:
+                    "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        params:
+            stats    = lambda wc, output: ["{}={}".format(x,y) for x,y in zip(bbstats, output.stats)],
+            minid    = 0.95,
+            maxindel = 3,
+            bwr      = 0.16,
+            bw       = 12,
+            trimq    = 10,
+            qtrim    = "rl",
+            flags    = "quickmatch fast untrim machineout",
+            minhits  = 2,
+            inout2   = "in2={input.fq[1]} outu2={output.clean[1]} outm2={output.human[1]}",
+        resources:
+            mem = "80g",
+        threads:
+            16
+        conda:
+            "bbmap"
+        shell:
+            "bbmap.sh "
+            " minid={params.minid} "
+            " maxindel={params.maxindel} "
+            " bwr={params.bwr} "
+            " bw={params.bw} "
+            " {params.flags} "
+            " minhits={params.minhits} "
+            " path={input.ref} "
+            " qtrim={params.qtrim} "
+            " trimq={params.trimq} "
+            " -Xmx{resources.mem_mb}m "
+            " in={input.fq[0]} "
+            " outu={output.clean[0]} "
+            " outm={output.human[0]} "
+            " {params.inout2} "
+            " threads={threads} "
+            " {params.stats} "
+            " > {log} 2>&1"
+
+    rule bbmap_split_se:  # ymp: extends bbmap_split
+        input:
+            fq    = ["{:prev:}/{target}.{:pairnames[0]:}.fq.gz"]
+        output:
+            clean = ["{:this:}/{target}.{:pairnames[0]:}.fq.gz"],
+            human = ["{:that:}/{target}.{:pairnames[0]:}.fq.gz"]
+        params:
+            inout2 = ""
+
+    rule bbmap_split_all:
+        message:
+            "BBMap: split complete"
+        output:
+            touch("{:this:}/all_targets.stamp")
+        input:
+            "{:this:}/{:fq_names:}.fq.gz"
+
+    rule bbmap_split_all_remove:
+        message:
+            "BBMap: split complete"
+        output:
+            touch("{:that:}/all_targets.stamp")
+        input:
+            "{:that:}/{:fq_names:}.fq.gz"
+
+
+###
+### Primer Filtering
+###
+
+with Stage("primermatch_bbmap", "primerfail_bbmap") as S:
+    S.doc("""
+    Filters reads by matching reference primer using `BBMap's <bioconda:bbmap>` "bbduk.sh".
+
+    >>> ymp make mpic.ref_primers.primermatch_bbmap
+    """)
+
+    rule bbduk_primer:
+        """
+        Splits reads based on primer matching into "primermatch" and "primerfail".
+        """
+        message:
+            "{:name:}: Filtering {wildcards.target} for primer set {input.primer}"
+        input:
+            fq     = "{:prev:}/{:target:}.{:pairnames:}.fq.gz",
+            primer = "{:prev:}/{:target:}.fasta.gz"
+        output:
+            match  = "{:this:}/{target}.{:pairnames:}.fq.gz.xx",
+            fail   = "{:that:}/{target}.{:pairnames:}.fq.gz",
+            stats  = expand("{{:this:}}/{{target}}.{x}", x=bbduk_stats)
+        log:
+            "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads: 8
+        params:
+            stats   = lambda wc, output: ["{}={}".format(x,y) for x,y in zip(bbstats, output.stats)],
+            k       = 12,
+            rl      = 12,
+            inout2  = "in2={input.fq[1]} outm2={output.match[1]} outu2={output.fail[1]}"
+        resources:
+            mem     = "80g",
+        conda: "bbmap"
+        shell:
+            'bbduk.sh'
+            ' in={input.fq[0]} outm={output.match[0]} outu={output.fail[0]} '
+            ' {params.inout2} '
+            ' ref={input.primer}'
+            ' k={params.k}'               # match using k-mers
+            ' restrictleft={params.rl} '  # only match leftmost n bases
+            ' maskmiddle=f'               # don't mask middle base in kmer
+            ' rcomp=f'                    # don't check reverse complement
+            ' copyundefined=t'            # expand wobbles in input
+            ' removeifeitherbad=f'        # "bad" is "match", we want both to match
+            ' pigz unpigz'
+            ' {params.stats}'
+            ' -Xmx{resources.mem_mb}m'
+            ' >{log} 2>&1'
+
+    rule bbduk_primer_se:  # ymp: extends bbduk_primer
+        input:
+            fq = ["{:prev:}/{:target:}.{:pairnames[0]:}.fq.gz"]
+        output:
+            match = ["{:this:}/{target}.{:pairnames[0]:}.fq.gz"],
+            fail  = ["{:that:}/{target}.{:pairnames[0]:}.fq.gz"]
+        params:
+            inout2 = ""
+
+    rule bbduk_primer_all:
+        message:
+            "BBMap: primer filter done"
+        output:
+            touch("{:this:}/all_targets.stamp")
+        input:
+            "{:this:}/{:fq_names:}.fq.gz"
+
+
+def ensure_list(x):
+    if isinstance(x, str):
+        return [x]
+    return x
+
+with Stage("map_bbmap") as S:
+    S.doc("""
+    Map reads using `BBMap <bioconda:bbmap>`
+
+    >>> ymp make toy.assemble_megahit.map_bbmap
+    >>> ymp make toy.ref_genome.map_bbmap
+    >>> ymp make mpic.ref_ssu.map_bbmap
+    """)
+    S.add_param("", typ="choice", name="sensitivity",
+                value=['F', 'N', 'S', 'VS'], default='N')
+    rule bbmap_map:
+        """Map read from each (co-)assembly read file to the assembly"""
+        message:
+            "BBMap mapping {input.fq1} to {input.fa}"
+        input:
+            fq1 = "{:prev:}/{:target:}.{:pairnames[0]:}.fq.gz",
+            fq2 = "{:prev:}/{:target:}.{:pairnames[1]:}.fq.gz",
+            fa = "{:prev:}/{:target:}.fasta.gz",
+        output:
+            bam   = temp("{:this:}/{target}.bam"),
+            stats =      "{:this:}/{target}.stats",
+            ihist =      "{:this:}/{target}.ihist"
+        log:
+                         "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        params:
+            in1 = lambda wc, input: "in="+",".join(ensure_list(input.fq1)),
+            in2 = lambda wc, input: "in2="+",".join(ensure_list(input.fq2))
+        resources:
+            mem = "80g",
+        threads:
+            8
+        conda:
+            "bbmap"
+        shell:
+            "case {params.sensitivity} in"
+            "  N) SENS='';; F) SENS='fast';; S) SENS='slow';; VS) SENS='vslow';;"
+            "esac;"
+            "bbwrap.sh mapper=bbmap"
+            " $SENS"
+            " threads={threads}"
+            " pigz unpigz"          # enable use of pigz for zip/unzip
+            # this is disabled because not compiled in conda:
+            # " jni"                # use JNI for C alignment algo
+            " nodisk "              # don't write index to disk
+            " ref={input.fa}"       # reference
+            " {params.in1} {params.in2}"
+            " out=stdout"           # write sam to stdout
+            " machineout statsfile={output.stats}" # parseable stats
+            " ihist={output.ihist}" # insert histogram
+            " ambiguous=all"        # output all matches
+            " mdtag"                # make source recoverable in sam
+            " trimreaddescriptions" # use header until space like bowtie2
+            " -Xmx{resources.mem_mb}m"     # set JVM heap size
+            " 2>{log}"              # log error
+            " | samtools view --threads 3 -b -o {output.bam} -" # convert to bam
+
+    rule bbmap_map_SE: # ymp: extends bbmap_map
+        input:
+            fq2 = []
+        params:
+            in2 = ""
+
+
+with Stage("dust_bbmap") as S:
+    S.doc("""
+    Perform entropy filtering on reads using `BBMap's <bioconda:bbmap>` bbduk.sh
+
+    The parameter ``Enn`` gives the entropy cutoff. Higher values
+    filter more sequences.
+
+    >>> ymp make toy.dust_bbmap
+    >>> ymp make toy.dust_bbmapE60
+    """)
+    S.add_param("E", typ="int", name="entropy", default=10)
+
+    rule bbmap_dust:
+        message:
+            "BBMap: removing low entropy reads"
+        input:
+            fq = "{:prev:}/{target}.{:pairnames:}.fq.gz"
+        output:
+            fq = "{:this:}/{target}.{:pairnames:}.fq.gz"
+        log:
+                 "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        threads: 8
+        conda: "bbmap"
+        params:
+            entropy_window = 50,
+            entropy_k = 5,
+            inout2 = "in2={input.fq[1]} out2={output.fq[1]}",
+        resources:
+            mem = "80g",
+        shell:
+            'bbduk.sh'
+            ' in={input.fq[0]} out={output.fq[0]}'
+            ' {params.inout2}'
+            ' entropy=0.{params.entropy}'
+            ' entropywindow={params.entropy_window}'
+            ' entropyk={params.entropy_k}'
+            ' pigz unpigz'
+            ' -Xmx{resources.mem_mb}m'
+            ' >{log} 2>&1'
+
+
+with Stage("format_bbmap") as S:
+    S.doc("""
+    Process sequences with `BBMap's <bioconda:bbmap>` format.sh
+
+    Parameter ``Ln`` filters sequences at a minimum length.
+
+    >>> ymp make toy.assemble_spades.format_bbmapL200
+    """)
+    S.add_param("L", typ="int", name="length", default=1)
+    rule bbmap_reformat:
+        message:
+            "BBMap: reformatting fasta"
+        input:
+            fasta = "{:prev:}/{:target:}.fasta.gz"
+        output:
+            fasta = "{:this:}/{target}.fasta.gz"
+        log:
+                    "{:this:}/{target}.log"
+        benchmark:
+            "benchmarks/{:name:}/{:this:}/{target}.txt"
+        params:
+            multi = lambda wc, input: isinstance(input.fasta, list)
+        threads:
+            4
+        conda:
+            "bbmap"
+        shell:
+            'exec >{log} 2>&1; set -x;'
+            '('
+            '  if [ "{params.multi}" == "False" ]; then'
+            '    gzip -dc {input.fasta};'
+            '  else'
+            '    for n in {input.fasta}; do'
+            '      name="$(basename $n)"'
+            '      name="${{name%.fasta.gz}}";'
+            '      gzip -dc "$n" | sed "s/^>/>${{name}}_/";'
+            '    done;'
+            '  fi'
+            ') |'
+            'reformat.sh'
+            ' in=stdin.fasta'
+            ' out={output.fasta}'
+            ' bgzip'
+            ' fastawrap=0'  # sequence on one line
+            ' fastaminlen={params.length}'
+

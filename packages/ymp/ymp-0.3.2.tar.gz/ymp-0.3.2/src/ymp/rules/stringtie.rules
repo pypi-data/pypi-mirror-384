@@ -1,0 +1,120 @@
+Env(name="stringtie", base="bioconda", packages="stringtie")
+Env(name="ballgown", base="bioconda", packages="bioconductor-ballgown")
+
+with Stage("count_stringtie"):
+    rule stringtie:
+        message:
+            "Stringtie: Assembling transcripts ({log})"
+        input:
+            bam = "{:prev:}/{target}.{source}.sorted.bam",
+            gtf = "{:reference.dir:}/{target}.gtf"
+        output:
+            gtf = "{:this:}/{target}.{source}.transscripts.gtf",
+            abd = "{:this:}/{target}.{source}.gene_abundances.tsv",
+            bgn = "{:this:}/indidivdual_{target}.{source}.ballgown"
+        log:
+                  "{:this:}/{target}.{source}.log"
+        threads:
+            16
+        resources:
+            mem = "16g",
+        conda:
+            "stringtie"
+        shell:
+            "stringtie"
+            " {input.bam}"
+            " -G {input.gtf}"
+            " -p {threads}"
+            " -A {output.abd}"
+            " -o {output.gtf}"
+            " -b {output.bgn}"
+            " >{log} 2>&1"
+
+    rule stringtie_merge:
+        message:
+            "Stringtie: Merging transcript assemblies ({log})"
+        input:
+            gtf = "{:this:}/{target}.{:sources:}.transscripts.gtf",
+            ref = "{:reference.dir:}/{target}.gtf"
+        output:
+            gtf = "{:this:}/{target}.gtf"
+        log:
+                  "{:this:}/{target}.log"
+        threads:
+            16
+        resources:
+            mem = "16g",
+        conda:
+            "stringtie"
+        shell:
+            "stringtie --merge"
+            " {input.gtf}"
+            " -G {input.ref}"
+            " -o {output.gtf}"
+            " -p {threads}"
+            " >{log} 2>&1"
+
+    rule stringtie_abundance:
+        message:
+            "Stringtie: Estimating abundances ({log})"
+        input:
+            bam = "{:prev:}/{target}.{source}.sorted.bam",
+            ref = "{:this:}/{target}.gtf"
+        output:
+            bgn = "{:this:}/{target}.{source}.ballgown",
+            abd = "{:this:}/{target}.{source}.gene_abundances.tsv",
+            gtf = "{:this:}/{target}.{source}.gtf"
+        log:
+                  "{:this:}/{target}.{source}.abundance.log"
+        threads:
+            16
+        resources:
+            mem = "16g",
+        conda:
+            "stringtie"
+        shell:
+            "stringtie"
+            " {input.bam}"
+            " -G {input.ref}"
+            " -e"
+            " -b {output.bgn}"
+            " -A {output.abd}"
+            " -p {threads}"
+            " -o {output.gtf}"
+            " >{log} 2>&1"
+
+    rule stringtie_gather_ballgown:
+        input:
+            "{:this:}/{target}.{:sources:}.ballgown"
+        output:
+            "{:this:}/{target}.rda"
+        log:
+            "{:this:}/{target}.rda.log"
+        threads:
+            1
+        params:
+            rscript = srcdir("../R/ballgown_collect.R")
+        resources:
+            mem = "32g",
+        conda:
+            "ballgown"
+        shell:
+            "Rscript {params.rscript} {output} {input} >{log} 2>&1"
+
+    rule stringtie_all_target:
+        message:
+            "Stringtie: finished {output}"
+        input:
+            "{:this:}/{target}.{:sources:}.ballgown",
+        output:
+            touch("{:this:}/all_{target}")
+
+
+    rule stringtie_all:
+        message:
+            "Stringtie: finished {output}"
+        input:
+            "{:this:}/all_{:targets:}"
+        output:
+            touch("{:this:}/all_targets.stamp")
+
