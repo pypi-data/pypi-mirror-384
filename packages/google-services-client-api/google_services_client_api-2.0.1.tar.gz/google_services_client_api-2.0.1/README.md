@@ -1,0 +1,123 @@
+# Google Services Client API
+
+Esta biblioteca é uma interface de alto nível (`Facade`) para interagir com as APIs do Google, focando na simplicidade e na gestão automatizada de tokens. Atualmente, oferece suporte completo ao **Google Calendar**.
+
+## 1. Instalação e Configuração Inicial
+
+Antes de começar, você deve ter seu arquivo de segredos de cliente (`client_secrets.json`) do Google Cloud.
+
+### 1.1. Estrutura do Token e Credenciais
+
+A API trabalha com dois tipos de arquivos:
+
+1. **Client Secrets:** O arquivo `google_webapp_credentials.json` (ou similar) obtido diretamente do Google Cloud.
+2. **User Token:** O arquivo gerado pela biblioteca após o primeiro login (contém o `refresh_token`).
+
+Python
+
+```python
+# Configuração (Exemplo)
+CREDENTIALS_PATH = 'keys/google_webapp_credentials.json'
+TOKEN_PATH = 'tokens/user_token.json' # Onde o token do usuário será salvo
+REDIRECT_URI = 'https://localhost:8080/callback'
+```
+
+## 2. Fluxo de Autenticação e Carregamento de Conta
+
+O fluxo é orquestrado pela `GoogleAccountFactory`, que gerencia a criação de links OAuth e a troca de código por *token*.
+
+### 2.1. Inicialização da Factory
+
+A `Factory` é o ponto de partida.
+
+Python
+
+```python
+from google_services_client_api import GoogleAccountFactory, TokenManager
+
+factory = GoogleAccountFactory(
+    client_secrets=CREDENTIALS_PATH,
+    enable_logs=True
+)
+```
+
+### 2.2. Verificação e OAuth Flow (Login)
+
+A API do Google exige que o usuário se autentique uma vez para obter o `refresh_token`.
+
+```python
+# 1. Tenta carregar um token existente do disco
+user_token = TokenManager.load_token(TOKEN_PATH)
+
+# Se o token não existir, for inválido ou tiver expirado (o decorator tratará o refresh), 
+# inicie o fluxo de autorização.
+if user_token is None or not user_token.valid: 
+    
+    # Gera a URL de autenticação
+    auth_url, state = factory.generate_authorization_url(REDIRECT_URI)
+
+    # APLICAÇÃO WEB: Redireciona o usuário para auth_url e salva o 'state' na sessão.
+    # TESTE/CLI: Imprime o link e espera o input do redirect.
+    print(f"Acesse o link: {auth_url}")
+    redirect_response = input('Cole o URL de redirecionamento aqui: ')
+    
+    # Troca o código de autorização pelo objeto Credentials
+    user_token = factory.fetch_token_from_redirect(
+        redirect_response, 
+        expected_state=state
+    )
+    
+    # 2. Salva o novo token no disco para persistência
+    TokenManager.save_token(user_token, TOKEN_PATH)
+
+# 3. Carrega a conta com o objeto Credentials (token)
+user_account = factory.load_account('User_Identifier', user_token)
+```
+
+---
+
+## 3. Uso do Serviço Google Calendar
+
+Após carregar a conta (`user_account`), todos os serviços são acessados por composição (`user_account.calendar`, `user_account.drive`, etc.).
+
+### 3.1. Listar Eventos (Composição Limpa)
+
+O acesso é feito diretamente pelo atributo `calendar`. O *refresh* automático do token é garantido pelo decorator da biblioteca, **sem necessidade de intervenção do usuário**.
+
+Python
+
+```python
+import datetime as dt
+
+# O decorator @ensure_valid_token irá validar/refrescar o token automaticamente aqui.
+prox_eventos = user_account.calendar.list_events(
+    event_count=5, # Opcional: Número máximo de eventos
+    start_date_time=dt.datetime.now() # Opcional: Início do range
+)
+
+# Exemplo de listagem com parâmetros
+for event in prox_eventos:
+    print(f"Event: {event.get('summary')} at {event.get('start').get('dateTime')}")
+```
+
+### 3.2. Criar Eventos
+
+O método `create_event` aceita argumentos nomeados para configurações avançadas (localização, participantes, etc.).
+
+Python
+
+```python
+import datetime as dt
+
+user_account.calendar.create_event(
+    summary="Reunião de Lançamento",
+    start_date_time=dt.datetime(2025, 10, 17, 20, 0),
+    end_date_time=dt.datetime(2025, 10, 17, 22, 0),
+    
+    # Parâmetros Opcionais (kwargs)
+    location="Rua dos Deploys, 42",
+    description="Discussão de arquitetura final.",
+    attendees_emails=["equipe@exemplo.com", "cliente@exemplo.com"],
+    color_id="4" # ID da cor do calendário
+)
+```
