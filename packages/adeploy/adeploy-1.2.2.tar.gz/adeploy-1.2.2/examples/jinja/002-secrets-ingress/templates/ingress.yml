@@ -1,0 +1,35 @@
+---
+kind: Ingress
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ name }}-{{ release }}-ingress
+  namespace: {{ namespace }}
+  annotations:
+    {% for name, value in ingress.get('annotations', deployment.get('ingress.annotations', {})).items() %}
+    {{ name }}: "{{ value }}"
+    {% endfor %}
+  labels:
+    app.kubernetes.io/part-of: {{ name }}
+    app.kubernetes.io/instance: {{ release }}
+    app.kubernetes.io/component: ingress
+# --8<-- [start:example-filter-yaml]
+spec:
+  ingressClassName: {{ ingress.className }}
+  {% if ingress.get('tls', False) %}
+  tls:
+    {{ ingress.get('tls') | yaml(false) | indent(4) }}
+  {% endif %}
+# --8<-- [end:example-filter-yaml]
+  rules:
+  {% for host in ingress.get('hosts') %}
+    - host: {{ host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: myservice
+                port:
+                  name: http
+  {% endfor %}

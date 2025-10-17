@@ -1,0 +1,26 @@
+versions:
+  nginx: 1.22
+
+secrets:
+  # See https://github.com/awesome-it/adeploy#jinja-secret-functions
+  registry: {{ create_docker_registry_secret(
+               server='registry.awesome-it.de',
+               username='sa_registry_ro',
+               password=from_shell_command('cat namespaces/playground/secrets/my_secret_prod')) }}
+
+  my_secret: {{ create_secret(as_ref=True, my_secret=from_shell_command('cat namespaces/playground/secrets/my_secret_prod | head -n 1')) }}
+
+ingress:
+  className: external
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-send-timeout: 300
+    nginx.ingress.kubernetes.io/proxy-read-timeout: 300
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  hosts:
+    - mydomain.com
+  tls:
+    - hosts:
+        - mydomain.com
+      secretName: {{ create_tls_secret(
+                      cert=from_shell_command('cat namespaces/playground/secrets/domain_prod/mydomain.com.crt'),
+                      key=from_shell_command('cat namespaces/playground/secrets/domain_prod/mydomain.com.key')) }}
