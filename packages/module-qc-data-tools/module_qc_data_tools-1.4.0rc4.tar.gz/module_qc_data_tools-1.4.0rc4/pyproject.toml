@@ -1,0 +1,249 @@
+[build-system]
+requires = ["hatchling>=0.7", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "module-qc-data-tools"
+dynamic = ["version"]
+authors = [
+    { name = "Jay Chan", email = "jay.chan@cern.ch" },
+]
+maintainers = [
+    { name = "Giordon Stark", email = "gstark@cern.ch" },
+]
+description = "Module qc data tools"
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "tabulate",
+    "jsonschema",
+    "rich",
+    "pymongo", # https://github.com/py-bson/bson/issues/124
+    "click",
+    "typer>=0.18.0",
+    "rich",
+    "typing-extensions",
+    'itksn >= 0.4.2', # for parsing serial numbers
+    'rfc3339-validator', # date-time: https://python-jsonschema.readthedocs.io/en/stable/validate/#validating-formats
+    'rfc3986-validator', # uri: https://python-jsonschema.readthedocs.io/en/stable/validate/#validating-formats
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Development Status :: 1 - Planning",
+]
+
+[project.urls]
+"Homepage" = "https://gitlab.cern.ch/atlas-itk/pixel/module/module-qc-data-tools"
+"Bug Tracker" = "https://gitlab.cern.ch/atlas-itk/pixel/module/module-qc-data-tools/-/issues"
+"Source" = "https://gitlab.cern.ch/atlas-itk/pixel/module/module-qc-data-tools"
+"Documentation" = "https://atlas-itk-pixel-mqdt.docs.cern.ch/1.4/"
+
+[project.scripts]
+module-qc-data-tools = "module_qc_data_tools.cli:app"
+"mqdt" = "module_qc_data_tools.cli:app"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/module_qc_data_tools/_version.py"
+
+[tool.hatch.build.targets.sdist]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "tbump>=6.7.0",
+    "pylint",
+    "build",
+    "twine",
+]
+installer = "uv"
+
+[tool.hatch.envs.hatch-uv]
+dependencies = [
+  "uv!=0.6.7", # https://github.com/astral-sh/uv/issues/12260
+]
+
+[tool.hatch.envs.default.scripts]
+tag = "tbump {args}"
+lint = "pylint src"
+build = "python -m build"
+validate = "twine check dist/*"
+# https://github.com/linkchecker/linkchecker/issues/678
+build-check = [
+  "build",
+  "validate",
+]
+upload = "twine upload dist/*"
+
+[tool.hatch.envs.dev]
+template = "dev"
+# pylint and pytest needs to be installed into package environment
+detached = false
+dependencies = [
+    "pytest >=6",
+]
+
+[tool.hatch.envs.dev.scripts]
+test = "pytest -ra {args}"
+
+[[tool.hatch.envs.dev.matrix]]
+python = ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+[tool.hatch.envs.docs]
+template = "docs"
+dependencies = [
+    "mkdocs>=1.4.0",
+    "mkdocs-material>=9.4.0",
+    # Plugins
+    "mkdocs-minify-plugin>=0.5.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.1.0",
+    "mkdocstrings[python]>=0.18",
+    "mkdocs-redirects>=1.1.0",
+    "mkdocs-glightbox>=0.3.0",
+    "mike>=2.0.0",
+    # Extensions
+    "mkdocs-click>=0.8.0",
+    "pymdown-extensions>=10.6.0",
+    # Necessary for syntax highlighting in code blocks
+    "pygments>=2.13.0",
+    # Validation
+    # https://github.com/linkchecker/linkchecker/pull/669#issuecomment-1267236287
+    "linkchecker @ git+https://github.com/linkchecker/linkchecker.git@d9265bb71c2054bf57b8c5734a4825d62505c779",
+    # auto-generation of docs
+    "mkdocs-gen-files>=0.4",
+    "mkdocs-literate-nav>=0.5.0",
+    "mkdocs-section-index>=0.3.4",
+    "mdx-truly-sane-lists", # for 2-space indented lists (https://github.com/mkdocs/mkdocs/issues/545)
+    # formatting signatures
+    "black>23",
+    # https://github.com/mkdocs/mkdocs-click/issues/78
+    "mkdocs-autorefs",
+]
+
+[tool.hatch.envs.docs.env-vars]
+MKDOCS_CONFIG = "mkdocs.yml"
+MKDOCS_BRANCH = "pages"
+[tool.hatch.envs.docs.scripts]
+# --strict disabled for now, see https://github.com/timvink/mkdocs-git-revision-date-localized-plugin/issues/101
+build = "mkdocs build --config-file {env:MKDOCS_CONFIG} --clean {args}"
+#build = "mkdocs build --config-file {env:MKDOCS_CONFIG} --clean --strict {args}"
+serve = "mkdocs serve --config-file {env:MKDOCS_CONFIG} --dev-addr localhost:8000 {args}"
+ci-build = "mike deploy --config-file {env:MKDOCS_CONFIG} --branch {env:MKDOCS_BRANCH} --update-aliases {args}"
+deploy = "ci-build --push"
+validate = "linkchecker --config .linkcheckerrc site"
+# https://github.com/linkchecker/linkchecker/issues/678
+build-check = [
+  "build --no-directory-urls",
+  "validate",
+]
+
+[tool.mypy]
+files = "src"
+python_version = "3.9"
+warn_unused_configs = true
+strict = true
+hide_error_codes = false
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+warn_unreachable = true
+
+[tool.ruff]
+
+[tool.ruff.lint]
+extend-select = [
+  "B",        # flake8-bugbear
+  "I",        # isort
+  "ARG",      # flake8-unused-arguments
+  "C4",       # flake8-comprehensions
+  "EM",       # flake8-errmsg
+  "ICN",      # flake8-import-conventions
+  "G",        # flake8-logging-format
+  "PGH",      # pygrep-hooks
+  "PIE",      # flake8-pie
+  "PL",       # pylint
+  "PT",       # flake8-pytest-style
+  "PTH",      # flake8-use-pathlib
+  "RET",      # flake8-return
+  "RUF",      # Ruff-specific
+  "SIM",      # flake8-simplify
+  "T20",      # flake8-print
+  "UP",       # pyupgrade
+  "YTT",      # flake8-2020
+  "EXE",      # flake8-executable
+  "NPY",      # NumPy specific rules
+  "PD",       # pandas-vet
+]
+ignore = [
+  "PLR09",    # Too many <...>
+  "PLR2004",  # Magic value used in comparison
+  "ISC001",   # Conflicts with formatter
+]
+# enable below when we hit python 3.10 minimum: https://github.com/fastapi/typer/discussions/802#discussioncomment-12759260
+#isort.required-imports = ["from __future__ import annotations"]
+typing-modules = ["module_qc_data_tools.typing_compat"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.Callable".msg = "Use collections.abc.Callable instead."
+"typing.Iterator".msg = "Use collections.abc.Iterator instead."
+"typing.Mapping".msg = "Use collections.abc.Mapping instead."
+"typing.Sequence".msg = "Use collections.abc.Sequence instead."
+"typing.Set".msg = "Use collections.abc.Set instead."
+"importlib.abc".msg = "Use sp_repo_review._compat.importlib.resources.abc instead."
+"importlib.resources.abc".msg = "Use sp_repo_review._compat.importlib.resources.abc instead."
+
+[tool.pylint]
+master.py-version = "3.9"
+master.ignore-paths= ["src/module_qc_data_tools/_version.py"]
+reports.output-format = "colorized"
+similarities.ignore-imports = "yes"
+messages_control.disable = [
+  "design",
+  "fixme",
+  "line-too-long",
+  "missing-module-docstring",
+  "wrong-import-position",
+  # below are disabled for now, need to actually fix
+  "duplicate-code",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "invalid-name",
+  "broad-except",
+]
+known-standard-library = ["_ctypes"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
+xfail_strict = true
+filterwarnings = [
+  "error",
+]
+testpaths = ["tests"]
+log_cli_level = "INFO"
+
+[tool.repo-review]
+ignore = [
+  "GH", # only if using GitHub
+  "PC140", "MY100", # no typehints used
+  "RTD100",
+]
