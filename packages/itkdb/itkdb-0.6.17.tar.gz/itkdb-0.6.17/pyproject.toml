@@ -1,0 +1,280 @@
+[build-system]
+requires = ["hatchling>=0.7", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "itkdb"
+dynamic = ["version"]
+authors = [
+    { name = "Giordon Stark", email = "kratsg@gmail.com" },
+]
+maintainers = [
+    { name = "Giordon Stark", email = "kratsg@gmail.com" },
+]
+
+description = "Python wrapper to interface with ITk DB."
+readme = "README.md"
+
+requires-python = ">=3.8"
+
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Development Status :: 1 - Planning",
+]
+
+dependencies = [
+    "requests>=2.0",  # for all HTTP calls to the API
+    "urllib3>=1.26.20", # for EOS uploading, need a correct urllib; see discussions in https://gitlab.cern.ch/atlas-itk/sw/db/itkdb/-/issues/13
+    'urllib3>=1.26.20,<2; "el7.x86_64" in platform_release', # downgrade urllib3 only for SL7
+    "certifi",  # SSL
+    "cachecontrol[filecache]",  # for caching HTTP requests according to spec to local file
+    'click<8.2; python_version < "3.10"',  # for console scripts,
+    'click; python_version >= "3.10"',  # for console scripts,
+    "python-jose",  # for id token decoding
+    "attrs",  # for model inflation/deflation
+    "python-dotenv",  # for loading env variables
+    "simple-settings",  # for handling settings more easily
+    'importlib_resources; python_version < "3.9"',
+    'python-magic; platform_system != "Windows"',  # for getting the filetype, non-Windows
+    'pylibmagic; platform_system != "Windows"',  # for shipping the magic library for python-magic
+    'python-magic-bin; platform_system == "Windows"',  # for getting the filetype, Windows-only
+    "typing_extensions >=4.0; python_version<'3.11'",
+]
+
+[project.optional-dependencies]
+eos = [
+    "pycurl", # for EOS uploads
+]
+contrib = [
+  "html2text"
+]
+
+[project.urls]
+Documentation = "https://itkdb.docs.cern.ch/0.6/"
+Homepage = "https://gitlab.cern.ch/atlas-itk/sw/db/itkdb"
+"Bug Tracker" = "https://gitlab.cern.ch/atlas-itk/sw/db/itkdb/issues"
+Source = "https://gitlab.cern.ch/atlas-itk/sw/db/itkdb"
+
+[project.scripts]
+itkdb = "itkdb.commandline:entrypoint"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/itkdb/_version.py"
+
+[tool.hatch.envs.default]
+dependencies = [
+    "tbump>=6.7.0",
+    "pylint",
+    "build",
+    "twine",
+]
+installer = "uv"
+pip-compile-resolver = "uv"
+
+[tool.hatch.envs.hatch-uv]
+dependencies = [
+  "uv!=0.6.7", # https://github.com/astral-sh/uv/issues/12260
+]
+
+[tool.hatch.envs.default.scripts]
+tag = "tbump {args}"
+lint = "pylint src"
+build = "python -m build"
+validate = "twine check dist/*"
+# https://github.com/linkchecker/linkchecker/issues/678
+build-check = [
+  "build",
+  "validate",
+]
+
+[tool.hatch.envs.dev]
+template = "dev"
+# pylint and pytest needs to be installed into package environment
+detached = false
+dependencies = [
+    "pytest >=6",
+    "pytest-cov >=3",
+    "pytest-mock",
+    "betamax",  # recording api calls for testing
+    "betamax-serializers",
+    "urllib3<2", # need to restrict to below 2 because betamax not currently compatible with it
+    "requests-mock",
+    "clirunner",
+]
+features = [
+  "eos",
+  "contrib",
+]
+
+[tool.hatch.envs.dev.overrides]
+platform.macos.set-env-vars = [
+  "LDFLAGS=-L/usr/local/opt/openssl@3/lib",
+  "CPPFLAGS=-I/usr/local/opt/openssl@3/include",
+]
+platform.macos.set-pre-install-commands = ["python -m pip install --no-cache-dir --compile --ignore-installed --install-option='--with-openssl' pycurl"]
+
+[tool.hatch.envs.dev.scripts]
+test = "pytest -ra {args}"
+doctest = "test -k 'itkdb or test_true'"
+
+[[tool.hatch.envs.dev.matrix]]
+python = ["3.8", "3.9", "3.10", "3.11", "pypy3.8"]
+
+[tool.hatch.envs.docs]
+template = "docs"
+dependencies = [
+    "mkdocs>=1.4.0",
+    "mkdocs-material>=8.5.6",
+    # Plugins
+    "mkdocs-minify-plugin>=0.5.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.1.0",
+    "mkdocstrings[python]>=0.18",
+    "mkdocs-redirects>=1.1.0",
+    "mkdocs-glightbox>=0.3.0",
+    # https://github.com/jimporter/mike/issues/82#issuecomment-1172913929
+    "mike @ https://github.com/jimporter/mike/archive/392d57b8bb9d14bcedf2451a0dc302709f8055eb.zip",
+    # Extensions
+    "mkdocs-click>=0.8.0",
+    "pymdown-extensions>=9.7.0",
+    # Necessary for syntax highlighting in code blocks
+    "pygments>=2.13.0",
+    # Validation
+    # https://github.com/linkchecker/linkchecker/pull/669#issuecomment-1267236287
+    "linkchecker @ git+https://github.com/linkchecker/linkchecker.git@d9265bb71c2054bf57b8c5734a4825d62505c779",
+    # auto-generation of docs
+    "mkdocs-gen-files>=0.4",
+    "mkdocs-literate-nav>=0.5.0",
+    "mkdocs-section-index>=0.3.4",
+    "mdx-truly-sane-lists", # for 2-space indented lists (https://github.com/mkdocs/mkdocs/issues/545)
+    # formatting signatures
+    "black>23",
+]
+
+[tool.hatch.envs.docs.env-vars]
+MKDOCS_CONFIG = "mkdocs.yml"
+MKDOCS_BRANCH = "gh-pages"
+
+[tool.hatch.envs.docs.scripts]
+# --strict disabled for now, see https://github.com/timvink/mkdocs-git-revision-date-localized-plugin/issues/101
+build = "mkdocs build --config-file {env:MKDOCS_CONFIG} --clean {args}"
+#build = "mkdocs build --config-file {env:MKDOCS_CONFIG} --clean --strict {args}"
+serve = "mkdocs serve --config-file {env:MKDOCS_CONFIG} --dev-addr localhost:8000 {args}"
+ci-build = "mike deploy --config-file {env:MKDOCS_CONFIG} --branch {env:MKDOCS_BRANCH} --update-aliases {args}"
+deploy = "ci-build --push"
+validate = "linkchecker --config .linkcheckerrc site"
+# https://github.com/linkchecker/linkchecker/issues/678
+build-check = [
+  "build --no-directory-urls",
+  "validate",
+]
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config", "--cov=itkdb", "--cov-report=term-missing", "--cov-config=.coveragerc", "--cov-report=xml", "--doctest-modules", "--doctest-glob='*.md'"]
+xfail_strict = true
+filterwarnings = ["error"]
+log_cli_level = "INFO"
+testpaths = [
+  "tests",
+  "src",
+]
+
+[tool.mypy]
+files = "src"
+python_version = "3.8"
+warn_unused_configs = true
+strict = true
+hide_error_codes = false
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = [
+  'simple_settings.*',
+  'magic.*',
+  'pylibmagic.*',
+  'cachecontrol.*',
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+  'itkdb',
+  'itkdb.models',
+  'itkdb.models.institution',
+  'itkdb.models.file',
+  'itkdb.responses',
+  'itkdb.caching.*',
+  'itkdb.utils',
+  'itkdb.exceptions',
+  'itkdb.client',
+  'itkdb.commandline',
+  'itkdb.eos',
+]
+ignore_errors = true
+
+[tool.ruff]
+target-version = "py37"
+src = ["src"]
+exclude = []
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W", # flake8
+  "B",  "B904",  # flake8-bugbear
+  "I",           # isort
+  "ARG",         # flake8-unused-arguments
+  "C4",          # flake8-comprehensions
+  "EM",          # flake8-errmsg
+  "ICN",         # flake8-import-conventions
+  "ISC",         # flake8-implicit-str-concat
+  "PGH",         # pygrep-hooks
+  "PIE",         # flake8-pie
+  "PL",          # pylint
+  "PT",          # flake8-pytest-style
+  "PTH",         # flake8-use-pathlib
+  "RET",         # flake8-return
+  "RUF",         # Ruff-specific
+  "SIM",         # flake8-simplify
+  "T20",         # flake8-print
+  "UP",          # pyupgrade
+  "YTT",         # flake8-2020
+]
+ignore = ["PLR", "E501"]
+typing-modules = ["itkdb.typing"]
+unfixable = ["T20", "F841"]
+isort.required-imports = ["from __future__ import annotations"]
+
+[tool.pylint]
+py-version = "3.8"
+ignore-paths= ["src/itkdb/_version.py"]
+reports.output-format = "colorized"
+similarities.ignore-imports = "yes"
+messages_control.disable = [
+  "design",
+  "fixme",
+  "line-too-long",
+  "missing-module-docstring",
+  "wrong-import-position",
+]

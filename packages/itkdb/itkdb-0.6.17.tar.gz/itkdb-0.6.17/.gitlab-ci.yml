@@ -1,0 +1,199 @@
+stages:
+  - autoupdate
+  - check
+  - test
+  - build
+  - deploy
+
+# Gather defaults to be used via extend
+.base:
+  variables:
+    # see https://docs.gitlab.com/ee/ci/caching/#cache-python-dependencies
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+  cache:
+    paths:
+      - .cache/pip
+      - venv/
+
+  image: registry.cern.ch/docker.io/library/python:3.11-bullseye
+
+  before_script:
+    # want to set up a virtualenv to cache
+    - apt-get install -y --no-install-recommends git
+    - python -V
+    - git config --global credential.helper 'cache'
+    - |
+      echo "protocol=https
+      host=gitlab.cern.ch
+      username=gitlab-ci-token
+      password=${CI_JOB_TOKEN}
+      " | git credential approve
+    - python -m venv venv
+    - source venv/bin/activate
+    - python -m pip install -U pip pipx
+    - python -m pipx ensurepath
+    - python -m pip freeze --local
+
+pre-commit:
+  extends: .base
+  stage: check
+  variables:
+    PRE_COMMIT_HOME: "$CI_PROJECT_DIR/.cache/pre-commit"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+  script:
+    - python -m pip install pre-commit
+    - python -m pip freeze --local
+    - pre-commit run --hook-stage manual --all-files
+  after_script:
+    - git diff
+  cache:
+    key:
+      files:
+        - .pre-commit-config.yaml
+    paths:
+      - .cache/pre-commit
+  artifacts:
+    paths:
+      - .cache/pre-commit/pre-commit.log
+    when: on_failure
+
+pre-commit-autoupdate:
+  extends: .base
+  stage: autoupdate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: always
+    - if:
+        $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      # manual jobs need allow_failure? https://gitlab.com/gitlab-org/gitlab/-/issues/233876
+      allow_failure: true
+  script:
+    - python -m pip install pre-commit
+    - python -m pip freeze --local
+    - ci/pre-commit-update.sh
+
+  cache:
+    key:
+      files:
+        - .pre-commit-config.yaml
+    paths:
+      - .cache/pre-commit
+
+lint:
+  extends: .base
+  stage: check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+  script:
+    - pipx run hatch run lint
+
+tests:
+  extends: .base
+  stage: test
+  image: registry.cern.ch/docker.io/library/$IMAGE
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+  script:
+    - pipx run hatch run +py=${PYTHON_VERSION} dev:test
+  parallel:
+    matrix:
+      - IMAGE: "python:3.8-buster"
+        PYTHON_VERSION: "3.8"
+      - IMAGE: "python:3.9-buster"
+        PYTHON_VERSION: "3.9"
+      - IMAGE: "python:3.10-buster"
+        PYTHON_VERSION: "3.10"
+      - IMAGE: "python:3.11-buster"
+        PYTHON_VERSION: "3.11"
+
+make-docs:
+  extends: .base
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+  script: pipx run hatch run docs:build-check
+
+package:
+  extends: .base
+  stage: build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+  script:
+    - pipx run hatch run build-check
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 day
+
+.deploy_package:
+  extends: .base
+  stage: deploy
+  dependencies:
+    - package
+  script:
+    - pipx run twine upload --verbose dist/*whl dist/*gz
+
+deploy_package_testpypi:
+  extends: .deploy_package
+  rules:
+    - if:
+        $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
+  variables:
+    TWINE_REPOSITORY: testpypi
+    TWINE_USERNAME: __token__
+    TWINE_PASSWORD: $TESTPYPI_TOKEN
+
+deploy_docs_dev:
+  extends: .base
+  stage: deploy
+  rules:
+    - if:
+        $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
+  script:
+    # the next three lines are just to commit and push gh-pages to the project
+    - git config --global user.email "git@gitlab.cern.ch"
+    - git config --global user.name "GitLab CI"
+    - git remote set-url origin
+      "https://__pre-commit_ci_token:${DOC_DEPLOY_CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git"
+    # this is the script
+    - pipx run hatch run docs:deploy dev
+
+deploy_package_gitlab:
+  extends: .deploy_package
+  rules:
+    - if:
+        $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
+  variables:
+    TWINE_REPOSITORY_URL: "https://gitlab.cern.ch/api/v4/projects/${CI_PROJECT_ID}/packages/pypi"
+    TWINE_USERNAME: "gitlab-ci-token"
+    TWINE_PASSWORD: "${CI_JOB_TOKEN}"
+
+deploy_package_pypi:
+  extends: .deploy_package
+  only:
+    - tags
+  variables:
+    TWINE_REPOSITORY: pypi
+    TWINE_USERNAME: __token__
+    TWINE_PASSWORD: $PYPI_TOKEN
+
+deploy_docs_latest:
+  extends: .base
+  stage: deploy
+  only:
+    - tags
+  script:
+    # the next three lines are just to commit and push gh-pages to the project
+    - git config --global user.email "git@gitlab.cern.ch"
+    - git config --global user.name "GitLab CI"
+    - git remote set-url origin
+      "https://__pre-commit_ci_token:${DOC_DEPLOY_CI_JOB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git"
+    # this is the script
+    - VERSION=$(cut -d '.' -f 1,2 <<< "${CI_COMMIT_TAG}")
+    - IS_LATEST=$([[ "${CI_COMMIT_TAG}" == *"rc"* ]] && echo "" || echo
+      "latest")
+    - echo "Building and deploying docs for ${VERSION}"
+    - pipx run hatch run docs:deploy "${VERSION}" ${IS_LATEST:+"$IS_LATEST"}
