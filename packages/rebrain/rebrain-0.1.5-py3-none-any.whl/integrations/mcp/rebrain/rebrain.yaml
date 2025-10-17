@@ -1,0 +1,83 @@
+version: v1
+
+id_policy:
+  kind: uuid
+  field: id
+
+defaults:
+  vector:
+    metric: cosine
+    normalize: true
+  timestamps:
+    auto_create: true
+    auto_update: true
+  datetime_format: "%Y-%m-%d %H:%M:%S"  # Default format for all datetime output
+
+entities:
+  - name: memo # base entity - all other entities are derived from this
+    description: "Base memory unit"
+    fields:
+      id:          { type: string, required: true, system: true } # uuid
+      user_id:     { type: string, required: true, system: true } # system: true = handled by API, not in user payload
+      content:     { type: string, required: true, max_length: 8000 }  # Main content field (150-250 tokens)
+      created_at:  { type: datetime, required: true, system: true }
+      updated_at:  { type: datetime, system: true }
+      vector:      { type: vector, anchored_to: content, system: true }
+    relations:
+      memo:
+        - name: memo_related
+          description: "Generic relation between memos"
+          predicate: RELATED_TO
+          directed: false
+
+  # OBSERVATION (commented out - observations contain detailed personal data)
+  # - name: observation
+  #   parent: memo
+  #   description: "Extracted observations from conversations (1 per conversation)"
+  #   fields:
+  #     title:     { type: string, max_length: 200 }  # 5-10 word title
+  #     keywords:  { type: string, max_length: 1000 } # Pipe-separated keywords (lowercase-kebab-case)
+  #     entities:  { type: string, max_length: 2000 } # Pipe-separated entities (Title Case)
+  #     category:  { type: string }                   # technical|professional|personal
+  #     privacy:   { type: string }                   # low|medium|high
+  #   relations:
+  #     observation:
+  #       - name: observation_related
+  #         description: "Related observations"
+  #         predicate: RELATED_TO
+  #         directed: false
+
+  - name: learning
+    parent: memo
+    description: "Mid-level patterns synthesized from observation clusters"
+    fields:
+      title:     { type: string, max_length: 200 }  # 5-10 word title
+      keywords:  { type: string, max_length: 1000 } # Pipe-separated keywords (lowercase-kebab-case)
+      entities:  { type: string, max_length: 5000 } # Pipe-separated entities (Title Case)
+      category:  { type: string }                   # technical|professional|personal|cross-domain
+    relations:
+      learning:
+        - name: learning_related
+          description: "Related learnings"
+          predicate: RELATED_TO
+          directed: false
+
+  - name: cognition
+    parent: memo
+    description: "High-level principles synthesized from learning clusters"
+    fields:
+      domains:  { type: string, max_length: 500 }  # Pipe-separated domains
+      keywords: { type: string, max_length: 1000 } # Pipe-separated keywords (lowercase-kebab-case)
+      entities: { type: string, max_length: 1000 } # Pipe-separated entities (Title Case)
+      # Note: source_learning_count stored as metadata, not required in schema
+    relations:
+      learning:
+        - name: cognition_synthesized_from_learning
+          description: "Cognition synthesized from one or more learnings"
+          predicate: SYNTHESIZED_FROM
+          directed: true
+      cognition:
+        - name: cognition_related
+          description: "Related cognitions"
+          predicate: RELATED_TO
+          directed: false
