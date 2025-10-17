@@ -1,0 +1,46 @@
+defaults:
+  - model/seem@model: seem_model
+  - datamodule: biomedparse_datamodule
+  - trainer: biomedparse_trainer
+  - evaluator: seem_evaluator
+  - loss: seem_loss
+  - optimizer: adamw
+  - olympus_checkpoint: seem_checkpoint_loader
+  - _self_
+  - parameters
+
+# Definitions sub-configs rely on. These will only work if running from amlt, override
+# on command line otherwise
+mounts:
+  external: ${oc.env:EXTERNAL}
+  output: ${oc.env:OUTPUT}
+  model_path: ${oc.env:MODEL_PATH}
+project_name: MIP_finetune
+experiment_name: ${oc.env:AMLT_EXPERIMENT_NAME}
+job_name: ${oc.env:AMLT_JOB_NAME}
+experiment_output_dir: ${mounts.output}/${project_name}/${job_name}
+
+datamodule:
+  dataloaders:
+    train:
+      batch_size: 4
+    validate:
+      batch_size: 4
+
+optimizer:
+  lr: 0.00002
+  weight_decay: 0.01
+
+trainer:
+  max_epochs: 10
+
+olympus_checkpoint:
+  loader:
+    _target_: azureml.acft.image.components.olympus_biomed_parse.checkpoint_loaders.safetensors_loader.SafeTensorsLoader
+    checkpoint_path: "${mounts.model_path}/artifacts/checkpoints/boltzformer_focal_all.safetensors"
+
+mode: "train"
+
+hydra:
+  job:
+    chdir: True

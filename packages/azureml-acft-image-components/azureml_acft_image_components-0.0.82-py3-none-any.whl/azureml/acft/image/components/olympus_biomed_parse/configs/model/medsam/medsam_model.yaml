@@ -1,0 +1,65 @@
+_target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.medsam.medsam_model.MedSAMModel
+# sam_vit_b
+image_encoder:
+  _target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.medsam.encoders.hiera_image_encoder.MedSamHieraEncoder
+  scalp: 1
+  trunk:
+    _target_: azureml.acft.image.components.olympus_biomed_parse.external.sam2.modeling.backbones.hieradet.Hiera
+    embed_dim: 96
+    num_heads: 1
+    stages: [1, 2, 11, 2]
+    global_att_blocks: [7, 10, 13]
+    window_pos_embed_bkg_spatial_size: [7, 7]
+  neck:
+    _target_: azureml.acft.image.components.olympus_biomed_parse.external.sam2.modeling.backbones.image_encoder.FpnNeck
+    position_encoding:
+      _target_: azureml.acft.image.components.olympus_biomed_parse.external.sam2.modeling.position_encoding.PositionEmbeddingSine
+      num_pos_feats: 256
+      normalize: true
+      temperature: 10000
+    d_model: 256
+    backbone_channel_list: [768, 384, 192, 96]
+    fpn_top_down_levels: [2, 3]
+    fpn_interp_model: nearest
+  ckpt_path: ${external_mount}/data/PretrainedModels/sam2/sam2_hiera_small.pt
+# sam_vit_l
+# image_encoder:
+#   _target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.medsam.encoders.image_encoder.ImageEncoderViT
+#   embed_dim: 1024
+#   depth: 24
+#   num_heads: 16
+#   out_chans: 256
+#   global_attn_indexes: [5, 11, 17, 23]
+mask_decoder:
+  _target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.medsam.encoders.mask_decoder.MaskDecoder
+  transformer_dim: 256
+  transformer:
+    _target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.medsam.encoders.transformer.TwoWayTransformer
+    depth: 2
+    embedding_dim: 256
+    mlp_dim: 2048
+    num_heads: 8
+  iou_head_hidden_dim: 256
+prompt_encoder: 
+  _target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.medsam.encoders.prompt_encoder.TextPromptEncoder
+  embed_dim: 256
+  image_embedding_size: [64, 64]
+  input_image_size: [1024, 1024]
+  mask_in_chans: 16
+  text_encoder: 
+    _target_: azureml.acft.image.components.olympus_biomed_parse.models.multimodal_models.seem.transformer_decoder.language_encoders.language_transformer.get_transformer_encoder
+    config_encoder:
+      CONTEXT_LENGTH: 77
+      VOCAB_SIZE: 49408
+      WIDTH: 512
+      LAYERS: 12
+      HEADS: 8
+      AUTOGRESSIVE: true
+      LOAD_PRETRAINED: false
+    verbose: true
+  hidden_state_key: "last_hidden_state"
+  freeze_text_encoder: False
+freeze_prompt_encoder: False
+freeze_image_encoder: False
+model_checkpoint_path: "${mounts.external}/data/PretrainedModels/medsam_vit_b.pth"
+
