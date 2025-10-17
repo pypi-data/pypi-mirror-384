@@ -1,0 +1,2 @@
+class AsyncDiaryError(Exception):
+    pass
