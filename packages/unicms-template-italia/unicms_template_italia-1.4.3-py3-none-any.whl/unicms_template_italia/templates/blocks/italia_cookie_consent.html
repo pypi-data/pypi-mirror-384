@@ -1,0 +1,78 @@
+<!-- https://getbootstrap.com/docs/4.0/utilities/embed/#aspect-ratios -->
+{% load i18n %}
+{% load static %}
+
+{% load unicms_template_italia %}
+{% load unicms_templates %}
+
+{% random_id uid as id %}
+
+{% settings_value "EXTERNAL_SOURCES_CONSENT_KEY" as external_sources_consent_key %}
+{% settings_value "EXTERNAL_SOURCES_CONSENT_KEY_EXPIRATION" as external_sources_consent_key_expiration %}
+{% settings_value "EXTERNAL_SOURCES_KNOWN_LIST" as external_sources_known_list %}
+{% settings_value "MAIN_DOMAIN" as cookie_domain %}
+
+
+<div id="{{ id }}">
+    <div class="alert alert-success" role="alert" v-if="alert_show">
+        {% trans "Preference saved" %}
+    </div>
+    <div class="form-check">
+        <div class="toggles">
+            <label for="toggle-{{ id }}-dummy">
+                {% trans "Technical cookies" %}
+                <input type="checkbox" id="toggle-{{ id }}-dummy" checked disabled>
+                <span class="lever"></span>
+            </label>
+        </div>
+    </div>
+    <div class="form-check" v-for="source in known_sources">
+        <div class="toggles">
+            <label :for="'toggle-{{ id }}-' + source">
+                [[ source ]]
+                <input type="checkbox" :id="'toggle-{{ id }}-' + source" @change="changeConsent(source)" :checked="hasConsent(source)">
+                <span class="lever"></span>
+            </label>
+        </div>
+    </div>
+    <div class="form-check" v-if="!known_sources.includes(key)" v-for="(value, key) in consents" :key="key">
+        <div class="toggles">
+            <label :for="'toggle-{{ id }}-' + key">
+                [[ key ]]
+                <input type="checkbox" :id="'toggle-{{ id }}-' + key" @change="changeConsent(key)"  :checked="hasConsent(key)">
+                <span class="lever"></span>
+            </label>
+        </div>
+    </div>
+</div>
+<script>
+var {{ id }} = new Vue({
+    el: '#{{ id }}',
+    data() {
+        return {
+            alert_show: false,
+            alert_timer: null,
+            consents: getConsents(),
+            known_sources: {{ external_sources_known_list|safe }},
+        }
+    },
+    methods: {
+        changeConsent(host) {
+            editConsent(
+                host=host,
+                revoke=hasConsent(host)
+            )
+            this.alert_show = true
+            if (this.alert_timer) {
+              clearTimeout(this.alert_timer)
+            }
+            this.alert_timer = setTimeout(
+                () => {
+                    this.alert_show = false
+                    this.alert_timer = null
+                }, 3000
+            );
+        }
+    }
+})
+</script>
