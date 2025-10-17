@@ -1,0 +1,1 @@
+import{j as t,A as s}from"./index-B5gNOk1p.js";function n(){const r=t(!1);return s.client.interceptors.request.use(e=>(r.value=!0,e),e=>(r.value=!1,Promise.reject(e))),s.client.interceptors.response.use(e=>(r.value=!1,e),e=>(r.value=!1,Promise.reject(e))),{isLoading:r}}export{n as u};
