@@ -1,0 +1,115 @@
+Metadata-Version: 2.4
+Name: cattle_grid
+Version: 0.5.9
+Summary: Middleware for the Fediverse
+License-File: LICENSE
+Requires-Python: >=3.11
+Requires-Dist: alembic>=1.16.5
+Requires-Dist: argon2-cffi>=23.1.0
+Requires-Dist: bovine>=0.5.13
+Requires-Dist: dynaconf>=3.2.6
+Requires-Dist: fastapi[standard]>=0.115.4
+Requires-Dist: faststream[cli,rabbit]>=0.6.0
+Requires-Dist: jinja2>=3.1.6
+Requires-Dist: sqlalchemy-utils>=0.41.2
+Requires-Dist: sqlalchemy[asyncio]>=2.0.36
+Requires-Dist: tomli-w>=1.0.0
+Requires-Dist: uuid6>=2024.7.10
+Provides-Extra: cache
+Requires-Dist: fakeredis>=2.26.2; extra == 'cache'
+Requires-Dist: redis>=5.2.1; extra == 'cache'
+Provides-Extra: postgres
+Requires-Dist: asyncpg>=0.30.0; extra == 'postgres'
+Provides-Extra: uvicorn
+Requires-Dist: uvicorn>=0.37.0; extra == 'uvicorn'
+Description-Content-Type: text/markdown
+
+# cattle_grid
+
+THIS README needs to be updated for cattle_grid 0.2.0
+
+cattle_grid is meant to simplify handling authentication in server to
+server communication of the Fediverse. cattle_grid checks the HTTP
+signatures based on the headers. For this public keys are retrieved
+and cached.
+
+For installation instructions see the [documentation](https://bovine.codeberg.page/cattle_grid/).
+
+## Development
+
+### Testing
+
+You can run the pytest tests via
+
+```bash
+uv run pytest
+```
+
+or in watch mode
+
+```bash
+uv run ptw .
+```
+
+### Running behave tests
+
+Build the container via
+
+```bash
+./update_docker.sh
+```
+
+This script uses the requirements from `pyproject.toml` via `uv export` to install
+python dependencies in the container. This means this script needs to be rerun, if
+you make changes to the dependencies. Startup the docker environment via
+
+```bash
+docker compose up
+```
+
+Open a runner container
+
+```bash
+docker compose run --rm --name runner cattle_grid_app /bin/sh
+```
+
+Inside this container, you now run
+
+```bash
+fediverse-features
+behave
+```
+
+The first step downloads some features from [fediverse-features](https://codeberg.org/helge/fediverse-features)
+and the second step runs the test suite.
+
+### Building end 2 end reports  (as done by CI)
+
+The process to build the end to end reports is described [here](./resources/report_builder/README.md). The reports should be published to [this repository](https://codeberg.org/helge/cattle_grid_reports) and then made available [here](https://helge.codeberg.page/cattle_grid_reports/).
+
+### Running as stand alone
+
+Create a requirements.txt file and start a virgin docker container
+
+```bash
+uv export --no-editable --no-emit-project --no-hashes --no-dev > requirements.txt
+docker run --rm -ti -p 8000:8000\
+    -v ./cattle_grid:/app/cattle_grid\
+    -v ./requirements.txt:/app/requirements.txt \
+    --workdir /app\
+    helgekr/bovine:python3.13 /bin/sh
+```
+
+Once inside the docker container install dependencies
+
+```sh
+pip intall -r requirements.txt
+```
+
+and run `cattle_grid` via
+
+```sh
+uvicorn cattle_grid:create_app --factory --host 0.0.0.0
+```
+
+This currently fails.
