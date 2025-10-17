@@ -1,0 +1,302 @@
+class ApiLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_ts = time.time()
+
+        # read request body (may be empty)
+        try:
+            body_bytes = await request.body()
+        except Exception:
+            body_bytes = b""
+
+        # restore request._receive so downstream can read the body as usual
+        async def _receive():
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+        request._receive = _receive
+
+        # prepare basic request metadata
+        import re
+
+        def _normalize_ip(val: str | None) -> str | None:
+            if not val:
+                return None
+            s = val.strip()
+            # remove surrounding quotes
+            if s.startswith('"') and s.endswith('"'):
+                s = s[1:-1]
+            # IPv6 in brackets: [::1]:1234 or [::1]
+            if s.startswith('['):
+                if ']' in s:
+                    end = s.find(']')
+                    return s[1:end]
+            # remove zone id like %eth0
+            if '%' in s:
+                s = s.split('%', 1)[0]
+            # if has multiple colons, it's IPv6 possibly with trailing :port
+            if s.count(':') > 1:
+                # if ends with :port digits, strip the port
+                m = re.match(r'^(.*):(\d+)$', s)
+                if m:
+                    return m.group(1)
+                return s
+            # IPv4 with optional :port
+            if ':' in s:
+                host, port = s.rsplit(':', 1)
+                if port.isdigit():
+                    return host
+            return s
+
+        # client_ip normalization and extraction
+        def _get_client_ip(req, hdrs: dict) -> str | None:
+            try:
+                xff = hdrs.get('x-forwarded-for') or hdrs.get('X-Forwarded-For')
+                if xff:
+                    parts = [p.strip() for p in xff.split(',') if p.strip()]
+                    if parts:
+                        return _normalize_ip(parts[0])
+
+                xri = hdrs.get('x-real-ip') or hdrs.get('X-Real-IP')
+                if xri:
+                    return _normalize_ip(xri)
+
+                fwd = hdrs.get('forwarded')
+                if fwd:
+                    for part in fwd.split(';'):
+                        part = part.strip()
+                        if part.lower().startswith('for='):
+                            val = part[4:].strip()
+                            return _normalize_ip(val)
+
+                if req.client is not None:
+                    return getattr(req.client, 'host', None)
+            except Exception:
+                return None
+
+        try:
+            client_ip = _get_client_ip(request, dict(request.headers))
+        except Exception:
+            client_ip = None
+
+        headers = dict(request.headers)
+        request_path = request.url.path
+        request_url = str(request.url)
+        request_method = request.method
+
+        # helper to decide if a content-type is textual (json/xml/html/text/* or +json/+xml)
+        def is_text_content_type(ct: str) -> bool:
+            if not ct:
+                return False
+            ct = ct.lower()
+            if ct.startswith('text/'):
+                return True
+            if 'json' in ct or 'xml' in ct or 'html' in ct:
+                return True
+            # vendor types like application/ld+json or application/vnd.something+json
+            if ct.endswith('+json') or ct.endswith('+xml'):
+                return True
+            return False
+
+        # serialize headers safely
+        try:
+            request_head_text = json.dumps(headers, ensure_ascii=False)
+        except Exception:
+            request_head_text = str(headers)
+
+        # Only record request body for textual and form Content-Types
+        try:
+            from starlette.datastructures import UploadFile as StarletteUploadFile
+            import urllib.parse
+
+            req_ct = (headers.get('content-type') or headers.get('Content-Type') or '').lower()
+
+            # multipart/form-data: parse form fields, but avoid storing file content
+            if 'multipart/form-data' in req_ct:
+                try:
+                    form = await request.form()
+                    form_dict = {}
+                    for k, v in form.items():
+                        # UploadFile objects represent file uploads
+                        if isinstance(v, StarletteUploadFile):
+                            # record filename only, not contents
+                            form_dict[k] = {'filename': getattr(v, 'filename', None)}
+                        else:
+                            # value may be list-like or str
+                            form_dict[k] = v
+                    request_body_text = json.dumps(form_dict, ensure_ascii=False)
+                except Exception:
+                    request_body_text = None
+
+            # application/x-www-form-urlencoded: parse into dict
+            elif req_ct.startswith('application/x-www-form-urlencoded') and body_bytes:
+                try:
+                    decoded = body_bytes.decode('utf-8', errors='replace')
+                    parsed = urllib.parse.parse_qs(decoded, keep_blank_values=True)
+                    # convert lists to single values when appropriate
+                    simple = {k: v if len(v) != 1 else v[0] for k, v in parsed.items()}
+                    request_body_text = json.dumps(simple, ensure_ascii=False)
+                except Exception:
+                    request_body_text = None
+
+            # other textual types (json, xml, html, text/*)
+            elif is_text_content_type(req_ct) and body_bytes:
+                try:
+                    request_body_text = body_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    request_body_text = None
+            else:
+                request_body_text = None
+        except Exception:
+            request_body_text = None
+
+        db_session = None
+        log_id = None
+        # create initial ApiLog entry (best-effort)
+        try:
+            db_session = Session()
+            api_log = ApiLog(
+                program=headers.get('x-program') or None,
+                client_ip=client_ip,
+                update_time=datetime.datetime.now(datetime.timezone.utc),
+                response_status=None,
+                request_method=request_method,
+                request_path=request_path,
+                request_url=request_url,
+                request_head=request_head_text,
+                request_body=request_body_text,
+            )
+            db_session.add(api_log)
+            db_session.flush()  # assign id
+            log_id = api_log.id
+            # don't commit yet; we'll commit the final update after response
+            db_session.commit()
+        except Exception:
+            try:
+                if db_session is not None:
+                    db_session.rollback()
+            except Exception:
+                pass
+            finally:
+                if db_session is not None:
+                    db_session.close()
+                db_session = None
+            log_id = None
+
+        # call downstream
+        response = None
+        response_body_text = None
+        response_headers = None
+        status_code = None
+        exception = None
+        try:
+            response = await call_next(request)
+
+            # decide whether to buffer response body for logging
+            headers_out = dict(response.headers)
+            status_code = response.status_code
+            media_type = getattr(response, 'media_type', '') or ''
+            content_length = None
+            cl = headers_out.get('content-length') or response.headers.get('Content-Length')
+            try:
+                if cl is not None:
+                    content_length = int(cl)
+            except Exception:
+                content_length = None
+
+            content_disposition = (headers_out.get('content-disposition')
+                                   or headers_out.get('Content-Disposition') or '')
+
+            # don't save body if it's a FileResponse, attachment, image, or larger than threshold
+            MAX_STORE_SIZE = 100 * 1024  # 100KB
+            is_file_like = isinstance(response, FileResponse)
+            is_image = bool(media_type and media_type.startswith('image/'))
+            is_attachment = ('attachment' in content_disposition.lower()) if content_disposition else False
+
+            # Only treat as textual if media_type / Content-Type indicates text/json/xml/html
+            resp_ct = headers_out.get('content-type') or response.headers.get('Content-Type') or media_type or ''
+            is_text = is_text_content_type(resp_ct)
+
+            # Buffer only when response is textual, not file/image/attachment, and size <= MAX_STORE_SIZE
+            should_buffer = is_text and (not is_file_like) and (not is_image) and (
+                not is_attachment) and (content_length is not None and content_length <= MAX_STORE_SIZE)
+
+            response_body_text = None
+            response_headers = headers_out
+
+            if should_buffer:
+                # safe to fully buffer according to content-length
+                resp_body = b""
+                try:
+                    body_iter = getattr(response, 'body_iterator', None)
+                    if body_iter is not None:
+                        # body_iterator exists for streaming responses
+                        async for chunk in body_iter:
+                            resp_body += chunk
+                    else:
+                        # fallback to .body when available
+                        resp_body = getattr(response, 'body', b"") or b""
+                except Exception:
+                    try:
+                        resp_body = getattr(response, 'body', b"") or b""
+                    except Exception:
+                        resp_body = b""
+
+                try:
+                    # decode as text; we already checked content-type indicates text
+                    response_body_text = resp_body.decode('utf-8', errors='replace') if resp_body else None
+                except Exception:
+                    response_body_text = None
+
+                # rebuild response to return to client
+                new_response = Response(content=resp_body, status_code=response.status_code,
+                                        headers=headers_out, media_type=response.media_type)
+                response = new_response
+
+            # if not buffering, leave response as-is and do not set response_body_text
+            return response
+        except BaseException as exc:
+            # Catch non-Exception subclasses (e.g. ExceptionGroup / BaseExceptionGroup on Python 3.11)
+            # Record it for logging and re-raise immediately so framework handles it.
+            exception = exc
+            raise
+        finally:
+            # finally: update the ApiLog entry (best-effort)
+            db2 = None
+            try:
+                db2 = Session()
+                if log_id is not None:
+                    api = db2.query(ApiLog).get(log_id)
+                    if api is not None:
+                        api.response_status = str(status_code) if status_code is not None else None
+                        try:
+                            api.response_head = json.dumps(response_headers or {}, ensure_ascii=False)
+                        except Exception:
+                            api.response_head = str(response_headers or {})
+                        # only store response_body_text when available (already truncated later)
+                        api.response_body = (response_body_text[:10000] if response_body_text else None)
+                        api.response_time = int((time.time() - start_ts) * 1000)
+                        api.update_time = datetime.datetime.now(datetime.timezone.utc)
+                        if exception:
+                            import traceback
+                            api.exception = ''.join(traceback.format_exception(exception))
+                        db2.add(api)
+                        db2.commit()
+            except Exception:
+                # defensive rollback if db2 was created
+                try:
+                    if db2 is not None:
+                        db2.rollback()
+                except Exception:
+                    pass
+            finally:
+                try:
+                    if db2 is not None:
+                        db2.close()
+                except Exception:
+                    pass
+
+                # close the initial session if still open
+                try:
+                    if db_session is not None:
+                        db_session.close()
+                except Exception:
+                    pass
