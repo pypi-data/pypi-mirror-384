@@ -1,0 +1,1 @@
+import{E as a,h as s}from"./index-D9OmnhdE.js";const r=a("layout",()=>{const e=s([]),t=s(!1);function n(u){e.value=u}async function o(){e.value=[],t.value=!1}return{leftMenuItems:e,compactLeftMenu:t,setLeftMenuItems:n,$reset:o}});export{r as u};

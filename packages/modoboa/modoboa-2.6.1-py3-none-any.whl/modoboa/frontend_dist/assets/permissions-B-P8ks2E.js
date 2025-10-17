@@ -1,0 +1,1 @@
+import{u,i as n,j as e}from"./index-D9OmnhdE.js";function c(){const t=u(),s=n(()=>[e.RESELLER,e.SUPER_ADMIN].includes(t.authUser.role)),r=n(()=>[e.RESELLER,e.SUPER_ADMIN].includes(t.authUser.role)),o=n(()=>[e.DOMAIN_ADMIN,e.RESELLER,e.SUPER_ADMIN].includes(t.authUser.role));return{canSetRole:s,canAddDomain:r,canViewDomain:o}}export{c as u};
