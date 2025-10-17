@@ -1,0 +1,435 @@
+This large command is used to `discover` the schema of a database in SQL Server Analysis Services (SSAS). It retrieves all available metadata about the entities in the associated PowerBI model.
+
+```xml
+<Batch Transaction="false" xmlns="http://schemas.microsoft.com/analysisservices/2003/engine">
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_MODEL</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_DATA_SOURCES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_TABLES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_COLUMNS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_ATTRIBUTE_HIERARCHIES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PARTITIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_RELATIONSHIPS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_MEASURES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_HIERARCHIES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_LEVELS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_ANNOTATIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_KPIS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_CULTURES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_OBJECT_TRANSLATIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_LINGUISTIC_METADATA</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PERSPECTIVES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PERSPECTIVE_TABLES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PERSPECTIVE_COLUMNS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PERSPECTIVE_HIERARCHIES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PERSPECTIVE_MEASURES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_ROLES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_ROLE_MEMBERSHIPS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_TABLE_PERMISSIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_VARIATIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_SETS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_PERSPECTIVE_SETS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_EXTENDED_PROPERTIES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_EXPRESSIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_COLUMN_PERMISSIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_DETAIL_ROWS_DEFINITIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_RELATED_COLUMN_DETAILS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_GROUP_BY_COLUMNS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_CALCULATION_GROUPS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_CALCULATION_ITEMS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_ALTERNATE_OF_DEFINITIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_REFRESH_POLICIES</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_FORMAT_STRING_DEFINITIONS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>TMSCHEMA_QUERY_GROUPS</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DatabaseName>{{db_name}}</DatabaseName>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+	<Discover xmlns="urn:schemas-microsoft-com:xml-analysis">
+		<RequestType>DISCOVER_CALC_DEPENDENCY</RequestType>
+		<Restrictions>
+			<RestrictionList>
+				<DATABASE_NAME>{{db_name}}</DATABASE_NAME>
+			</RestrictionList>
+		</Restrictions>
+		<Properties>
+			<PropertyList/>
+		</Properties>
+	</Discover>
+</Batch>
+```

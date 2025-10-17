@@ -1,0 +1,15 @@
+This command is used to load a PowerBI data model to SSAS from a pbix file.
+```xml
+<ImageLoad 
+  xmlns="http://schemas.microsoft.com/analysisservices/2003/engine" 
+  xmlns:ddl100="http://schemas.microsoft.com/analysisservices/2008/engine/100" 
+  xmlns:ddl200="http://schemas.microsoft.com/analysisservices/2010/engine/200" 
+  xmlns:ddl700_700="http://schemas.microsoft.com/analysisservices/2018/engine/700/700"
+>
+  <ddl700_700:PackagePath>{{source_path}}</ddl700_700:PackagePath>
+  <ddl700_700:PackagePartUri>/DataModel</ddl700_700:PackagePartUri>
+  <DatabaseName>{{db_name}}</DatabaseName>
+  <DatabaseID>{{db_name}}</DatabaseID>
+  <ddl100:ReadWriteMode>ReadWrite</ddl100:ReadWriteMode>
+</ImageLoad>
+```

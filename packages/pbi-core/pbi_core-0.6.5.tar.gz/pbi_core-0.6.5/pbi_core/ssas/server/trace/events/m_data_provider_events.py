@@ -1,0 +1,31 @@
+from enum import Enum
+
+
+class ExecuteSourceQueryColumns(Enum):
+    EVENTCLASS = 0
+    CURRENTTIME = 2
+    STARTTIME = 3
+    ENDTIME = 4
+    DURATION = 5
+    CPUTIME = 6
+    JOBID = 7
+    SESSIONTYPE = 8
+    INTEGERDATA = 10
+    OBJECTID = 11
+    OBJECTTYPE = 12
+    OBJECTNAME = 13
+    OBJECTPATH = 14
+    SEVERITY = 22
+    SUCCESS = 23
+    ERROR = 24
+    CONNECTIONID = 25
+    DATABASENAME = 28
+    CLIENTPROCESSID = 36
+    SESSIONID = 39
+    SPID = 41
+    TEXTDATA = 42
+    SERVERDATA = 43
+    ACTIVITYID = 46
+    REQUESTID = 47
+    ERRORTYPE = 49
+    APPLICATIONCONTEXT = 52
