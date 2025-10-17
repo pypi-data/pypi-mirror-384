@@ -1,0 +1,369 @@
+Metadata-Version: 2.4
+Name: raga-canvas-cli
+Version: 1.0.1
+Summary: CLI tool for interacting with Raga Canvas no-code agent deployment platform
+Author-email: Raga AI <support@raga.ai>
+License: MIT
+Project-URL: Homepage, https://github.com/raga-ai/raga-canvas-cli
+Project-URL: Documentation, https://docs.raga.ai/canvas-cli
+Project-URL: Repository, https://github.com/raga-ai/raga-canvas-cli
+Project-URL: Issues, https://github.com/raga-ai/raga-canvas-cli/issues
+Keywords: cli,agent,deployment,no-code,ai
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: click>=8.0.0
+Requires-Dist: requests>=2.25.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: rich>=12.0.0
+Requires-Dist: keyring>=23.0.0
+Requires-Dist: python-dotenv>=0.19.0
+Requires-Dist: pydantic>=1.8.0
+Requires-Dist: tabulate>=0.9.0
+Requires-Dist: pathlib
+Requires-Dist: typing-extensions>=4.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: flake8>=5.0.0; extra == "dev"
+Requires-Dist: mypy>=0.991; extra == "dev"
+Requires-Dist: pre-commit>=2.20.0; extra == "dev"
+Dynamic: license-file
+
+# Raga Canvas CLI
+
+A command-line interface for interacting with the Raga Canvas no-code agent deployment platform.
+
+## Installation
+
+```bash
+pip install raga-canvas-cli
+```
+
+## Quick Start
+
+1) **Login** to authenticate with Canvas platform
+```bash
+canvas login [--api-base https://api.canvas.raga.ai] [--profile <name>]
+```
+
+2) **Initialize** a workspace
+```bash
+canvas init <directory> [--profile <name>] [--force]
+```
+
+3) **Add** a project to your workspace
+```bash
+canvas add project <project-short-name> [--profile <name>]
+```
+
+4) **Set** the default project
+```bash
+canvas set default-project <project-short-name>
+```
+
+5) **Pull** an agent and its dependencies
+```bash
+canvas pull agent <agent-short-name> [--project <project-name>] [--profile <name>]
+```
+
+6) **Push** your modified agent
+```bash
+canvas push agent <agent-short-name> [--project <project-name>] [--profile <name>] [--force]
+```
+
+7) **Deploy** the agent
+```bash
+canvas deploy agent <agent-short-name> [--project <project-name>] [--profile <name>]
+```
+
+## Commands
+
+### canvas login
+Authenticate with the Canvas platform and save credentials.
+
+**Usage:**
+```bash
+canvas login [--api-base <url>] [--profile <name>]
+```
+
+Prompts for username and password, validates, and stores a token securely (in system keychain or `~/.canvasrc`).
+
+**Options:**
+- `--api-base`: API base URL (default: `https://api.canvas.raga.ai`)
+- `--profile`: Profile name to save credentials under (default: `default`)
+
+---
+
+### canvas init
+Initialize a Canvas workspace.
+
+**Usage:**
+```bash
+canvas init <directory> [--profile <name>] [--force]
+```
+
+Creates the workspace structure:
+- `canvas.yaml` - workspace configuration
+- `agents/`, `tools/`, `datasources/` - resource directories
+- `.gitignore` - excludes sensitive files
+
+**Arguments:**
+- `<directory>`: Directory to initialize (use `.` for current directory)
+
+**Options:**
+- `--profile`: Profile to use for authentication
+- `--force`: Proceed even if files already exist
+
+---
+
+### canvas add
+Add projects to your workspace.
+
+**Usage:**
+```bash
+canvas add project <project-short-name> [--profile <name>]
+```
+
+Downloads project configuration and sets up environment templates for the specified project.
+
+**Examples:**
+```bash
+canvas add project my-project
+canvas add project my-project --profile production
+```
+
+---
+
+### canvas set
+Set workspace-level defaults.
+
+**Usage:**
+```bash
+canvas set default-project <project-short-name>
+```
+
+Sets the default project in `canvas.yaml` that will be used by other commands when `--project` is not specified.
+
+---
+
+### canvas list
+List Canvas resources.
+
+**List Projects:**
+```bash
+canvas list projects [--profile <name>] [--local]
+```
+- `--local`: List projects added to local workspace instead of remote projects
+
+**List Agents:**
+```bash
+canvas list agents [--project <short-name>] [--profile <name>]
+```
+
+Shows all agents in the specified project (or default project if not specified).
+
+---
+
+### canvas pull
+Pull resources from Canvas platform into your workspace.
+
+**Pull Agent:**
+```bash
+canvas pull agent <agent-short-name> [--project <short-name>] [--profile <name>]
+```
+
+Pulls an agent and all its dependencies (tools, datasources, sub-agents) into the global `agents/` directory.
+
+**Examples:**
+```bash
+canvas pull agent my-agent
+canvas pull agent my-agent --project my-project
+```
+
+**Note:** The deprecated `canvas pull project` command has been replaced by `canvas add project`.
+
+---
+
+### canvas push
+Push local resources to Canvas platform.
+
+**Push Agent:**
+```bash
+canvas push agent <agent-short-name> [--project <short-name>] [--profile <name>] [--force]
+```
+
+Creates or updates an agent and its dependencies in the target project.
+
+**Arguments:**
+- `<agent-short-name>`: Agent directory name in `agents/`
+
+**Options:**
+- `--project`: Target project short name (uses default project if not specified)
+- `--profile`: Profile to use for authentication
+- `--force`: Force push even if validation warnings exist
+
+**Examples:**
+```bash
+canvas push agent my-agent
+canvas push agent my-agent --project my-project
+canvas push agent my-agent --force
+```
+
+---
+
+### canvas deploy
+Deploy an agent to Canvas platform.
+
+**Usage:**
+```bash
+canvas deploy agent <agent-short-name> [--project <short-name>] [--profile <name>]
+```
+
+Triggers deployment of an existing agent version in the target project.
+
+**Examples:**
+```bash
+canvas deploy agent my-agent
+canvas deploy agent my-agent --project my-project
+```
+
+---
+
+### canvas get
+Get information from Canvas platform.
+
+**Get Project Certificate:**
+```bash
+canvas get project-certificate [--project <short-name>] [--profile <name>]
+```
+
+Retrieves the JWT public key certificate configured for a project. The key is used for validating JWT tokens issued by the project.
+
+**Examples:**
+```bash
+canvas get project-certificate
+canvas get project-certificate --project my-project
+```
+
+---
+
+### canvas update
+Update information on Canvas platform.
+
+**Update Project Certificate:**
+```bash
+canvas update project-certificate --public-key <path-to-pem-file> [--project <short-name>] [--profile <name>]
+```
+
+Uploads a new JWT public key certificate for a project. The key should be in PEM format and will be used for JWT token validation.
+
+**Options:**
+- `--public-key`: Path to the public key PEM file (required)
+- `--project`: Target project short name (uses default project if not specified)
+- `--profile`: Profile to use for authentication
+
+**Examples:**
+```bash
+canvas update project-certificate --public-key ./public_key.pem
+canvas update project-certificate --project my-project --public-key ./key.pem
+```
+
+---
+
+### canvas help
+Show help information for Canvas CLI commands.
+
+**Usage:**
+```bash
+canvas help [<command>] [--structure]
+```
+
+**Options:**
+- `--structure`: Show workspace directory structure
+
+**Examples:**
+```bash
+canvas help                # General help
+canvas help pull          # Help for pull command
+canvas help --structure   # Show directory structure
+```
+
+## Directory Structure
+
+When you run `canvas init` and `canvas add project`, the following structure is created:
+
+```
+my-canvas-workspace/
+├── canvas.yaml              # Workspace configuration
+├── .gitignore              # Ignores sensitive files (.canvasrc, *.env, etc.)
+│
+├── agents/                 # Global agents directory
+│   └── my-agent/
+│       ├── agent.yaml      # Agent configuration
+│       └── system_prompt.txt  # System prompt (if extracted)
+│
+├── tools/                  # Global tools directory  
+│   └── my-tool/
+│       └── tool.yaml       # Tool configuration
+│
+├── datasources/            # Global datasources directory
+│   └── my-datasource/
+│       └── datasource.yaml # Datasource configuration
+│
+├── projects/               # Project-specific configurations
+│   └── my-project/
+│       └── project.yaml    # Project metadata
+│
+└── env/                    # Environment-specific variables
+    ├── dev.yaml           # Development environment
+    ├── staging.yaml       # Staging environment
+    └── prod.yaml          # Production environment
+```
+
+**Key Files:**
+- `canvas.yaml`: Workspace config with default project name and version
+- `~/.canvasrc`: Global user profiles and authentication tokens (stored in system keychain when available)
+- `agents/<name>/agent.yaml`: Agent configuration with references to tools and datasources by short name
+- `projects/<name>/project.yaml`: Project-specific metadata including project ID, environment, and profile
+- `env/<environment>.yaml`: Environment-specific variables (API keys, connection strings, etc.)
+
+## Configuration
+
+The CLI uses the following configuration files:
+
+- `~/.canvasrc` - Global user configuration and profiles (or system keychain)
+- `canvas.yaml` - Workspace configuration
+- `projects/<name>/project.yaml` - Project metadata and settings
+- `env/*.yaml` - Environment-specific variables
+
+## Development
+
+To set up for development:
+
+```bash
+git clone https://github.com/raga-ai/raga-canvas-cli
+cd raga-canvas-cli
+pip install -e ".[dev]"
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+## License
+
+MIT License - see LICENSE file for details.
