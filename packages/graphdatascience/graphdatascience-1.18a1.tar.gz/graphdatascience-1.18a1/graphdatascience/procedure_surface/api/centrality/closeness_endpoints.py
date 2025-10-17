@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+from pandas import DataFrame
+
+from graphdatascience.procedure_surface.api.base_result import BaseResult
+from graphdatascience.procedure_surface.api.catalog.graph_api import GraphV2
+from graphdatascience.procedure_surface.api.estimation_result import EstimationResult
+
+
+class ClosenessEndpoints(ABC):
+    @abstractmethod
+    def mutate(
+        self,
+        G: GraphV2,
+        mutate_property: str,
+        use_wasserman_faust: bool | None = None,
+        relationship_types: list[str] | None = None,
+        node_labels: list[str] | None = None,
+        sudo: bool | None = None,
+        log_progress: bool = True,
+        username: str | None = None,
+        concurrency: Any | None = None,
+        job_id: Any | None = None,
+    ) -> ClosenessMutateResult:
+        """
+        Runs the Closeness Centrality algorithm and stores the results in the graph catalog as a new node property.
+
+        Closeness centrality is a way of detecting nodes that are able to spread information very efficiently through a graph.
+        The closeness centrality of a node measures its average farness (inverse distance) to all other nodes.
+        Nodes with a high closeness score have the shortest distances to all other nodes.
+
+        Parameters
+        ----------
+        G : GraphV2
+            The graph to run the algorithm on
+        mutate_property : str
+            The property name to store the closeness centrality score for each node
+        use_wasserman_faust : bool | None, default=None
+            Use the improved Wasserman-Faust formula for closeness computation.
+        relationship_types : list[str] | None, default=None
+            The relationship types used to select relationships for this algorithm run.
+        node_labels : list[str] | None, default=None
+            The node labels used to select nodes for this algorithm run.
+        sudo : bool | None, default=None
+            Override memory estimation limits. Use with caution as this can lead to
+            memory issues if the estimation is significantly wrong.
+        log_progress : bool | None, default=None
+            Whether to log progress of the algorithm execution
+        username : str | None, default=None
+            The username to attribute the procedure run to
+        concurrency : Any | None, default=None
+            The number of concurrent threads used for the algorithm execution.
+        job_id : Any | None, default=None
+            An identifier for the job that can be used for monitoring and cancellation
+
+        Returns
+        -------
+        ClosenessMutateResult
+            Algorithm metrics and statistics including the centrality distribution
+        """
+        pass
+
+    @abstractmethod
+    def stats(
+        self,
+        G: GraphV2,
+        use_wasserman_faust: bool | None = None,
+        relationship_types: list[str] | None = None,
+        node_labels: list[str] | None = None,
+        sudo: bool | None = None,
+        log_progress: bool = True,
+        username: str | None = None,
+        concurrency: Any | None = None,
+        job_id: Any | None = None,
+    ) -> ClosenessStatsResult:
+        """
+        Runs the Closeness Centrality algorithm and returns result statistics without storing the results.
+
+        Closeness centrality is a way of detecting nodes that are able to spread information very efficiently through a graph.
+        The closeness centrality of a node measures its average farness (inverse distance) to all other nodes.
+        Nodes with a high closeness score have the shortest distances to all other nodes.
+
+        Parameters
+        ----------
+        G : GraphV2
+            The graph to run the algorithm on
+        use_wasserman_faust : bool | None, default=None
+            Use the improved Wasserman-Faust formula for closeness computation.
+        relationship_types : list[str] | None, default=None
+            The relationship types used to select relationships for this algorithm run.
+        node_labels : list[str] | None, default=None
+            The node labels used to select nodes for this algorithm run.
+        sudo : bool | None, default=None
+            Override memory estimation limits. Use with caution as this can lead to
+            memory issues if the estimation is significantly wrong.
+        log_progress : bool | None, default=None
+            Whether to log progress of the algorithm execution
+        username : str | None, default=None
+            The username to attribute the procedure run to
+        concurrency : Any | None, default=None
+            The number of concurrent threads used for the algorithm execution.
+        job_id : Any | None, default=None
+            An identifier for the job that can be used for monitoring and cancellation
+
+        Returns
+        -------
+        ClosenessStatsResult
+            Algorithm statistics including the centrality distribution
+        """
+        pass
+
+    @abstractmethod
+    def stream(
+        self,
+        G: GraphV2,
+        use_wasserman_faust: bool | None = None,
+        relationship_types: list[str] | None = None,
+        node_labels: list[str] | None = None,
+        sudo: bool | None = None,
+        log_progress: bool = True,
+        username: str | None = None,
+        concurrency: Any | None = None,
+        job_id: Any | None = None,
+    ) -> DataFrame:
+        """
+        Executes the Closeness Centrality algorithm and returns a stream of results.
+
+        Parameters
+        ----------
+        G : GraphV2
+            The graph to run the algorithm on
+        use_wasserman_faust : bool | None, default=None
+            Use the improved Wasserman-Faust formula for closeness computation.
+        relationship_types : list[str] | None, default=None
+            The relationship types used to select relationships for this algorithm run.
+        node_labels : list[str] | None, default=None
+            The node labels used to select nodes for this algorithm run.
+        sudo : bool | None, default=None
+            Override memory estimation limits. Use with caution as this can lead to
+            memory issues if the estimation is significantly wrong.
+        log_progress : bool | None, default=None
+            Whether to log progress of the algorithm execution
+        username : str | None, default=None
+            The username to attribute the procedure run to
+        concurrency : Any | None, default=None
+            The number of concurrent threads used for the algorithm execution.
+        job_id : Any | None, default=None
+            An identifier for the job that can be used for monitoring and cancellation
+
+        Returns
+        -------
+        DataFrame
+            DataFrame with nodeId and score columns containing closeness centrality results.
+            Each row represents a node with its corresponding closeness centrality score.
+        """
+        pass
+
+    @abstractmethod
+    def write(
+        self,
+        G: GraphV2,
+        write_property: str,
+        use_wasserman_faust: bool | None = None,
+        relationship_types: list[str] | None = None,
+        node_labels: list[str] | None = None,
+        sudo: bool | None = None,
+        log_progress: bool = True,
+        username: str | None = None,
+        concurrency: Any | None = None,
+        job_id: Any | None = None,
+        write_concurrency: Any | None = None,
+    ) -> ClosenessWriteResult:
+        """
+        Runs the Closeness Centrality algorithm and stores the result in the Neo4j database as a new node property.
+
+        Closeness centrality is a way of detecting nodes that are able to spread information very efficiently through a graph.
+        The closeness centrality of a node measures its average farness (inverse distance) to all other nodes.
+        Nodes with a high closeness score have the shortest distances to all other nodes.
+
+        Parameters
+        ----------
+        G : GraphV2
+            The graph to run the algorithm on
+        write_property : str
+            The property name to write closeness centrality scores to in the Neo4j database
+        use_wasserman_faust : bool | None, default=None
+            Use the improved Wasserman-Faust formula for closeness computation.
+        relationship_types : list[str] | None, default=None
+            The relationship types used to select relationships for this algorithm run.
+        node_labels : list[str] | None, default=None
+            The node labels used to select nodes for this algorithm run.
+        sudo : bool | None, default=None
+            Override memory estimation limits. Use with caution as this can lead to
+            memory issues if the estimation is significantly wrong.
+        log_progress : bool | None, default=None
+            Whether to log progress of the algorithm execution
+        username : str | None, default=None
+            The username to attribute the procedure run to
+        concurrency : Any | None, default=None
+            The number of concurrent threads used for the algorithm execution.
+        job_id : Any | None, default=None
+            An identifier for the job that can be used for monitoring and cancellation
+        write_concurrency : Any | None, default=None
+            The number of concurrent threads used during the write phase.
+
+        Returns
+        -------
+        ClosenessWriteResult
+            Algorithm metrics and statistics including the number of properties written
+        """
+        pass
+
+    @abstractmethod
+    def estimate(
+        self,
+        G: GraphV2 | dict[str, Any],
+        use_wasserman_faust: bool | None = None,
+        relationship_types: list[str] | None = None,
+        node_labels: list[str] | None = None,
+        concurrency: Any | None = None,
+    ) -> EstimationResult:
+        """
+        Estimate the memory consumption of an algorithm run.
+
+        Parameters
+        ----------
+        G : GraphV2 | dict[str, Any]
+            The graph to run the algorithm on or a dictionary representing the graph configuration.
+        use_wasserman_faust : bool | None, default=None
+            Use the improved Wasserman-Faust formula for closeness computation.
+        relationship_types : list[str] | None, default=None
+            The relationship types used to select relationships for this algorithm run.
+        node_labels : list[str] | None, default=None
+            The node labels used to select nodes for this algorithm run.
+        concurrency : Any | None, default=None
+            The number of concurrent threads used for the algorithm execution.
+
+        Returns
+        -------
+        EstimationResult
+            An object containing the result of the estimation
+        """
+        pass
+
+
+class ClosenessMutateResult(BaseResult):
+    """Result of running Closeness Centrality algorithm with mutate mode."""
+
+    node_properties_written: int
+    pre_processing_millis: int
+    compute_millis: int
+    post_processing_millis: int
+    mutate_millis: int
+    centrality_distribution: dict[str, Any]
+    configuration: dict[str, Any]
+
+
+class ClosenessStatsResult(BaseResult):
+    """Result of running Closeness Centrality algorithm with stats mode."""
+
+    centrality_distribution: dict[str, Any]
+    pre_processing_millis: int
+    compute_millis: int
+    post_processing_millis: int
+    configuration: dict[str, Any]
+
+
+class ClosenessWriteResult(BaseResult):
+    """Result of running Closeness Centrality algorithm with write mode."""
+
+    node_properties_written: int
+    pre_processing_millis: int
+    compute_millis: int
+    post_processing_millis: int
+    write_millis: int
+    centrality_distribution: dict[str, Any]
+    configuration: dict[str, Any]
