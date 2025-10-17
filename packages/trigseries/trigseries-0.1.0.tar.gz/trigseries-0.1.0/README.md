@@ -1,0 +1,135 @@
+# trigseries
+
+Ever wondered how calculators actually compute `sin(x)` or `e^x`? This package shows you how, from scratch! 
+
+We've built `exp`, `sin`, `cos`, `tan`, and `sinc` functions using nothing but Taylor/Maclaurin series—no cheating with built-in math functions. It's like showing your work in math class, but for code.
+
+## What's This All About?
+
+Instead of relying on mysterious library functions, `trigseries` implements fundamental math functions from first principles. Here's what makes it interesting:
+
+- **Series expansion**: Each function adds up terms in a mathematical series until we're close enough to the answer
+- **Smart angle reduction**: For trig functions, we map huge angles down to tiny ones where the series converges super fast
+- **Know when to stop**: The series terminates when the next term is so small it won't matter (based on your chosen tolerance)
+- **Error estimates**: We tell you approximately how accurate the result is
+- **Edge case handling**: Special care for tricky spots like `sinc(0)` or `tan(π/2)`
+
+This was built for a Modern Programming Methods course—think of it as educational reference code that's actually production-quality (with tests, type hints, CI/CD, and all the good stuff).
+
+## Getting Started
+
+### Installation
+
+```bash
+# Basic installation
+pip install -e .
+
+# With all the testing and linting tools
+pip install -e .[dev]
+
+# With documentation tools too
+pip install -e .[dev,docs]
+```
+
+### Try It Out
+
+```python
+from trigseries import exp, sin, cos, tan, sinc
+
+# Just use them like normal functions
+result = sin(1.5)                    # ≈ 0.997
+result = exp(2.0)                    # ≈ 7.389
+result = sinc(0.0)                   # Exactly 1.0 (handled specially!)
+
+# Want more precision? Crank up the tolerance
+result = cos(3.14159, tol=1e-15, max_terms=2000)
+
+# Curious about what happened under the hood?
+value, info = sin(1.0, return_info=True)
+print(f"Result: {value}")
+print(f"Estimated error: {info.error_estimate}")
+print(f"Number of terms used: {info.n_terms}")
+print(f"Did we hit the term limit? {info.capped}")
+```
+
+### Utility Functions
+
+```python
+from trigseries import reduce_angle, series_term
+
+# Map a giant angle to something manageable
+y = reduce_angle(100.0)              # Brings it down to [-π/4, π/4] range
+
+# See individual terms of the series (great for learning!)
+term = series_term("sin", n=3, x=0.5)  # The 3rd term of sin(0.5)
+```
+
+## How to Use It
+
+### The Main Functions
+
+All functions work the same way—here's what they do and what you can tweak:
+
+**`exp(x, tol=1e-12, max_terms=1000, return_info=False)`**  
+The exponential function: `eˣ = 1 + x + x²/2! + x³/3! + ...`
+
+**`sin(x, tol=1e-12, max_terms=1000, return_info=False)`**  
+Sine function. We shrink big angles down first, then use the series.
+
+**`cos(x, tol=1e-12, max_terms=1000, return_info=False)`**  
+Cosine function. Actually implemented as `sin(π/2 - x)` because math is beautiful like that.
+
+**`tan(x, tol=1e-12, max_terms=1000, pole_threshold=1e-12, return_info=False)`**  
+Tangent via `sin/cos`. Watch out—it'll throw an error if you get too close to π/2 where tan goes to infinity!
+
+**`sinc(x, tol=1e-12, max_terms=1000, small_x_threshold=1e-4, return_info=False)`**  
+The normalized sinc function: `sin(x)/x`. Handles the tricky `x=0` case correctly (it's 1, by the way).
+
+**What the parameters mean:**
+- `tol`: How accurate do you want it? Smaller = more accurate but more terms needed (default: `1e-12`)
+- `max_terms`: Safety limit—stop after this many terms even if we haven't converged yet
+- `return_info`: Set to `True` if you want the nerdy details about convergence
+- `pole_threshold`: *(tan only)* How close to a pole are we willing to get?
+- `small_x_threshold`: *(sinc only)* Use series expansion for `|x|` smaller than this
+
+**Return values:**  
+Normally you just get a number. But with `return_info=True`, you get a tuple: `(value, SeriesInfo)` where `SeriesInfo` includes error estimates, number of terms used, and whether we maxed out the term limit.
+
+### Helper Functions
+
+**`reduce_angle(x: float) -> float`**  
+Takes any angle and maps it to a small interval near zero. Makes the series converge way faster.
+
+**`series_term(name: str, n: int, x: float) -> float`**  
+Get the `n`-th term of a series. Supports `"exp"`, `"sin"`, `"cos"`, and `"sinc"`. Mostly useful for education or testing.
+
+## Heads Up: Known Quirks
+
+Nothing's perfect! Here's what to watch out for:
+
+1. **Really huge numbers**: If you throw in something like `x = 10¹⁶`, floating-point rounding can mess with the angle reduction. It'll still work, just might be less accurate.
+
+2. **Tangent has boundaries**: Near π/2, 3π/2, etc., tangent shoots off to infinity. We don't try to approximate that—we just raise an error. Handle those cases yourself if needed.
+
+3. **One number at a time**: Right now this only works with single numbers, not arrays. No NumPy vectorization (yet?).
+
+4. **Not optimized for speed**: This is educational code! Your CPU's built-in math functions are way faster. Use this to learn how things work, not for production number-crunching.
+
+5. **Python 3.11+ required**: We use modern type hints, so you'll need a recent Python version.
+
+6. **Very large exponentials**: Computing `exp(200)` with default settings might hit the term cap. The result will still be decent, but check `info.capped` if accuracy is critical.
+
+## About This Project
+
+This package was created as part of a Modern Programming Methods assessment to demonstrate:
+- How fundamental math functions actually work internally
+- Clean code practices with types, tests, and documentation
+- Software engineering discipline (we have 85%+ test coverage and CI/CD!)
+
+Think of it as a learning tool that's also a real, working library.
+
+---
+
+**License:** MIT  
+**Version:** 0.1.0  
+**Made with ❤️ for learning**
