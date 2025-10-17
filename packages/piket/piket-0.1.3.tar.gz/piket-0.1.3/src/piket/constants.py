@@ -1,0 +1,3 @@
+SIZE_INFO = 0x26
+VPK_SIZE = 0x51
+VPK = 0x53
