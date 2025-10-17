@@ -1,0 +1,215 @@
+.. _run_sampler:
+
+========
+Sampling
+========
+
+Given a :ref:`likelihood` and :ref:`priors`, we run parameter estimation
+using the :code:`run_sampler` function. This is the core interface which you should
+use to setup a sampler and switch between different samplers easily.
+
+This can be accessed via :code:`bilby.run_sampler` or
+:code:`bilby.core.sampler.run_sampler`.
+
+--------------------------
+Switching between samplers
+--------------------------
+
+:code:`bilby` can use a large number (and growing) of off-the-shelf samplers.
+Given your likelihood and prior, it is trivial to switch between samplers by
+changing the argument :code:`sampler` given to :code:`run_sampler`.
+
+.. note::
+   By default, only the :code:`dynesty` sampler is a requirement when
+   installing :code:`bilby`; therefore, other samplers may not be installed
+   on your system. You can try to use them, if they aren't installed a help
+   message will print out. See `installing samplers`_ for help with
+   installation.
+
+Different samplers take different arguments to control their behaviour. To
+handle this, we allow the user to pass arbitrary `keyword arguments
+<https://docs.python.org/2/tutorial/controlflow.html#keyword-arguments>`_ into
+:code:`run_sampler`. To document what keyword arguments are available, below we
+give the API for each sampler. In each of these, there is an "Other Parameters"
+section which contains information on all the available keyword arguments that
+sampler takes. For example, to use the :code:`dynesty` sampler with 250 live points,
+you would use
+
+.. code-block:: python
+
+   >>> bilby.core.run_sampler(likelihood, priors, sampler='dynesty', nlive=250)
+
+.. note::
+
+   For some parameters, we map a variety of similar arguments together. E.g.,
+   :code:`nlive=250` is equivalent to :code:`npoints`. The full list of these
+   is given in the API information below.
+
+Below, we give the detailed API for the samplers. Remember, this API is not
+recommended for direct use by the user, rather it should be accessed via the
+:code:`run_sampler`.
+
+---------------
+Nested Samplers
+---------------
+
+Native
+======
+
+- Dynesty: :code:`bilby.core.sampler.dynesty.Dynesty`
+- Nestle :code:`bilby.core.sampler.nestle.Nestle`
+- CPNest :code:`bilby.core.sampler.cpnest.Cpnest`
+- PyMultiNest :code:`bilby.core.sampler.pymultinest.Pymultinest`
+- UltraNest :code:`bilby.core.sampler.ultranest.Ultranest`
+
+External
+========
+
+- DNest4 :code:`dnest4-bilby`
+- Nessai :code:`nessai-bilby`
+- PyPolyChord :code:`pypolychord-bilby`
+
+-------------
+MCMC samplers
+-------------
+
+- bilby-mcmc :code:`bilby.bilby_mcmc.sampler.Bilby_MCMC`
+- emcee :code:`bilby.core.sampler.emcee.Emcee`
+- ptemcee :code:`bilby.core.sampler.ptemcee.Ptemcee`
+- pymc :code:`bilby.core.sampler.pymc.Pymc`
+- zeus :code:`bilby.core.sampler.zeus.Zeus`
+
+--------------------------
+Listing available samplers
+--------------------------
+
+A list of available samplers can be produced using
+:py:func:`bilby.core.sampler.get_implemented_samplers`.
+This will list native bilby samplers and any samplers available via a plugin.
+If a plugin provides a sampler that is also implemented in bilby, the bilby
+implementation will be labeled with the prefix `bilby.` to distinguish it from
+the plugin version. See `sampler plugins`_ for more details.
+
+
+-------------------
+Installing samplers
+-------------------
+
+pip-installable samplers
+========================
+
+Most samplers can be installed using `pip <https://pypi.org/project/pip/>`_
+(see exceptions below). E.g., to install the :code:`emcee`
+
+.. code:: console
+
+   $ pip install emcee
+
+If you installed :code:`bilby` from source, then all the samplers can be
+installed using
+
+.. code:: console
+
+   $ pip install -r sampler_requirements.txt
+
+where the file `sampler_requirements.txt
+<https://github.com/bilby-dev/bilby/blob/main/sampler_requirements.txt>`_ can
+be found in the at the top-level of `the repository
+<https://github.com/bilby-dev/bilby>`_ (Note: if you installed from pip, you
+can simply download that file and use the command above).
+
+.. note::
+
+   Some samplers are being migrated to use sampler plugins and may require an
+   additional step, see `migrating to sampler plugins`_.
+
+Installing PyPolyChord
+======================
+
+If you want to use the `PyPolyChord` sampler, you first need the
+PolyChord library to be installed to work properly. An image of PolyChord can be found on github.
+Clone the following repository onto your system. Navigate to the folder you want to install PolyChord in and run:
+
+.. code-block:: console
+
+   $ git clone https://github.com/PolyChord/PolyChordLite.git
+
+Then navigate into the PolyChord directory and install PolyChord/PyPolyChord with
+
+.. code-block:: console
+
+   $ make pypolychord MPI=
+   $ python setup.py install --user
+
+Add a number after `MPI=` to compile with `MPI`. Leave it like it is if you don't wish to compile with MPI.
+
+Installing pymultinest
+======================
+
+If you want to use the `pymultinest` sampler, you first need the
+MultiNest library to be installed to work properly. The full instructions can
+be found here: https://johannesbuchner.github.io/PyMultiNest/install.html. Here
+is a shortened version:
+
+First, install the dependencies (for Ubuntu/Linux):
+
+.. code-block:: console
+
+   $ sudo apt-get install python-{scipy,numpy,matplotlib,progressbar} ipython libblas{3,-dev} liblapack{3,-dev} libatlas{3-base,-dev} cmake build-essential git gfortran
+
+For Mac, the advice in the instructions are "If you google for “MultiNest Mac OSX” or “PyMultiNest Mac OSX” you will find installation instructions".
+
+The following will place a directory `MultiNest` in your :code:`$HOME` directory, if you want
+to place it somewhere, adjust the instructions as such.
+
+.. code-block:: console
+
+   $ git clone https://github.com/JohannesBuchner/MultiNest $HOME
+   $ cd $HOME/MultiNest/build
+   $ cmake ..
+   $ make
+
+Finally, add the libraries to you path. Add this to the `.bashrc` file (
+replacing the path where appropriate)
+
+.. code-block:: console
+
+   $ export LD_LIBRARY_PATH=$HOME/MultiNest/lib:
+
+(you'll need to re-source your `.bashrc` after this, i.e. run `bash`).
+
+
+----------------------------
+Adding new samplers to bilby
+----------------------------
+
+We actively encourage the addition of new samplers to :code:`bilby`.
+We now recommended adding support for new samplers via the sampler plugins
+interface. For more details, and a template, see `sampler plugins`_.
+
+If you have a :code:`bilby` sampler plugin that you would like to be listed here,
+please let us know!
+
+----------------------------
+Migrating to sampler plugins
+----------------------------
+
+The interface for some samplers are being moved from bilby to external sampler
+plugins. This does not change how the samplers are used for most users, you
+still specify :code:`sampler='sampler name'` in :code:`run_sampler`, however,
+an additional dependency must be installed before using a sampler.
+
+.. note::
+   Samplers that are scheduled to be moved will print a warning when using them.
+
+For example, the :code:`nessai` sampler interface has been moved to a plugin.
+In order for a user to continue using this sampler, they must install the
+`nessai-bilby` `plugin <https://github.com/bilby-dev/nessai-bilby>`_ which is
+available via PyPI and conda. Once this package is installed, the new interface
+will automatically be used instead of the native bilby interface.
+
+.. warning::
+   Some samplers may require additional installation steps.
+
+For more details about how sampler plugins, including a list of available
+sampler plugins, see `sampler plugins`_.

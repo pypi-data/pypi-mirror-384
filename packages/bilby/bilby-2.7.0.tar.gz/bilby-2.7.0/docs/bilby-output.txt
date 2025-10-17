@@ -1,0 +1,103 @@
+============
+Bilby output
+============
+
+In this document, we will describe what :code:`bilby` outputs, where it is
+stored, and how you can access it.  When you call :code:`run_sampler`, there
+are two arguments :code:`outdir` and :code:`label` which are used in generating
+all the file names for saved data. In the rest of these documents, we'll assume
+the defaults where used (which are :code:`outdir` and :code:`label`).
+
+
+The result file
+---------------
+
+First off, the primary data dump of :code:`bilby` goes into
+:code:`outdir/label_result.json`.  This is a `JSON file
+<https://en.wikipedia.org/wiki/JSON>`_, so it is human readable. Note, older
+version of bilby used a H5 file, the use of H5 files is still possible in bilby,
+but we recommend using the default JSON format.
+
+Here is an example of the first 10 lines of a result file
+
+.. code-block:: console
+
+   (base) 15:49 outdir [master]: $ head gaussian_example_result.json
+   {
+     "label": "gaussian_example",
+     "outdir": "/home/user1/bilby/examples/other_examples/outdir",
+     "sampler": "dynesty",
+     "log_evidence": -278.8659756143005,
+     "log_evidence_err": 0.06169580559443693,
+     "log_noise_evidence": NaN,
+     "log_bayes_factor": NaN,
+     "priors": {
+       "mu": "Uniform(minimum=0, maximum=5, name='mu', latex_label='mu', unit=None, boundary=None)",
+     ...
+     ...
+
+
+At its core, the JSON file is a nested set of dictionaries. JSON is a cross
+platform and language agnostic data format. In python, you can read in a JSON
+file like this
+
+.. code-block:: python
+
+   import json
+   with open(filename, "r") as f:
+       data = json.load(f)
+
+   print(In [5]: data.keys())
+   dict_keys(['label', 'outdir', 'sampler', 'log_evidence', 'log_evidence_err', 'log_noise_evidence', 'log_bayes_factor', 'priors', 'posterior', 'injection_parameters', 'meta_data', 'search_parameter_keys', 'fixed_parameter_keys', 'constraint_parameter_keys', 'sampling_time', 'sampler_kwargs', 'use_ratio', 'log_likelihood_evaluations', 'log_prior_evaluations', 'samples', 'nested_samples', 'parameter_labels', 'parameter_labels_with_unit', 'version']))
+
+
+This will read in any properly formatted JSON file. However, JSON by default
+only understands simple data types (str, int, dict, etc). So, complicated things
+like the posterior (which is a pandas dataframe) will exist, but won't be easy
+to use.
+
+Reading in a result file
+------------------------
+Rather than reading in the raw :code:`json` file, you will find it more convenient to
+instead load the data using :code:`bilby`. To do this::
+
+   >>> import bilby
+   >>> result = bilby.result.read_in_result(outdir=outdir, label=label)  # OR
+   >>> result = bilby.result.read_in_result(filename='outdir/label_result.json')
+
+Note, these two lines are equivalent, but show two different ways to read in
+the data. Using this method, :code:`result` is now a
+:code:`bilby.result.Result` instance and has all the methods and attributes.
+So, for example, you could call `result.plot_corner()` to generate a corner
+plot. This method will also read in a :code:`h5` file.
+
+Accessing samples directly
+--------------------------
+
+To get the samples for a particular parameter, use::
+
+   >>> result.posterior[key]
+
+where :code:`key` is a string of the parameter name you are interested in. The
+`posterior` attribute is a :code:`pandas.DataFrame`, so if you want to return just
+a :code:`numpy` array, use::
+
+   >>> result.posterior.[key].values
+
+Saving to ASCII text
+--------------------
+
+You may wish to get hold of the samples in a simple text file, this can be
+done via::
+
+   result.save_posterior_samples()
+
+which will generate a file :code:`outdir/label_posterior.txt`.
+
+
+Visualising the results
+-----------------------
+Bilby also provides some useful built-in plotting tools. Some examples on how
+to visualise results using these tools (and  how to extend them) are shown in
+one of the tutorials at `visualising_the_results.ipynb  <https://github.com/bilby-dev/bilby/-/blob/master/examples/tutorials/visualising_the_results.ipynb>`_.
+
