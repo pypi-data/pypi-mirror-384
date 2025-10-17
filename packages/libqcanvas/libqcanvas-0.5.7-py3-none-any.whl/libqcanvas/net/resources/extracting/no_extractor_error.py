@@ -1,0 +1,2 @@
+class NoExtractorError(Exception):
+    pass
