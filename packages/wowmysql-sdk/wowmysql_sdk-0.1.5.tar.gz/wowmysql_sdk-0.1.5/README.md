@@ -1,0 +1,513 @@
+# 🚀 WowMySQL Python SDK
+
+Official Python client for [WowMySQL](https://wowmysql.com) - MySQL Backend-as-a-Service with S3 Storage.
+
+## Installation
+
+```bash
+pip install wowmysql-sdk
+```
+
+## Quick Start
+
+### Database Operations
+
+```python
+from wowmysql import WowMySQLClient
+
+# Initialize client
+client = WowMySQLClient(
+    project_url="https://your-project.wowmysql.com",
+    api_key="your-api-key"  # Get from dashboard
+)
+
+# Select data
+response = client.table("users").select("*").limit(10).execute()
+print(response.data)  # [{'id': 1, 'name': 'John', ...}, ...]
+
+# Insert data
+result = client.table("users").insert({
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "age": 25
+}).execute()
+
+# Update data
+result = client.table("users").update({
+    "name": "Jane Smith"
+}).eq("id", 1).execute()
+
+# Delete data
+result = client.table("users").delete().eq("id", 1).execute()
+```
+
+### Storage Operations (NEW in 0.2.0!)
+
+```python
+from wowmysql import WowMySQLStorage
+
+# Initialize storage client
+storage = WowMySQLStorage(
+    project_url="https://your-project.wowmysql.com",
+    api_key="your-api-key"
+)
+
+# Upload file
+storage.upload("local-file.pdf", "uploads/document.pdf")
+
+# Download file (get presigned URL)
+url = storage.download("uploads/document.pdf")
+print(url)
+
+# List files
+files = storage.list_files(prefix="uploads/")
+for file in files:
+    print(f"{file.key}: {file.size} bytes")
+
+# Delete file
+storage.delete_file("uploads/document.pdf")
+
+# Check storage quota
+quota = storage.get_quota()
+print(f"Used: {quota.used_bytes}/{quota.limit_bytes} bytes")
+print(f"Available: {quota.available_bytes} bytes")
+```
+
+## Features
+
+### Database Features
+- ✅ Fluent query builder interface
+- ✅ Type-safe queries with Python type hints
+- ✅ Full CRUD operations (Create, Read, Update, Delete)
+- ✅ Advanced filtering (eq, neq, gt, gte, lt, lte, like, is_null)
+- ✅ Pagination (limit, offset)
+- ✅ Sorting (order_by)
+- ✅ Raw SQL queries
+- ✅ Table schema introspection
+- ✅ Automatic rate limit handling
+- ✅ Built-in error handling
+- ✅ Context manager support
+
+### Storage Features (NEW!)
+- ✅ S3-compatible storage client
+- ✅ File upload with automatic quota validation
+- ✅ File download (presigned URLs)
+- ✅ File listing with metadata
+- ✅ File deletion (single and batch)
+- ✅ Storage quota management
+- ✅ Multi-region support
+- ✅ Client-side limit enforcement
+
+## Usage Examples
+
+### Select Queries
+
+```python
+from wowmysql import WowMySQLClient
+
+client = WowMySQLClient(
+    project_url="https://your-project.wowmysql.com",
+    api_key="your-api-key"
+)
+
+# Select all columns
+users = client.table("users").select("*").execute()
+
+# Select specific columns
+users = client.table("users").select("id", "name", "email").execute()
+
+# With filters
+active_users = client.table("users") \
+    .select("*") \
+    .eq("status", "active") \
+    .gt("age", 18) \
+    .execute()
+
+# With ordering
+recent_users = client.table("users") \
+    .select("*") \
+    .order_by("created_at", desc=True) \
+    .limit(10) \
+    .execute()
+
+# With pagination
+page_1 = client.table("users").select("*").limit(20).offset(0).execute()
+page_2 = client.table("users").select("*").limit(20).offset(20).execute()
+
+# Pattern matching
+gmail_users = client.table("users") \
+    .select("*") \
+    .like("email", "%@gmail.com") \
+    .execute()
+```
+
+### Insert Data
+
+```python
+# Insert single row
+result = client.table("users").insert({
+    "name": "John Doe",
+    "email": "john@example.com",
+    "age": 30
+}).execute()
+
+# Insert multiple rows
+result = client.table("users").insert([
+    {"name": "Alice", "email": "alice@example.com"},
+    {"name": "Bob", "email": "bob@example.com"}
+]).execute()
+```
+
+### Update Data
+
+```python
+# Update by ID
+result = client.table("users").update({
+    "name": "Jane Smith",
+    "age": 26
+}).eq("id", 1).execute()
+
+# Update with conditions
+result = client.table("users").update({
+    "status": "inactive"
+}).lt("last_login", "2024-01-01").execute()
+```
+
+### Delete Data
+
+```python
+# Delete by ID
+result = client.table("users").delete().eq("id", 1).execute()
+
+# Delete with conditions
+result = client.table("users").delete() \
+    .eq("status", "deleted") \
+    .lt("created_at", "2023-01-01") \
+    .execute()
+```
+
+### Filter Operators
+
+```python
+# Equal
+.eq("status", "active")
+
+# Not equal
+.neq("status", "deleted")
+
+# Greater than
+.gt("age", 18)
+
+# Greater than or equal
+.gte("age", 18)
+
+# Less than
+.lt("age", 65)
+
+# Less than or equal
+.lte("age", 65)
+
+# Pattern matching (SQL LIKE)
+.like("email", "%@gmail.com")
+
+# Is null
+.is_null("deleted_at")
+```
+
+### Storage Operations
+
+```python
+from wowmysql import WowMySQLStorage, StorageLimitExceededError
+
+storage = WowMySQLStorage(
+    project_url="https://your-project.wowmysql.com",
+    api_key="your-api-key"
+)
+
+# Upload file with metadata
+storage.upload(
+    "document.pdf",
+    "uploads/2024/document.pdf",
+    metadata={"category": "reports"}
+)
+
+# Upload file object
+with open("image.jpg", "rb") as f:
+    storage.upload_fileobj(f, "images/photo.jpg")
+
+# Check if file exists
+if storage.file_exists("uploads/document.pdf"):
+    print("File exists!")
+
+# Get file information
+info = storage.get_file_info("uploads/document.pdf")
+print(f"Size: {info.size} bytes")
+print(f"Modified: {info.last_modified}")
+
+# List files with prefix
+files = storage.list_files(prefix="uploads/2024/", limit=100)
+for file in files:
+    print(f"{file.key}: {file.size} bytes")
+
+# Download file to local path
+storage.download("uploads/document.pdf", "local-copy.pdf")
+
+# Get presigned URL (valid for 1 hour)
+url = storage.download("uploads/document.pdf")
+print(url)  # https://s3.amazonaws.com/...
+
+# Delete single file
+storage.delete_file("uploads/old-file.pdf")
+
+# Delete multiple files
+storage.delete_files([
+    "uploads/file1.pdf",
+    "uploads/file2.pdf",
+    "uploads/file3.pdf"
+])
+
+# Check quota before upload
+quota = storage.get_quota()
+file_size = storage.get_file_size("large-file.zip")
+
+if quota.available_bytes < file_size:
+    print(f"Not enough storage! Need {file_size} bytes, have {quota.available_bytes}")
+else:
+    storage.upload("large-file.zip", "backups/large-file.zip")
+
+# Handle storage limit errors
+try:
+    storage.upload("huge-file.zip", "uploads/huge-file.zip")
+except StorageLimitExceededError as e:
+    print(f"Storage limit exceeded: {e}")
+    print("Please upgrade your plan or delete old files")
+```
+
+### Context Manager
+
+```python
+# Automatically closes connection
+with WowMySQLClient(project_url="...", api_key="...") as client:
+    users = client.table("users").select("*").execute()
+    print(users.data)
+# Connection closed here
+
+# Works with storage too
+with WowMySQLStorage(project_url="...", api_key="...") as storage:
+    files = storage.list_files()
+    print(f"Total files: {len(files)}")
+```
+
+### Error Handling
+
+```python
+from wowmysql import (
+    WowMySQLClient,
+    WowMySQLError,
+    StorageError,
+    StorageLimitExceededError
+)
+
+client = WowMySQLClient(project_url="...", api_key="...")
+
+try:
+    users = client.table("users").select("*").execute()
+except WowMySQLError as e:
+    print(f"Database error: {e}")
+
+storage = WowMySQLStorage(project_url="...", api_key="...")
+
+try:
+    storage.upload("file.pdf", "uploads/file.pdf")
+except StorageLimitExceededError as e:
+    print(f"Storage full: {e}")
+except StorageError as e:
+    print(f"Storage error: {e}")
+```
+
+### Utility Methods
+
+```python
+# Check API health
+health = client.health()
+print(health)  # {'status': 'healthy', ...}
+
+# List all tables
+tables = client.list_tables()
+print(tables)  # ['users', 'posts', 'comments']
+
+# Get table schema
+schema = client.describe_table("users")
+print(schema)  # {'columns': [...], 'row_count': 100}
+```
+
+## Response Object
+
+All database queries return a response object:
+
+```python
+response = client.table("users").select("*").limit(10).execute()
+
+# Access data
+print(response.data)   # [{'id': 1, ...}, {'id': 2, ...}]
+
+# Access count
+print(response.count)  # 10
+
+# Check for errors
+if response.error:
+    print(response.error)
+```
+
+## Configuration
+
+### Timeouts
+
+```python
+# Custom timeout (default: 30 seconds)
+client = WowMySQLClient(
+    project_url="...",
+    api_key="...",
+    timeout=60  # 60 seconds
+)
+
+# Storage timeout (default: 60 seconds for large files)
+storage = WowMySQLStorage(
+    project_url="...",
+    api_key="...",
+    timeout=120  # 2 minutes
+)
+```
+
+### Auto Quota Check
+
+```python
+# Disable automatic quota checking before uploads
+storage = WowMySQLStorage(
+    project_url="...",
+    api_key="...",
+    auto_check_quota=False
+)
+
+# Manually check quota
+quota = storage.get_quota()
+if quota.available_bytes > file_size:
+    storage.upload("file.pdf", "uploads/file.pdf", check_quota=False)
+```
+
+## API Keys
+
+Get your API keys from the WowMySQL dashboard:
+
+1. Go to Project Settings → API Keys
+2. Copy your API key
+
+```python
+# Initialize with API key
+client = WowMySQLClient(
+    project_url="https://your-project.wowmysql.com",
+    api_key="your-api-key-here"
+)
+```
+
+## Examples
+
+### Blog Application
+
+```python
+from wowmysql import WowMySQLClient
+
+client = WowMySQLClient(project_url="...", api_key="...")
+
+# Create a new post
+post = client.table("posts").insert({
+    "title": "Hello World",
+    "content": "My first blog post",
+    "author_id": 1,
+    "published": True
+}).execute()
+
+# Get published posts
+posts = client.table("posts") \
+    .select("id", "title", "content", "created_at") \
+    .eq("published", True) \
+    .order_by("created_at", desc=True) \
+    .limit(10) \
+    .execute()
+
+# Get post with comments
+post = client.table("posts").select("*").eq("id", 1).execute()
+comments = client.table("comments").select("*").eq("post_id", 1).execute()
+```
+
+### File Upload Application
+
+```python
+from wowmysql import WowMySQLClient, WowMySQLStorage
+
+client = WowMySQLClient(project_url="...", api_key="...")
+storage = WowMySQLStorage(project_url="...", api_key="...")
+
+# Upload user avatar
+user_id = 123
+avatar_path = f"avatars/{user_id}.jpg"
+storage.upload("avatar.jpg", avatar_path)
+
+# Save avatar URL in database
+avatar_url = storage.download(avatar_path)
+client.table("users").update({
+    "avatar_url": avatar_url
+}).eq("id", user_id).execute()
+
+# List user's files
+user_files = storage.list_files(prefix=f"users/{user_id}/")
+print(f"User has {len(user_files)} files")
+```
+
+## Requirements
+
+- Python 3.8+
+- requests>=2.31.0
+
+## Development
+
+```bash
+# Clone repository
+git clone https://github.com/wowmysql/wowmysql.git
+cd wowmysql/sdk/python
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run examples
+python examples/basic_usage.py
+python examples/storage_usage.py
+```
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Links
+
+- 📚 [Documentation](https://wowmysql.com/docs)
+- 🌐 [Website](https://wowmysql.com)
+- 💬 [Discord](https://discord.gg/wowmysql)
+- 🐛 [Issues](https://github.com/wowmysql/wowmysql/issues)
+
+## Support
+
+- Email: support@wowmysql.com
+- Discord: https://discord.gg/wowmysql
+- Documentation: https://wowmysql.com/docs
+
+---
+
+Made with ❤️ by the WowMySQL Team
