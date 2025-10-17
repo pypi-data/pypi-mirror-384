@@ -1,0 +1,1 @@
+from procuret.customer_payment.payment import CustomerPayment
