@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import TYPE_CHECKING, Any
+
+from gzspidertools.request import AiohttpRequest
+from gzspidertools.spiders import AyuSpider
+from scrapy.crawler import CrawlerProcess
+from scrapy.http import Request
+from scrapy.utils.project import get_project_settings
+from scrapy_redis.spiders import RedisSpider
+from scrapy_redis.utils import bytes_to_str
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from scrapy.http.response import Response
+
+
+class $classname(AyuSpider, RedisSpider):
+    name = "$name"
+    redis_key = "$name:start_urls"
+    custom_settings = {
+        # REDIS配置
+        "REDIS_START_URLS_BATCH_SIZE": 16,
+        "DUPEFILTER_CLASS": "scrapy_redis.dupefilter.RFPDupeFilter",
+        "SCHEDULER": "scrapy_redis.scheduler.Scheduler",
+        "SCHEDULER_PERSIST": True,
+        "REDIS_URL": get_project_settings().get("REDIS_URL"),
+        "STATS_CLASS": "scrapy_redis.stats.RedisStatsCollector",
+
+        # OTHER
+        # 'CONCURRENT_REQUESTS': 3,
+        'DOWNLOAD_DELAY': 0.1,
+        "LOG_LEVEL": "DEBUG",  # DEBUG INFO ERROR
+        "LOG_FILE": "",  # scrapy logger
+        "ITEM_PIPELINES": {
+            # "gzspidertools.pipelines.AyuFtyMysqlPipeline": 300,
+            "gzspidertools.pipelines.AyuAsyncMongoPipeline": 301,
+        },
+        "DOWNLOADER_MIDDLEWARES": {
+            # 将 scrapy Request 替换为 aiohttp 方式
+            "gzspidertools.middlewares.AiohttpDownloaderMiddleware": 543,
+        },
+        # scrapy Request 替换为 aiohttp 的配置示例
+        "AIOHTTP_CONFIG": {
+            "sleep": 0,
+            # 同时连接的总数
+            "limit": 64,
+            # 同时连接到一台主机的数量
+            "limit_per_host": 32,
+            "retry_times": 5,
+        },
+        "LOGSTATS_INTERVAL": 10,
+        "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
+    }
+
+    def __init__(self):
+        import redis
+        db = redis.StrictRedis.from_url(url=self.custom_settings['REDIS_URL'])
+        db.lpush(self.redis_key,
+                 json.dumps(
+                     dict(url="https://blog.csdn.net/phoenix/web/blog/hot-rank?page=0&pageSize=25&type=",
+                          headers={"referer": "https://blog.csdn.net/rank/list", },
+                          cb_kwargs={"curr_site": "csdn", },
+                          ))
+
+                 )
+        self.logger.info("推送成功")
+
+    async def start(self) -> AsyncIterator[Any]:
+        """Asynchronous start method compatible with new Scrapy versions."""
+        for req in await asyncio.to_thread(self._collect_start_requests):
+            yield req
+
+    def _collect_start_requests(self):
+        """Collect start requests synchronously from next_requests()."""
+        return list(self.next_requests())  # collect all yielded requests
+
+    def make_request_from_data(self, data):
+        data = json.loads(bytes_to_str(data))
+        url = data.get('url')
+        headers = data.get('headers')
+        cb_kwargs = data.get('cb_kwargs')
+
+        yield AiohttpRequest(
+            method="GET",
+            url=url,
+            callback=self.parse_first,
+            headers=headers,
+            cb_kwargs=cb_kwargs,
+            dont_filter=True
+        )
+
+    async def parse_first(self, response: "Response", curr_site: str):
+        self.slog.info(f"当前采集的站点为: {curr_site}")
+        _save_table = "_article_info_list"
+
+        data_list = json.loads(response.text)["data"]
+        for curr_data in data_list:
+            article_detail_url = curr_data.get("articleDetailUrl")
+            article_title = curr_data.get("articleTitle")
+            comment_count = curr_data.get("commentCount")
+            favor_count = curr_data.get("favorCount")
+            nick_name = curr_data.get("nickName")
+
+            article_item = AyuItem(
+                article_detail_url=article_detail_url,
+                article_title=article_title,
+                comment_count=comment_count,
+                favor_count=favor_count,
+                nick_name=nick_name,
+                _table=_save_table,
+                _update_rule={"article_detail_url": article_detail_url},
+                _update_keys={"article_detail_url", "article_title", "comment_count", 'favor_count'},
+            )
+            self.slog.info(f"article_item: {article_item}")
+            yield article_item
+
+if __name__ == '__main__':
+    process = CrawlerProcess(get_project_settings())
+    process.crawl($classname.name)
+    process.start()
