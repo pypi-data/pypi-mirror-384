@@ -1,0 +1,151 @@
+import logging
+from abc import abstractmethod
+from typing import Optional, Self, Sequence
+
+from libqcanvas import db
+from libqcanvas.net.sync.sync_receipt import SyncReceipt
+from PySide6.QtCore import QItemSelection, Signal, Slot
+from PySide6.QtWidgets import QHeaderView, QTreeWidgetItem
+
+from qcanvas.ui.course_viewer.tree_widget_data_item import AnyTreeDataItem
+from qcanvas.ui.memory_tree import MemoryTreeWidget
+from qcanvas.util.basic_fonts import bold_font, normal_font
+
+_logger = logging.getLogger(__name__)
+
+
+class ContentTree[T](MemoryTreeWidget):
+    item_selected = Signal(object)
+
+    @classmethod
+    def create_from_receipt[U: Self](
+        cls: U, course: db.Course, *, sync_receipt: SyncReceipt
+    ) -> type[U]:
+        tree = cls(course.id)
+        tree.reload(course, sync_receipt=sync_receipt)
+        return tree
+
+    def __init__(
+        self,
+        tree_name: str,
+        *,
+        emit_selection_signal_for_type: type,
+    ):
+        super().__init__(tree_name)
+        self._reloading = False
+        self._last_selected_id: Optional[str] = None
+        self._target_data_type = emit_selection_signal_for_type
+
+        self.selectionModel().selectionChanged.connect(self._selection_changed)
+
+    def ui_setup(
+        self,
+        *,
+        header_text: str | Sequence[str],
+        indentation: int = 20,
+        max_width: Optional[int] = None,
+        min_width: Optional[int] = None,
+        alternating_row_colours: bool = False,
+    ) -> None:
+        if not isinstance(header_text, str) and isinstance(header_text, Sequence):
+            self.setHeaderLabels(header_text)
+        else:
+            self.setHeaderLabel(header_text)
+
+        self.setIndentation(indentation)
+
+        if max_width is not None:
+            self.setMaximumWidth(max_width)
+
+        if min_width is not None:
+            self.setMinimumWidth(min_width)
+
+        self.setAlternatingRowColors(alternating_row_colours)
+
+    def set_columns_resize_mode(
+        self,
+        resize_mode_for_columns: list[QHeaderView.ResizeMode],
+        *,
+        stretch_last: bool = False,
+    ) -> None:
+        header = self.header()
+
+        for index, mode in enumerate(resize_mode_for_columns):
+            header.setSectionResizeMode(index, mode)
+
+        header.setStretchLastSection(stretch_last)
+
+    def reload(self, data: T, *, sync_receipt: SyncReceipt) -> None:
+        self._reloading = True
+
+        try:
+            self.clear()
+            self.addTopLevelItems(self.create_tree_items(data, sync_receipt))
+            self.reexpand()
+        finally:
+            self._reloading = False
+
+        self.reselect()
+
+    def reselect(self) -> None:
+        if self._last_selected_id is not None:
+            if not self.select_ids([self._last_selected_id]):
+                self._clear_selection()
+
+    @abstractmethod
+    def create_tree_items(
+        self, data: T, sync_receipt: SyncReceipt
+    ) -> Sequence[QTreeWidgetItem]: ...
+
+    @Slot(QItemSelection, QItemSelection)
+    def _selection_changed(self, _0: QItemSelection, _1: QItemSelection) -> None:
+        if self._reloading:
+            return
+
+        if len(self.selectedItems()) > 0:
+            selected = self.selectedItems()[0]
+        else:
+            self._clear_selection()
+            return
+
+        if self.is_unseen(selected):
+            self.mark_as_seen(selected)
+
+        if not isinstance(selected, AnyTreeDataItem):
+            self._clear_selection()
+            return
+
+        data = selected.extra_data
+
+        if isinstance(data, self._target_data_type):
+            if hasattr(data, "id"):
+                _logger.debug("id=%s selected", data.id)
+                self._last_selected_id = data.id
+                self.item_selected.emit(data)
+            else:
+                raise AttributeError(
+                    f"Expected {self._target_data_type.__name__} to have an id attribute"
+                )
+        else:
+            logging.warning(
+                "Expected type %s, got %s instead, ignoring",
+                self._target_data_type.__name__,
+                type(data).__name__,
+            )
+
+            self._clear_selection()
+
+    def _clear_selection(self) -> None:
+        _logger.debug("Clearing selection")
+
+        self._last_selected_id = None
+        self.item_selected.emit(None)
+
+    def is_unseen(self, item: QTreeWidgetItem) -> bool:
+        return item.font(0).bold()
+
+    def mark_as_unseen(self, item: QTreeWidgetItem) -> None:
+        item.setFont(0, bold_font)
+
+    def mark_as_seen(self, item: QTreeWidgetItem) -> None:
+        item.setFont(0, normal_font)
