@@ -1,0 +1,1 @@
+pdoc ./vaapi -o docs --template-dir docs/templates/ 
