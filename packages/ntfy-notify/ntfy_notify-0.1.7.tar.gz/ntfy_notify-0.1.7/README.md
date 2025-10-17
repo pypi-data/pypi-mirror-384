@@ -1,0 +1,143 @@
+# ntfy-notify
+
+## Installation
+
+### Using pip
+
+```bash
+pip install ntfy-notify
+```
+
+### Using Poetry
+
+```bash
+poetry add ntfy-notify
+```
+
+## Configuration
+
+Create a configuration file at `~/.config/ntfy-notify/config.toml` with your ntfy credentials:
+
+```toml
+# Required: Your ntfy server URL
+server = "https://ntfy.server"
+
+# Required: Your access token (if using ntfy with authentication)
+token = "your_token_here"
+
+# Required: Default topic to send notifications to
+default_topic = "your_topic_here"
+
+# Optional: Default message priority (default: "default")
+# Valid values: "min", "low", "default", "high", "max"
+default_priority = "default"
+```
+
+## Usage
+
+### Python API
+
+```python
+from ntfy_notify.core import send_notification
+
+# Basic notification
+send_notification("Hello from Python!")
+
+# With title and priority
+send_notification(
+    "This is an important message",
+    title="Important Update",
+    priority="high"
+)
+
+# With custom topic
+send_notification("This goes to a custom topic", topic="custom_topic")
+
+# With additional options
+send_notification(
+    "Check out our website!",
+    title="Website",
+    click_url="https://example.com",
+    tags=["globe_with_meridians", "link"]
+)
+```
+
+### Command Line Interface
+
+```bash
+ntfy_notify    --message "${BASH_SOURCE}:33 message" \
+    --topic "topic" \
+	--title "title" \
+	--priority "default" \
+	--tags "test_tube, building_construction" \
+	--click "https://server.com/click" \
+    --actions "view, act1, https://server.com/act1; \
+       view, act2, https://server.com/act2"
+```
+
+If you want to run ntfy-notify as a root user, you may call it with the explicit path to the python interpreter:
+
+```bash
+# get the path
+which ntfy_notify
+
+# run with sudo
+sudo /path/to/python/ntfy_notify --message "Test message" --topic "topic" --title "Test Title" --priority "default" --tags "test" --click "https://example.com"
+```
+
+#### Command Line Options
+
+```
+Usage: ntfy_notify [OPTIONS] [MESSAGE]
+
+  Send a notification via ntfy
+
+  If MESSAGE is not provided, reads from stdin.
+
+Options:
+  -m, --message TEXT       The message to send (required if not reading from
+                          stdin)
+  -t, --topic TEXT         Topic to send to (overrides config)
+  --title TEXT             Message title
+  -p, --priority [min|low|default|high|max]
+                          Message priority
+  --click-url TEXT         URL to open when notification is clicked
+  --tags TEXT              Comma-separated list of tags/emojis
+  --config FILE            Path to config file
+  --version                Show the version and exit.
+  --help                   Show this message and exit.
+```
+
+## License
+
+This project is licensed under the EUPL-1.2 - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Running Tests
+
+The test suite uses pytest and can be run with:
+
+```bash
+# Install test dependencies
+poetry install --with test
+
+# Run tests
+poetry run pytest -v tests/
+```
+
+## Development
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   poetry install
+   ```
+3. Create a test configuration file at `~/.config/ntfy-notify/config.toml`
+4. Run tests to verify your setup
+
+## License
+
+EUPL-1.2
