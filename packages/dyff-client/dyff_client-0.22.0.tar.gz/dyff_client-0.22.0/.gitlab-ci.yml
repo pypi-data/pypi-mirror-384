@@ -1,0 +1,84 @@
+# SPDX-FileCopyrightText: 2024 UL Research Institutes
+# SPDX-License-Identifier: Apache-2.0
+
+stages:
+  - test
+  - build
+  - deploy
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - when: always
+
+include:
+  - project: saferatday0/library/gitlab
+    ref: 0.18.3
+    file:
+      - gitlab-release.yml
+  - project: saferatday0/library/detect-secrets
+    ref: 0.7.2
+    file:
+      - detect-secrets.yml
+  - project: saferatday0/library/prettier
+    ref: 0.7.1
+    file:
+      - prettier.yml
+  - project: saferatday0/library/python
+    ref: 0.22.0
+    file:
+      - python-autoflake.yml
+      - python-black.yml
+      - python-isort.yml
+      - python-build-sdist.yml
+      - python-build-wheel.yml
+      - python-pyroma.yml
+      - python-pytest.yml
+      - python-twine-upload.yml
+      - python-docformatter.yml
+  - project: saferatday0/library/skywalking-eyes
+    ref: 0.8.3
+    file:
+      - license-eye-header-check.yml
+
+variables:
+  PYTHON_PACKAGE: dyff/client
+  PYTHON_REQUIREMENTS: .
+  DETECT_SECRETS_OPTS: --exclude-files dyff/client/_generated/
+
+dyff-client-install-test:
+  stage: test
+  image: ${CONTAINER_PROXY}python:3.12-bookworm
+  cache: {}
+  dependencies: []
+  variables:
+    # prettier-ignore
+    GIT_DEPTH: '1'
+    GIT_SUBMODULE_STRATEGY: none
+  script:
+    - pip install .
+    # can't use namespace packages from project root
+    # can use anywhere else
+    - cd ..
+    # prettier-ignore
+    - python3 -c 'from dyff.client import Client'
+    # prettier-ignore
+    - python3 -c 'from dyff.schema.platform import InferenceService'
+
+python-twine-upload-pypi:
+  extends: python-twine-upload
+  variables:
+    TWINE_USERNAME: __token__
+    TWINE_PASSWORD: $PYPI_API_TOKEN
+    TWINE_REPOSITORY_URL: https://upload.pypi.org/legacy/
+
+python-pytest:
+  parallel:
+    matrix:
+      # prettier-ignore
+      - PYTHON_VERSION: ['3.10', '3.11', '3.12']
+
+python-docformatter:
+  variables:
+    PYTHON_DOCFORMATTER_EXCLUDE: _generated
