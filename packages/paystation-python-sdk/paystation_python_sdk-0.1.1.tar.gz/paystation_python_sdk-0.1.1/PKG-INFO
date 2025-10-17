@@ -1,0 +1,246 @@
+Metadata-Version: 2.4
+Name: paystation-python-sdk
+Version: 0.1.1
+Summary: A Python SDK for the PayStation Bangladesh payment gateway.
+Home-page: https://github.com/h-azad/paystation-python-sdk
+Author: Hossain Azad
+Author-email: me-azad@proton.me
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+Requires-Dist: requests
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# PayStation Python SDK
+
+[![PyPI version](https://badge.fury.io/py/paystation-python-sdk.svg)](https://badge.fury.io/py/paystation-python-sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+PayStation is a popular payment gateway in Bangladesh, licensed by the central bank as a Payment System Operator (PSO). It allows businesses to accept payments from a wide range of methods, including cards, mobile banking (like bKash, Nagad), and internet banking.
+
+**Disclaimer:** This is an unofficial SDK. It is developed and maintained by the community and is not officially endorsed or supported by PayStation or Service Hub Limited. The SDK is based on the public-facing API documentation available on the PayStation website.
+
+A comprehensive Python SDK for the PayStation payment gateway. This SDK provides a simple and convenient way to integrate PayStation's payment services into your Python applications.
+
+## Features
+
+-   Initiate payments with a simple function call.
+-   Check transaction status by invoice number or transaction ID.
+-   Built-in error handling for API responses.
+-   Easy to configure for live and sandbox environments.
+
+## Installation
+
+You can install the SDK from PyPI:
+
+```bash
+pip install paystation-python-sdk
+```
+
+Alternatively, you can install it from the source:
+
+```bash
+git clone https://github.com/h-azad/paystation-python-sdk.git
+cd paystation-python-sdk
+pip install .
+```
+
+## Configuration
+
+First, you need to import and initialize the `PayStationClient`. You will need your `merchant_id` and `password` provided by PayStation.
+
+```python
+from paystation import PayStationClient
+
+client = PayStationClient(merchant_id="YOUR_MERCHANT_ID", password="YOUR_PASSWORD")
+```
+
+### Sandbox Mode
+
+The PayStation documentation mentions a sandbox environment but does not provide a specific URL. By default, the SDK points to the live URL (`https://api.paystation.com.bd`). If you have a sandbox URL, you can pass it when creating the client, or set the `sandbox` parameter to `True` if the sandbox URL follows a standard convention that might be supported in the future. For now, you can override the `base_url`.
+
+```python
+# Example of overriding the base_url for a custom sandbox
+client = PayStationClient(merchant_id="YOUR_SANDBOX_MERCHANT_ID", password="YOUR_SANDBOX_PASSWORD")
+client.base_url = "https://sandbox.example.com" # Replace with the actual sandbox URL
+```
+
+## API Reference
+
+### `initiate_payment(...)`
+
+This method is used to initiate a payment transaction. It returns a dictionary containing the payment URL to which you should redirect your user.
+
+**Arguments:**
+
+| Parameter          | Type         | Required | Description                               |
+| ------------------ | ------------ | -------- | ----------------------------------------- |
+| `invoice_number`   | `str`        | Yes      | A unique identifier for your invoice.     |
+| `payment_amount`   | `int`        | Yes      | The amount to be paid.                    |
+| `callback_url`     | `str`        | Yes      | The URL to which PayStation will send a callback after the payment is completed. |
+| `cust_name`        | `str`        | Yes      | The full name of the customer.            |
+| `cust_phone`       | `str`        | Yes      | The phone number of the customer.         |
+| `cust_email`       | `str`        | Yes      | The email address of the customer.        |
+| `currency`         | `str`        | No       | The currency code. Defaults to `"BDT"`.   |
+| `pay_with_charge`  | `int`        | No       | Set to `1` if the merchant bears the charge. |
+| `reference`        | `str`        | No       | Any reference information for the transaction. |
+| `cust_address`     | `str`        | No       | The physical address of the customer.     |
+| `checkout_items`   | `str`/`JSON` | No       | Details of the purchased items.           |
+| `opt_a`, `opt_b`, `opt_c` | `str`/`JSON` | No | Any additional optional information.      |
+
+**Example:**
+
+```python
+from paystation import APIError
+
+try:
+    response = client.initiate_payment(
+        invoice_number="INV-2025-001",
+        payment_amount=1500,
+        callback_url="https://your-domain.com/payment/callback",
+        cust_name="Jane Doe",
+        cust_phone="01987654321",
+        cust_email="jane.doe@example.com",
+        reference="Order #123",
+        checkout_items="Product A, Product B"
+    )
+    print("Payment initiated successfully!")
+    print(f"Redirect the user to: {response['payment_url']}")
+except APIError as e:
+    print(f"Failed to initiate payment. Error code: {e.status_code}, Message: {e.message}")
+```
+
+**Success Response:**
+
+```json
+{
+  "status_code": "200",
+  "status": "success",
+  "message": "Payment Link Created Successfully.",
+  "payment_amount": "1500",
+  "invoice_number": "INV-2025-001",
+  "payment_url": "https://api.paystation.com.bd/checkout/..."
+}
+```
+
+### `check_transaction_status_by_invoice(...)`
+
+Checks the status of a transaction using the `invoice_number` you provided during payment initiation.
+
+**Arguments:**
+
+| Parameter        | Type  | Required | Description                           |
+| ---------------- | ----- | -------- | ------------------------------------- |
+| `invoice_number` | `str` | Yes      | The invoice number of the transaction. |
+
+**Example:**
+
+```python
+try:
+    status_response = client.check_transaction_status_by_invoice("INV-2025-001")
+    print("Transaction status:", status_response['data']['trx_status'])
+except APIError as e:
+    print(f"Error checking status: {e.message}")
+```
+
+### `check_transaction_status_by_trx_id(...)`
+
+Checks the status of a transaction using the `trx_id` returned in the callback. This uses the `v2` endpoint of the PayStation API.
+
+**Arguments:**
+
+| Parameter | Type  | Required | Description                               |
+| --------- | ----- | -------- | ----------------------------------------- |
+| `trx_id`  | `str` | Yes      | The transaction ID from PayStation.       |
+
+**Example:**
+
+```python
+try:
+    status_response = client.check_transaction_status_by_trx_id("TRX123456789")
+    print("Transaction status:", status_response['data']['trx_status'])
+except APIError as e:
+    print(f"Error checking status: {e.message}")
+```
+
+## Handling Callbacks
+
+After a user completes a payment, PayStation sends a `GET` request to the `callback_url` you specified. Your application needs to be able to handle this request to get the payment status.
+
+The callback includes the following query parameters:
+
+-   `status`: The final status of the payment (`Successful`, `Failed`, or `Canceled`).
+-   `invoice_number`: The invoice number you originally sent.
+-   `trx_id`: The unique transaction ID from PayStation (only for successful payments).
+
+Here is a basic example of how you might handle this in a Flask application:
+
+```python
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/payment/callback', methods=['GET'])
+def payment_callback():
+    status = request.args.get('status')
+    invoice_number = request.args.get('invoice_number')
+    trx_id = request.args.get('trx_id')
+
+    print(f"Received callback for invoice {invoice_number}:")
+    print(f"  Status: {status}")
+    print(f"  Transaction ID: {trx_id}")
+
+    # Here, you should update your database with the payment status.
+    # For example, find the order with `invoice_number` and update its status.
+
+    if status == 'Successful':
+        # Payment was successful, you can now confirm the order.
+        # It's a good practice to double-check the transaction status
+        # by calling the check_transaction_status_by_trx_id method.
+        pass
+    else:
+        # Payment failed or was canceled.
+        pass
+
+    return jsonify({"status": "callback received"})
+
+if __name__ == '__main__':
+    app.run(port=5000)
+```
+
+## Error Handling
+
+The SDK raises a custom `APIError` exception when the PayStation API returns an error. You should wrap your API calls in a `try...except` block to handle these errors gracefully.
+
+The `APIError` exception has two attributes:
+-   `status_code`: The error code returned by the API.
+-   `message`: A descriptive message of the error.
+
+```python
+from paystation import APIError
+
+try:
+    # Your API call here
+except APIError as e:
+    print(f"An API error occurred.")
+    print(f"Status Code: {e.status_code}")
+    print(f"Message: {e.message}")
+```
+
+## Contributing
+
+Contributions are welcome! If you find a bug or have a feature request, please open an issue on GitHub. If you want to contribute code, please fork the repository and create a pull request.
+
+## License
+
+This SDK is released under the [MIT License](https://opensource.org/licenses/MIT).
