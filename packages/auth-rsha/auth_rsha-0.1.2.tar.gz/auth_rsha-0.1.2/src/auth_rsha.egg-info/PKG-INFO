@@ -1,0 +1,172 @@
+Metadata-Version: 2.4
+Name: auth-rsha
+Version: 0.1.2
+Summary: Reusable JWT auth for FastAPI (password flow)
+Author-email: Hayk Sargsyan <hsargsyan889@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/sargsyanhayko/rsha_auth
+Project-URL: Documentation, https://sargsyanhayko.github.io/rsha_auth/
+Project-URL: Issues, https://github.com/sargsyanhayko/rsha_auth/issues
+Project-URL: Source, https://github.com/sargsyanhayko/rsha_auth
+Classifier: Programming Language :: Python :: 3
+Classifier: Framework :: FastAPI
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Typing :: Typed
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115
+Requires-Dist: pydantic>=2.6
+Requires-Dist: python-jose[cryptography]>=3.3.0
+Requires-Dist: passlib>=1.7.4
+Requires-Dist: argon2-cffi>=23.1.0
+Requires-Dist: pydantic-settings>=2.4
+
+auth-rsha
+
+Переиспользуемая JWT-аутентификация для FastAPI (password flow).
+Делает две вещи без лишней магии:
+
+выдает access-токен по username/password на эндпоинте /auth/token;
+
+даёт зависимость current_user, которая проверяет Bearer-токен в запросах.
+
+Пакет не навязывает хранилище пользователей: ты сам даёшь репозиторий со своим способом поиска юзера.
+
+Установка
+pip install auth-rsha
+
+Быстрый старт
+# main.py
+import os, secrets
+from fastapi import FastAPI, Depends
+from auth_rsha import AuthSettings, make_auth_router, make_current_user
+from auth_rsha.schemas import UserInDB, TokenPayload
+from auth_rsha.hashing import hash_password
+
+# 1) Настройки: секрет либо из ENV, либо сгенерим для локалки
+SECRET = os.getenv("AUTH_RSHA_SECRET") or secrets.token_urlsafe(64)
+settings = AuthSettings(jwt_secret=SECRET, access_ttl=3600)
+
+# 2) Твой репозиторий: как угодно, лишь бы был метод get_by_username()
+class InMemoryRepo:
+    def __init__(self):
+        self.users = {
+            "david": UserInDB(
+                id="1", username="david",
+                password_hash=hash_password("pass123"),
+                role="admin", is_active=True
+            )
+        }
+    async def get_by_username(self, username: str):
+        return self.users.get(username)
+
+repo = InMemoryRepo()
+
+# 3) Приложение и маршруты
+app = FastAPI(title="demo with auth-rsha")
+app.include_router(make_auth_router(settings, repo))  # POST /auth/token
+
+# 4) Защита эндпоинтов
+current_user = make_current_user(settings)
+
+@app.get("/me")
+async def me(payload: TokenPayload = Depends(current_user)):
+    return {"sub": payload.sub, "role": payload.role}
+
+Проверка (curl)
+
+Получить токен:
+
+curl -X POST http://127.0.0.1:8000/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=david&password=pass123"
+
+
+Ответ:
+
+{
+  "access_token": "<JWT>",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+
+
+Позвать защищённый эндпоинт:
+
+curl http://127.0.0.1:8000/me -H "Authorization: Bearer <JWT>"
+
+Конфигурация (ENV)
+Переменная	Значение по умолчанию	Описание
+AUTH_RSHA_SECRET	— (обязательно)	Секрет для подписи JWT, >= 32 символов
+AUTH_RSHA_ACCESS_TTL	3600	Время жизни access-токена (сек)
+AUTH_RSHA_ALG	HS256	Алгоритм подписи
+
+Замечание: секрет должен быть стабильным между перезапусками сервиса. В проде клади его в secret-manager, а не генерируй на лету.
+
+Публичное API
+
+Импортируй из корня пакета:
+
+from auth_rsha import AuthSettings, make_auth_router, make_current_user
+from auth_rsha.hashing import hash_password, verify_password
+
+AuthSettings
+AuthSettings(
+  jwt_secret: str,            # min_length=32
+  jwt_alg: str = "HS256",
+  access_ttl: int = 3600,
+  token_url_path: str = "/auth/token",
+)
+
+make_auth_router(settings, repo, *, prefix="", tags=("auth",)) -> APIRouter
+
+Создает роутер с эндпоинтом POST {prefix}{token_url_path} (по умолчанию /auth/token).
+repo — любой объект с методом:
+
+class UserRepository(Protocol):
+    async def get_by_username(self, username: str) -> Optional[UserInDB]: ...
+
+
+где UserInDB:
+
+class UserInDB(BaseModel):
+    id: str
+    username: str
+    password_hash: str
+    role: Optional[str] = None
+    is_active: bool = True
+
+make_current_user(settings) -> Depends
+
+Зависимость FastAPI, которая:
+
+достаёт Bearer-токен из заголовка;
+
+валидирует JWT;
+
+возвращает TokenPayload(sub: str, role: Optional[str]).
+
+Хеширование паролей
+from auth_rsha.hashing import hash_password, verify_password
+hash = hash_password("plain")
+verify_password("plain", hash)  # True/False
+
+Что библиотека сознательно не делает
+
+Refresh-токены, logout/ревокация — это политика твоего сервиса. Этот пакет занимается только access-токеном.
+
+Хранилище пользователей — полностью на твоей стороне: БД, внешняя система и т.п.
+
+Rate limiting — ставь на /auth/token на уровне API-шлюза/прокси.
+
+Рекомендации по безопасности
+
+Короткий TTL (например, 900 секунд) и пере-выдача по мере надобности.
+
+Секрет держать в secret-manager, а не в .env в репозитории.
+
+Для блокировки скомпрометированных токенов — версионируй “token_version” у пользователя и проверяй её при каждом запросе (это уже логика твоего сервиса).
+
+Лицензия
+
+MIT
