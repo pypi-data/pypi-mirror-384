@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>src/litterate/generator.py annotated source</title>
+    <link rel="stylesheet" href="../../main.css">
+</head>
+
+<body>
+    <main>
+        <div class="line">
+            <div class="doc">
+                <h1>src/litterate/generator.py <span class="fade">annotated source</span></h1>
+                <em><a class="back" href="../../">Back to index</a></em>
+            </div>
+            <pre></pre>
+        </div>
+        <div class="line"><div class="doc"><h2>Generator Module</h2>
+<p>This module contains the bulk of the logic for generating litterate pages.
+It exports a function that the command-line utility calls with configurations.</p></div><pre class="source language-python"><strong class="lineNumber">5</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">6</strong><code class="language-python">import html</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">7</strong><code class="language-python">from pathlib import Path</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">8</strong><code class="language-python">from typing import Any</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">9</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">10</strong><code class="language-python">import markdown</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">11</strong><code class="language-python">from jinja2 import Template</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">12</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>This isn't optimal, but for now, we read the three template files into memory
+at module load time, so we can reuse them later without repeatedly reading from disk.</p></div><pre class="source language-python"><strong class="lineNumber">15</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">16</strong><code class="language-python">TEMPLATE_DIR = Path(__file__).parent / &quot;templates&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">17</strong><code class="language-python">INDEX_TEMPLATE = Template((TEMPLATE_DIR / &quot;index.html&quot;).read_text())</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">18</strong><code class="language-python">STYLES_CSS = (TEMPLATE_DIR / &quot;main.css&quot;).read_text()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">19</strong><code class="language-python">SOURCE_TEMPLATE = Template((TEMPLATE_DIR / &quot;source.html&quot;).read_text())</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">20</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">21</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Language Detection</h3>
+<p>Detect the programming language from file extension for syntax highlighting.
+If the user specifies a language in the config, we use that instead of auto-detection.</p></div><pre class="source language-python"><strong class="lineNumber">26</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">27</strong><code class="language-python">def detect_language(file_path: Path, config: dict[str, Any]) -&gt; str:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">28</strong><code class="language-python">    if &quot;language&quot; in config and config[&quot;language&quot;] != &quot;auto&quot;:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">29</strong><code class="language-python">        return config[&quot;language&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">30</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Map common file extensions to Highlight.js language identifiers.
+This covers most popular programming languages.</p></div><pre class="source language-python"><strong class="lineNumber">33</strong><code class="language-python">    ext_map = {</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">34</strong><code class="language-python">        &quot;.py&quot;: &quot;python&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">35</strong><code class="language-python">        &quot;.js&quot;: &quot;javascript&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">36</strong><code class="language-python">        &quot;.jsx&quot;: &quot;javascript&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">37</strong><code class="language-python">        &quot;.ts&quot;: &quot;typescript&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">38</strong><code class="language-python">        &quot;.tsx&quot;: &quot;typescript&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">39</strong><code class="language-python">        &quot;.java&quot;: &quot;java&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">40</strong><code class="language-python">        &quot;.cpp&quot;: &quot;cpp&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">41</strong><code class="language-python">        &quot;.cc&quot;: &quot;cpp&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">42</strong><code class="language-python">        &quot;.cxx&quot;: &quot;cpp&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">43</strong><code class="language-python">        &quot;.c&quot;: &quot;c&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">44</strong><code class="language-python">        &quot;.h&quot;: &quot;c&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">45</strong><code class="language-python">        &quot;.hpp&quot;: &quot;cpp&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">46</strong><code class="language-python">        &quot;.rs&quot;: &quot;rust&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">47</strong><code class="language-python">        &quot;.go&quot;: &quot;go&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">48</strong><code class="language-python">        &quot;.rb&quot;: &quot;ruby&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">49</strong><code class="language-python">        &quot;.php&quot;: &quot;php&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">50</strong><code class="language-python">        &quot;.sh&quot;: &quot;bash&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">51</strong><code class="language-python">        &quot;.bash&quot;: &quot;bash&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">52</strong><code class="language-python">        &quot;.zsh&quot;: &quot;bash&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">53</strong><code class="language-python">        &quot;.fish&quot;: &quot;bash&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">54</strong><code class="language-python">        &quot;.swift&quot;: &quot;swift&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">55</strong><code class="language-python">        &quot;.kt&quot;: &quot;kotlin&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">56</strong><code class="language-python">        &quot;.scala&quot;: &quot;scala&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">57</strong><code class="language-python">        &quot;.r&quot;: &quot;r&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">58</strong><code class="language-python">        &quot;.sql&quot;: &quot;sql&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">59</strong><code class="language-python">        &quot;.html&quot;: &quot;html&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">60</strong><code class="language-python">        &quot;.xml&quot;: &quot;xml&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">61</strong><code class="language-python">        &quot;.css&quot;: &quot;css&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">62</strong><code class="language-python">        &quot;.scss&quot;: &quot;scss&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">63</strong><code class="language-python">        &quot;.sass&quot;: &quot;sass&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">64</strong><code class="language-python">        &quot;.json&quot;: &quot;json&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">65</strong><code class="language-python">        &quot;.yaml&quot;: &quot;yaml&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">66</strong><code class="language-python">        &quot;.yml&quot;: &quot;yaml&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">67</strong><code class="language-python">        &quot;.toml&quot;: &quot;toml&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">68</strong><code class="language-python">        &quot;.md&quot;: &quot;markdown&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">69</strong><code class="language-python">        &quot;.rst&quot;: &quot;rst&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">70</strong><code class="language-python">        &quot;.tex&quot;: &quot;latex&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">71</strong><code class="language-python">        &quot;.vim&quot;: &quot;vim&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">72</strong><code class="language-python">        &quot;.lua&quot;: &quot;lua&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">73</strong><code class="language-python">        &quot;.pl&quot;: &quot;perl&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">74</strong><code class="language-python">        &quot;.pm&quot;: &quot;perl&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">75</strong><code class="language-python">    }</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">76</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">77</strong><code class="language-python">    suffix = file_path.suffix.lower()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">78</strong><code class="language-python">    return ext_map.get(suffix, &quot;plaintext&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">79</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">80</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Helper Functions</h3>
+<p>These utility functions help with text processing and path management.</p></div><pre class="source language-python"><strong class="lineNumber">84</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber"></strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p><strong>Line Wrapping</strong>: Helper function to wrap a given line of text into multiple lines,
+with <code>limit</code> characters per line.</p></div><pre class="source language-python"><strong class="lineNumber">87</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">88</strong><code class="language-python">def wrap_line(line: str, limit: int) -&gt; str:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">89</strong><code class="language-python">    result = []</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">90</strong><code class="language-python">    for i in range(0, len(line), limit):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">91</strong><code class="language-python">        result.append(line[i:i + limit])</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">92</strong><code class="language-python">    return &quot;\n&quot;.join(result)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">93</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">94</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p><strong>HTML Encoding</strong>: Escape characters that won't display in HTML correctly,
+like the very common <code>&gt;</code>, <code>&lt;</code>, and <code>&amp;</code> characters in code.</p></div><pre class="source language-python"><strong class="lineNumber">97</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">98</strong><code class="language-python">def encode_html(code: str) -&gt; str:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">99</strong><code class="language-python">    return html.escape(code)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">100</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">101</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p><strong>Path Mapping</strong>: Function that maps a given source file to the path where
+its annotated version will be saved.</p></div><pre class="source language-python"><strong class="lineNumber">104</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">105</strong><code class="language-python">def get_output_path_for_source_path(source_path: Path, config: dict[str, Any]) -&gt; Path:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">106</strong><code class="language-python">    output_dir = Path(config[&quot;output_directory&quot;])</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">107</strong><code class="language-python">    return output_dir / f&quot;{source_path}.html&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">108</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">109</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Index Page Generation</h3>
+<p>Function to populate the <code>index.html</code> page of the generated site with all
+the source links, project name, description, etc.</p></div><pre class="source language-python"><strong class="lineNumber">114</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">115</strong><code class="language-python">def populate_index_page(source_files: list[Path], config: dict[str, Any]) -&gt; str:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">116</strong><code class="language-python">    output_dir = Path(config[&quot;output_directory&quot;])</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">117</strong><code class="language-python">    base_url = config[&quot;baseURL&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">118</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Generate links for each source file, handling both local and web deployment scenarios.</p></div><pre class="source language-python"><strong class="lineNumber">120</strong><code class="language-python">    files_html = []</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">121</strong><code class="language-python">    for source_path in source_files:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">122</strong><code class="language-python">        output_path = get_output_path_for_source_path(source_path, config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">123</strong><code class="language-python">        relative_path = output_path.relative_to(output_dir)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">124</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">125</strong><code class="language-python">        if base_url == &quot;./&quot;:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">126</strong><code class="language-python">            link = str(relative_path)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">127</strong><code class="language-python">        else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">128</strong><code class="language-python">            link = f&quot;{base_url}{relative_path}&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">129</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">130</strong><code class="language-python">        files_html.append(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">131</strong><code class="language-python">            f&#x27;&lt;p class=&quot;sourceLink&quot;&gt;&lt;a href=&quot;{link}&quot;&gt;{source_path}&lt;/a&gt;&lt;/p&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">132</strong><code class="language-python">        )</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">133</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>For CSS link, handle baseURL properly.
+The template appends "main.css", so just pass the directory path.</p></div><pre class="source language-python"><strong class="lineNumber">136</strong><code class="language-python">    css_base = &quot;&quot; if base_url == &quot;./&quot; else base_url</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">137</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">138</strong><code class="language-python">    return INDEX_TEMPLATE.render(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">139</strong><code class="language-python">        title=config[&quot;name&quot;],</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">140</strong><code class="language-python">        description=markdown.markdown(config[&quot;description&quot;]),</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">141</strong><code class="language-python">        sourcesList=&quot;\n&quot;.join(files_html),</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">142</strong><code class="language-python">        baseURL=css_base,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">143</strong><code class="language-python">    )</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">144</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">145</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Parsing Source Lines</h3>
+<p><code>lines_to_line_pairs</code> works by having two arrays -- one of the annotation-lineNumber-source line
+tuples, and one buffer for the annotation text being read.</p></div><pre class="source language-python"><strong class="lineNumber">150</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">151</strong><code class="language-python">def lines_to_line_pairs(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">152</strong><code class="language-python">    lines: list[str], config: dict[str, Any]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">153</strong><code class="language-python">) -&gt; list[tuple[str, str, int]]:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">154</strong><code class="language-python">    line_pairs = []</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">155</strong><code class="language-python">    doc_line = &quot;&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">156</strong><code class="language-python">    in_annotation_comment = False</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">157</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">158</strong><code class="language-python">    annotation_start = config[&quot;annotation_start_mark&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">159</strong><code class="language-python">    annotation_continue = config[&quot;annotation_continue_mark&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">160</strong><code class="language-python">    wrap_limit = config[&quot;wrap&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">161</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">162</strong><code class="language-python">    def process_code_line(code_line: str) -&gt; str:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">163</strong><code class="language-python">        encoded = encode_html(code_line)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">164</strong><code class="language-python">        if wrap_limit != 0:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">165</strong><code class="language-python">            return wrap_line(encoded, wrap_limit)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">166</strong><code class="language-python">        return encoded</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">167</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">168</strong><code class="language-python">    def push_pair(code_line: str, line_number: int) -&gt; None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">169</strong><code class="language-python">        nonlocal doc_line</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">170</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">171</strong><code class="language-python">        if doc_line:</code></pre></div>
+<div class="line"><div class="doc"><p>Add spacing between annotation blocks for better readability</p></div><pre class="source language-python"><strong class="lineNumber">173</strong><code class="language-python">            if line_pairs and line_pairs[-1][0]:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">174</strong><code class="language-python">                line_pairs.append((&quot;&quot;, &quot;&quot;, &quot;&quot;))</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">175</strong><code class="language-python">            line_pairs.append(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">176</strong><code class="language-python">                (markdown.markdown(doc_line), process_code_line(code_line), line_number)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">177</strong><code class="language-python">            )</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">178</strong><code class="language-python">        else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">179</strong><code class="language-python">            line_pairs.append((&quot;&quot;, process_code_line(code_line), line_number))</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">180</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">181</strong><code class="language-python">        doc_line = &quot;&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">182</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">183</strong><code class="language-python">    def push_comment(line: str) -&gt; None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">184</strong><code class="language-python">        nonlocal doc_line</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">185</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">186</strong><code class="language-python">        if line.strip().startswith(annotation_start):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">187</strong><code class="language-python">            doc_line = line.replace(annotation_start, &quot;&quot;, 1).strip()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">188</strong><code class="language-python">        else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">189</strong><code class="language-python">            doc_line += &quot;\n&quot; + line.replace(annotation_continue, &quot;&quot;, 1).strip()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">190</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Main parsing loop: iterate through source lines and identify annotation comments
+vs regular code lines.</p></div><pre class="source language-python"><strong class="lineNumber">193</strong><code class="language-python">    for idx, line in enumerate(lines):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">194</strong><code class="language-python">        stripped = line.strip()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">195</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">196</strong><code class="language-python">        if stripped.startswith(annotation_start):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">197</strong><code class="language-python">            in_annotation_comment = True</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">198</strong><code class="language-python">            push_comment(line)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">199</strong><code class="language-python">        elif stripped.startswith(annotation_continue):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">200</strong><code class="language-python">            if in_annotation_comment:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">201</strong><code class="language-python">                push_comment(line)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">202</strong><code class="language-python">            else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">203</strong><code class="language-python">                push_pair(line, idx + 1)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">204</strong><code class="language-python">        else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">205</strong><code class="language-python">            if in_annotation_comment:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">206</strong><code class="language-python">                in_annotation_comment = False</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">207</strong><code class="language-python">            push_pair(line, idx + 1)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">208</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">209</strong><code class="language-python">    return line_pairs</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">210</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">211</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Page Creation</h3>
+<p>This function is called for each source file, to process and save
+the Litterate version of the source file in the correct place.</p></div><pre class="source language-python"><strong class="lineNumber">216</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">217</strong><code class="language-python">def create_and_save_page(source_path: Path, config: dict[str, Any]) -&gt; None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">218</strong><code class="language-python">    content = source_path.read_text(encoding=&quot;utf-8&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">219</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">220</strong><code class="language-python">    line_pairs = lines_to_line_pairs(content.split(&quot;\n&quot;), config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">221</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">222</strong><code class="language-python">    language = detect_language(source_path, config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">223</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Generate HTML for each line, combining documentation and source code</p></div><pre class="source language-python"><strong class="lineNumber">225</strong><code class="language-python">    lines_html = []</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">226</strong><code class="language-python">    for doc, source, line_number in line_pairs:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">227</strong><code class="language-python">        lines_html.append(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">228</strong><code class="language-python">            f&#x27;&lt;div class=&quot;line&quot;&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">229</strong><code class="language-python">            f&#x27;&lt;div class=&quot;doc&quot;&gt;{doc}&lt;/div&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">230</strong><code class="language-python">            f&#x27;&lt;pre class=&quot;source language-{language}&quot;&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">231</strong><code class="language-python">            f&#x27;&lt;strong class=&quot;lineNumber&quot;&gt;{line_number}&lt;/strong&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">232</strong><code class="language-python">            f&#x27;&lt;code class=&quot;language-{language}&quot;&gt;{source}&lt;/code&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">233</strong><code class="language-python">            f&#x27;&lt;/pre&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">234</strong><code class="language-python">            f&#x27;&lt;/div&gt;&#x27;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">235</strong><code class="language-python">        )</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">236</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Calculate relative paths for navigation, handling both local file viewing and web deployment</p></div><pre class="source language-python"><strong class="lineNumber">238</strong><code class="language-python">    output_dir = Path(config[&quot;output_directory&quot;])</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">239</strong><code class="language-python">    output_path = get_output_path_for_source_path(source_path, config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">240</strong><code class="language-python">    base_url = config[&quot;baseURL&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">241</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">242</strong><code class="language-python">    if base_url == &quot;./&quot;:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">243</strong><code class="language-python">        depth = len(output_path.relative_to(output_dir).parts) - 1</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">244</strong><code class="language-python">        base_link = &quot;../&quot; * depth if depth &gt; 0 else &quot;./&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">245</strong><code class="language-python">        css_link = base_link + &quot;main.css&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">246</strong><code class="language-python">    else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">247</strong><code class="language-python">        base_link = base_url</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">248</strong><code class="language-python">        css_link = f&quot;{base_url}main.css&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">249</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">250</strong><code class="language-python">    annotated_page = SOURCE_TEMPLATE.render(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">251</strong><code class="language-python">        title=str(source_path),</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">252</strong><code class="language-python">        lines=&quot;\n&quot;.join(lines_html),</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">253</strong><code class="language-python">        baseURL=base_link,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">254</strong><code class="language-python">        cssURL=css_link,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">255</strong><code class="language-python">    )</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">256</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Save to output directory, creating parent directories as needed</p></div><pre class="source language-python"><strong class="lineNumber">258</strong><code class="language-python">    output_path.parent.mkdir(parents=True, exist_ok=True)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">259</strong><code class="language-python">    output_path.write_text(annotated_page, encoding=&quot;utf-8&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">260</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">261</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Main Entry Point</h3>
+<p>This is the main function called by the CLI to generate literate documentation
+for all specified source files.</p></div><pre class="source language-python"><strong class="lineNumber">266</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">267</strong><code class="language-python">def generate_litterate_pages(source_files: list[Path], config: dict[str, Any]) -&gt; None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">268</strong><code class="language-python">    output_directory = Path(config[&quot;output_directory&quot;])</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">269</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">270</strong><code class="language-python">    output_directory.mkdir(parents=True, exist_ok=True)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">271</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Generate and write the index page listing all source files</p></div><pre class="source language-python"><strong class="lineNumber">273</strong><code class="language-python">    index_html = populate_index_page(source_files, config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">274</strong><code class="language-python">    (output_directory / &quot;index.html&quot;).write_text(index_html, encoding=&quot;utf-8&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">275</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Write the CSS stylesheet</p></div><pre class="source language-python"><strong class="lineNumber">277</strong><code class="language-python">    (output_directory / &quot;main.css&quot;).write_text(STYLES_CSS, encoding=&quot;utf-8&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">278</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Process each source file, generating its annotated page</p></div><pre class="source language-python"><strong class="lineNumber">280</strong><code class="language-python">    for source_file in source_files:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">281</strong><code class="language-python">        create_and_save_page(source_file, config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">282</strong><code class="language-python">        print(f&quot;Annotated {source_file}&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">283</strong><code class="language-python"></code></pre></div>
+    </main>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+
+</html>

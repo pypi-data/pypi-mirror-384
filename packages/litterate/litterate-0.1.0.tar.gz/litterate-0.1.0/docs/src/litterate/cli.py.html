@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>src/litterate/cli.py annotated source</title>
+    <link rel="stylesheet" href="../../main.css">
+</head>
+
+<body>
+    <main>
+        <div class="line">
+            <div class="doc">
+                <h1>src/litterate/cli.py <span class="fade">annotated source</span></h1>
+                <em><a class="back" href="../../">Back to index</a></em>
+            </div>
+            <pre></pre>
+        </div>
+        <div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">1</strong><code class="language-python">#!/usr/bin/env python3</code></pre></div>
+<div class="line"><div class="doc"><h2>Command-line Interface</h2>
+<p>This is the entry point for the command-line utility,
+focused on handling and processing CLI arguments and
+figuring out the right options to pass to the docs generator.</p></div><pre class="source language-python"><strong class="lineNumber">7</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">8</strong><code class="language-python">import importlib.util</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">9</strong><code class="language-python">import json</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">10</strong><code class="language-python">import sys</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">11</strong><code class="language-python">from glob import glob</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">12</strong><code class="language-python">from pathlib import Path</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">13</strong><code class="language-python">from typing import Any</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">14</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">15</strong><code class="language-python">import click</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">16</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">17</strong><code class="language-python">from litterate.defaults import DEFAULTS</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">18</strong><code class="language-python">from litterate.generator import generate_litterate_pages</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">19</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">20</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>Configuration Loading</h3>
+<p>Load configuration from a Python or JSON file. This allows users to
+specify their Litterate configuration in whichever format is most convenient.</p></div><pre class="source language-python"><strong class="lineNumber">25</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">26</strong><code class="language-python">def load_config_file(config_path: str) -&gt; dict[str, Any]:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">27</strong><code class="language-python">    path = Path(config_path)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">28</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">29</strong><code class="language-python">    if path.suffix == &quot;.json&quot;:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">30</strong><code class="language-python">        with open(path, encoding=&quot;utf-8&quot;) as f:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">31</strong><code class="language-python">            return json.load(f)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">32</strong><code class="language-python">    elif path.suffix == &quot;.py&quot;:</code></pre></div>
+<div class="line"><div class="doc"><p>For Python config files, we dynamically load the module and extract configuration</p></div><pre class="source language-python"><strong class="lineNumber">34</strong><code class="language-python">        spec = importlib.util.spec_from_file_location(&quot;config&quot;, path)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">35</strong><code class="language-python">        if spec is None or spec.loader is None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">36</strong><code class="language-python">            raise ValueError(f&quot;Cannot load config from {path}&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">37</strong><code class="language-python">        module = importlib.util.module_from_spec(spec)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">38</strong><code class="language-python">        spec.loader.exec_module(module)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">39</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Look for CONFIG or config variable, or extract all non-private module attributes</p></div><pre class="source language-python"><strong class="lineNumber">41</strong><code class="language-python">        if hasattr(module, &quot;CONFIG&quot;):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">42</strong><code class="language-python">            return module.CONFIG</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">43</strong><code class="language-python">        elif hasattr(module, &quot;config&quot;):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">44</strong><code class="language-python">            return module.config</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">45</strong><code class="language-python">        else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">46</strong><code class="language-python">            return {</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">47</strong><code class="language-python">                k: v</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">48</strong><code class="language-python">                for k, v in module.__dict__.items()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">49</strong><code class="language-python">                if not k.startswith(&quot;_&quot;) and not callable(v)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">50</strong><code class="language-python">            }</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">51</strong><code class="language-python">    else:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">52</strong><code class="language-python">        raise ValueError(f&quot;Unsupported config file type: {path.suffix}. Use .py or .json&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">53</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">54</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><h3>CLI Command Definition</h3>
+<p>Using Click to define the command-line interface with various options for customization.</p></div><pre class="source language-python"><strong class="lineNumber">58</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">59</strong><code class="language-python">@click.command()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">60</strong><code class="language-python">@click.option(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">61</strong><code class="language-python">    &quot;--config&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">62</strong><code class="language-python">    type=click.Path(exists=True),</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">63</strong><code class="language-python">    help=&quot;Specify a Python or JSON file for configuration&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">64</strong><code class="language-python">)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">65</strong><code class="language-python">@click.option(&quot;-n&quot;, &quot;--name&quot;, help=&quot;Name of your project, shown in the generated site&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">66</strong><code class="language-python">@click.option(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">67</strong><code class="language-python">    &quot;-d&quot;, &quot;--description&quot;, help=&quot;Description text for your project, shown in the generated site&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">68</strong><code class="language-python">)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">69</strong><code class="language-python">@click.option(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">70</strong><code class="language-python">    &quot;-w&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">71</strong><code class="language-python">    &quot;--wrap&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">72</strong><code class="language-python">    type=int,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">73</strong><code class="language-python">    help=&quot;Wrap long lines to N characters (0 = no wrapping)&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">74</strong><code class="language-python">)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">75</strong><code class="language-python">@click.option(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">76</strong><code class="language-python">    &quot;-b&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">77</strong><code class="language-python">    &quot;--base-url&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">78</strong><code class="language-python">    help=&quot;Base URL for the generated site (e.g., /project-name for GitHub Pages)&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">79</strong><code class="language-python">)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">80</strong><code class="language-python">@click.option(&quot;-v&quot;, &quot;--verbose&quot;, is_flag=True, help=&quot;Verbose output while litterate runs&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">81</strong><code class="language-python">@click.option(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">82</strong><code class="language-python">    &quot;-o&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">83</strong><code class="language-python">    &quot;--output&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">84</strong><code class="language-python">    help=&quot;Destination directory for generated docs (default: ./docs/)&quot;,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">85</strong><code class="language-python">)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">86</strong><code class="language-python">@click.argument(&quot;files&quot;, nargs=-1, type=click.Path())</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">87</strong><code class="language-python">def main(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">88</strong><code class="language-python">    config: str | None,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">89</strong><code class="language-python">    name: str | None,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">90</strong><code class="language-python">    description: str | None,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">91</strong><code class="language-python">    wrap: int | None,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">92</strong><code class="language-python">    base_url: str | None,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">93</strong><code class="language-python">    verbose: bool,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">94</strong><code class="language-python">    output: str | None,</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">95</strong><code class="language-python">    files: tuple[str, ...],</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">96</strong><code class="language-python">) -&gt; None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">97</strong><code class="language-python">    &quot;&quot;&quot;Litterate - Generate beautiful literate programming-style code annotations.</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">98</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">99</strong><code class="language-python">    Read the full documentation at https://github.com/thesephist/litterate</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">100</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">101</strong><code class="language-python">    \b</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">102</strong><code class="language-python">    Basic usage:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">103</strong><code class="language-python">        litterate --config your-litterate-config.py</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">104</strong><code class="language-python">        litterate [options] [files]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">105</strong><code class="language-python">        (if no files are specified, litterate runs on src/**/*.py)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">106</strong><code class="language-python">    &quot;&quot;&quot;</code></pre></div>
+<div class="line"><div class="doc"><p>Configuration merging: Start with defaults, then layer on config file, then CLI args</p></div><pre class="source language-python"><strong class="lineNumber">108</strong><code class="language-python">    merged_config = DEFAULTS.copy()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">109</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">110</strong><code class="language-python">    if config:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">111</strong><code class="language-python">        user_config = load_config_file(config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">112</strong><code class="language-python">        merged_config.update(user_config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">113</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Command-line arguments have highest priority and override everything else</p></div><pre class="source language-python"><strong class="lineNumber">115</strong><code class="language-python">    if name is not None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">116</strong><code class="language-python">        merged_config[&quot;name&quot;] = name</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">117</strong><code class="language-python">    if description is not None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">118</strong><code class="language-python">        merged_config[&quot;description&quot;] = description</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">119</strong><code class="language-python">    if wrap is not None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">120</strong><code class="language-python">        merged_config[&quot;wrap&quot;] = wrap</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">121</strong><code class="language-python">    if base_url is not None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">122</strong><code class="language-python">        merged_config[&quot;baseURL&quot;] = base_url</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">123</strong><code class="language-python">    if verbose:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">124</strong><code class="language-python">        merged_config[&quot;verbose&quot;] = True</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">125</strong><code class="language-python">    if output is not None:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">126</strong><code class="language-python">        merged_config[&quot;output_directory&quot;] = output</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">127</strong><code class="language-python">    if files:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">128</strong><code class="language-python">        merged_config[&quot;files&quot;] = list(files)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">129</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Expand glob patterns to actual file paths, filtering out directories</p></div><pre class="source language-python"><strong class="lineNumber">131</strong><code class="language-python">    source_files = []</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">132</strong><code class="language-python">    for glob_pattern in merged_config[&quot;files&quot;]:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">133</strong><code class="language-python">        try:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">134</strong><code class="language-python">            matches = glob(glob_pattern, recursive=True)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">135</strong><code class="language-python">            file_matches = [Path(f) for f in matches if Path(f).is_file()]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">136</strong><code class="language-python">            source_files.extend(file_matches)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">137</strong><code class="language-python">        except Exception as e:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">138</strong><code class="language-python">            click.echo(f&quot;Error while looking for matching source files: {e}&quot;, err=True)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">139</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Ensure baseURL ends with / for proper path joining</p></div><pre class="source language-python"><strong class="lineNumber">141</strong><code class="language-python">    base_url_value = merged_config[&quot;baseURL&quot;]</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">142</strong><code class="language-python">    if not base_url_value.endswith(&quot;/&quot;):</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">143</strong><code class="language-python">        merged_config[&quot;baseURL&quot;] = base_url_value + &quot;/&quot;</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">144</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">145</strong><code class="language-python">    if merged_config[&quot;verbose&quot;]:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">146</strong><code class="language-python">        click.echo(f&quot;Using configuration: {merged_config}&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">147</strong><code class="language-python">        click.echo(f&quot;Found {len(source_files)} source files&quot;)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">148</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">149</strong><code class="language-python">    if not source_files:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">150</strong><code class="language-python">        click.echo(</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">151</strong><code class="language-python">            &quot;Warning: No source files found matching the specified patterns&quot;, err=True</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">152</strong><code class="language-python">        )</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">153</strong><code class="language-python">        sys.exit(1)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">154</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"><p>Generate the literate documentation pages</p></div><pre class="source language-python"><strong class="lineNumber">156</strong><code class="language-python">    generate_litterate_pages(source_files, merged_config)</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">157</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">158</strong><code class="language-python"></code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">159</strong><code class="language-python">if __name__ == &quot;__main__&quot;:</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">160</strong><code class="language-python">    main()</code></pre></div>
+<div class="line"><div class="doc"></div><pre class="source language-python"><strong class="lineNumber">161</strong><code class="language-python"></code></pre></div>
+    </main>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+
+</html>

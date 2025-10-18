@@ -1,0 +1,221 @@
+# Litterate
+
+A Python command-line tool to generate beautiful literate programming-style documentation from comment annotations in your code.
+
+This is a complete Python port of the original [litterate](https://github.com/thesephist/litterate) JavaScript tool, built as a modern Python package managed with [pixi](https://prefix.dev).
+
+Check out Litterate's own source code, annotated with `litterate`, on [GitHub Pages](https://thesephist.github.io/litterate/).
+
+## Features
+
+- 📝 Generate beautiful documentation websites from annotated source code
+- 🎨 Clean, readable two-column layout (annotations + code)
+- 🔧 Highly configurable via command-line or config files
+- 🐍 Python-first with sensible defaults for Python projects
+- 📦 Easy installation and distribution via pixi
+- 🌐 Support for any language with line-comment syntax
+
+## Installation
+
+### Using pixi (recommended)
+
+Install globally using pixi:
+
+```bash
+pixi global install litterate
+```
+
+### From source
+
+Clone this repository and install with pixi:
+
+```bash
+git clone https://github.com/yourusername/litterate.git
+cd litterate
+pixi install
+pixi shell
+```
+
+## Usage
+
+### Quick Start
+
+Run Litterate with default settings:
+
+```bash
+litterate
+```
+
+This will process all Python files in `./src/**/*.py` and generate documentation in `./docs/`.
+
+**Note:** By default, documentation is generated with relative paths so you can view it locally by opening `docs/index.html` directly in your browser. For web deployment (like GitHub Pages), set `baseURL` to your site's base path.
+
+### With Configuration File
+
+Create a `litterate.config.py` file:
+
+```python
+# litterate.config.py
+name = "My Project"
+description = """
+A cool project that does amazing things.
+You can use **Markdown** here!
+"""
+
+files = [
+    "./src/**/*.py",
+    "./scripts/**/*.py",
+]
+
+baseURL = "/my-project"  # For GitHub Pages
+output_directory = "./docs/"
+```
+
+Run with config:
+
+```bash
+litterate --config litterate.config.py
+```
+
+### Command-Line Options
+
+```
+Options:
+  --config PATH         Specify a Python or JSON file for configuration
+  -n, --name TEXT       Name of your project
+  -d, --description TEXT Description text for your project
+  -w, --wrap INTEGER    Wrap long lines to N characters (0 = no wrapping)
+  -b, --base-url TEXT   Base URL for the site (e.g., /project for GitHub Pages)
+  -v, --verbose         Verbose output
+  -o, --output PATH     Destination directory for generated docs
+  --help                Show this message and exit
+```
+
+### Annotation Syntax
+
+By default, Litterate processes Python-style comments starting with `#>`:
+
+```python
+#> This is a documentation annotation.
+#  You can continue the annotation on multiple lines.
+#  Markdown is supported: **bold**, *italic*, `code`, etc.
+
+def hello_world():
+    # Regular comments are ignored
+    print("Hello, World!")
+```
+
+### Configuration Options
+
+All options can be set via config file or command-line:
+
+- **`name`**: Project name shown in the generated site
+- **`description`**: Project description (Markdown supported)
+- **`files`**: List of glob patterns for source files to process
+- **`wrap`**: Character limit for line wrapping (0 = no wrapping)
+- **`baseURL`**: Base URL for the generated site (default: `"./"` for local viewing, use `"/"` for web root or `"/project-name"` for GitHub Pages)
+- **`verbose`**: Enable verbose output
+- **`output_directory`**: Where to save generated docs (default: `./docs/`)
+- **`annotation_start_mark`**: Comment prefix for annotation blocks (default: `#>`)
+- **`annotation_continue_mark`**: Comment prefix for continuation lines (default: `#`)
+
+### Using with Other Languages
+
+Litterate can work with any language that has line comments. For JavaScript/TypeScript:
+
+```python
+# litterate.config.py
+files = ["./src/**/*.js"]
+annotation_start_mark = "//>"
+annotation_continue_mark = "//"
+```
+
+## Development
+
+### Setup Development Environment
+
+```bash
+# Install dependencies
+pixi install
+
+# Activate the environment
+pixi shell
+```
+
+### Run Tests
+
+```bash
+pixi run test
+```
+
+### Lint and Format
+
+```bash
+pixi run lint
+pixi run fmt
+```
+
+### Generate Documentation
+
+Generate Litterate's own documentation:
+
+```bash
+pixi run docs
+```
+
+## Pixi Tasks
+
+This project includes several pixi tasks for convenience:
+
+- `pixi run test` - Run the test suite
+- `pixi run lint` - Run linting checks
+- `pixi run fmt` - Format code
+- `pixi run docs` - Generate documentation for this project
+
+## How It Works
+
+1. **Parse**: Litterate reads your source files and identifies annotation comments (lines starting with `#>` by default)
+2. **Transform**: Annotations are processed as Markdown, code is syntax-highlighted
+3. **Generate**: HTML pages are created with a beautiful two-column layout
+4. **Output**: A static website is generated in your output directory
+
+## Publishing to GitHub Pages
+
+1. Configure your build to output to `./docs/`:
+
+```python
+# litterate.config.py
+output_directory = "./docs/"
+baseURL = "/your-repo-name"  # Match your repo name
+```
+
+2. Generate docs:
+
+```bash
+litterate --config litterate.config.py
+```
+
+3. Commit and push to GitHub
+4. Enable GitHub Pages in your repository settings, using the `docs/` folder as the source
+
+## Differences from Original
+
+This Python port maintains feature parity with the original JavaScript version while adding:
+
+- Native Python support with modern tooling (pixi, click, jinja2)
+- Better type hints and documentation
+- Pytest-based test suite
+- Improved error handling
+- Support for both `.py` and `.json` config files
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Acknowledgments
+
+Original concept and implementation by [Linus Lee](https://github.com/thesephist). This is a complete Python port of the original [litterate](https://github.com/thesephist/litterate) tool.

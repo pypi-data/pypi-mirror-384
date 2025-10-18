@@ -1,0 +1,314 @@
+# Litterate - LLM Usage Guide
+
+## What is Litterate?
+
+Litterate is a Python CLI tool that generates beautiful literate programming-style documentation from annotated source code. It reads special comment annotations from your code files and creates a static HTML website with a clean two-column layout showing annotations alongside code.
+
+## Installation
+
+```bash
+# Install with pixi (recommended)
+pixi install
+
+# Or install globally
+pixi global install litterate
+```
+
+## Basic Usage
+
+### Generate documentation with defaults
+```bash
+litterate
+```
+This processes all Python files in `./src/**/*.py` and outputs to `./docs/`
+
+### Use a configuration file
+```bash
+litterate --config litterate.config.py
+```
+
+### Specify files directly
+```bash
+litterate src/main.py src/utils.py lib/helper.py
+```
+
+### With command-line options
+```bash
+litterate -n "My Project" -d "Project description" -o ./output/
+```
+
+## Configuration
+
+### Configuration File (Python)
+Create `litterate.config.py`:
+
+```python
+name = "My Project Name"
+description = """
+Project description here.
+Supports **Markdown** formatting!
+"""
+
+# Files to process (glob patterns)
+files = [
+    "./src/**/*.py",
+    "./lib/**/*.py",
+]
+
+# Output directory
+output_directory = "./docs/"
+
+# Base URL for links (use "./" for local viewing, "/project-name" for GitHub Pages)
+baseURL = "./"
+
+# Wrap long lines at N characters (0 = no wrapping)
+wrap = 80
+
+# Annotation markers
+annotation_start_mark = "#>"
+annotation_continue_mark = "#"
+```
+
+### Configuration File (JSON)
+Or use JSON format:
+
+```json
+{
+  "name": "My Project",
+  "description": "Project description",
+  "files": ["./src/**/*.py"],
+  "output_directory": "./docs/",
+  "baseURL": "./"
+}
+```
+
+## Annotation Syntax
+
+### For Python (default)
+```python
+#> This is a documentation annotation.
+#  You can continue on multiple lines.
+#
+#  **Markdown** is fully supported:
+#  - Lists
+#  - *Emphasis*
+#  - `code`
+#  - Links: [GitHub](https://github.com)
+
+def hello_world():
+    # Regular comments are ignored
+    print("Hello, World!")
+```
+
+### For JavaScript/TypeScript
+Configure different comment markers:
+
+```python
+# In litterate.config.py
+annotation_start_mark = "//>"
+annotation_continue_mark = "//"
+files = ["./src/**/*.js", "./src/**/*.ts"]
+```
+
+Then in your JS/TS files:
+```javascript
+//> This function handles user authentication.
+//  It validates credentials and returns a JWT token.
+
+function authenticate(username, password) {
+    // Implementation here
+}
+```
+
+### For Other Languages
+Any language with line comments works. Examples:
+
+**Ruby, Shell, Python, Perl:** `#>` and `#`
+**C, C++, Java, Go, Rust:** `//>` and `//`
+**SQL:** `-->` and `--`
+
+## Command-Line Options
+
+```
+--config PATH         Configuration file (.py or .json)
+-n, --name TEXT       Project name
+-d, --description TEXT Project description (Markdown supported)
+-w, --wrap INTEGER    Wrap code lines at N characters (0 = no wrap)
+-b, --base-url TEXT   Base URL for generated site
+-v, --verbose         Show detailed output
+-o, --output PATH     Output directory (default: ./docs/)
+--help                Show help message
+--llm-txt             Display this LLM usage guide
+```
+
+## Common Use Cases
+
+### 1. Local Development Documentation
+```bash
+# Create config
+cat > litterate.config.py << EOF
+name = "My Project"
+description = "Development documentation"
+files = ["./src/**/*.py"]
+baseURL = "./"  # Relative paths for local viewing
+output_directory = "./docs/"
+EOF
+
+# Generate
+litterate --config litterate.config.py
+
+# View
+open docs/index.html
+```
+
+### 2. GitHub Pages Deployment
+```python
+# litterate.config.py
+name = "My Project"
+description = "Public documentation"
+files = ["./src/**/*.py"]
+baseURL = "/repository-name"  # Match your GitHub repo name
+output_directory = "./docs/"
+```
+
+Generate and commit:
+```bash
+litterate --config litterate.config.py
+git add docs/
+git commit -m "Generate documentation"
+git push
+```
+
+Then enable GitHub Pages in repository settings (deploy from `docs/` folder).
+
+### 3. Multi-Language Project
+```python
+# litterate.config.py
+name = "Full Stack App"
+files = [
+    "./backend/**/*.py",
+    "./frontend/**/*.js",
+    "./frontend/**/*.ts",
+]
+
+# For Python files, use #> markers (default)
+# For JS/TS files, you may want separate configs or use #> in JS comments too
+```
+
+### 4. Custom Line Wrapping
+```bash
+# Wrap long code lines at 80 characters
+litterate -w 80 --config myconfig.py
+```
+
+## Output Structure
+
+Generated documentation:
+```
+docs/
+├── index.html           # Landing page with file list
+├── main.css            # Styles
+└── src/                # Mirrors source directory structure
+    ├── main.py.html
+    └── utils/
+        └── helper.py.html
+```
+
+## Tips for LLMs
+
+1. **When helping users generate docs:**
+   - First check if `litterate.config.py` exists
+   - If not, create one with appropriate settings
+   - Run `litterate --config litterate.config.py`
+
+2. **For local viewing:**
+   - Use `baseURL = "./"`
+   - Users can open `docs/index.html` directly in browser
+
+3. **For web deployment:**
+   - Use `baseURL = "/project-name"` for GitHub Pages
+   - Use `baseURL = "/"` for root domain deployment
+
+4. **Multi-language support:**
+   - Change `annotation_start_mark` and `annotation_continue_mark`
+   - For JS/TS: `//>` and `//`
+   - For any language: use its line comment syntax
+
+5. **Annotation writing:**
+   - Start annotation block with marker + `>`
+   - Continue with just the base marker
+   - Regular comments (without `>`) are ignored
+   - Full Markdown syntax supported in annotations
+
+## Examples
+
+### Example 1: Simple Python project
+```bash
+# One-liner with defaults
+litterate
+
+# Opens docs/index.html with all files from src/**/*.py annotated
+```
+
+### Example 2: Custom configuration
+```bash
+# Create config
+cat > litterate.config.py << 'EOF'
+name = "Data Processing Pipeline"
+description = """
+A high-performance data processing system.
+See [GitHub](https://github.com/user/repo) for more.
+"""
+files = ["./pipeline/**/*.py", "./tests/**/*.py"]
+output_directory = "./documentation/"
+wrap = 100
+EOF
+
+# Generate with verbose output
+litterate -v --config litterate.config.py
+```
+
+### Example 3: JavaScript project
+```bash
+cat > litterate.config.py << 'EOF'
+name = "React Application"
+files = ["./src/**/*.js", "./src/**/*.jsx"]
+annotation_start_mark = "//>"
+annotation_continue_mark = "//"
+baseURL = "/my-app"
+EOF
+
+litterate --config litterate.config.py
+```
+
+## Verification
+
+After generation:
+1. Check `docs/index.html` exists
+2. Verify all source files listed on index page
+3. Click through to individual file pages
+4. Ensure CSS loads correctly (check browser console if styling is broken)
+
+## Common Issues
+
+**No files found:**
+- Check glob patterns in config
+- Use `-v` for verbose output to see what's matched
+- Ensure files exist at specified paths
+
+**Broken links/styling:**
+- Verify `baseURL` is correct for your deployment
+- Local viewing: `baseURL = "./"`
+- GitHub Pages: `baseURL = "/repo-name"`
+
+**Annotations not appearing:**
+- Check `annotation_start_mark` matches your comment style
+- Ensure lines start with marker (e.g., `#>` not `  #>`)
+- Continuation lines must start with continue marker
+
+## Reference
+
+Project: https://github.com/thesephist/litterate
+Python port using pixi package management
+Dependencies: markdown, jinja2, click
+Output: Static HTML site with syntax-highlighted code + annotations
