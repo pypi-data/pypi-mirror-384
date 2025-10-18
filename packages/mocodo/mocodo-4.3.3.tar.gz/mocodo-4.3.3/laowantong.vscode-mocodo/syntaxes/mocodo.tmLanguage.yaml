@@ -1,0 +1,210 @@
+---
+name: Mocodo
+scopeName: source.mocodo
+uuid: 2AD24A5A-63C9-40B3-B6AA-E240B7B54480
+
+# Warning: yaml_to_json_tmlanguage.py will suppress all " " symbols from the regexes.
+
+variables:
+  latin: 'a-zA-Z\u00C0-\u024F\u1E00-\u1EFF'
+  attr: '(?=[{{latin}}0-9]) [^\[\]>,]*[^\[\]>,\s]'
+  box_def_prefix: '\+|-'
+  constraint_name: '\([{{latin}}\d_\s]{0,3}\)'
+  card_hidden: '-'
+  card_prefix: '[_/]'
+  colon: '\s*:\s*'
+  comma: '\s*,\s*'
+  constraint_leg: '<?(?:\.+|-+)>?'
+  id_symbols: '(?: \d*0\d*_|_)'
+  alt_id_symbols: '[1-9]+_'
+  inheritance_name: '/ (?: XT\d?|TX\d?|X\d?|T\d?|\d? ) \\{1,2}'
+  inheritance_arrow: '(?: <==?|<--?|--?>|==?> )'
+  leg_arrow: '[<>]'
+  morethan: '\s*>\s*'
+  note: \[.*?\]
+  number: '-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'
+  box_name: '(?=[{{latin}}]) [^=<>,:\\]* [^-\[\]\\=<>,:\s\\]'
+  card: '(?![-_\/]) (?:[\w?]{2}) (?=[\s]*[^\w,\r\n:])'
+  constraint_coord: '(?: {{number}} | {{box_name}} )'
+  foreign_reference: '#{{attr}} {{morethan}} {{attr}} {{morethan}} {{attr}}'
+  entity_or_table_attr: '(?: {{attr}} | {{foreign_reference}} )'
+
+patterns:
+- include: "#indent"
+- include: "#comment"
+- include: "#phantoms"
+- include: "#constraint_clause"
+- include: "#inheritance_clause"
+- include: "#association_clause"
+- include: "#entity_clause"
+- include: "#invalid"
+
+repository:
+
+  indent:
+    match: ^\s+
+
+  comment:
+    patterns:
+    - # Jupyter cell magic command, interpreted as a comment
+      match: '%%mocodo\b.*$'
+      name: "markup.bold comment.line.magic.mocodo"
+    - # Normal comment line
+      match: '%.*$'
+      name: comment.line.normal.mocodo
+
+  phantoms:
+    description: A line containing at least one colon, ane nothing else but spaces and colons
+    match: ':[:\s]*$'
+    name: "markup.italic punctuation.separator.phantom.mocodo"
+
+  association_clause:
+    name: association.mocodo
+    begin: '({{box_def_prefix}})? ({{box_name}}) (?={{comma}})'
+    end: '$|^'
+    beginCaptures:
+      '1': { name: keyword.control.mocodo }
+      '2': { name: "markup.bold support.function.association.mocodo" }
+    patterns:
+      - include: "#association_legs"
+
+  association_legs:
+    name: legs.mocodo
+    begin: ''
+    end: '$|^'
+    patterns:
+      - match: >- # Multiline string without a linebreak appended at the end.
+          {{comma}}
+          (?: ({{card_hidden}})? ({{card_prefix}})? ({{card}}))? ({{leg_arrow}})? \s*
+          ({{note}})? \s*
+          ({{box_name}}) \s*
+        captures:
+          '1': { name: keyword.control.card_hidden.mocodo }
+          '2': { name: keyword.control.card_prefix.mocodo }
+          '3': { name: support.function.cardinality.mocodo }
+          '4': { name: keyword.control.arrow.mocodo }
+          '5': { name: string.regexp.note.mocodo }
+          '6': { name: token.info-token.entity.mocodo }
+      - include: "#association_attrs"
+      - include: "#invalid"
+
+  association_attrs:
+    name: attrs.mocodo
+    begin: "{{colon}}"
+    end: '$|^'
+    patterns:
+      - include: "#typed_attr"
+      - match: '{{comma}}'
+        name: punctuation.separator
+  
+  typed_attr:
+    name: typed_attribute.mocodo
+    match: '({{attr}}) \s* ({{note}})? \s*'
+    captures:
+      '1': { name: support.type.attribute.mocodo }
+      '2': { name: "markup.italic token.warn-token.datatype.mocodo" }
+
+  entity_clause:
+    name: entity.mocodo
+    begin: '( {{box_def_prefix}} )? ( {{box_name}} ) {{colon}}'
+    end: '$|^'
+    beginCaptures:
+      '1': { name: keyword.control.mocodo }
+      '2': { name: "markup.bold token.info-token.entity.mocodo" }
+    patterns:
+      - include: "#entity_first_attr"
+  
+  entity_first_attr:
+    # After the entity's name, process the first attribute
+    # Underline it iff it is **not** prefixed by id_symbols.
+    begin: '(?: ({{id_symbols}}) ({{entity_or_table_attr}}) | ({{alt_id_symbols}})? ({{entity_or_table_attr}}) | ) \s* ({{note}})?'
+    end: '$|^'
+    beginCaptures:
+      '1': { name: string.regexp.id_symbols.mocodo }
+      '2': { name: support.type.attribute.mocodo}
+      '3': { name: string.regexp.alt_id_symbols.mocodo }
+      '4': { name: "markup.underline support.type.attribute.mocodo" }
+      '5': { name: "markup.italic token.warn-token.datatype.mocodo" }
+    patterns:
+      - include: "#entity_next_attrs"
+      - include: "#invalid"
+    
+  entity_next_attrs:
+    # After the first attribute, process the remaining ones.
+    # Underline them iff they are prefixed by a "_" symbol.
+    patterns:
+      - match: '{{comma}} (?: ({{id_symbols}}) ({{entity_or_table_attr}}) | ({{alt_id_symbols}})? ({{entity_or_table_attr}}) | ) \s* ({{note}})?'
+        captures:
+          '1': { name: string.regexp.id_symbols.mocodo }
+          '2': { name: "markup.underline support.type.attribute.mocodo" }
+          '3': { name: string.regexp.alt_id_symbols.mocodo }
+          '4': { name: support.type.attribute.mocodo}
+          '5': { name: "markup.italic token.warn-token.datatype.mocodo" }
+      - include: '#invalid'
+
+  constraint_clause:
+    name: constraint.mocodo
+    begin: '({{constraint_name}}) \s* ({{note}})? \s*'
+    end: '$|^'
+    beginCaptures:
+      '1': { name: markup.bold variable.constraint_name.mocodo }
+      '2': { name: string.regexp.note.mocodo }
+    patterns:
+      - include: "#constraint_targets"
+
+  constraint_targets:
+    name: targets.mocodo
+    begin: ''
+    end: '$|^'
+    patterns:
+      - match: '({{constraint_leg}})? \s* ({{box_name}})'
+        captures:
+          '1': { name: string.regexp.constraint_leg.mocodo }
+          '2': { name: variable.other.constant.box.mocodo }
+      - match: '{{comma}}'
+      - include: "#constraint_coords"
+      - include: "#invalid"
+  
+  constraint_coords:
+    name: coords.mocodo
+    match: '{{colon}} ({{constraint_coord}}) {{comma}} ({{constraint_coord}})$'
+    captures:
+      '1': { name: "markup.italic string.regexp.constraint_coords.mocodo" }
+      '2': { name: "markup.italic string.regexp.constraint_coords.mocodo" }
+
+  inheritance_clause:
+    name: inheritance.mocodo
+    begin: '({{inheritance_name}}) \s* ({{box_name}})? \s* ({{inheritance_arrow}}) \s*'
+    end: '$|^'
+    beginCaptures:
+      '1': { name: "markup.bold support.function.inheritance.mocodo markup.underline" }
+      '2': { name: token.info-token.parent.mocodo }
+      '3': { name: keyword.control.arrow.mocodo }
+    patterns:
+      - include: "#inheritance_children"
+
+  inheritance_children:
+    name: children.mocodo
+    begin: ''
+    end: '$|^'
+    patterns:
+      - match: '({{box_name}})'
+        name: token.info-token.child.mocodo
+      - match: '{{comma}}'
+      - include: "#inheritance_attrs"
+      - include: "#invalid"
+
+  inheritance_attrs:
+    name: attrs.mocodo
+    begin: '{{colon}}'
+    end: '$|^'
+    patterns:
+      - match: '{{attr}}'
+        name: "markup.italic string.regexp.inheritance_attribute.mocodo"
+      - match: '{{comma}}'
+      - include: "#invalid"
+
+  invalid:
+    match: '.+'
+    name: invalid.illegal.mocodo
+
