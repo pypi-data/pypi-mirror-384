@@ -1,0 +1,60 @@
+#!/usr/bin/env groovy
+
+def build() {
+    
+    checkout scm
+
+    stage('Build') {
+        sh '''
+            rm -rf build
+            mkdir build
+            cd build
+            cmake ..
+            make -j
+        '''
+    }
+
+    stage('Test') {
+        sh '''
+            cd build
+            make test
+        '''
+    }
+
+    stage('Deploy') {
+        if(env.BRANCH_NAME == "master") {
+            echo 'Nothing to deploy'
+        } else {
+            echo 'Branch is not master: skipping deployment'
+        }
+    }
+}
+
+try {
+
+    buildStatus = "OK"
+
+    parallel (
+        'x86_64': {
+            node('two-gpus-intel') {
+                build()
+            }
+        }
+    )
+
+} catch(e) {
+
+    buildStatus = "FAILED"
+    throw e
+
+} finally {
+
+    if(buildStatus == "FAILED") {
+        slackSend(channel:'#snap-ml-ops', color: 'danger',
+            message: "The pipeline ${currentBuild.fullDisplayName} failed: ${env.BUILD_URL}")
+    } else {
+        slackSend(channel: '#snap-ml-ops', color: 'good',
+            message: "The pipeline ${currentBuild.fullDisplayName} completed successfully: ${env.BUILD_URL}")
+    }
+
+}
