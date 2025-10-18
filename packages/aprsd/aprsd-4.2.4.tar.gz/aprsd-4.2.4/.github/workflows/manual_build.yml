@@ -1,0 +1,52 @@
+name: Manual Build docker container
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+        type: choice
+        options:
+        - info
+        - warning
+        - debug
+jobs:
+
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get Branch Name
+      id: branch-name
+      uses: tj-actions/branch-names@v8
+    - name: Extract Branch
+      id: extract_branch
+      run: |
+        echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+    - name: What is the selected branch?
+      run: |
+        echo "Selected Branch '${{ steps.extract_branch.outputs.branch }}'"
+    - name: Setup QEMU
+      uses: docker/setup-qemu-action@v3
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Login to Docker HUB
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Build the Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: "{{defaultContext}}:docker"
+        platforms: linux/amd64,linux/arm64
+        file: ./Dockerfile
+        build-args: |
+            INSTALL_TYPE=github
+            BRANCH=${{ steps.extract_branch.outputs.branch }}
+            BUILDX_QEMU_ENV=true
+        push: true
+        tags: |
+          hemna6969/aprsd:${{ steps.extract_branch.outputs.branch }}
