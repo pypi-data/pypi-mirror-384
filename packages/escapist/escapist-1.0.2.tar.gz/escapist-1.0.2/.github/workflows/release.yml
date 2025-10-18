@@ -1,0 +1,232 @@
+name: Release, Publish & Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release type"
+        required: true
+        type: choice
+        options:
+          - release:major
+          - release:minor
+          - release:patch
+        default: release:patch
+
+  pull_request:
+    types: [closed]
+
+env:
+  default-python: "3.13"
+
+jobs:
+  prepare-release:
+    name: 🔖 Prepare Release
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+      (contains(github.event.pull_request.labels.*.name, 'release:major') ||
+       contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+       contains(github.event.pull_request.labels.*.name, 'release:patch')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      pushed_sha: ${{ steps.commit_tag.outputs.pushed_sha }}
+
+    steps:
+      - name: 🔄 Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Fetch latest tag
+        run: |
+          git fetch --tags
+          latest_tag=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$latest_tag" >> $GITHUB_ENV
+
+      - name: 🧠 Determine bump type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            bump="${{ github.event.inputs.release }}"
+          else
+            labels=$(echo '${{ toJSON(github.event.pull_request.labels.*.name) }}')
+            if [[ "$labels" == *"release:major"* ]]; then
+              bump="release:major"
+            elif [[ "$labels" == *"release:minor"* ]]; then
+              bump="release:minor"
+            elif [[ "$labels" == *"release:patch"* ]]; then
+              bump="release:patch"
+            else
+              echo "No valid release label found. Exiting."
+              exit 1
+            fi
+          fi
+          echo "bump=$bump" >> $GITHUB_ENV
+
+      - name: 🧮 Calculate new version
+        id: version
+        run: |
+          IFS='.' read -r major minor patch <<< "${latest_tag#v}"
+          case "$bump" in
+            release:major) major=$((major+1)); minor=0; patch=0 ;;
+            release:minor) minor=$((minor+1)); patch=0 ;;
+            release:patch) patch=$((patch+1)) ;;
+          esac
+          new_version="v$major.$minor.$patch"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+          echo "new_version=$new_version" >> $GITHUB_ENV
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.default-python }}
+          cache: pip
+
+      - name: 📦 Install Nox
+        run: pip install nox
+
+      - name: 📝 Build changelog
+        run: |
+          nox --error-on-missing-interpreters --non-interactive --session changelog -- ${{ env.new_version }}
+
+      - name: ✂️ Extract release notes
+        run: |
+          python3 -c "
+          from pathlib import Path
+          import os
+
+          version = os.environ['new_version']
+          changelog = Path('docs/changelog.md')
+          output = Path('release_notes.md')
+
+          lines = changelog.read_text().splitlines(keepends=True)
+          in_section = False
+          notes = []
+
+          for line in lines:
+              if line.startswith(f'## [{version}]'):
+                  in_section = True
+              elif line.startswith('## [') and in_section:
+                  break
+              if in_section:
+                  notes.append(line)
+
+          output.write_text(''.join(notes))
+          print(f'Extracted release notes for {version}')
+          "
+
+      - name: ✅ Commit and tag release
+        id: commit_tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: release ${{ env.new_version }}" || echo "No changes to commit."
+          git tag -a "${{ env.new_version }}" -m "Release ${{ env.new_version }}"
+          git push origin HEAD --follow-tags
+          echo "pushed_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.new_version }}
+          name: Release ${{ env.new_version }}
+          body_path: release_notes.md
+  build:
+    name: 🛠️ Build Package
+    runs-on: ubuntu-latest
+    needs: prepare-release
+    permissions:
+      contents: read
+
+    outputs:
+      version: ${{ needs.prepare-release.outputs.new_version }}
+
+    steps:
+      - name: 🔄 Checkout repository at release commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare-release.outputs.pushed_sha }}
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.default-python }}
+          cache: pip
+
+      - name: 📦 Install Nox
+        run: pip install nox
+
+      - name: 🏗️ Build distribution
+        run: nox --error-on-missing-interpreters --non-interactive --session build
+
+      - name: 📤 Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifact
+          path: dist/*
+
+  publish-pypi:
+    name: 🚀 Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+
+    steps:
+      - name: 📥 Download dist artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: dist-artifact
+          path: dist
+
+      - name: 🧾 Generate SLSA attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "dist/*"
+
+      - name: 🧪 Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          print-hash: true
+
+  deploy-docs:
+    name: 📚 Deploy Docs
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - name: 🔄 Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.default-python }}
+          cache: pip
+
+      - name: 📦 Install Nox
+        run: pip install nox
+
+      - name: 🌍 Deploy docs via Mike
+        env:
+          MIKE_VERSION_PROVIDER: mike
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          nox --error-on-missing-interpreters --non-interactive --session deploy_docs -- ${{ needs.build.outputs.version }} "latest"
+          git push origin gh-pages
