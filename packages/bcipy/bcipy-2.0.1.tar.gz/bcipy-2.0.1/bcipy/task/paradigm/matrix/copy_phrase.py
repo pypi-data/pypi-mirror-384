@@ -1,0 +1,170 @@
+"""Matrix copy phrase task module.
+
+This module defines the Copy Phrase Task implementation using a Matrix display.
+The task allows users to copy a predefined phrase using a matrix-based interface.
+"""
+
+from psychopy import visual
+
+from bcipy.core.parameters import Parameters
+from bcipy.display import InformationProperties, StimuliProperties
+from bcipy.display.components.task_bar import CopyPhraseTaskBar
+from bcipy.display.main import PreviewParams
+from bcipy.display.paradigm.matrix.display import MatrixDisplay
+from bcipy.helpers.clock import Clock
+from bcipy.task import TaskMode
+from bcipy.task.paradigm.rsvp.copy_phrase import RSVPCopyPhraseTask
+
+
+class MatrixCopyPhraseTask(RSVPCopyPhraseTask):
+    """Matrix Copy Phrase Task.
+
+    This task allows users to copy a predefined phrase using a matrix-based
+    interface. The task initializes and runs all necessary components for
+    executing a copy phrase task.
+
+    Attributes:
+        name: Name of the task.
+        paradigm: Name of the paradigm.
+        mode: Task execution mode.
+        parameters: Task configuration parameters.
+        file_save: Path for saving task data.
+        fake: Whether to run in fake (testing) mode.
+        window: PsychoPy window for display.
+        experiment_clock: Task timing clock.
+        spelled_text: Currently spelled text.
+        PARAMETERS_USED: List of parameter names used by this task.
+    """
+
+    name = 'Matrix Copy Phrase'
+    paradigm = 'Matrix'
+    mode = TaskMode.COPYPHRASE
+
+    PARAMETERS_USED = [
+        "backspace_always_shown",
+        "decision_threshold",
+        "down_sampling_rate",
+        "feedback_duration",
+        "filter_high",
+        "filter_low",
+        "filter_order",
+        "fixation_color",
+        "font",
+        "info_color",
+        "info_color",
+        "info_height",
+        "info_height",
+        "info_pos_x",
+        "info_pos_y",
+        "info_text",
+        "info_text",
+        "is_txt_stim",
+        "lm_backspace_prob",
+        "matrix_columns",
+        "matrix_keyboard_layout",
+        "matrix_rows",
+        "matrix_stim_height",
+        "matrix_stim_pos_x",
+        "matrix_stim_pos_y",
+        "matrix_task_height",
+        "matrix_task_padding",
+        "matrix_width",
+        "max_incorrect",
+        "max_inq_len",
+        "max_inq_per_series",
+        "max_minutes",
+        "max_selections",
+        "min_inq_len",
+        "notch_filter_frequency",
+        "prestim_length",
+        "preview_box_text_size",
+        "preview_inquiry_error_prob",
+        "preview_inquiry_isi",
+        "preview_inquiry_key_input",
+        "preview_inquiry_length",
+        "preview_inquiry_progress_method",
+        "show_feedback",
+        "show_preview_inquiry",
+        "spelled_letters_count",
+        "stim_color",
+        "stim_jitter",
+        "stim_length",
+        "stim_number",
+        "stim_order",
+        "stim_pos_x",
+        "stim_pos_y",
+        "stim_space_char",
+        "target_color",
+        "task_buffer_length",
+        "task_color",
+        "task_text",
+        "time_fixation",
+        "time_flash",
+        "time_prompt",
+        "trial_window",
+        "trigger_type",
+    ]
+
+    def init_display(self) -> MatrixDisplay:
+        """Initialize the Matrix display.
+
+        Returns:
+            MatrixDisplay: Configured matrix display instance.
+        """
+        return init_display(self.parameters, self.window,
+                            self.experiment_clock, self.spelled_text)
+
+
+def init_display(
+        parameters: Parameters,
+        win: visual.Window,
+        experiment_clock: Clock,
+        starting_spelled_text: str) -> MatrixDisplay:
+    """Initialize a new Matrix display with given parameters.
+
+    Args:
+        parameters: Task configuration parameters.
+        win: PsychoPy window for display.
+        experiment_clock: Task timing clock.
+        starting_spelled_text: Initial text to display.
+
+    Returns:
+        MatrixDisplay: Configured matrix display instance.
+    """
+    info = InformationProperties(
+        info_color=[parameters['info_color']],
+        info_pos=[(parameters['info_pos_x'], parameters['info_pos_y'])],
+        info_height=[parameters['info_height']],
+        info_font=[parameters['font']],
+        info_text=[parameters['info_text']],
+    )
+
+    stimuli = StimuliProperties(stim_font=parameters['font'],
+                                stim_pos=(parameters['matrix_stim_pos_x'],
+                                          parameters['matrix_stim_pos_y']),
+                                stim_height=parameters['matrix_stim_height'],
+                                is_txt_stim=parameters['is_txt_stim'],
+                                prompt_time=parameters['time_prompt'],
+                                layout=parameters['matrix_keyboard_layout'])
+
+    task_bar = CopyPhraseTaskBar(win,
+                                 task_text=parameters['task_text'],
+                                 spelled_text=starting_spelled_text,
+                                 colors=[parameters['task_color']],
+                                 font=parameters['font'],
+                                 height=parameters['matrix_task_height'],
+                                 padding=parameters['matrix_task_padding'])
+
+    return MatrixDisplay(
+        win,
+        experiment_clock,
+        stimuli,
+        task_bar,
+        info,
+        rows=parameters['matrix_rows'],
+        columns=parameters['matrix_columns'],
+        width_pct=parameters['matrix_width'],
+        height_pct=1 - (2 * task_bar.height_pct),
+        trigger_type=parameters['trigger_type'],
+        should_prompt_target=False,
+        preview_config=parameters.instantiate(PreviewParams))
