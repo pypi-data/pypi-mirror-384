@@ -1,0 +1,1 @@
+from pancad.filetypes.part_file import PartFile
