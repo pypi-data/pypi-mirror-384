@@ -1,0 +1,9 @@
+from typing import Protocol, Type, Dict, Any
+from pydantic import BaseModel
+from sqlmodel import SQLModel
+
+class RLSStrategy(Protocol):
+    """Builds RLS conditions & guards writes."""
+    def condition(self, Model: Type[SQLModel], user: Any) -> Any: ...
+    def inject_on_create(self, Model: Type[SQLModel], data: Dict[str, Any], user: Any) -> None: ...
+    def guard_update(self, Model: Type[SQLModel], db_obj: Any, changes: Dict[str, Any], user: Any) -> None: ...
