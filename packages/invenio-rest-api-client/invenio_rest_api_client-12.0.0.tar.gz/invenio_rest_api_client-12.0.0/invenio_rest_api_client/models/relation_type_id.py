@@ -1,0 +1,41 @@
+from enum import Enum
+
+
+class RelationTypeId(str, Enum):
+    CITES = "cites"
+    COMPILES = "compiles"
+    CONTINUES = "continues"
+    DESCRIBES = "describes"
+    DOCUMENTS = "documents"
+    HASMETADATA = "hasmetadata"
+    HASPART = "haspart"
+    HASVERSION = "hasversion"
+    ISCITEDBY = "iscitedby"
+    ISCOMPILEDBY = "iscompiledby"
+    ISCONTINUEDBY = "iscontinuedby"
+    ISDERIVEDFROM = "isderivedfrom"
+    ISDESCRIBEDBY = "isdescribedby"
+    ISDOCUMENTEDBY = "isdocumentedby"
+    ISIDENTICALTO = "isidenticalto"
+    ISMETADATAFOR = "ismetadatafor"
+    ISNEWVERSIONOF = "isnewversionof"
+    ISOBSOLETEDBY = "isobsoletedby"
+    ISORIGINALFORMOF = "isoriginalformof"
+    ISPARTOF = "ispartof"
+    ISPREVIOUSVERSIONOF = "ispreviousversionof"
+    ISPUBLISHEDIN = "ispublishedin"
+    ISREFERENCEDBY = "isreferencedby"
+    ISREQUIREDBY = "isrequiredby"
+    ISREVIEWEDBY = "isreviewedby"
+    ISSOURCEOF = "issourceof"
+    ISSUPPLEMENTEDBY = "issupplementedby"
+    ISSUPPLEMENTTO = "issupplementto"
+    ISVARIANTFORMOF = "isvariantformof"
+    ISVERSIONOF = "isversionof"
+    OBSOLETES = "obsoletes"
+    REFERENCES = "references"
+    REQUIRES = "requires"
+    REVIEWS = "reviews"
+
+    def __str__(self) -> str:
+        return str(self.value)
