@@ -1,0 +1,1007 @@
+{% extends "enap_designsystem/base.html" %}
+{% load static %}
+{% load wagtailcore_tags wagtailimages_tags %}
+{% load math_tags %}
+
+{% block metadata %}
+    {% comment %} <meta name="viewport" content="width=device-width, initial-scale=1.0"> {% endcomment %}
+{% endblock %}
+
+
+{% block title %}
+	<title>{{ page.title }}</title>
+{% endblock %}
+
+
+{%block govnavbar %}
+    <div style="background-color: #071E41;">
+        <div class="menu">
+            <div class="logo">
+                <img style="width: 51px; height: 18px;" src="{% static 'enap_designsystem/icons/logo-white.png' %}" alt="Passar pro lado esquerdo" alt="Logo GovBR" height="40">
+            </div>
+            <a href="https://www.gov.br/secom/pt-br/acesso-a-informacao/comunicabr">Comunica BR</a>
+            <div class="separator"></div>
+            <a href="https://www.gov.br/acessoainformacao/pt-br">Acesso à informação</a>
+            <div class="separator"></div>
+            <a href="https://www.gov.br/pt-br/participacao-social/">Participe</a>
+            <div class="separator"></div>
+            <a href="https://www4.planalto.gov.br/legislacao/">Legislação</a>
+            <div class="separator"></div>
+            <a href="https://www.gov.br/pt-br/orgaos-do-governo">Órgãos do Governo</a>
+        </div>
+    </div>
+{% endblock %}
+
+
+{% block navbar %}
+    {% if page.navbar %}
+        {% include "enap_designsystem/blocks/navbar/navbar_block.html" with navbar=page.navbar %}
+    {% else %}
+        <p style="color: red;">DEBUG: Nenhuma Navbar foi definida.</p>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="page-wrapper">
+    <div class="hearder-search">
+        <!-- Na sua página -->
+        {% include "enap_designsystem/blocks/auto_breadcrumb_block.html" with value=breadcrumb_config %}
+        <div class="">
+            <div class="space-header">
+            <div>
+                <h1 class="title-large-green">
+                    {% if query %}
+                        "{{ query }}"
+                    {% else %}
+                        Todos os resultados disponíveis
+                    {% endif %}
+                </h1>
+                <p class="result-info">
+                    {{ tabs_totais.todos|default:"0" }} Resultado{% if tabs_totais.todos != 1 %}s{% endif %} em todo o ENAP.GOV.BR
+                </p>
+            </div>
+            <div class="tab">
+                <a class="tabbusca tab-btn {% if tipo == 'cursos' %}active{% endif %} tabcursos"
+                href="?q={{ query }}&tipo=cursos&ordenacao=relevantes">
+                    Cursos
+                    <span id="resultInfoTab" class="tab-count">{{ tabs_totais.cursos }}</span>
+                </a>
+
+                <a class="tabbusca tab-btn {% if tipo == 'servicos' %}active{% endif %} tabservicos"
+                href="?q={{ query }}&tipo=servicos&ordenacao=relevantes">
+                    Serviços
+                    <span class="tab-count">{{ tabs_totais.servicos }}</span>
+                </a>
+
+                <a class="tabbusca tab-btn {% if tipo == 'noticias' %}active{% endif %} tabnoticiais"
+                href="?q={{ query }}&tipo=noticias&ordenacao=recentes">
+                    Notícias
+                    <span class="tab-count">{{ tabs_totais.noticias }}</span>
+                </a>
+
+                <a class="tabbusca tab-btn {% if tipo == 'eventos' %}active{% endif %} tabeventos"
+                href="?q={{ query }}&tipo=eventos&ordenacao=recentes">
+                    Eventos e Oficinas
+                    <span class="tab-count">{{ tabs_totais.eventos }}</span>
+                </a>
+
+                <a class="tabbusca tab-btn {% if tipo == 'pesquisa_conhecimento' %}active{% endif %} tabpesquisa"
+                href="?q={{ query }}&tipo=pesquisa_conhecimento&ordenacao=relevantes">
+                    Pesquisa e Conhecimento
+                    <span class="tab-count">{{ tabs_totais.pesquisa_conhecimento }}</span>
+                </a>
+
+                <a class="tabbusca tab-btn {% if tipo == 'todos' %}active{% endif %} tabtodos"
+                href="?q={{ query }}&tipo=todos&ordenacao=relevantes">
+                    Todos
+                    <span class="tab-count">{{ tabs_totais.todos }}</span>
+                </a>
+            </div>
+        </div>
+        </div>
+    </div>
+    <div class="cor-fundo-pesquisa">
+    {% if tipo == "cursos" %}
+        <div class="filter-container">
+            <div id="SrvTab01" class="srv-tabcontent" style="display: block;">
+                <div class="srv-filter-container">
+                    <a href="?q={{ query }}&tipo=cursos&ordenacao=recentes">
+                        <button class="srv-filter-btn {% if ordenacao == 'recentes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                            Mais Recentes
+                        </button>
+                    </a>
+                    <a href="?q={{ query }}&tipo=cursos&ordenacao=relevantes">
+                        <button class="srv-filter-btn {% if ordenacao == 'relevantes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                            Mais Relevantes
+                        </button>
+                    </a>
+                    
+                </div>
+                <div class="srv-filter-content_cards">
+                    <div class="filtro-btn-group">
+                        <button class="toggle-filtro-btn" onclick="toggleFiltros()">
+                            <span class="material-icons">filter_list</span> Filtros
+                        </button>
+                        <!-- Botão Limpar -->
+                        <button type="button" class="filtro-limpar" id="limpar-filtros" onclick="limparFiltros()" style="display: none;">
+                            <i style="text-decoration: none; font-size: 20px;" class="fa-solid fa-xmark"></i>
+                            <span style="text-decoration: underline;">Limpar Filtros</span>
+                        </button>
+                    </div>
+                    <div id="resultInfoWrapper" class="result-info-wrapper">
+                        {% with pagination.current_page|add:"-1" as page_offset %}
+                            {% with page_offset|add:"0"|mul:10 as start %}
+                                {% with start|add:"1" as start_display %}
+                                    {% with start_display|add:results|length|add:"-1" as end_display %}
+                                        <div class="srv-result-info">
+                                            {{ pagination.start_display }} - {{ pagination.end_display }} de {{ results_count }} resultados encontrados
+                                        </div>
+                                    {% endwith %}
+                                {% endwith %}
+                            {% endwith %}
+                        {% endwith %}
+                    </div>
+                </div>
+                <form id="filtroForm" method="get">
+                    <input type="hidden" name="q" value="{{ query }}">
+                    <input type="hidden" name="tipo" value="cursos">
+                    <input type="hidden" name="ordenacao" value="{{ ordenacao }}">
+
+                    <!-- 🔥 Aqui começa o wrapper com filtros e cards lado a lado -->
+                    <div class="filtro-wrapper" id="filtroWrapper">
+                        <!-- Filtros -->
+                        <div class="filtro-sidebar" id="filtroSidebar">
+                            <div class="dropdown-filter">
+                                <div class="dropdown-header" onclick="toggleDropdown('modalidade')">
+                                    <span id="modalidade-nome-filtro">Modalidade</span>
+                                    <div class="contador-e-seta">
+                                        <span id="modalidade-count" class="filter-count"></span>
+                                        <i class="dropdown-arrow fa-solid fa-caret-down"></i>
+                                    </div>
+                                </div>
+                                <div class="dropdown-checkbox-area" id="modalidade-dropdown">
+                                    <div class="checkbox-container">
+                                        {% for item in filtros.modalidade %}
+                                            <div class="checkbox-item">
+                                                <input type="checkbox" 
+                                                    name="modalidade" 
+                                                    id="modalidade_{{ item.id }}" 
+                                                    value="{{ item.id }}"
+                                                    >
+                                                <label for="modalidade_{{ item.id }}">{{ item.nome }}</label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dropdown-filter">
+                                <div class="dropdown-header" onclick="toggleDropdown('inscricoes')">
+                                    <span id="inscricoes-nome-filtro">Inscrições</span>
+                                    <div class="contador-e-seta">
+                                        <span id="inscricoes-count" class="filter-count"></span>
+                                        <i class="dropdown-arrow fa-solid fa-caret-down"></i>
+                                    </div>
+                                </div>
+                                <div class="dropdown-checkbox-area" id="inscricoes-dropdown">
+                                    <div class="checkbox-container">
+                                        {% for item in filtros.inscricoes %}
+                                            <div class="checkbox-item">
+                                                <input type="checkbox" 
+                                                    name="inscricoes" 
+                                                    id="inscricoes_{{ item.id }}" 
+                                                    value="{{ item.id }}"
+                                                    >
+                                                <label for="inscricoes_{{ item.id }}">{{ item.nome }}</label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dropdown-filter">
+                                <div class="dropdown-header" onclick="toggleDropdown('temas')">
+                                    <span id="temas-nome-filtro">Temas</span>
+                                    <div class="contador-e-seta">
+                                        <span id="temas-count" class="filter-count"></span>
+                                        <i class="dropdown-arrow fa-solid fa-caret-down"></i>
+                                    </div>
+                                </div>
+                                <div class="dropdown-checkbox-area" id="temas-dropdown">
+                                    <div class="checkbox-container">
+                                        {% for item in filtros.temas %}
+                                            <div class="checkbox-item">
+                                                <input type="checkbox" 
+                                                    name="temas" 
+                                                    id="temas_{{ item.id }}" 
+                                                    value="{{ item.nome }}"
+                                                    >
+                                                <label for="temas_{{ item.id }}">{{ item.nome }}</label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dropdown-filter">
+                                <div class="dropdown-header" onclick="toggleDropdown('categoria')">
+                                    <span id="categoria-nome-filtro">Categoria</span>
+                                    <div class="contador-e-seta">
+                                        <span id="categoria-count" class="filter-count"></span>
+                                        <i class="dropdown-arrow fa-solid fa-caret-down"></i>
+                                    </div>
+                                </div>
+                                <div class="dropdown-checkbox-area" id="categoria-dropdown">
+                                    <div class="checkbox-container">
+                                        {% for item in filtros.categoria %}
+                                            <div class="checkbox-item">
+                                                <input type="checkbox" 
+                                                    name="categoria" 
+                                                    id="categoria_{{ item.id }}" 
+                                                    value="{{ item.nome }}"
+                                                    >
+                                                <label for="categoria_{{ item.id }}">{{ item.nome }}</label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Competências convertido para checkbox -->
+                            <div class="dropdown-filter">
+                                <div class="dropdown-header" onclick="toggleDropdown('competencias')">
+                                    <span id="competencias-nome-filtro">Competências</span>
+                                    <div class="contador-e-seta">
+                                        <span id="competencias-count" class="filter-count"></span>
+                                        <i class="dropdown-arrow fa-solid fa-caret-down"></i>
+                                    </div>
+                                </div>
+                                <div class="dropdown-checkbox-area" id="competencias-dropdown">
+                                    <div class="checkbox-container">
+                                        {% for item in filtros.competencias %}
+                                            <div class="checkbox-item">
+                                                <input type="checkbox" 
+                                                    name="competencias"
+                                                    id="competencias_{{ item.id }}" 
+                                                    value="{{ item.descricao }}"
+                                                    >
+                                                <label for="competencias_{{ item.id }}">{{ item.descricao }}</label>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botões de ação no final da sidebar -->
+                            <div style="margin-top: 20px; padding: 0 20px; display: flex; flex-direction: column; gap: 10px;">
+                                <!-- Botão Aplicar -->
+                                <button id="btn-aplicar-filtros" class="filtro-aplicar" type="submit" onclick="submitForm()">
+                                    <span style="vertical-align: middle;" class="material-icons">filter_alt</span>
+                                    Aplicar Filtros 
+                                    <span id="contador-filtros"></span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Cards -->
+                        <div class="cards-grid-search" id="cardsGrid">
+                            {% for item in results %}
+                                <a class="link-card-search" href="{{ item.link }}" target="_blank" rel="noopener noreferrer">
+                                    <div class="card-primary_busca">
+                                        <div class="img-card_busca">
+                                            <img class="img_busca"
+                                                src="{% if item.imagem %}{{ item.imagem }}{% else %}{% static 'enap_designsystem/blocks/suap/default_1.png' %}{% endif %}"
+                                                alt="{{ item.titulo }}"
+                                            >
+                                        </div>
+                                        <div class="wrapper-text-card">
+                                            <div class="separar-cards">
+                                            {% if item.inscricoes %}
+                                                <span class="badge-inscricao">{{ item.inscricoes }}</span>
+                                            {% endif %}
+
+                                            <h2 class="h2-card">{{ item.titulo }}</h2>
+                                            <p class="p-card">{{ item.descricao|truncatewords:25 }}</p>
+                                        </div>
+                                        </div>
+                                    </div>
+                                </a>
+                            {% empty %}
+                                <p>Nenhum curso encontrado.</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </form>
+
+                <div id="paginacaoWrapper" class="paginacao-wrapper">
+                    <div class="paginacao">
+                        <button type="button" onclick="submitForm(1)" {% if not pagination.has_previous %}class="disabled"{% endif %}>&laquo;</button>
+                        <button type="button" onclick="submitForm({{ pagination.current_page|add:"-1" }})" {% if not pagination.has_previous %}class="disabled"{% endif %}>&lsaquo;</button>
+
+                        {% for num in pagination.pages %}
+                            <button type="button" onclick="submitForm({{ num }})" class="{% if num == pagination.current_page %}ativo{% endif %}">
+                                {{ num }}
+                            </button>
+                        {% endfor %}
+
+                        <button type="button" onclick="submitForm({{ pagination.current_page|add:"1" }})" {% if not pagination.has_next %}class="disabled"{% endif %}>&rsaquo;</button>
+                        <button type="button" onclick="submitForm({{ pagination.total_pages }})" {% if not pagination.has_next %}class="disabled"{% endif %}>&raquo;</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    {% elif tipo == "servicos" %}
+        <div class="filter-container">
+            <div id="SrvTab02" class="srv-tabcontent" style="display: block;">
+
+                <!-- Botões de ordenação -->
+                <div class="srv-filter-container">
+                    <a href="?q={{ query }}&tipo=servicos&ordenacao=recentes">
+                        <button class="srv-filter-btn {% if ordenacao == 'recentes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                            Mais Recentes
+                        </button>
+                    </a>
+                    <a href="?q={{ query }}&tipo=servicos&ordenacao=relevantes">
+                        <button class="srv-filter-btn {% if ordenacao == 'relevantes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                            Mais Relevantes
+                        </button>
+                    </a>
+                </div>
+
+                <!-- Lista de resultados -->
+                <div class="srv-filter-content">
+                    {% with pagination.current_page|add:"-1" as page_offset %}
+                        {% with page_offset|add:"0"|mul:10 as start %}
+                            {% with start|add:"1" as start_display %}
+                                {% with start_display|add:results|length|add:"-1" as end_display %}
+                                    <div class="srv-result-info">
+                                        {{ pagination.start_display }} - {{ pagination.end_display }} de {{ results_count }} resultados encontrados
+                                    </div>
+                                {% endwith %}
+                            {% endwith %}
+                        {% endwith %}
+                    {% endwith %}
+
+                    <div class="srv-card-horizontal-wrapper">
+                        {% for item in results %}
+                        <a class="link-card-search" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">
+                                <div class="srv-card-horizontal">
+                                    <div class="srv-card-content">
+                                        <div class="wrapper-text-news">
+                                            <span class="srv-card-badge">Serviços</span>
+                                            <h3 class="srv-card-title">{{ item.titulo }}</h3>
+                                            <p class="srv-card-text">
+                                                {{ item.introducao|default:item.descricao|striptags|truncatewords:40 }}
+                                            </p>
+                                        </div>
+                                        <div class="srv-card-meta">
+                                            {% if item.dataPublicacao %}
+                                                <div class="srv-card-date">
+                                                    <svg class="srv-card-date-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                        stroke-linejoin="round">
+                                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                                    </svg>
+                                                    {{ item.dataPublicacao|date:"d/m/Y" }}
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </a>
+                        {% empty %}
+                            <p>Nenhum serviço encontrado.</p>
+                        {% endfor %}
+                    </div>
+                    <div class="paginacao-wrapper">
+                        <div class="paginacao">
+                            <a href="?{{ pagination.base_querystring }}page=1" {% if not pagination.has_previous %}class="disabled"{% endif %}>&laquo;</a>
+                            <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"-1" }}" {% if not pagination.has_previous %}class="disabled"{% endif %}>&lsaquo;</a>
+
+                            {% for num in pagination.pages %}
+                                <a href="?{{ pagination.base_querystring }}page={{ num }}" class="{% if num == pagination.current_page %}ativo{% endif %}">{{ num }}</a>
+                            {% endfor %}
+
+                            <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"1" }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&rsaquo;</a>
+                            <a href="?{{ pagination.base_querystring }}page={{ pagination.total_pages }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&raquo;</a>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    {% elif tipo == "noticias" %}
+        
+        <div id="SrvNoImg" class="srv-tabcontent" style="display: block;">
+            <div class="srv-filter-container">
+                <a href="?q={{ query }}&tipo=noticias&ordenacao=recentes">
+                    <button class="srv-filter-btn srv-filter-option {% if ordenacao == 'recentes' %}active{% endif %}">
+                        Mais Recentes
+                    </button>
+                </a>
+                <a href="?q={{ query }}&tipo=noticias&ordenacao=relevantes">
+                    <button class="srv-filter-btn srv-filter-option {% if ordenacao == 'relevantes' %}active{% endif %}">
+                        Mais Relevantes
+                    </button>
+                </a>
+            </div>
+
+            {% with pagination.current_page|add:"-1" as page_offset %}
+                {% with page_offset|add:"0"|mul:10 as start %}
+                    {% with start|add:"1" as start_display %}
+                        {% with start_display|add:results|length|add:"-1" as end_display %}
+                            <div class="srv-result-info">
+                                {{ pagination.start_display }} - {{ pagination.end_display }} de {{ results_count }} resultados encontrados
+                            </div>
+                        {% endwith %}
+                    {% endwith %}
+                {% endwith %}
+            {% endwith %}
+
+            <div class="srv-card-wrapper">
+                {% for item in results %}
+                <a class="link-card-search" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">
+                    <div class="srv-card-horizontal">
+                        <div class="srv-card-image-container">
+                            {% comment %}Verifica se existe featured_image na página{% endcomment %}
+                            {% if item.imagem %}
+                                <img class="srv-card-image" src="{{ item.imagem }}" alt="{{ item.titulo }}">
+                                {% comment %}Usando apenas a primeira imagem encontrada{% endcomment %}
+                            {% else %}
+                                <!-- Imagem padrão da ENAP -->
+                                <img class="srv-card-image default-search-image" 
+                                    src="{% static 'enap_designsystem/blocks/suap/default_1.png' %}" 
+                                    alt="ENAP - {{ item.titulo }}">
+                            {% endif %}
+                        </div>
+                        <div class="srv-card-content">
+                            <h3 class="srv-card-title">{{ item.titulo }}</h3>
+                            <p class="srv-card-text">{{ item.introducao|default:item.descricao|striptags|truncatewords:40 }}</p>
+                            <div class="srv-card-meta">
+                                {% if item.data_publicacao %}
+                                    <div class="srv-card-date">
+                                        <svg class="srv-card-date-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </svg>
+                                        Publicado em: {{ item.data_publicacao|date:"d/m/Y" }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                {% empty %}
+                <div class="no-results-message">
+                    <div class="no-results-content">
+                        <img src="{% static 'enap_designsystem/blocks/suap/default_1.png' %}" 
+                            alt="ENAP" 
+                            class="no-results-image">
+                        <p>Nenhuma notícia encontrada.</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="paginacao-wrapper">
+                <div class="paginacao">
+                    <a href="?{{ pagination.base_querystring }}page=1" {% if not pagination.has_previous %}class="disabled"{% endif %}>&laquo;</a>
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"-1" }}" {% if not pagination.has_previous %}class="disabled"{% endif %}>&lsaquo;</a>
+
+                    {% for num in pagination.pages %}
+                        <a href="?{{ pagination.base_querystring }}page={{ num }}" class="{% if num == pagination.current_page %}ativo{% endif %}">{{ num }}</a>
+                    {% endfor %}
+
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"1" }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&rsaquo;</a>
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.total_pages }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&raquo;</a>
+                </div>
+            </div>
+        </div>
+    {% elif tipo == "pesquisa_conhecimento" %}
+        <div class="srv-tabcontent" style="display: block;">
+
+            <!-- Filtros de ordenação -->
+            <div class="srv-filter-container">
+                <a href="?q={{ query }}&tipo=pesquisa_conhecimento&ordenacao=recentes">
+                    <button class="srv-filter-btn {% if ordenacao == 'recentes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                        Mais Recentes
+                    </button>
+                </a>
+                <a href="?q={{ query }}&tipo=pesquisa_conhecimento&ordenacao=relevantes">
+                    <button class="srv-filter-btn {% if ordenacao == 'relevantes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                        Mais Relevantes
+                    </button>
+                </a>
+            </div>
+
+            <!-- Quantidade de resultados -->
+            {% with pagination.current_page|add:"-1" as page_offset %}
+                {% with page_offset|add:"0"|mul:10 as start %}
+                    {% with start|add:"1" as start_display %}
+                        {% with start_display|add:results|length|add:"-1" as end_display %}
+                            <div class="srv-result-info">
+                                {{ pagination.start_display }} - {{ pagination.end_display }} de {{ results_count }} resultados encontrados
+                            </div>
+                        {% endwith %}
+                    {% endwith %}
+                {% endwith %}
+            {% endwith %}
+
+            <!-- Lista de cards -->
+            <div class="srv-card-wrapper">
+                {% for item in results %}
+                    <a class="link-card-search" href="{{ item.link }}" target="_blank" rel="noopener noreferrer">
+                        <div class="srv-card">
+                            <div class="srv-card-tag">{{ item.origem|capfirst|default:"-" }}</div>
+                            <h3 class="srv-card-title">{{ item.titulo }}</h3>
+                            <div class="srv-card-meta">
+                                <div class="srv-card-info">
+                                    {% if item.autor %}
+                                        <div class="srv-card-info-item">Autor: {{ item.autor }}</div>
+                                    {% endif %}
+                                    {% if item.publicador %}
+                                        <div class="srv-card-info-item">Publicado por: {{ item.publicador }}</div>
+                                    {% endif %}
+                                    {% if item.linguagem %}
+                                        <div class="srv-card-info-item">Linguagem: {{ item.linguagem|cut:"Idioma::"|cut:":portuguese:pt" }}</div>
+                                    {% endif %}
+                                    {% if item.dataPublicacao %}
+                                        <div class="fo-item">Publicação: {{ item.dataPublicacao|date:"d/m/Y" }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                {% empty %}
+                    <p>Nenhum conteúdo encontrado.</p>
+                {% endfor %}
+            </div>
+
+            <div class="paginacao-wrapper">
+                <div class="paginacao">
+                    <a href="?{{ pagination.base_querystring }}page=1" {% if not pagination.has_previous %}class="disabled"{% endif %}>&laquo;</a>
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"-1" }}" {% if not pagination.has_previous %}class="disabled"{% endif %}>&lsaquo;</a>
+
+                    {% for num in pagination.pages %}
+                        <a href="?{{ pagination.base_querystring }}page={{ num }}" class="{% if num == pagination.current_page %}ativo{% endif %}">{{ num }}</a>
+                    {% endfor %}
+
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"1" }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&rsaquo;</a>
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.total_pages }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&raquo;</a>
+                </div>
+            </div>
+        </div>
+    {% elif tipo == "eventos" %}
+        <div class="srv-tabcontent" style="display: block;">
+
+            <!-- Filtros de ordenação -->
+            <div class="srv-filter-container">
+                <a href="?q={{ query }}&tipo=eventos&ordenacao=recentes">
+                    <button class="srv-filter-btn {% if ordenacao == 'recentes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                        Mais Recentes
+                    </button>
+                </a>
+                <a href="?q={{ query }}&tipo=eventos&ordenacao=relevantes">
+                    <button class="srv-filter-btn {% if ordenacao == 'relevantes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                        Mais Relevantes
+                    </button>
+                </a>
+            </div>
+
+            <!-- Quantidade de resultados -->
+            {% with pagination.current_page|add:"-1" as page_offset %}
+                {% with page_offset|add:"0"|mul:10 as start %}
+                    {% with start|add:"1" as start_display %}
+                        {% with start_display|add:results|length|add:"-1" as end_display %}
+                            <div class="srv-result-info">
+                                {{ pagination.start_display }} - {{ pagination.end_display }} de {{ results_count }} resultados encontrados
+                            </div>
+                        {% endwith %}
+                    {% endwith %}
+                {% endwith %}
+            {% endwith %}
+
+            <!-- Lista de cards -->
+            <div class="srv-card-wrapper">
+                {% for item in results %}
+                    <a class="link-card-search" href="{{ item.link }}" target="_blank" rel="noopener noreferrer">
+                        <div class="srv-card">
+                            {% if "oficina" in item.titulo|lower or "oficina" in item.descricao|lower or "oficina" in item.oferta|lower %}
+                            <div class="srv-card-tag">Oficina</div>
+                            {% else %}
+                            <div class="srv-card-tag">Evento</div>
+                            {% endif %}
+                            <h3 class="srv-card-title">{{ item.titulo }}</h3>
+                            <div class="srv-card-meta">
+                                <div class="srv-card-info">
+                                    {% if item.autor %}
+                                        <div class="srv-card-info-item">Autor: {{ item.autor }}</div>
+                                    {% endif %}
+                                    {% if item.publicador %}
+                                        <div class="srv-card-info-item">Publicado por: {{ item.publicador }}</div>
+                                    {% endif %}
+                                    {% if item.linguagem %}
+                                        <div class="srv-card-info-item">Linguagem: {{ item.linguagem|cut:"Idioma::"|cut:":portuguese:pt" }}</div>
+                                    {% endif %}
+                                    {% if item.inicioRealizacao %}
+                                        <div class="srv-card-info-item"><svg class="srv-card-date-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </svg> {{ item.inicioRealizacao|date:"d/m/Y" }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                {% empty %}
+                    <p>Nenhum conteúdo encontrado.</p>
+                {% endfor %}
+            </div>
+
+            <div class="paginacao-wrapper">
+                <div class="paginacao">
+                    <a href="?{{ pagination.base_querystring }}page=1" {% if not pagination.has_previous %}class="disabled"{% endif %}>&laquo;</a>
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"-1" }}" {% if not pagination.has_previous %}class="disabled"{% endif %}>&lsaquo;</a>
+
+                    {% for num in pagination.pages %}
+                        <a href="?{{ pagination.base_querystring }}page={{ num }}" class="{% if num == pagination.current_page %}ativo{% endif %}">{{ num }}</a>
+                    {% endfor %}
+
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"1" }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&rsaquo;</a>
+                    <a href="?{{ pagination.base_querystring }}page={{ pagination.total_pages }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&raquo;</a>
+                </div>
+            </div>
+        </div>
+    {% elif tipo == "todos" %}
+        <div id="TodosNoImg" class="srv-tabcontent" style="display: block;">
+            <div class="srv-filter-container">
+                <a href="?q={{ query }}&tipo=todos&ordenacao=recentes">
+                    <button class="srv-filter-btn {% if ordenacao == 'recentes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                        Mais Recentes
+                    </button>
+                </a>
+                <a href="?q={{ query }}&tipo=todos&ordenacao=relevantes">
+                    <button class="srv-filter-btn {% if ordenacao == 'relevantes' %}srv-filter-option active{% else %}srv-filter-option{% endif %}">
+                        Mais Relevantes
+                    </button>
+                </a>
+            </div>
+
+            <div class="srv-filter-content">
+                {% with pagination.current_page|add:"-1" as page_offset %}
+                    {% with page_offset|add:"0"|mul:10 as start %}
+                        {% with start|add:"1" as start_display %}
+                            {% with start_display|add:results|length|add:"-1" as end_display %}
+                                <div class="srv-result-info">
+                                    {{ pagination.start_display }} - {{ pagination.end_display }} de {{ results_count }} resultados encontrados
+                                </div>
+                            {% endwith %}
+                        {% endwith %}
+                    {% endwith %}
+                {% endwith %}
+                <div class="srv-card-wrapper">
+                    {% for item in results %}
+                        {% if item.url == null %}
+                        <a class="link-card-search" href="{{ item.link }}" target="_blank" rel="noopener noreferrer">
+                            <div class="srv-card">
+                                {% if item.origem %}
+                                    <div class="srv-card-tag">
+                                        {{ item.origem|capfirst }}
+                                    </div>
+                                {% else %}
+                                    <div class="srv-card-tag">
+                                        Página
+                                    </div>
+                                {% endif %}
+                                <h3 class="srv-card-title">{{ item.titulo }}</h3>
+                                <p class="srv-card-text">{{ item.descricao|truncatewords:30 }}</p>
+                                <div class="srv-card-meta">
+                                    <div class="srv-card-date">
+                                        <svg class="srv-card-date-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </svg>
+                                        {{ item.dataPublicacao|date:"d/m/Y" }}
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                        {% else %}
+                        <a class="link-card-search" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">
+                            <div class="srv-card">
+                                {% if item.origem %}
+                                    <div class="srv-card-tag">
+                                        {{ item.origem|capfirst }}
+                                    </div>
+                                {% else %}
+                                    <div class="srv-card-tag">
+                                        Página
+                                    </div>
+                                {% endif %}
+                                <h3 class="srv-card-title">
+                                    {% if item.titulo_2 == "" %}
+                                    {{ item.title }}
+                                    {% else %}
+                                    {{ item.titulo_2 }}
+                                    {% endif %}
+                                </h3>
+                                <p class="srv-card-text">{{ item.descricao_2|truncatewords:30 }}</p>
+                                <div class="srv-card-meta">
+                                    <div class="srv-card-date">
+                                        <svg class="srv-card-date-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </svg>
+                                        {{ item.data_publicacao|date:"d/m/Y" }}
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                        {% endif %}
+                    {% empty %}
+                        <p>Nenhum resultado encontrado.</p>
+                    {% endfor %}
+                </div>
+
+                <div class="paginacao-wrapper">
+                    <div class="paginacao">
+                        <a href="?{{ pagination.base_querystring }}page=1" {% if not pagination.has_previous %}class="disabled"{% endif %}>&laquo;</a>
+                        <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"-1" }}" {% if not pagination.has_previous %}class="disabled"{% endif %}>&lsaquo;</a>
+
+                        {% for num in pagination.pages %}
+                            <a href="?{{ pagination.base_querystring }}page={{ num }}" class="{% if num == pagination.current_page %}ativo{% endif %}">{{ num }}</a>
+                        {% endfor %}
+
+                        <a href="?{{ pagination.base_querystring }}page={{ pagination.current_page|add:"1" }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&rsaquo;</a>
+                        <a href="?{{ pagination.base_querystring }}page={{ pagination.total_pages }}" {% if not pagination.has_next %}class="disabled"{% endif %}>&raquo;</a>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    {% endif %}
+    </div>
+</section>
+<style>
+.cor-fundo-pesquisa{
+    background: linear-gradient(180deg, #ffffff 40px, #F5F7FA 40px);
+}
+
+.filter-count{
+    background: #025257;
+    color: white;
+    padding: 0px 6px 0px 6px;
+    border-radius: 100%;
+    font-weight: 400;
+    font-size: 12px;
+}
+
+.contador-e-seta{
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Estilo do esqueleto */
+.skeleton-card {
+    background: #e0e0e0;
+    animation: skeleton-loading 1.5s infinite ease-in-out;
+    min-width: 268px;
+    min-height: 450px;
+    border-radius: 20px;
+    box-shadow: inset 0 0 0 1px #DEE3ED;
+    margin-top: 20px;
+}
+
+
+.skeleton-card:nth-child(odd) {
+    animation-delay: 0.5s;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-color: #e0e0e0;
+    }
+    50% {
+        background-color: #f0f0f0;
+    }
+    100% {
+        background-color: #e0e0e0;
+    }
+}
+
+</style>
+{% endblock %}
+
+
+{% block footer %}
+    {% include "enap_designsystem/includes/footer.html" %}
+{% endblock %}
+
+{% block scriptinline %}
+    <script>
+        function submitForm(num=1) {
+            // Previne o envio tradicional do formulário
+            event.preventDefault();
+
+            var skeletonCards = Array(12).fill('<div class="skeleton-card"></div>').join('');
+            $("#cardsGrid").html(skeletonCards);
+
+            // Coleta os dados do formulário
+            var formData = $("#filtroForm").serialize() + "&page=" + num;
+            
+            // Faz a requisição AJAX
+            $.ajax({
+                url: $("#filtroForm").attr("action"),  // URL onde o formulário será enviado
+                type: "GET",                          // Método da requisição (GET, pois o seu formulário usa GET)
+                data: formData,                       // Dados a serem enviados
+                success: function(response) {
+                    // Atualiza a área de resultados com os novos cards
+                    $("#cardsGrid").html($(response).find("#cardsGrid").html());
+                    $("#resultInfoWrapper").html($(response).find("#resultInfoWrapper").html());
+                    $("#resultInfoTab").html($(response).find("#resultInfoTab").html());
+                    $("#paginacaoWrapper").html($(response).find("#paginacaoWrapper").html());
+                    var newURL = "?" + formData
+                    // Atualiza a URL para refletir os filtros
+                    history.pushState(null, null, newURL);
+                },
+                error: function(xhr, status, error) {
+                    // Em caso de erro
+                    console.error("Erro na requisição AJAX:", status, error);
+                }
+            });
+        }
+
+        function limparFiltros() {
+            // Desmarcar todos os checkboxes
+            document.querySelectorAll('#filtroForm input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            // Atualizar contador
+            updateFilterCounter();
+            
+            // Opcional: Aplicar automaticamente ou deixar o usuário decidir
+            submitForm();
+        }
+
+        function handleResponsiveFilters() {
+            const isMobile = $(window).width() < 768; // Verifica se a tela é menor que 768px
+            const checkboxes = $("input[type=checkbox]");  // Seleciona todos os checkboxes
+
+            // Em dispositivos móveis, ativa o envio apenas ao clicar no botão
+            if (isMobile) {
+                $("#btn-aplicar-filtros").show();  // Exibe o botão de "Aplicar Filtros"
+            } else {
+                // Em telas maiores que 768px, o envio será feito automaticamente ao marcar/desmarcar
+                checkboxes.off('change').on('change', function() {
+                    submitForm();  // Dispara a função submitForm ao marcar/desmarcar
+                });
+                $("#btn-aplicar-filtros").hide();  // Oculta o botão de "Aplicar Filtros"
+            }
+        }  
+
+        function toggleFiltros() {
+            const wrapper = document.getElementById('filtroWrapper');
+            const btn = document.querySelector('.toggle-filtro-btn');
+            wrapper.classList.toggle('filtro-aberto');
+            btn.classList.toggle('ativo');
+        }
+
+        function toggleDropdown(dropdownId) {
+            const dropdown = document.getElementById(dropdownId + '-dropdown');
+            const header = dropdown.previousElementSibling;
+            
+            // Fechar outros dropdowns
+            const allDropdowns = document.querySelectorAll('.dropdown-checkbox-area'); 
+            const allHeaders = document.querySelectorAll('.dropdown-header');
+            
+            // Toggle do dropdown atual
+            dropdown.classList.toggle('open');
+            header.classList.toggle('active');
+        }
+
+
+        function updateFilterCounter() {
+            const checkboxes = document.querySelectorAll('#filtroForm input[type="checkbox"]:checked');
+            const counter = document.getElementById('contador-filtros');
+            const limparBtn = document.getElementById('limpar-filtros');
+            const aplicarBtn = document.querySelector('.filtro-aplicar');
+
+            const count = checkboxes.length;
+
+            // Atualizar contador global
+            if (counter) {
+                counter.textContent = count > 0 ? `(${count})` : '';
+            }
+
+            // Mostrar/ocultar botão limpar
+            if (limparBtn) {
+                limparBtn.style.display = count > 0 ? 'flex' : 'none';
+            }
+
+            // Mudar cor do botão aplicar
+            if (aplicarBtn) {
+                aplicarBtn.style.backgroundColor = count > 0 ? '#025257' : '#007D7A';
+            }
+
+            // 🔁 Contar por grupo (ex: modalidade, categoria, etc.)
+            const filterGroups = ['modalidade', 'inscricoes', 'temas', 'categoria', 'competencias']; // Adicione aqui os nomes dos seus filtros
+
+            filterGroups.forEach(group => {
+                const groupCheckboxes = document.querySelectorAll(`#filtroForm input[name="${group}"]:checked`);
+                const groupCount = groupCheckboxes.length;
+                const groupCountElement = document.getElementById(`${group}-count`);
+                const filterNameElement = document.getElementById(`${group}-nome-filtro`);
+
+                if (groupCountElement) {
+                    groupCountElement.textContent = groupCount > 0 ? `${groupCount}` : '';
+                }
+
+                if (filterNameElement) {
+                    if (groupCount > 0) {
+                        filterNameElement.style.fontWeight = '700';
+                    } else {
+                        filterNameElement.style.fontWeight = '500';
+                    }
+                }
+            });
+        }
+
+        function keepFilterCheck() {
+            const filterGroups = ['modalidade', 'inscricoes', 'temas', 'categoria', 'competencias'];
+
+            filterGroups.forEach(group => {
+                const allGroupCheckboxes = document.querySelectorAll(`#filtroForm input[name="${group}"]`);
+                const urlParams = new URLSearchParams(window.location.search);
+                const paramValue = urlParams.getAll(`${group}`);
+
+                allGroupCheckboxes.forEach(checkbox => {
+                    if (paramValue.includes(checkbox.value)) {
+                        checkbox.checked = true;
+                    }
+                });
+            });
+        }
+        
+        // Inicializar
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkboxes = document.querySelectorAll('#filtroForm input[type="checkbox"]');
+            handleResponsiveFilters();
+            
+            window.addEventListener('resize', function() {
+                handleResponsiveFilters(); // Ajusta a lógica de filtros quando a tela for redimensionada
+            });
+
+            keepFilterCheck();
+
+            checkboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateFilterCounter);
+            });
+
+            updateFilterCounter();
+        });
+    </script>
+{% endblock %}
+
+
