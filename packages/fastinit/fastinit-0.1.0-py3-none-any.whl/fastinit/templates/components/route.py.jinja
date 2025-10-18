@@ -1,0 +1,86 @@
+"""{{ route_name }} routes."""
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List{% if pagination_type == 'cursor' %}, Optional{% endif %}
+
+from api.deps import get_db
+from services.{{ model_name | lower }}_service import {{ service_name }}
+from schemas.{{ model_name | lower }} import (
+    {{ model_name }}Create,
+    {{ model_name }}Update,
+    {{ model_name }}Response
+)
+
+router = APIRouter()
+
+
+@router.get("/{{ route_name }}", response_model=List[{{ model_name }}Response])
+def get_{{ route_name }}(
+{% if pagination_type == 'limit-offset' %}    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+{% elif pagination_type == 'cursor' %}    cursor: Optional[int] = None,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+{% else %}    db: Session = Depends(get_db)
+{% endif %}):
+    """Get all {{ route_name }}."""
+{% if pagination_type == 'limit-offset' %}    return {{ service_name }}.get_all(db, skip=skip, limit=limit)
+{% elif pagination_type == 'cursor' %}    return {{ service_name }}.get_all(db, cursor=cursor, limit=limit)
+{% else %}    return {{ service_name }}.get_all(db)
+{% endif %}
+
+
+@router.get("/{{ route_name }}/{id}", response_model={{ model_name }}Response)
+def get_{{ model_name | lower }}(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    """Get a {{ model_name }} by ID."""
+    item = {{ service_name }}.get_by_id(db, id)
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="{{ model_name }} not found"
+        )
+    return item
+
+
+@router.post("/{{ route_name }}", response_model={{ model_name }}Response, status_code=status.HTTP_201_CREATED)
+def create_{{ model_name | lower }}(
+    data: {{ model_name }}Create,
+    db: Session = Depends(get_db)
+):
+    """Create a new {{ model_name }}."""
+    return {{ service_name }}.create(db, **data.model_dump())
+
+
+@router.put("/{{ route_name }}/{id}", response_model={{ model_name }}Response)
+def update_{{ model_name | lower }}(
+    id: int,
+    data: {{ model_name }}Update,
+    db: Session = Depends(get_db)
+):
+    """Update a {{ model_name }}."""
+    item = {{ service_name }}.update(db, id, **data.model_dump(exclude_unset=True))
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="{{ model_name }} not found"
+        )
+    return item
+
+
+@router.delete("/{{ route_name }}/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_{{ model_name | lower }}(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a {{ model_name }}."""
+    success = {{ service_name }}.delete(db, id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="{{ model_name }} not found"
+        )

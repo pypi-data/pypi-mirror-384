@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PROJECT_NAME={{ project_name }}
+      {% if use_db %}
+      - DATABASE_URL={{ 'postgresql://postgres:postgres@db:5432/{{ project_name }}' if db_type == 'postgresql' else 'mysql://root:root@db:3306/{{ project_name }}' if db_type == 'mysql' else 'sqlite:///./app.db' }}
+      {% endif %}
+    {% if use_db and db_type != 'sqlite' %}
+    depends_on:
+      - db
+    {% endif %}
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  {% if use_db and db_type == 'postgresql' %}
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB={{ project_name }}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+  {% elif use_db and db_type == 'mysql' %}
+  db:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE={{ project_name }}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
+  {% endif %}

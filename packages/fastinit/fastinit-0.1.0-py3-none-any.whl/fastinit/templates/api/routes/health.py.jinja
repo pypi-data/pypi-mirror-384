@@ -1,0 +1,52 @@
+"""Health check endpoints."""
+
+from fastapi import APIRouter{% if use_db %}, Depends
+from sqlalchemy.orm import Session
+from api.deps import get_db{% endif %}
+{% if use_logging %}
+import logging
+
+logger = logging.getLogger(__name__)
+{% endif %}
+
+router = APIRouter()
+
+
+@router.get("/health")
+async def health_check():
+    """Basic health check endpoint."""
+    {% if use_logging %}
+    logger.info("Health check requested")
+    {% endif %}
+    return {"status": "healthy", "message": "Service is running"}
+
+
+{% if use_db %}
+@router.get("/health/db")
+async def database_health_check(db: Session = Depends(get_db)):
+    """Database health check endpoint."""
+    try:
+        # Try to execute a simple query
+        db.execute("SELECT 1")
+        {% if use_logging %}
+        logger.info("Database health check passed")
+        {% endif %}
+        return {"status": "healthy", "message": "Database connection is working"}
+    except Exception as e:
+        {% if use_logging %}
+        logger.error(f"Database health check failed: {str(e)}")
+        {% endif %}
+        return {"status": "unhealthy", "message": f"Database error: {str(e)}"}
+{% endif %}
+
+
+@router.get("/health/ready")
+async def readiness_check():
+    """Readiness check for Kubernetes/container orchestration."""
+    return {"status": "ready"}
+
+
+@router.get("/health/live")
+async def liveness_check():
+    """Liveness check for Kubernetes/container orchestration."""
+    return {"status": "alive"}
