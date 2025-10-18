@@ -1,0 +1,140 @@
+# Py3DGraphics
+
+Библиотека для создания и отображения 3D объектов с помощью Tkinter.
+
+## Установка
+
+```bash
+pip install treeed
+```
+
+## Быстрый старт
+
+Создайте вращающийся куб в пару строк:
+
+```python
+from py3dgraphics import create_cube, quick_scene
+
+cube = create_cube()  # Куб по умолчанию
+quick_scene(cube)     # Запуск сцены
+```
+
+## Пример использования
+
+```python
+from py3dgraphics import create_cube, quick_scene
+
+# Создание кубов с разными размерами и скоростями
+cube1 = create_cube(size=150, speed=0.02)  # Большой, быстрый
+cube2 = create_cube(size=75, speed=0.005)  # Маленький, медленный
+
+# Запуск сцены
+quick_scene(cube1, cube2)
+```
+
+## Расширенное использование
+
+```python
+from py3dgraphics import create_cube, Scene3D
+import time
+
+# Создание кубов
+cube = create_cube(size=150, speed=0.009, position=(300, 0, 0))
+cube1 = create_cube(size=120, speed=0.007)
+
+# Создание сцены
+scene = Scene3D()
+scene.add_object(cube)
+scene.add_object(cube1)
+
+# Анимация движения
+xp = 300
+while True:
+    xp += 1
+    cube.set_position(xp, 0, 0)  # Изменение позиции
+    scene.update_scene()  # Обновление сцены
+    time.sleep(0.05)
+```
+
+### Цвета и управление анимацией
+
+Объекты могут иметь разные цвета. Объекты вращаются только если их `speed > 0`. Для статичных объектов установите `speed=0`.
+
+```python
+from py3dgraphics import create_cube, quick_scene
+
+# Создание кубов с разными скоростями и цветами
+cube1 = create_cube(size=150, speed=0.02, color="red")  # Вращается
+cube2 = create_cube(size=75, speed=0, color="blue")     # Не вращается
+
+# Запуск сцены
+quick_scene(cube1, cube2)
+```
+
+### Управление объектом клавиатурой
+
+Вы можете управлять одним объектом с помощью клавиатуры (WASDQE для движения по осям X, Y, Z).
+
+```python
+from py3dgraphics import create_cube, quick_scene
+
+cube1 = create_cube(size=150, speed=0.02, color="red")
+cube2 = create_cube(size=75, speed=0, color="blue")  # Управляемый
+
+# Запуск сцены с управлением вторым кубом
+quick_scene(cube1, cube2, player=cube2)
+```
+
+Или ручное управление:
+
+```python
+from py3dgraphics import create_cube, Scene3D
+
+scene = Scene3D()
+scene.add_object(create_cube())
+scene.add_object(create_cube(size=100, position=(200, 0, 0), speed=0, color="green"))
+scene.set_player(scene.objects[1])  # Устанавливаем второго объекта как управляемого
+
+scene.run()
+```
+
+### Ручное создание объектов
+
+```python
+from py3dgraphics import Point3D, Object3D, Scene3D
+
+# Создание куба вручную
+CUBE_SIZE = 150
+points = [
+    [-CUBE_SIZE, -CUBE_SIZE, -CUBE_SIZE],
+    [ CUBE_SIZE, -CUBE_SIZE, -CUBE_SIZE],
+    [ CUBE_SIZE,  CUBE_SIZE, -CUBE_SIZE],
+    [-CUBE_SIZE,  CUBE_SIZE, -CUBE_SIZE],
+    [-CUBE_SIZE, -CUBE_SIZE,  CUBE_SIZE],
+    [ CUBE_SIZE, -CUBE_SIZE,  CUBE_SIZE],
+    [ CUBE_SIZE,  CUBE_SIZE,  CUBE_SIZE],
+    [-CUBE_SIZE,  CUBE_SIZE,  CUBE_SIZE]
+]
+edges = [
+    (0, 1), (1, 2), (2, 3), (3, 0),
+    (4, 5), (5, 6), (6, 7), (7, 4),
+    (0, 4), (1, 5), (2, 6), (3, 7)
+]
+
+cube = Object3D(points, edges, speed=0.02)
+scene = Scene3D()
+scene.add_object(cube)
+scene.run()
+```
+
+## Классы и функции
+
+- `Point3D`: Представляет 3D точку.
+- `Object3D`: Представляет 3D объект с точками и рёбрами.
+- `Scene3D`: Управляет сценой и отображением объектов.
+- `create_cube(size=150, speed=0.01)`: Создаёт куб с заданными параметрами.
+- `quick_scene(*objects, width=600, height=600, title="3D Сцена", bg="black")`: Быстро создаёт и запускает сцену с объектами.
+
+## Лицензия
+
+MIT
