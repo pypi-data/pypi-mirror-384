@@ -1,0 +1,121 @@
+from typing import Type, List
+from types import ModuleType
+from pathlib import Path
+from glob import glob
+import importlib
+import argparse
+import inspect
+import sys
+import os
+
+from config.database.connections import DatabaseManager
+
+class Command:
+    name = "seed"
+    help = "Seed the database with initial data"
+    description = (
+        "This command will seed the database with initial data. "
+        "It will create a superuser and some default roles and permissions."
+    )
+    commands = ["seed:all"]
+
+    def handle(self, args: List[str]):
+        parser = self._build_parser()
+        parsed_args, _ = parser.parse_known_args(args)
+
+        if not parsed_args.connection_name:
+            print("[ERROR] --connection is required.")
+            parser.print_help()
+            sys.exit(1)
+
+        database = DatabaseManager()
+
+        if parsed_args.connection_name == "global":
+            db= database.get_db_dependency("global")()
+            self.db = next(db)
+        else:
+            database.create_connection(parsed_args.connection_name)
+            db= database.get_db_dependency("client")()
+            self.db = next(db)
+
+        if parsed_args.class_name:
+            self.run_seeder_class(parsed_args.class_name)
+            sys.exit(0)
+
+        if parsed_args.cmd == "seed:all":
+            self.run_all_seeders()
+            sys.exit(0)
+
+        parser.print_help()
+        sys.exit(1)
+
+    def _build_parser(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser(description=self.description)
+        parser.add_argument("cmd", nargs="?", help="Comando: seed --class=SeederName o seed:all")
+        parser.add_argument("--connection", dest="connection_name", required=True, help="Database connection name")
+        parser.add_argument("--class", dest="class_name", required=False, help="Class name to run")
+        return parser
+
+    def run_all_seeders(self):
+        seeder_classes = self._discover_seeders()
+
+        if not seeder_classes:
+            print("[WARNING] No seeders found.")
+            return
+
+        total = 0
+        for cls in seeder_classes:
+            total += self._run_seeder_instance(cls)
+
+        print(f"[INFO] Total seeders run: {total}")
+
+    def run_seeder_class(self, class_name: str):
+        seeder_classes = self._discover_seeders()
+
+        for cls in seeder_classes:
+            if cls.__name__ == class_name:
+                self._run_seeder_instance(cls)
+                return
+
+        print(f"[ERROR] Seeder class '{class_name}' not found.")
+        sys.exit(1)
+
+    def _discover_seeders(self) -> List[Type[BaseSeeder]]:
+        base_dir = Path(__file__).resolve().parent.parent
+        seeder_files = glob(str(base_dir / "database" / "seeders" / "**" / "*.py"), recursive=True)
+
+        seeder_classes = []
+
+        for file_path in seeder_files:
+            if file_path.endswith("base.py"):
+                continue
+
+            module_path = self._convert_path_to_module(file_path, base_dir)
+
+            try:
+                module = importlib.import_module(module_path)
+                seeder_classes.extend(self._get_seeder_classes_from_module(module))
+            except ImportError as e:
+                print(f"[ERROR] Cannot import {module_path}: {e}")
+
+        return seeder_classes
+
+    def _convert_path_to_module(self, file_path: str, base_dir: Path) -> str:
+        relative_path = os.path.relpath(file_path, base_dir)
+        return relative_path.replace(os.path.sep, ".").replace(".py", "")
+
+    def _get_seeder_classes_from_module(self, module: ModuleType) -> List[Type[BaseSeeder]]:
+        return [
+            obj for _, obj in inspect.getmembers(module, inspect.isclass)
+            if issubclass(obj, BaseSeeder) and obj is not BaseSeeder
+        ]
+
+    def _run_seeder_instance(self, seeder_class: Type[BaseSeeder]) -> int:
+        print(f"[RUNNING] Executing {seeder_class.__name__}...")
+        try:
+            instance = seeder_class(self.db)
+            instance.run()
+            return 1
+        except Exception as e:
+            print(f"[ERROR] Failed to run {seeder_class.__name__}: {e}")
+            return 0

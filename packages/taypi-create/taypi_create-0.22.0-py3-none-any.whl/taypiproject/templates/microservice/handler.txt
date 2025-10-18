@@ -1,0 +1,100 @@
+from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR, HTTP_422_UNPROCESSABLE_ENTITY
+import logging
+import uuid
+
+from config.translate.messages import MESSAGES
+
+logger = logging.getLogger("uvicorn.error")
+
+class ExceptionHandler:
+
+    @staticmethod
+    def generate_trace_id() -> str:
+        return str(uuid.uuid4())
+
+    @staticmethod
+    def get_language(request: Request) -> str:
+        return request.headers.get("accept-language", "es").lower().split(",")[0].strip()
+
+    @staticmethod
+    def format_validation_errors(errors: list[dict], lang: str = 'es') -> dict[str, list[str]]:
+        messages = MESSAGES.get(lang, MESSAGES["es"])
+        formatted = {}
+        for err in errors:
+            loc = err.get("loc", [])
+            field = loc[1] if len(loc) >= 2 and loc[0] == "body" else ".".join(str(l) for l in loc)
+            raw_message = err.get("msg", "Error desconocido").split(":")[0].lower().strip()
+            tempalte = messages.get(raw_message, raw_message)
+
+            try:
+                message = tempalte.format(field=field)
+            except Exception:
+                message = tempalte
+            formatted.setdefault(field, []).append(message)
+        return formatted
+
+    @staticmethod
+    async def log_exception(
+        trace_id,
+        request: Request,
+        exc: Exception,
+        level: str = "error"
+    ):
+        method = request.method
+        url = request.url.path
+        try:
+            body = await request.json()
+        except Exception:
+            body = "<no-body>"
+
+        msg = f"[{trace_id}] [{method}] {url} | Body: {body} | Error: {str(exc)}"
+
+        if level == "error":
+            logger.error(msg)
+        elif level == "warning":
+            logger.warning(msg)
+        else:
+            logger.info(msg)
+
+    @classmethod
+    async def http_exception(cls, request: Request, exc: HTTPException):
+        trace_id = cls.generate_trace_id()
+        await cls.log_exception(trace_id, request, exc, level="warning")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "errors": exc.detail,
+                "error_code": "HTTP_ERROR",
+                "trace_id": trace_id,
+            }
+        )
+
+    @classmethod
+    async def validation_exception(cls, request: Request, exc: RequestValidationError):
+        trace_id = cls.generate_trace_id()
+        await cls.log_exception(trace_id, request, exc, level="warning")
+        lang = cls.get_language(request)
+        return JSONResponse(
+            status_code=HTTP_422_UNPROCESSABLE_ENTITY,
+            content={
+                "errors": cls.format_validation_errors(exc.errors(), lang),
+                "error_code": "VALIDATION_ERROR",
+                "trace_id": trace_id,
+            }
+        )
+
+    @classmethod
+    async def generic_exception(cls, request: Request, exc: Exception):
+        trace_id = cls.generate_trace_id()
+        await cls.log_exception(trace_id, request, exc, level="error")
+        return JSONResponse(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "message": exc.__str__(),
+                "error_code": "INTERNAL_SERVER_ERROR",
+                "trace_id": trace_id,
+            }
+        )
