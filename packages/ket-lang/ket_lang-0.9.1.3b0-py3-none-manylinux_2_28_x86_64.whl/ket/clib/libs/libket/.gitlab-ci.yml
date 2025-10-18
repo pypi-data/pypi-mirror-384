@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: 2024 Evandro Chagas Ribeiro da Rosa <evandro@quantuloop.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+cargo-clippy:
+  image: registry.gitlab.com/quantum-ket/ket-building-images:linux-1.88
+  stage: lint
+  script:
+    - cargo clippy --all-features -- -D warnings
+
+reuse:
+  image: python:slim
+  stage: lint
+  script:
+    - pip install reuse
+    - reuse lint
+
+cargo-test:
+  image: registry.gitlab.com/quantum-ket/ket-building-images:linux-1.88
+  stage: test
+  script:
+    - cargo test --all-features
+
+linux-build:
+  image: registry.gitlab.com/quantum-ket/ket-building-images:linux-1.88
+  stage: build
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/release/libket.so
+
+windows-build:
+  image: registry.gitlab.com/quantum-ket/ket-building-images:windows-1.88
+  stage: build
+  script:
+    - cargo build --release --target x86_64-pc-windows-gnu
+  artifacts:
+    paths:
+      - target/x86_64-pc-windows-gnu/release/ket.dll
+
+publish:
+  stage: deploy
+  script:
+    - |
+      curl --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file target/release/libket.so \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/libket/${CI_COMMIT_SHORT_SHA}/libket.so"
+    - |
+      curl --location --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+           --upload-file target/x86_64-pc-windows-gnu/release/ket.dll \
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/libket/${CI_COMMIT_SHORT_SHA}/ket.dll"
