@@ -1,0 +1,182 @@
+_defaults:
+  es-uid: &es-uid 999
+
+containers:
+  py2-test:
+    setup:
+      - !Ubuntu bionic
+      - !Install [curl]
+      - !PipConfig
+        dependencies: true
+      - !Py2Requirements requirements.txt
+      - !Py2Requirements requirements_test.txt
+
+  py3-test:
+    setup:
+      - !Ubuntu bionic
+      - !Install [curl]
+      - !PipConfig
+        dependencies: true
+      - !Py3Requirements requirements.txt
+      - !Py3Requirements requirements_async.txt
+      - !Py3Requirements requirements_async_test.txt
+      - !Py3Requirements requirements_lint.txt
+      - !Py3Requirements requirements_test.txt
+
+  py2-sphinx:
+    setup:
+      - !Alpine v3.5
+      - !Install
+        - make
+      - !PipConfig
+        dependencies: true
+      - !Py2Requirements requirements.txt
+      - !Py2Requirements requirements_test.txt
+      - !Py2Requirements requirements_doc.txt
+
+  py3-sphinx:
+    setup:
+      - !Alpine v3.5
+      - !Install
+        - make
+      - !PipConfig
+        dependencies: true
+      - !Py3Requirements requirements.txt
+      - !Py3Requirements requirements_test.txt
+      - !Py3Requirements requirements_doc.txt
+
+  bump:
+    setup:
+    - !Alpine v3.8
+    - !Install
+      - git
+    - !PipConfig
+      dependencies: true
+    - !Py3Install
+      - bumpversion
+
+  bench:
+    environ:
+      HOME: /work
+      PYTHONPATH: /work
+    setup:
+      - !Alpine v3.4
+      - !PipConfig
+        dependencies: true
+      - !Py3Requirements requirements.txt
+      - !Py3Install [coverage]
+
+  elastic-5x:
+    setup:
+    - !Ubuntu bionic
+    - !UbuntuUniverse
+    # elastic PGP & Repo
+    - !Install [gnupg]
+    - !AptTrust
+      server: pgp.mit.edu
+      keys: [D88E42B4]
+    - !UbuntuRepo
+      url: https://artifacts.elastic.co/packages/5.x/apt
+      suite: stable
+      components: [main]
+    - !Env
+      ES_UID: *es-uid
+    - !Sh |
+        groupadd -g $ES_UID elasticsearch
+        useradd -u $ES_UID -g elasticsearch -d /usr/share/elasticsearch elasticsearch
+    - !Install
+      - ca-certificates
+      - ca-certificates-java
+      - openjdk-8-jre-headless
+      - elasticsearch=5.6.14
+    volumes:
+      /var/lib/elasticsearch: !Tmpfs
+
+commands:
+  test-py2: !Command
+    description: Run tests with Python2
+    container: py2-test
+    run: [py.test]
+
+  test-py3: !Command
+    description: Run tests with Python3
+    container: py3-test
+    run: [py.test]
+
+  flake8: !Command
+    description: Run flake8 linter
+    container: py3-test
+    run: [flake8, elasticmagic, tests_integ]
+
+  bump: !Command
+    description: Bump version
+    container: bump
+    run: [bumpversion]
+
+  test-integ-5x: !Supervise
+    options: |
+      Usage:
+        vagga test-integ-5x [options] [--tests=<tests>] [--] [<pytest-options>...]
+
+      Options:
+        --tests=<tests>   Tests to run
+        <pytest-options>  Pytest options
+    children:
+      elastic-5x: !Command
+        container: elastic-5x
+        user-id: *es-uid
+        group-id: *es-uid
+        work-dir: /usr/share/elasticsearch
+        run: |
+          ./bin/elasticsearch \
+            -Enetwork.host=_local_ \
+            -Epath.conf=/etc/elasticsearch \
+            -Epath.scripts=/etc/elasticsearch/scripts \
+            -Epath.data=/var/lib/elasticsearch/data \
+            -Epath.logs=/var/lib/elasticsearch/logs
+      test: !Command
+        container: py3-test
+        run: |
+          ./scripts/wait_es.sh ${ES_URL:-localhost:9200}
+          TESTS=${VAGGAOPT_TESTS:-tests_integ}
+          eval py.test $TESTS $VAGGACLI_PYTEST_OPTIONS
+
+  _py2-cov: !Command
+    container: py2-test
+    run: [py.test, --cov]
+
+  cover: !Command
+    prerequisites: [_py2-cov]
+    container: py3-test
+    run: [py.test, --cov, --cov-append]
+
+  doctest: !Command
+    description: Run doctests
+    container: py3-sphinx
+    work-dir: docs
+    run: [make, doctest]
+  
+  doc: !Command
+    description: Build documentation
+    container: py3-sphinx
+    work-dir: docs
+    prerequisites: [doctest]
+    run: [make, html]
+  
+  doctest-py2: !Command
+    description: Run doctests
+    container: py2-sphinx
+    work-dir: docs
+    run: [make, doctest]
+  
+  doc-py2: !Command
+    description: Build documentation
+    container: py2-sphinx
+    work-dir: docs
+    prerequisites: [doctest-py2]
+    run: [make, html]
+  
+  bench: !Command
+    description: Run benchmarks
+    container: bench
+    run: [python3, benchmark/run.py]

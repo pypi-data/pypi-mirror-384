@@ -1,0 +1,120 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: Test and build
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    if: |
+      !contains(github.event.head_commit.message, '[skip tests]')
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', 'pypy3.11']
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v6
+    # tox-gh fails with uv-venv-lock-runner: https://github.com/tox-dev/tox-gh/issues/175
+    - name: Set tox environments
+      run: |
+        echo "TOX_ENV_OPTS=$(.github/gh-tox-envs.py ${{ matrix.python-version }})" >> $GITHUB_ENV
+    - name: Install dependencies
+      run: |
+        uv tool install tox --with tox-uv
+    - name: Lint with flake8
+      run: |
+        uv tool run -v tox -e flake8
+    - name: Run unit tests
+      run: |
+        uv tool run -v tox ${TOX_ENV_OPTS} -- -v --cov --cov-append
+    - name: Run doc tests
+      run: |
+        uv tool run -v tox -e doctest
+
+  integ-tests:
+    runs-on: ubuntu-latest
+    if: |
+      !contains(github.event.head_commit.message, '[skip tests]')
+    strategy:
+      matrix:
+        es-image:
+        - 'elasticsearch:6.8.23'
+        - 'elasticsearch:7.17.28'
+        - 'elasticsearch:8.19.5'
+        - 'opensearchproject/opensearch:2.19.2'
+        python-version: ['3.11', '3.12', '3.13', 'pypy3.11']
+    services:
+      elasticsearch:
+        image: ${{ matrix.es-image }}
+        ports:
+        - 9200:9200
+        options: >-
+          -e="discovery.type=single-node"
+          ${{ startsWith(matrix.es-image, 'elasticsearch:8.') && '-e="xpack.security.enabled=false" -e="xpack.security.enrollment.enabled=false"' || '' }}
+          ${{ startsWith(matrix.es-image, 'opensearch') && '-e="DISABLE_SECURITY_PLUGIN=true"' || '' }}
+          --health-cmd="curl http://localhost:9200/_cluster/health"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=10
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v6
+    - name: Install dependencies
+      run: |
+        uv tool install tox --with tox-uv
+    - name: Run integration tests
+      run: |
+        uv tool run tox -e integ -- -v --cov --cov-append
+    - name: Run async integration tests
+      if: startsWith(matrix.python-version, '3.')
+      run: |
+        uv tool run tox -e integ-async -- -v --cov --cov-append
+
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v')
+    needs:
+    - unit-tests
+    - integ-tests
+    strategy:
+      matrix:
+        python-version: ['3.11']
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v6
+    - name: Build package
+      run: |
+        uv build
+    - name: Upload package to pypi.org
+      run: |
+        uv publish
