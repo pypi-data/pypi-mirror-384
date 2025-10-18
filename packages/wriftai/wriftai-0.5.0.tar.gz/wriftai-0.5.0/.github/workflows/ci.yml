@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  quality-checks-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run quality checks
+        run: make check
+
+      - name: Run unit and integration tests
+        run: make test
+
+  release:
+    needs: quality-checks-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    # Release job needs higher permissions than the test job
+    permissions:
+      contents: write # create tags & GitHub releases
+      pull-requests: write # open/update Release PR
+      id-token: write # OIDC for PyPI Trusted Publishing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history & tags help Release Please
+
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: 'release-please-config.json'
+          manifest-file: '.release-please-manifest.json'
+
+      - name: Set up the python environment
+        if: steps.release.outputs.release_created == 'true'
+        uses: ./.github/actions/setup-python-env
+
+      - name: Build package
+        if: steps.release.outputs.release_created == 'true'
+        run: |
+          make build
+
+      # Publish to PyPI via Trusted Publishing (no API token needed)
+      - name: Publish to PyPI
+        if: steps.release.outputs.release_created == 'true'
+        run: uv publish
