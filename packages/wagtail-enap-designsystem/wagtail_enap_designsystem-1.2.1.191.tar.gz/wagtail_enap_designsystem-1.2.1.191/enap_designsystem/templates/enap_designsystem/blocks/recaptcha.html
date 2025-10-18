@@ -1,0 +1,356 @@
+<!-- templates/blocks/recaptcha.html -->
+{% load static %}
+
+<div class="recaptcha-container {{ value.css_classes }}" data-recaptcha-id="recaptcha-widget">
+    
+    <!-- Forçar has_recaptcha_keys = True -->
+    {% comment %} {% if has_recaptcha_keys %} {% endcomment %}
+        <!-- reCAPTCHA v2 (checkbox + desafio) -->
+        <div class="g-recaptcha" 
+             data-sitekey="6Lf_9MMrAAAAAOAsVXk8F5scxr6vsZJzC2jJnGHb"
+             data-theme="{{ value.tema|default:'light' }}"
+             data-size="{{ value.tamanho|default:'normal' }}"
+             data-callback="onRecaptchaSuccess"
+             data-expired-callback="onRecaptchaExpired"
+             data-error-callback="onRecaptchaError"
+             id="recaptcha-widget">
+        </div>
+        
+        <!-- Status da verificação -->
+        <div id="status-recaptcha" class="recaptcha-status mt-3" style="display: none;">
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> 
+                <strong>Verificação completa!</strong> 
+                Você passou no teste reCAPTCHA.
+            </div>
+        </div>
+        
+        <!-- Status de erro -->
+        <div id="error-recaptcha" class="recaptcha-error mt-3" style="display: none;">
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> 
+                <strong>Erro no reCAPTCHA!</strong> 
+                Tente novamente.
+            </div>
+        </div>
+        
+    {% comment %}
+    {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>reCAPTCHA não configurado!</strong>
+            <br><small>Configure RECAPTCHA_PUBLIC_KEY e RECAPTCHA_PRIVATE_KEY no settings.py</small>
+        </div>
+    {% endif %}
+    {% endcomment %}
+</div>
+
+<!-- Script do Google reCAPTCHA (sempre carregar) -->
+<script>
+// Verificar se já foi carregado
+if (!window.recaptchaLoaded) {
+    window.recaptchaLoaded = true;
+    window.recaptchaToken = null;
+    
+    // Carregar script do Google
+    const script = document.createElement('script');
+    script.src = 'https://www.google.com/recaptcha/api.js';
+    script.async = true;
+    script.defer = true;
+    
+    script.onload = function() {
+        console.log('📡 reCAPTCHA carregado com sucesso!');
+    };
+    
+    script.onerror = function() {
+        console.error('❌ Erro ao carregar reCAPTCHA do Google');
+        
+        // Mostrar erro visual
+        const errorDiv = document.getElementById('error-recaptcha');
+        if (errorDiv) {
+            errorDiv.querySelector('.alert').innerHTML = `
+                <i class="fas fa-wifi"></i> 
+                <strong>Erro de conexão!</strong> 
+                Não foi possível carregar o reCAPTCHA.
+            `;
+            errorDiv.style.display = 'block';
+        }
+    };
+    
+    document.head.appendChild(script);
+    console.log('📡 Carregando reCAPTCHA do Google...');
+}
+
+// Callback quando reCAPTCHA é completado (nome deve coincidir com template)
+function onRecaptchaSuccess(response) {
+    console.log('✅ reCAPTCHA completado com sucesso!');
+    console.log('Token recebido:', response.substring(0, 50) + '...');
+    
+    recaptchaVerified = true;
+    recaptchaResponse = response;
+    
+    // Habilitar botão de prosseguir
+    const botaoProsseguir = document.getElementById('prosseguir-votacao');
+    if (botaoProsseguir) {
+        botaoProsseguir.disabled = false;
+        botaoProsseguir.innerHTML = '✓ Iniciar Votação';
+        botaoProsseguir.style.background = '#007D7A';
+        botaoProsseguir.style.color = 'white';
+    }
+
+    // Mostrar texto pós-recaptcha se existir
+    const posTexto = document.getElementById('pos-recaptcha-text');
+    if (posTexto) {
+        posTexto.style.display = 'block';
+    }
+
+    // Marcar como verificado no container
+    const container = document.querySelector('[data-recaptcha-id]');
+    if (container) {
+        container.setAttribute('data-verified', 'true');
+        container.setAttribute('data-response', response);
+    }
+
+    // Disparar evento customizado para integração
+    document.dispatchEvent(new CustomEvent('recaptchaCompleted', {
+        detail: { 
+            response: response,
+            success: true
+        }
+    }));
+}
+
+// Callback quando expira
+window.onRecaptchaExpired = function() {
+    console.log('⚠️ reCAPTCHA expirado');
+    
+    window.recaptchaToken = null;
+    
+    const statusDiv = document.getElementById('status-recaptcha');
+    const errorDiv = document.getElementById('error-recaptcha');
+    
+    if (statusDiv) statusDiv.style.display = 'none';
+    if (errorDiv) {
+        errorDiv.querySelector('.alert').innerHTML = `
+            <i class="fas fa-clock"></i> 
+            <strong>reCAPTCHA expirado!</strong> 
+            Clique novamente para verificar.
+        `;
+        errorDiv.style.display = 'block';
+    }
+    
+    const container = document.querySelector('[data-recaptcha-id]');
+    if (container) {
+        container.setAttribute('data-verified', 'false');
+        container.setAttribute('data-response', '');
+        container.classList.remove('recaptcha-verified');
+        container.classList.add('recaptcha-error');
+    }
+    
+    // Desabilitar botões de submit
+    const submitButtons = document.querySelectorAll('button[type="submit"], input[type="submit"]');
+    submitButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.classList.add('disabled');
+    });
+};
+
+// Callback de erro
+window.onRecaptchaError = function() {
+    console.log('❌ Erro no reCAPTCHA');
+    
+    window.recaptchaToken = null;
+    
+    const statusDiv = document.getElementById('status-recaptcha');
+    const errorDiv = document.getElementById('error-recaptcha');
+    
+    if (statusDiv) statusDiv.style.display = 'none';
+    if (errorDiv) {
+        errorDiv.querySelector('.alert').innerHTML = `
+            <i class="fas fa-exclamation-triangle"></i> 
+            <strong>Erro no reCAPTCHA!</strong> 
+            Verifique sua conexão e tente novamente.
+        `;
+        errorDiv.style.display = 'block';
+    }
+    
+    const container = document.querySelector('[data-recaptcha-id]');
+    if (container) {
+        container.setAttribute('data-verified', 'false');
+        container.setAttribute('data-response', '');
+        container.classList.remove('recaptcha-verified');
+        container.classList.add('recaptcha-error');
+    }
+};
+
+// Utilitários públicos para JavaScript
+window.recaptchaUtils = {
+    isVerified: function() {
+        return window.recaptchaToken && window.recaptchaToken.length > 0;
+    },
+    
+    getResponse: function() {
+        return window.recaptchaToken || '';
+    },
+    
+    reset: function() {
+        if (typeof grecaptcha !== 'undefined') {
+            try {
+                grecaptcha.reset();
+                console.log('🔄 reCAPTCHA resetado');
+            } catch (e) {
+                console.log('⚠️ Erro ao resetar reCAPTCHA:', e);
+            }
+        }
+        
+        window.recaptchaToken = null;
+        
+        const container = document.querySelector('[data-recaptcha-id]');
+        if (container) {
+            container.setAttribute('data-verified', 'false');
+            container.setAttribute('data-response', '');
+            container.classList.remove('recaptcha-verified', 'recaptcha-error');
+        }
+        
+        const statusDiv = document.getElementById('status-recaptcha');
+        const errorDiv = document.getElementById('error-recaptcha');
+        
+        if (statusDiv) statusDiv.style.display = 'none';
+        if (errorDiv) errorDiv.style.display = 'none';
+    }
+};
+
+// Debug: informações da configuração
+console.log('🔍 reCAPTCHA Config (FIXED):');
+console.log('- Public Key: 6Lf_9MMrAAAAAOAsVXk8...');
+console.log('- Has Keys: true');
+console.log('- Tema:', '{{ value.tema|default:"light" }}');
+console.log('- Tamanho:', '{{ value.tamanho|default:"normal" }}');
+</script>
+
+<style>
+.recaptcha-container {
+    margin: 20px 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    border: 2px solid #e5e7eb;
+}
+
+.recaptcha-container .g-recaptcha {
+    margin: 10px 0;
+}
+
+/* Estado verificado */
+.recaptcha-container.recaptcha-verified {
+    border-color: #28a745;
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+}
+
+.recaptcha-container.recaptcha-verified::before {
+    content: '✅ Verificado com Sucesso';
+    display: block;
+    color: #155724;
+    font-weight: bold;
+    margin-bottom: 10px;
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Estado de erro */
+.recaptcha-container.recaptcha-error {
+    border-color: #dc3545;
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+}
+
+.recaptcha-container.recaptcha-error::before {
+    content: '❌ Erro na Verificação';
+    display: block;
+    color: #721c24;
+    font-weight: bold;
+    margin-bottom: 10px;
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Animações */
+.recaptcha-status .alert,
+.recaptcha-error .alert {
+    margin-bottom: 0;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Alertas */
+.alert {
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 10px 0;
+    border: 1px solid transparent;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    border-color: #ffeaa7;
+    color: #856404;
+}
+
+/* Responsivo */
+@media (max-width: 576px) {
+    .recaptcha-container {
+        padding: 15px;
+        margin: 15px 0;
+    }
+    
+    .recaptcha-container .g-recaptcha {
+        transform: scale(0.85);
+        transform-origin: center;
+    }
+}
+
+/* Integração com formulários */
+.recaptcha-container + form button[type="submit"].disabled,
+.recaptcha-container + form input[type="submit"].disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Classes CSS personalizadas */
+.recaptcha-container.text-center {
+    text-align: center;
+}
+
+.recaptcha-container.my-4 {
+    margin: 1.5rem 0;
+}
+
+.recaptcha-container.mx-auto {
+    margin-left: auto;
+    margin-right: auto;
+}
+</style>
