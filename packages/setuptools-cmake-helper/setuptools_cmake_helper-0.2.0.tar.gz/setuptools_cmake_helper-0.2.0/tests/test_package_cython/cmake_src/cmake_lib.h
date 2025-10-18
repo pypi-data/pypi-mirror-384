@@ -1,0 +1,9 @@
+#ifndef FA5ED277_750E_4737_94EB_9B1A8AD46709
+#define FA5ED277_750E_4737_94EB_9B1A8AD46709
+
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
+PyObject * my_func(PyObject *);
+
+#endif /* FA5ED277_750E_4737_94EB_9B1A8AD46709 */
