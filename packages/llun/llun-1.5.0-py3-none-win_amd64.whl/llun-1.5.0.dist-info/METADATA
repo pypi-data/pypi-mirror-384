@@ -1,0 +1,272 @@
+Metadata-Version: 2.4
+Name: llun
+Version: 1.5.0
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Software Development :: Quality Assurance
+License-File: LICENSE
+Summary: A linter for architecture and abstraction
+Keywords: automation,ruff,cli,rust,architecture,ai
+Author-email: John C Ll Stokes <johnclstokes@hotmail.com>
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+
+# Llun - The Architectural 'Linter'
+ 
+## Intro
+
+Llun ([pronounced '/ɬiːn/'](https://www.howtopronounce.com/welsh/llun), meaning 'picture' (as in **big**)) brings architectural principles directly into your development workflow through a familiar command-line interface. Unlike traditional linters that focus on syntax and style, Llun evaluates your code against configurable architectural rules — ensuring consistency in design patterns, dependency management, and structural decisions across your entire codebase. 
+
+Following DevOps principles of early and frequent feedback, Llun shifts architectural validation left in your development pipeline. Rather than discovering architectural drift during lengthy code reviews or post-deployment, teams can catch and correct structural issues immediately—during development, in pre-commit hooks, or as part of continuous integration.
+
+By leveraging the power of rust, Llun offers a reliable, high performance and type-safe solution to your teams architectural CI/CD needs.
+
+## Why Llun?
+
+Modern development teams face a challenge: how to maintain architectural consistency while leveraging LLM-generated code and supporting developers with varying levels of experience. Traditional code reviews catch surface-level issues but often miss deeper architectural concerns. Raw LLM feedback is inconsistent and context-dependent.
+Llun bridges this gap by providing:
+
+- Consistent architectural guidance that goes beyond syntax checking
+- Configurable rules tailored to your team's architectural principles
+- LLM-powered analysis with the reliability of a traditional linter
+- Clear, actionable feedback that helps teams maintain design coherence
+
+Perfect for teams that want to:
+
+- Ensure high-quality commits from developers at all experience levels
+- Maintain consistency when incorporating LLM-generated code
+- Standardize architectural feedback across code reviews
+- Prefer systematic automation over ad-hoc creative decisions
+
+Llun does this by providing a number of useful tools:
+
+- `check`, a command line tool for providing a linting-esque review of code using a user specified LLM
+- `context`, which creates or updates AGENTS or copilot-instructions files with the users selected rules
+
+## Quick Start
+
+Follow this guide to get up and running ASAP
+
+### Installation
+
+to use the app, the fastest way is to pip install it into a local environment:
+
+```
+uv pip install llun
+```
+
+or for those not yet ready to migrate to uv:
+
+```
+pip install llun
+```
+
+to check installation has worked, run `llun` in the command line to view the help menu for the application.
+
+### Basic Usage
+
+To run Llun in your local directory, use the command
+
+```
+llun check .
+```
+If it is running correctly, you should (eventually) see a json formatted response, explaining to you areas of architectural weakness in the provided code.
+
+**Note** You will need to have set the `OPENAI_API_KEY` variable in your environment to a valid openai api key in order to get valid output from the service. New api keys can be generated at [this address](https://platform.openai.com/api-keys). Users should be cognisant of the associated costs to run their chosen AI model.
+
+**Note** for azure users, you will instead need to set the following variables in your environment:
+
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_API_VERSION`
+- `AZURE_OPENAI_DEPLOYMENT`
+
+These variables can be easily accessed from your foundry instance.
+
+for users of agentic setups, you will instead need to run the command:
+
+```
+llun context agent-format "agents" # / "copilot-instructions" (pick based on your chosen agentic executor)
+```
+
+in order to update your preferred file.
+
+## Configuring Llun
+
+Llun makes use of a heirarchical configuration under the following rules:
+
+1. Llun has a sensible set of default values, which can be directly observed in `src/data/default.toml`
+2. Use of the `tool.llun` tag in `pyproject.toml` will overwrite any defaults
+3. Use of a `llun.toml` will overwrite any prior configurations 
+4. any CLI arguments override everything prior
+
+At the moment, Llun does not support any nested configuration. If you require this feature (for instance for a monorepo), feel free to develop it and submit a PR.
+
+### Ignoring Violations
+
+There are several ways to encourage Llun to ignore violations that it is otherwise programmed to detect.
+
+One option is to utilise the comment structure `#NOLLUN: RULENAME` in line in order to encourage Llun to ignore certain violations. **NOTE** this makes use of the LLM so may not be wholly reliable, depending on the specific model you are using to run Llun with.
+
+for a programmtically enforced 'per-file ignore', you can instead make use of the `--per-file-ignores` command, documented in the API guide.
+
+### API Guide
+
+the following table describes the various methods available to the `llun check` command. It is kept up to date with the currently deployed package.
+
+| Argument | Description | Valid Values | Default |
+|----------|-------------|--------------|---------|
+| `--path`   | The directorys or files to run llun against | Any paths from root i.e. './XXX' or '.' | None |
+| `--exclude` | A path to be excluded from the targeted directory described by `--path` | Any path from root i.e. './XXX' or '.' | None | 
+| `--select` | A (valid) Llun rule code, or Llun rule family to apply during the check | Any rule code i.e. 'LLUN01', or rule family i.e. 'LLUN' to group select all. | ['SOLID'] (a group selection of the five *solid* principles) |
+| `--extend-select` | Extend the rules selected in a lower level of configuration | Any rule code i.e. 'LLUN01' | None |
+| `--ignore` | A rule selected at any point prior to be ignored for the current run | Any rule code i.e. 'LLUN01' | None |
+| `--model` | An openAI model to use to run the check on | Any OpenAI model | "gpt4-o" |
+| `--no-respect-gitignore` | Including this flag will disable the behaviour which automatically `--exclude`s any file in the gitignore (not recommended in case you leak secrets etc...) | N/A | False |
+| `--output-format` | The format(s) that llun should use for its trace | "json", "azure", "junit", "summary" | "json" |
+| `--provider` | The LLM provider to run the check against | "openai", "azure-openai" | "openai" |
+| `--context`  | Additional ontext the LLM might want to know to guide it i.e. "this is for xyz purpose" or "this will not need to be touched again" | any free text | None |
+| `--production-mode` | boolean flag will run a more powerful (and more expensive) scan when turned on | N/A | False |
+| `--per-file-ignores` | Ignore a certain rule only in a given file, enforced programmatically (i.e. more reliable than #NOLLUN) | anything in the format '<FILENAME>:<RULE>' i.e. './src/main.rs:SOLID01' | None |
+
+the following table describes the various methods available to the `llun context` command. It is kept up to date with the currently deployed package.
+
+| Argument | Description | Valid Values | Default |
+|----------|-------------|--------------|---------|
+| `--select` | A (valid) Llun rule code, or Llun rule family to apply during the check | Any rule code i.e. 'LLUN01', or rule family i.e. 'LLUN' to group select all. | ['SOLID'] (a group selection of the five *solid* principles) |
+| `--extend-select` | Extend the rules selected in a lower level of configuration | Any rule code i.e. 'LLUN01' | None |
+| `--ignore` | A rule selected at any point prior to be ignored for the current run | Any rule code i.e. 'LLUN01' | None |
+| `--agent-format` | The format of agent configuration you are using | 'agents' for AGENTS.md or 'copilot-instructions' for .github/copilot-instructions.md | 'agents' |
+
+### Rule Guide
+
+The following describes each rule that can be set by Llun. full descriptions can be found in the rule files (`/src/data/rules`). When picking rules it may be tempting to simply turn them all on, but do be aware that older LLM models can become overwhelmed and unreliable when provided too much context - pick the subset of rules you think will most impact the long term success of your products.
+
+#### SOLID
+The five SOLID principles, individually available
+
+- **SOLID01**: Single Responsibility Principle
+  Each class, function, or module should have one clear responsibility and one reason to change.
+
+- **SOLID02**: Open/Closed Principle
+  Software entities should be open for extension but closed for modification.
+  
+- **SOLID03**: Liskov Substitution Principle
+Objects of a superclass should be replaceable with objects of its subclasses without affecting the correctness of the program.
+  
+- **SOLID04**: Interface Segregation Principle
+Clients should not be forced to depend on interfaces they do not use.
+  
+- **SOLID05**: Dependency Inversion Principle
+High-level modules should not depend on low-level modules. Both should depend on abstractions.
+
+#### CLASSIC
+A selection of other classic coding idonyms and wisdom
+
+- **CLASSIC01**: Favour Composition Over Inheritance
+Build functionality by combining objects that contain other objects, rather than inheriting behavior from parent classes.
+  
+- **CLASSIC02**: YAGNI (You Aren't Gonna Need It)
+Don't implement functionality until it's actually required. Build only what you need right now, not what you think you might need later.
+
+- **CLASSIC03**: KISS (Keep It Simple, Stupid)
+Choose the simplest solution that solves the problem effectively. Avoid unnecessary complexity in design and implementation.
+  
+- **CLASSIC04**: Consistency in approach
+Approaches to architectural problems should be consistent across the code base.
+
+- **CLASSIC05**: Minimize Stateful Objects
+Prefer stateless objects and immutable data structures. Keep mutable state localized and explicit, rather than spreading it throughout your object hierarchy.
+
+#### DOMAIN
+A selection of rules relating to domain driven design principles
+
+- **DOMAIN01**: Use Ubiquitous Language
+Use the same terminology and concepts throughout the codebase, documentation, and conversations that domain experts use in the real business context.
+
+- **DOMAIN02**: Keep Context Bounded
+Define clear boundaries where specific domain models and business rules apply. Different parts of the system can have different interpretations of the same concept.
+  
+- **DOMAIN03**: Convention Over Configuration
+Provide sensible defaults and follow established patterns so developers can be productive without extensive setup or decision-making about common scenarios.
+
+#### FUNCTIONAL
+A selection of rules based on functional programming paradimes 
+
+- **FUNCTIONAL01**: Keep Functions Pure
+Functions should always return the same output for the same input and have no side effects (don't modify external state or perform I/O operations).
+
+- **FUNCTIONAL02**: Idempotency
+Operations should produce the same result when called multiple times with the same parameters. Repeated calls should not cause additional side effects or change the system state further.
+
+- **FUNCTIONAL03**: Immutable Objects
+Create objects whose state cannot be modified after construction. When changes are needed, return new instances rather than modifying existing ones.
+
+#### PATTERN
+A selection of coding patterns to situationally apply
+
+- **PATTERN01**: Strategy Pattern
+Define a family of algorithms or behaviors, encapsulate each one, and make them interchangeable at runtime based on context or configuration.
+  
+- **PATTERN02**: Dependency Injection
+Provide dependencies to a class from the outside rather than creating them internally. Dependencies should be injected through constructors, methods, or properties.
+  
+- **PATTERN03** : Facade Pattern
+Provide a simplified interface to a complex subsystem by creating a single entry point that coordinates multiple underlying components.
+  
+- **PATTERN04**: Repository Pattern
+Encapsulate data access logic behind an interface that mimics a collection of domain objects, separating business logic from data persistence concerns.
+
+#### TEST
+Rules to be applied to testing practices specifically
+
+- **TEST01**: Test behaviour, not implementation
+Write tests that verify the system's externally visible behavior rather than its internal implementation details.
+
+#### Custom Rules
+
+Llun now also supports *custom rules*. To define a custom rule, you'll need to create a folder in the root where you run llun, called 'llun'. this folder should contain one or more json files whos names will be the 'rule code' for the associated rule they define. **NOTE**: Llun doesnt support remapping existing rule codes, so you'll have to pick names that are unique compared to the public rules we ship.
+
+The schema your custom rules should adhere to is as follows:
+
+```
+{
+  "name": "simple name for rule, better for the llm if its a commonly known short hand",
+  "description": "description of the rule to further clarify its context both to the LLM and to your developers",
+  "risk_if_violated": "clearly spell out the danger of not following the rule. this helps the LLM assess the potential impacts of your rule, and decide what constitutes a major vs minor violation",
+  "examples": [
+    {
+      "violation": "A snippet showing the rule being broken",
+      "better": "An ammended snippet showing a better way to solve the problem by following the rule"
+    }, ...
+  ]
+}
+```
+
+please be aware that all json files in the llun directory will be treated as rules, and as such you shouldnt have other formats of jsons included or llun will raise an error. you can if you so wish include any other file types in this directory as the tool only looks at jsons - but for cleanliness sake we dont recommend it.
+
+## Contributing
+
+We are glad to take contributions via github issues or pull requests into the main branch. Please ensure all code is tested and documented before opening a pull request in order to aid the process along. to test locally, you'll want to follow the build guide below:
+
+### build guide
+
+run the following commands to build the application locally
+
+1. `source .venv/bin/activate`
+2. `uv pip install maturin twine`
+3. `maturin develop`
+4. `uv run llun --help`
+
+note that to rebuild after a change, you'll want to make sure you purge the current app version entirely from your environment.
