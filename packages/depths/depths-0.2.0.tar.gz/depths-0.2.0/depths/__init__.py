@@ -1,0 +1,1 @@
+from depths.core.logger import DepthsLogger
