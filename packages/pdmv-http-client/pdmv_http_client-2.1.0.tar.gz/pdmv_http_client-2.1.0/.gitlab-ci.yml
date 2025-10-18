@@ -1,0 +1,172 @@
+stages:
+  - quality
+  - test
+  - build
+  - publish
+  - create_release
+
+lint:
+  stage: quality
+  image: registry.cern.ch/docker.io/library/python:3.9
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install uv
+    - uv sync
+  script:
+    - uv run black --check .
+    - uv run isort --check .
+
+.test-setup:
+  stage: test
+  parallel:
+    matrix:
+      # Before including more Python versions to the matrix, confirm they are available for the
+      # AlmaLinux 9 image via RPM.
+      - PYTHON_VERSION: ["3.9", "3.11", "3.12"]
+  image: gitlab-registry.cern.ch/linuxsupport/rpmci/builder-al9:latest
+  variables:
+    AUTH_GET_SSO_COOKIE_URL: http://linuxsoft.cern.ch/internal/repos/authz9-stable/x86_64/os/Packages/auth-get-sso-cookie-2.3.0-1.el9.noarch.rpm
+  before_script:
+    - if [ -z "${KRB_USERNAME}" ]; then echo "KRB_USERNAME is not set. Provide a username"; exit 1; fi;
+    - if [ -z "${KRB_PASSWORD}" ]; then echo "KRB_PASSWORD is not set. Provide a password"; exit 1; fi;
+    - echo "${KRB_PASSWORD}" | kinit "${KRB_USERNAME}@CERN.CH"
+    - klist
+    - curl -s -o package.rpm ${AUTH_GET_SSO_COOKIE_URL}
+    - dnf install -y ./package.rpm
+    - export PYTHON_INTERPRETER="python${PYTHON_VERSION}"
+    - echo "Running test for ${PYTHON_INTERPRETER}"
+    - dnf install -y "${PYTHON_INTERPRETER}"
+    - $PYTHON_INTERPRETER -m venv venv && source ./venv/bin/activate
+    - pip install uv && export UV_PROJECT_ENVIRONMENT="${VIRTUAL_ENV}"
+    - uv sync
+
+smoke-test:
+  extends: .test-setup
+  script:
+    - uv run pytest -k 'TestSessionFactory or test_rest' -vv
+  needs:
+   - lint
+
+integration-test:
+  extends: .test-setup
+  script:
+    - uv run pytest -vv
+  needs:
+    - smoke-test
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: always
+    - when: never
+
+build:
+  stage: build
+  image: registry.cern.ch/docker.io/library/python:3.12
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install uv
+    - uv sync
+  script:
+    - rm -rf dist/
+    - uv build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 hour
+  needs:
+    - job: smoke-test
+    - job: integration-test
+      optional: true
+
+publish:
+  stage: publish
+  image: registry.cern.ch/docker.io/library/python:3.12
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: always
+    - when: never
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install uv
+  needs:
+    - build
+  script:
+    - |
+      # UV_PUBLISH_TOKEN has to be set in CI/CD variables
+      if [ -z "${PYPI_PRODUCTION}" ]; then
+        uv publish --index testpypi
+      else
+        export UV_PUBLISH_TOKEN="${CMS_PPD_PYPI_TOKEN}"
+        uv publish
+      fi
+
+create_release:
+  stage: create_release
+  image: registry.cern.ch/registry.gitlab.com/gitlab-org/cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG
+  variables:
+    GITLAB_HOST: $CI_SERVER_FQDN
+    GITLAB_TOKEN: $GITLAB_API_ACCESS_TOKEN
+  before_script:
+    - apk add jq --no-cache
+  script:
+    - |
+      set -x
+
+      # Fetch all tags
+      git fetch --tags
+
+      # Try to get the previous tag
+      PREV_TAG=$(git describe --tags --abbrev=0 "${CI_COMMIT_TAG}^" 2>/dev/null || true)
+
+      if [ -z "$PREV_TAG" ]; then
+        echo "Generating release for ${CI_COMMIT_TAG} - No previous tag found, assuming this is the first release."
+        COMMIT_RANGE_LINEAR_COMP=""
+        COMMIT_RANGE_SYMMETRIC_DIFF=""
+      else
+        echo "Generating release for ${CI_COMMIT_TAG} (MRs since ${PREV_TAG})"
+        COMMIT_RANGE_LINEAR_COMP="${PREV_TAG}..${CI_COMMIT_TAG}"
+        COMMIT_RANGE_SYMMETRIC_DIFF="${PREV_TAG}...${CI_COMMIT_TAG}"
+      fi
+
+      # Setup auth
+      glab auth login --token "$GITLAB_TOKEN"
+
+      # Generate release notes
+      if [ -z "$COMMIT_RANGE_LINEAR_COMP" ]; then
+        echo "### First release: ${CI_COMMIT_TAG}:" > release_notes.md
+        echo "" >> release_notes.md
+      else
+        echo "### Changes since ${PREV_TAG}:" > release_notes.md
+        echo "" >> release_notes.md
+        echo "[${COMMIT_RANGE_SYMMETRIC_DIFF}]($CI_PROJECT_URL/-/compare/${COMMIT_RANGE_SYMMETRIC_DIFF})" >> release_notes.md
+        echo "" >> release_notes.md
+      fi
+
+      # Get MR numbers between the two tags by parsing commit messages
+      MR_NUMBERS=$(git log ${COMMIT_RANGE_LINEAR_COMP} --merges --pretty=format:"%b" | grep -oE '!([0-9]+)' || :)
+      MR_NUMBERS=$(echo "$MR_NUMBERS" | tr -d '!' | sort -u)
+
+      # Update release notes, fallback to commit list if merge request list is empty
+      if [ -z "$MR_NUMBERS" ]; then
+        COMMIT_LIST=$(git log --pretty=format:"- #%h from %an <%ae>: %s" ${COMMIT_RANGE_LINEAR_COMP})
+        echo "${COMMIT_LIST}" >> release_notes.md
+      else
+        for mr in $MR_NUMBERS; do
+          echo "Fetching MR $mr metadata"
+          mr_metadata=$(glab mr view "$mr" -R "$CI_PROJECT_PATH" -F json || echo 'Unable to find the MR at origin!')
+          if [ -n "$mr_metadata" ] && [ "$mr_metadata" != "{}" ]; then
+            mr_web_url=$(echo "$mr_metadata" | jq -r '.web_url')
+            title=$(echo "$mr_metadata" | jq -r '.title')
+            author_username=$(echo "$mr_metadata" | jq -r '.author.username')
+            author_username_web_url=$(echo "$mr_metadata" | jq -r '.author.web_url')
+            echo "- [!${mr}](${mr_web_url}) from [@${author_username}](${author_username_web_url}): ${title}" >> release_notes.md
+          fi
+        done
+      fi
+
+      # Create the release
+      echo "Creating release for tag $CI_COMMIT_TAG"
+      glab release create "${CI_COMMIT_TAG}" -R "$CI_PROJECT_PATH" -F release_notes.md
+  needs:
+    - publish
