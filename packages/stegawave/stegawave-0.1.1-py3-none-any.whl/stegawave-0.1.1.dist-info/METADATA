@@ -1,0 +1,150 @@
+Metadata-Version: 2.4
+Name: stegawave
+Version: 0.1.1
+Summary: Python client for the Stegawave media pipeline API
+Project-URL: Homepage, https://stegawave.com
+Project-URL: Documentation, https://stegawave.com/docs
+Project-URL: Source, https://github.com/stegawave/saas-media-backend
+Author-email: Stegawave <support@stegawave.com>
+License: MIT License
+        
+        Copyright (c) 2025 Stegawave Limited
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+License-File: LICENSE
+Keywords: aws,media,stegawave,streaming,video
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Multimedia :: Video
+Requires-Python: >=3.9
+Requires-Dist: pydantic<3,>=2.6
+Requires-Dist: requests<3,>=2.32
+Provides-Extra: dev
+Requires-Dist: pytest-cov<5,>=4.1; extra == 'dev'
+Requires-Dist: pytest<9,>=8.2; extra == 'dev'
+Requires-Dist: python-dotenv<2,>=1.0; extra == 'dev'
+Requires-Dist: responses<0.26,>=0.25; extra == 'dev'
+Provides-Extra: docs
+Requires-Dist: mkdocs<2,>=1.5; extra == 'docs'
+Description-Content-Type: text/markdown
+
+# Stegawave Python Client
+
+`stegawave` is an unofficial Python SDK for the Stegawave forensic watermarking platform. It wraps the public REST API and helps you validate `/create` payloads, manage pipeline lifecycle, and trigger watermark decode jobs without hand-writing HTTP calls.
+
+## Installation
+
+```bash
+pip install stegawave
+```
+
+## Quick start
+
+```python
+from stegawave import StegawaveClient, models
+
+client = StegawaveClient(api_key="your-api-key")
+
+create_request = models.CreatePipelineRequest(
+    name="launch-stream",
+    description="Product launch livestream",
+    segmentDuration=4,
+    input=models.InputConfig(  # RTMP push by default
+        Type="RTMP_PUSH",
+        whitelist=["0.0.0.0/0"],
+    ),
+    encoder=models.EncoderConfig(
+        vodArchive=False,
+        output_group=models.OutputGroup(
+            Name="cmaf-main",
+            Outputs=[
+                models.OutputConfig(
+                    OutputName="cmaf-1080p",
+                    resolution="1920x1080",
+                    FramerateNumerator=30,
+                    FramerateDenominator=1,
+                    VideoBitrate=7_500_000,
+                    AudioBitrate=128_000,
+                )
+            ],
+        ),
+    ),
+    packager=models.PackagerConfig(
+        originEndpoints=[
+            models.OriginEndpoint(
+                name="cmaf-hybrid",
+                ContainerType="CMAF",
+                HlsManifests=[models.HlsManifest(ManifestName="index")],
+            )
+        ]
+    ),
+)
+
+session = client.create_pipeline_session(create_request, wait=True)
+print(session.event_id)
+
+print("Input:", session.input_uri)
+print("Manifests:")
+for url in session.signed_manifest_uris("john_doe"):
+    print("  ", url)
+```
+
+The SDK automatically injects your API key, validates payload structure using Pydantic models, and surfaces HTTP issues as rich exceptions.
+
+## Configuration
+
+Set your base URL or API key explicitly, or rely on environment variables.
+
+```python
+client = StegawaveClient()
+```
+
+| Environment variable      | Description                            |
+|---------------------------|----------------------------------------|
+| `STEGAWAVE_API_KEY`       | API key provided by Stegawave          |
+| `STEGAWAVE_API_BASE_URL`  | Override the default `https://api.stegawave.com` |
+
+## Features
+
+- Strongly-typed request and response models for `/create`, `/get`, `/state`, `/delete`, `/token`, `/decode`, `/iptv`, `/passphrase`
+- High-level `PipelineSession` workflow helper to provision, poll, and sign manifests in a few lines
+- Convenience helpers for SRT listener inputs, ABR ladders, and asynchronous provisioning workflows
+- Configurable retries, timeouts, and polling intervals
+- First-class error types for authentication, validation, rate limiting, and server-side failures
+
+## Status
+
+This client is pre-release software targeting the October 2025 API schema. Expect breaking changes as the platform evolves. Contributions and issue reports are welcome.
+
+## Development
+
+```bash
+pip install -e .[dev]
+pytest
+```
+
+Refer to `CHANGELOG.md` for planned enhancements and release history.
