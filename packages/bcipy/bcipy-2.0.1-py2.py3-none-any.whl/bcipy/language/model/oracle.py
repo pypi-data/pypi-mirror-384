@@ -1,0 +1,181 @@
+"""Oracle language model"""
+import logging
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
+
+from bcipy.config import SESSION_LOG_FILENAME
+from bcipy.core.symbols import BACKSPACE_CHAR, DEFAULT_SYMBOL_SET
+from bcipy.exceptions import InvalidSymbolSetException
+from bcipy.language.main import CharacterLanguageModel
+from bcipy.language.model.uniform import equally_probable
+
+logger = logging.getLogger(SESSION_LOG_FILENAME)
+
+TARGET_BUMP_MIN = 0.0
+TARGET_BUMP_MAX = 1.0
+
+
+class OracleLanguageModel(CharacterLanguageModel):
+    """Language model which knows the target phrase the user is attempting to
+    spell.
+
+    Probabilities for symbols are uniformly distributed with the exception of
+    the target letter, which has a slightly higher probability. How much higher
+    depends on the configured parameter.
+
+    After the target text has been correctly spelled subsequent predictions
+    yield all symbols with equal probability.
+
+    Parameters
+    ----------
+        task_text - the phrase the user is attempting to spell (ex. 'HELLO_WORLD')
+        target_bump - the amount by which the probability of the target letter
+            is increased.
+    """
+
+    def __init__(self,
+                 task_text: Optional[str] = None,
+                 target_bump: float = 0.1):
+
+        self.task_text = task_text
+        self.target_bump = target_bump
+
+        self.symbol_set = DEFAULT_SYMBOL_SET
+
+        logger.debug(
+            f"Initialized OracleLanguageModel(task_text='{task_text}', target_bump={target_bump})"
+        )
+
+    def set_symbol_set(self, symbol_set: List[str]) -> None:
+        """Updates the symbol set of the model. Must be called prior to prediction"""
+        self.symbol_set = symbol_set
+
+    @property
+    def task_text(self):
+        """Get the task_text property"""
+        return self._task_text
+
+    @task_text.setter
+    def task_text(self, value: str):
+        """Setter for task_text"""
+        assert value, "task_text is required"
+        self._task_text = value
+
+    @property
+    def target_bump(self):
+        """Get the target_bump property"""
+        return self._target_bump
+
+    @target_bump.setter
+    def target_bump(self, value: float):
+        """Setter for target_bump"""
+        msg = f"target_bump should be between {TARGET_BUMP_MIN} and {TARGET_BUMP_MAX}"
+        assert TARGET_BUMP_MIN <= value <= TARGET_BUMP_MAX, msg
+        self._target_bump = value
+
+    def predict_character(self, evidence: Union[str, List[str]]) -> List[Tuple]:
+        """
+        Using the provided data, compute probabilities over the entire symbol.
+        set.
+
+        Parameters
+        ----------
+            evidence  - list of previously typed symbols
+
+        Returns
+        -------
+            list of (symbol, probability) tuples
+        """
+
+        if not self.symbol_set:
+            raise InvalidSymbolSetException(
+                "symbol set must be set prior to requesting predictions.")
+
+        spelled_text = ''.join(evidence)
+        target = self._next_target(spelled_text)
+
+        symbol_probs = {}
+
+        if target:
+            # non-target prob = x = (1-b)/n where n is len(symbol_set) and b is target_bump
+            # target prob = x + b
+            non_target_prob = (1 - self.target_bump) / len(self.symbol_set)
+            for ch in self.symbol_set:
+                if ch == target:
+                    symbol_probs[ch] = non_target_prob + self.target_bump
+                else:
+                    symbol_probs[ch] = non_target_prob
+        else:
+            symbol_probs = dict(
+                zip(self.symbol_set, equally_probable(self.symbol_set)))
+
+        return sorted(symbol_probs.items(),
+                      key=lambda item: item[1],
+                      reverse=True)
+
+    def _next_target(self, spelled_text: str) -> Optional[str]:
+        """Computes the next target letter based on the currently spelled_text."""
+        len_spelled = len(spelled_text)
+        len_task = len(self.task_text)
+
+        if len_spelled >= len_task and spelled_text[
+                0:len_task] == self.task_text:
+            return None
+
+        if len_spelled < len_task and self.task_text[
+                0:len_spelled] == spelled_text:
+            # correctly spelled so far, get the next letter.
+            return self.task_text[len(spelled_text)]
+        return BACKSPACE_CHAR
+
+
+# TODO: Cleanup; This method is copied from helpers/language_model.py but can't
+# be imported from there due to circular dependencies. We should either create
+# a separate module for lm utilities, or refactor this method to only extract
+# the needed functionality.
+def with_min_prob(symbol_probs: List[Tuple[str, float]],
+                  sym_prob: Tuple[str, float]) -> List[Tuple[str, float]]:
+    """Returns a new list of symbol-probability pairs where the provided
+    symbol has a minimum probability given in the sym_prob.
+
+    If the provided symbol is already in the list with a greater probability,
+    the list of symbol_probs will be returned unmodified.
+
+    If the new probability is added or modified, existing values are adjusted
+    equally.
+
+    Parameters:
+    -----------
+        symbol_probs - list of symbol, probability pairs
+        sym_prob - (symbol, min_probability) defines the minimum probability
+            for the given symbol in the returned list.
+
+    Returns:
+    -------
+        list of (symbol, probability) pairs such that the sum of the
+        probabilities is approx. 1.0.
+    """
+    new_sym, new_prob = sym_prob
+
+    # Split out symbols and probabilities into separate lists, excluding the
+    # symbol to be adjusted.
+    symbols = []
+    probs = []
+    for sym, prob in symbol_probs:
+        if sym != new_sym:
+            symbols.append(sym)
+            probs.append(prob)
+        elif prob >= new_prob:
+            # symbol prob in list is larger than minimum.
+            return symbol_probs
+
+    probabilities = np.array(probs)
+
+    # Add new symbol and its probability
+    all_probs = np.append(probabilities, new_prob / (1 - new_prob))
+    all_symbols = symbols + [new_sym]
+
+    normalized = all_probs / sum(all_probs)
+
+    return list(zip(all_symbols, normalized))
