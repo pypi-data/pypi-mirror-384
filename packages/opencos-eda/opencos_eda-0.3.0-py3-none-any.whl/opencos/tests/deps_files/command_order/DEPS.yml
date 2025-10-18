@@ -1,0 +1,31 @@
+
+target_echo_hi:
+  # no 'deps', just 'commands'
+  commands:
+    - shell: echo "hi"
+
+target_echo_hi_bye:
+  # 'commands' in 'deps':
+  deps:
+    - target_echo_hi
+    - foo.sv
+    - commands:
+        - shell: echo "bye"
+          tee: custom_tee_echo_bye.log # In this test, we'll also confirm manual log names.
+
+# If this was not ordered, we'd get "hi" (first traversed) followed by "bye"
+
+target_test:
+  deps: target_echo_hi_bye
+  top: foo
+
+target_test_with_post_tool_commands:
+  deps:
+    # In this test, we want to put a new command in the front of the ordered "deps" list,
+    # but with run-after-tool=true, so it should run after any of the normal pre-compile
+    # shell commands.
+    - commands:
+        - shell: echo "final goodbye"
+          run-after-tool: true
+    - target_echo_hi_bye
+  top: foo
