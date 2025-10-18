@@ -1,0 +1,133 @@
+import numpy as np
+from xarray import Dataset, Variable
+
+from xarray_ms.backend.msv2.factories.core import DatasetFactory
+from xarray_ms.backend.msv2.imputation import maybe_impute_observation_table
+from xarray_ms.backend.msv2.measures_encoders import MSv2CoderFactory
+from xarray_ms.errors import InvalidMeasurementSet
+
+RELOCATABLE_ARRAY = {"ALMA", "VLA", "NOEMA", "EVLA"}
+
+
+class AntennaFactory(DatasetFactory):
+  """Factory class for generating the antenna_xds dataset for a
+  given partition of the Measurement Set"""
+
+  def get_dataset(self) -> Dataset:
+    partition = self._structure_factory.instance[self._partition_key]
+    ants = self._subtable_factories["ANTENNA"].instance
+    feeds = self._subtable_factories["FEED"].instance
+    obs = self._subtable_factories["OBSERVATION"].instance
+
+    obs = maybe_impute_observation_table(obs, [partition.obs_id])
+    telescope_name = obs["TELESCOPE_NAME"][0].as_py()
+
+    import pyarrow.compute as pac
+
+    feed_id = feeds["FEED_ID"].to_numpy()
+    spw_id = feeds["SPECTRAL_WINDOW_ID"].to_numpy()
+    feed_ant_id = feeds["ANTENNA_ID"].to_numpy()
+    # Select feeds with global spws (-1) or that match the partition spw
+    mask = np.logical_or.reduce(
+      (
+        spw_id == -1,
+        spw_id == partition.spw_id,
+      )
+    )
+
+    np.logical_and.reduce(
+      (
+        mask,
+        np.isin(feed_id, partition.feed_ids),
+        np.isin(feed_ant_id, partition.antenna_ids),
+      ),
+      out=mask,
+    )
+
+    filtered_ants = ants.take(feed_ant_id[mask])
+
+    if len(filtered_ants) == 0:
+      raise InvalidMeasurementSet(
+        f"No antennas were found in FEED matching "
+        f"feed_id = {partition.feed_ids} and spw_id = {partition.spw_id}"
+      )
+
+    ant_coder_factory = MSv2CoderFactory.from_arrow_table(filtered_ants)
+    antenna_names = filtered_ants["NAME"].to_numpy().astype(str)
+    telescope_names = np.asarray([telescope_name] * len(antenna_names), dtype=str)
+    position = pac.list_flatten(filtered_ants["POSITION"]).to_numpy().reshape(-1, 3)
+    diameter = filtered_ants["DISH_DIAMETER"].to_numpy()
+    station = filtered_ants["STATION"].to_numpy().astype(str)
+    mount = filtered_ants["MOUNT"].to_numpy().astype(str)
+
+    filtered_feeds = feeds.take(np.where(mask)[0])
+    feed_coder_factory = MSv2CoderFactory.from_arrow_table(filtered_feeds)
+    nreceptors = filtered_feeds["NUM_RECEPTORS"].unique().to_numpy()
+
+    if len(nreceptors) != 1:
+      raise NotImplementedError(
+        f"Measurement Set partitions {self._partition_key} with  "
+        f"multiple FEED::NUM_RECEPTOR values {nreceptors.tolist()}"
+      )
+
+    receptor_angle = (
+      pac.list_flatten(filtered_feeds["RECEPTOR_ANGLE"])
+      .to_numpy()
+      .reshape(-1, nreceptors.item())
+    )
+    pol_type = (
+      pac.list_flatten(filtered_feeds["POLARIZATION_TYPE"])
+      .to_numpy()
+      .astype(str)
+      .reshape(-1, nreceptors.item())
+    )
+    receptor_labels = [f"pol_{i}" for i in range(nreceptors.item())]
+    antenna_position = Variable(
+      ("antenna_name", "cartesian_pos_label"),
+      position,
+      {
+        # Antenna's are (currently) assumed to be earth-centric
+        "coordinate_system": "geocentric",
+        "origin_object_name": "earth",
+      },
+    )
+
+    dish_diameter = Variable("antenna_name", diameter)
+    ant_receptor_angle = Variable(("antenna_name", "receptor_label"), receptor_angle)
+
+    data_vars = {
+      "ANTENNA_POSITION": ant_coder_factory.create("POSITION").decode(antenna_position),
+      "ANTENNA_DISH_DIAMETER": ant_coder_factory.create("DISH_DIAMETER").decode(
+        dish_diameter
+      ),
+      "ANTENNA_EFFECTIVE_DISH_DIAMETER": ant_coder_factory.create(
+        "DISH_DIAMETER"
+      ).decode(dish_diameter),
+      "ANTENNA_RECEPTOR_ANGLE": feed_coder_factory.create("RECEPTOR_ANGLE").decode(
+        ant_receptor_angle
+      ),
+    }
+
+    if "FOCUS_LENGTH" in filtered_feeds:
+      focus_length = filtered_feeds["FOCUS_LENGTH"].to_numpy()
+      data_vars["ANTENNA_FOCUS_LENGTH"] = feed_coder_factory.create(
+        "FOCUS_LENGTH"
+      ).decode(Variable("antenna_name", focus_length))
+
+    return Dataset(
+      data_vars=data_vars,
+      coords={
+        "antenna_name": Variable("antenna_name", antenna_names),
+        "mount": Variable("antenna_name", mount),
+        "telescope_name": Variable("antenna_name", telescope_names),
+        "station_name": Variable("antenna_name", station),
+        "cartesian_pos_label": Variable("cartesian_pos_label", ["x", "y", "z"]),
+        "polarization_type": Variable(("antenna_name", "receptor_label"), pol_type),
+        "receptor_label": Variable("receptor_label", receptor_labels),
+      },
+      attrs={
+        "type": "antenna",
+        "overall_telescope_name": telescope_name,
+        "relocatable_antennas": telescope_name in RELOCATABLE_ARRAY,
+      },
+    )

@@ -1,0 +1,137 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+    - main
+    tags:
+    - "*"
+  pull_request:
+  schedule:
+    - cron: '30 2 * * 1,4' # Every Monday and Thursday @ 2h30am UTC
+
+jobs:
+  check_skip:
+    runs-on: ubuntu-latest
+    if: |
+      !contains(format('{0} {1} {2}', github.event.head_commit.message, github.event.pull_request.title, github.event.pull_request.body), '[skip ci]')
+    steps:
+      - run: |
+          cat <<'MESSAGE'
+          github.event_name: ${{ toJson(github.event_name) }}
+          github.event:
+          ${{ toJson(github.event) }}
+          MESSAGE
+  test:
+    needs: check_skip
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-22.04", "macos-13", "macos-14", "macos-15"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        is_main_or_release:
+          - ${{ contains(github.ref, 'main') || startsWith(github.ref, 'refs/tags')}}
+        exclude:
+          # Don't test on macos-{13,14} in PR's
+          - is_main_or_release: false
+            os: "macos-13"
+          - is_main_or_release: false
+            os: "macos-14"
+          # Don't test on 3.10 - 3.12 in PR's
+          - is_main_or_release: false
+            python-version: "3.10"
+          - is_main_or_release: false
+            python-version: "3.11"
+          - is_main_or_release: false
+            python-version: "3.12"
+          # Don't test on macos on 3.10 - 3.12 in PRs
+          - os: "macos-13"
+            python-version: "3.10"
+          - os: "macos-13"
+            python-version: "3.11"
+          - os: "macos-13"
+            python-version: "3.12"
+          - os: "macos-14"
+            python-version: "3.10"
+          - os: "macos-14"
+            python-version: "3.11"
+          - os: "macos-14"
+            python-version: "3.12"
+          - os: "macos-15"
+            python-version: "3.10"
+          - os: "macos-15"
+            python-version: "3.11"
+          - os: "macos-15"
+            python-version: "3.12"
+
+
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Download metadata
+        run: curl https://downloadnrao.org/file.download.json > metadata.json
+
+      - name: Load cached MSv4 Test Corpus
+        id: load-cached-msv4-test-corpus
+        uses: actions/cache@v4
+        with:
+          key: msv4-test-corpus-${{ hashFiles('metadata.json')}}
+          path: ~/.cache/xarray-ms/msv4-test-data
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U pip
+
+      - name: Install xarray-ms
+        run: |
+          source .venv/bin/activate
+          pip install .[testing]
+
+      - name: Test xarray-ms
+        run: |
+          source .venv/bin/activate
+          py.test -s -vvv tests/ -Werror --msv4_test_corpus
+
+      # - name: Debug with tmate on failure
+      #   if: ${{ failure() }}
+      #   uses: mxschmitt/action-tmate@v3
+
+  deploy:
+    needs: [test]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https:/pypi.org/p/xarray-ms
+    permissions:
+      id-token: write
+    steps:
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: 3.11
+
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Build distributions
+        run: |
+          pip install -U pip build
+          python -m build --sdist --wheel
+
+      - name: Publish distribution 📦 to PyPI
+        if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@release/v1
