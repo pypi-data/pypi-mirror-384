@@ -1,0 +1,296 @@
+<!-- templates/blocks/carousel_responsivo_snippet.html -->
+{% load wagtailcore_tags wagtailimages_tags %}
+
+<section class="carousel-responsivo" 
+         data-autoplay="{{ value.autoplay }}" 
+         data-interval="{{ value.intervalo_autoplay }}"
+         style="--carousel-height-desktop: {{ value.altura_desktop }}; --carousel-height-mobile: {{ value.altura_mobile }};">
+    
+    {% if value.titulo_secao %}
+    <div class="container">
+        <h2 class="carousel-responsivo__title">{{ value.titulo_secao }}</h2>
+    </div>
+    {% endif %}
+    
+    <!-- CORREÇÃO #1: ID único usando block.id e forloop.counter como fallback -->
+    <div class="carousel-responsivo__container" 
+         id="carousel-responsivo-{{ block.id|default:forloop.counter|default:'main' }}"
+         data-carousel-type="responsivo">
+        
+        <!-- Slides -->
+        <div class="carousel-responsivo__slides" 
+             role="region" 
+             aria-label="Carrossel de imagens"
+             aria-roledescription="carrossel">
+            {% for slide in value.slides.all %}
+                <div class="carousel-responsivo__slide carousel-responsivo__slide--{{ slide.posicao_texto }} carousel-responsivo__slide--{{ slide.cor_tema }}"
+                     {% if forloop.first %}data-active="true" aria-hidden="false"{% else %}aria-hidden="true"{% endif %}
+                     role="group"
+                     aria-roledescription="slide"
+                     aria-label="Slide {{ forloop.counter }} de {{ value.slides.count }}">
+                    
+                    <!-- Imagem Responsiva -->
+                    {% if slide.imagem_desktop and slide.imagem_mobile %}
+                        {% image slide.imagem_desktop fill-1920x600 as img_desktop %}
+                        {% image slide.imagem_mobile fill-768x600 as img_mobile %}
+                        <picture class="carousel-responsivo__picture">
+                            <source media="(min-width: 768px)" srcset="{{ img_desktop.url }}">
+                            <img src="{{ img_mobile.url }}" 
+                                 alt="{% if slide.titulo %}{{ slide.titulo }}{% else %}Imagem do slide {{ forloop.counter }}{% endif %}" 
+                                 class="carousel-responsivo__image"
+                                 loading="{% if forloop.first %}eager{% else %}lazy{% endif %}"
+                                 decoding="{% if forloop.first %}sync{% else %}async{% endif %}">
+                        </picture>
+                    {% elif slide.imagem_desktop %}
+                        {% image slide.imagem_desktop fill-1920x600 as img_desktop %}
+                        <img src="{{ img_desktop.url }}" 
+                             alt="{% if slide.titulo %}{{ slide.titulo }}{% else %}Imagem do slide {{ forloop.counter }}{% endif %}" 
+                             class="carousel-responsivo__image"
+                             loading="{% if forloop.first %}eager{% else %}lazy{% endif %}"
+                             decoding="{% if forloop.first %}sync{% else %}async{% endif %}">
+                    {% endif %}
+                    
+                    <!-- Overlay -->
+                    <div class="carousel-responsivo__overlay" aria-hidden="true"></div>
+                    
+                    <!-- Conteúdo -->
+                    <div class="carousel-responsivo__content">
+                        <div class="container">
+                            <div class="carousel-responsivo__text-wrapper">
+                                <!-- CORREÇÃO #2: Hierarquia de cabeçalhos melhorada -->
+                                {% if slide.titulo %}
+                                <h3 class="carousel-responsivo__slide-title">{{ slide.titulo }}</h3>
+                                {% endif %}
+                                
+                                {% if slide.subtitulo %}
+                                <p class="carousel-responsivo__slide-subtitle">{{ slide.subtitulo }}</p>
+                                {% endif %}
+                                
+                                {% if slide.texto %}
+                                <div class="carousel-responsivo__slide-text">
+                                    {{ slide.texto|linebreaks }}
+                                </div>
+                                {% endif %}
+                                
+                                <!-- CORREÇÃO #3: Link com melhor acessibilidade -->
+                                {% if slide.link_texto and slide.link_final %}
+                                <div class="carousel-responsivo__slide-actions">
+                                    <a href="{{ slide.link_final }}" 
+                                       class="carousel-responsivo__slide-button"
+                                       {% if slide.link_url %}target="_blank" rel="noopener noreferrer"{% endif %}
+                                       aria-label="{{ slide.link_texto }}{% if slide.link_url %} (abre em nova aba){% endif %}">
+                                        {{ slide.link_texto }}
+                                        <span class="carousel-responsivo__slide-button-icon" aria-hidden="true">→</span>
+                                    </a>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        
+        <!-- CORREÇÃO #4: Navegação com melhor acessibilidade -->
+        {% if value.mostrar_navegacao and value.slides.count > 1 %}
+        <button class="carousel-responsivo__nav carousel-responsivo__nav--prev" 
+                type="button"
+                aria-label="Ir para o slide anterior"
+                aria-controls="carousel-responsivo-{{ block.id|default:forloop.counter|default:'main' }}">
+            <span aria-hidden="true">‹</span>
+        </button>
+        <button class="carousel-responsivo__nav carousel-responsivo__nav--next" 
+                type="button"
+                aria-label="Ir para o próximo slide"
+                aria-controls="carousel-responsivo-{{ block.id|default:forloop.counter|default:'main' }}">
+            <span aria-hidden="true">›</span>
+        </button>
+        {% endif %}
+        
+        <!-- CORREÇÃO #5: Indicadores com IDs únicos e melhor acessibilidade -->
+        {% if value.mostrar_indicators and value.slides.count > 1 %}
+        <div class="carousel-responsivo__indicators" 
+             role="tablist"
+             aria-label="Slides do carrossel">
+            {% for slide in value.slides.all %}
+            <button class="carousel-responsivo__indicator"
+                    type="button"
+                    role="tab"
+                    id="carousel-tab-{{ block.id|default:forloop.parentloop.counter|default:'main' }}-{{ forloop.counter }}"
+                    aria-label="Ir para slide {{ forloop.counter }}: {{ slide.titulo|default:'Slide sem título' }}"
+                    aria-controls="carousel-responsivo-{{ block.id|default:forloop.parentloop.counter|default:'main' }}"
+                    data-slide="{{ forloop.counter0 }}"
+                    {% if forloop.first %}aria-selected="true" tabindex="0"{% else %}aria-selected="false" tabindex="-1"{% endif %}>
+                <span class="sr-only">Slide {{ forloop.counter }}: {{ slide.titulo|default:'Sem título' }}</span>
+            </button>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        <!-- CORREÇÃO #6: Live region para anúncios de mudança de slide -->
+        <div class="sr-only" aria-live="polite" aria-atomic="true" id="carousel-status-{{ block.id|default:forloop.counter|default:'main' }}">
+            Slide 1 de {{ value.slides.count }}{% if value.slides.all.0.titulo %}: {{ value.slides.all.0.titulo }}{% endif %}
+        </div>
+    </div>
+</section>
+
+<!-- templates/blocks/carousel_responsivo_com_opcoes.html - MANTÉM IGUAL -->
+{% load wagtailcore_tags %}
+
+<div class="carousel-wrapper 
+            carousel-wrapper--margin-top-{{ value.margem_superior }}
+            carousel-wrapper--margin-bottom-{{ value.margem_inferior }}
+            {% if value.largura_maxima %}carousel-wrapper--max-width{% endif %}">
+    
+    {% include 'blocks/carousel_responsivo_snippet.html' with value=value.carousel %}
+    
+</div>
+
+
+
+<!-- CORREÇÃO #7: JavaScript atualizado para trabalhar com IDs únicos -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // CORREÇÃO: Buscar por data-attribute ao invés de classe genérica
+    const carousels = document.querySelectorAll('[data-carousel-type="responsivo"]');
+    
+    carousels.forEach(function(carousel) {
+        const slides = carousel.querySelectorAll('.carousel-responsivo__slide');
+        const indicators = carousel.querySelectorAll('.carousel-responsivo__indicator');
+        const prevBtn = carousel.querySelector('.carousel-responsivo__nav--prev');
+        const nextBtn = carousel.querySelector('.carousel-responsivo__nav--next');
+        const carouselSection = carousel.closest('.carousel-responsivo');
+        const statusElement = carousel.querySelector('[aria-live]');
+        
+        if (slides.length <= 1) return; // Não inicializar se houver apenas 1 slide
+        
+        let currentSlide = 0;
+        let autoplayTimer = null;
+        
+        const autoplay = carouselSection.dataset.autoplay === 'true';
+        const interval = parseInt(carouselSection.dataset.interval) * 1000 || 5000;
+        
+        function updateStatus() {
+            if (statusElement) {
+                const currentSlideElement = slides[currentSlide];
+                const title = currentSlideElement.querySelector('.carousel-responsivo__slide-title');
+                const titleText = title ? title.textContent : 'Slide sem título';
+                statusElement.textContent = `Slide ${currentSlide + 1} de ${slides.length}: ${titleText}`;
+            }
+        }
+        
+        function showSlide(index) {
+            // Remove active state from current slide
+            slides[currentSlide].setAttribute('data-active', 'false');
+            slides[currentSlide].setAttribute('aria-hidden', 'true');
+            if (indicators[currentSlide]) {
+                indicators[currentSlide].setAttribute('aria-selected', 'false');
+                indicators[currentSlide].setAttribute('tabindex', '-1');
+            }
+            
+            // Set new current slide
+            currentSlide = index;
+            
+            // Add active state to new slide
+            slides[currentSlide].setAttribute('data-active', 'true');
+            slides[currentSlide].setAttribute('aria-hidden', 'false');
+            if (indicators[currentSlide]) {
+                indicators[currentSlide].setAttribute('aria-selected', 'true');
+                indicators[currentSlide].setAttribute('tabindex', '0');
+            }
+            
+            // Update screen reader status
+            updateStatus();
+        }
+        
+        function nextSlide() {
+            const next = (currentSlide + 1) % slides.length;
+            showSlide(next);
+        }
+        
+        function prevSlide() {
+            const prev = (currentSlide - 1 + slides.length) % slides.length;
+            showSlide(prev);
+        }
+        
+        function startAutoplay() {
+            if (autoplay && slides.length > 1) {
+                autoplayTimer = setInterval(nextSlide, interval);
+            }
+        }
+        
+        function stopAutoplay() {
+            if (autoplayTimer) {
+                clearInterval(autoplayTimer);
+                autoplayTimer = null;
+            }
+        }
+        
+        // Event listeners para navegação
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function() {
+                stopAutoplay();
+                nextSlide();
+                startAutoplay();
+            });
+        }
+        
+        if (prevBtn) {
+            prevBtn.addEventListener('click', function() {
+                stopAutoplay();
+                prevSlide();
+                startAutoplay();
+            });
+        }
+        
+        // Event listeners para indicadores
+        indicators.forEach(function(indicator, index) {
+            indicator.addEventListener('click', function() {
+                stopAutoplay();
+                showSlide(index);
+                startAutoplay();
+                indicator.focus(); // Melhor acessibilidade
+            });
+        });
+        
+        // Pause autoplay on hover
+        carousel.addEventListener('mouseenter', stopAutoplay);
+        carousel.addEventListener('mouseleave', startAutoplay);
+        
+        // CORREÇÃO #8: Navegação por teclado melhorada
+        carousel.addEventListener('keydown', function(e) {
+            const focusedElement = document.activeElement;
+            
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                stopAutoplay();
+                prevSlide();
+                startAutoplay();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                stopAutoplay();
+                nextSlide();
+                startAutoplay();
+            } else if (e.key === 'Home' && focusedElement.classList.contains('carousel-responsivo__indicator')) {
+                e.preventDefault();
+                stopAutoplay();
+                showSlide(0);
+                indicators[0].focus();
+                startAutoplay();
+            } else if (e.key === 'End' && focusedElement.classList.contains('carousel-responsivo__indicator')) {
+                e.preventDefault();
+                stopAutoplay();
+                showSlide(slides.length - 1);
+                indicators[slides.length - 1].focus();
+                startAutoplay();
+            }
+        });
+        
+        // Inicializar status para leitores de tela
+        updateStatus();
+        
+        // Start autoplay
+        startAutoplay();
+    });
+});
+</script>
