@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+    
+    - name: Lint with flake8 (optional)
+      run: |
+        pip install flake8
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+      continue-on-error: true
+    
+    - name: Test package installation
+      run: |
+        python -c "import embedding_model; print('Package imported successfully')"
+    
+    - name: Run basic functionality tests
+      run: |
+        # Test CLI help commands work
+        python -m embedding_model.cli.train --help
+        python -m embedding_model.cli.embed --help
+        python -m embedding_model.cli.search --help
+        python -m embedding_model.cli.adaptive_search --help
+        python -m embedding_model.cli.benchmark --help
+        
+        # Test Python API imports
+        python -c "
+        from embedding_model import JSONEmbeddingModel, embed_documents, search_documents
+        from embedding_model.data.flatten import flatten_to_text
+        from embedding_model.tokenizer import CharVocab
+        from embedding_model.model.charcnn import CharCNNEncoder
+        print('All imports successful!')
+        "
+        
+        # Test basic data processing
+        echo '{"id": "1", "title": "test document", "description": "sample"}' > test_data.jsonl
+        echo '{"id": "2", "title": "example", "description": "another sample"}' >> test_data.jsonl
+        
+        # Test data flattening functionality
+        python -c "
+        import json
+        from embedding_model.data.flatten import flatten_to_text
+        with open('test_data.jsonl') as f:
+            for line in f:
+                obj = json.loads(line.strip())
+                text = flatten_to_text(obj)
+                print(f'Flattened: {text[:50]}...')
+        print('Data processing test passed!')
+        "
+        
+        # Test config loading
+        python -c "
+        from embedding_model.config import load_config
+        cfg = load_config('src/embedding_model/config/default.yaml')
+        print(f'Config loaded: projection_dim={cfg.projection_dim}')
+        "
+    
+    - name: Clean up test files
+      run: |
+        rm -f test_data.jsonl test_model.pt test_embeddings.npy
