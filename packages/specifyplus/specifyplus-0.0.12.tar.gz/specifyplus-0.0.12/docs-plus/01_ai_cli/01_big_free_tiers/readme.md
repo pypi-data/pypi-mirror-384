@@ -1,0 +1,20 @@
+# Gemini CLI Tutorial Series
+
+> Note: Qwen Code is a fork of Gemini CLI therefore most things covered here also apply to Qwen Code.
+
+[Gemini CLI Tutorial Series](https://medium.com/google-cloud/gemini-cli-tutorial-series-77da7d494718)
+
+[About Gemini CLI](https://www.youtube.com/watch?v=A3AOeX1s7yw)
+
+[Advanced Gemini CLI: Part 1](https://medium.com/google-cloud/advanced-gemini-cli-part-1-whats-the-context-6fd91326979b)
+
+[Advanced Gemini CLI: Part 2— Decoding the Context](https://medium.com/google-cloud/advanced-gemini-cli-part-2-decoding-the-context-edc9e815b548)
+
+Subagent feature is coming soon to Gemini CLI:
+
+[How I Turned Gemini CLI into a Multi-Agent System with Just Prompts](https://aipositive.substack.com/p/how-i-turned-gemini-cli-into-a-multi)
+
+https://docs.claude.com/en/docs/claude-code/sub-agents
+
+https://github.com/google-gemini/gemini-cli/issues/3132
+
