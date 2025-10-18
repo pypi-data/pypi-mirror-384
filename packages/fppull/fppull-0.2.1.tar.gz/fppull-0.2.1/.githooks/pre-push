@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+if ! command -v pre-commit >/dev/null 2>&1; then
+  if [ -x .venv/bin/pre-commit ]; then PATH=.venv/bin:$PATH; else
+    echo "pre-commit not found; install it with: python -m pip install pre-commit" >&2; exit 1; fi
+fi
+set -euo pipefail
+
+# Prefer checking only changes vs origin/main (fast), else fall back.
+if git rev-parse --verify -q origin/main >/dev/null; then
+  RANGE_OK=1
+  pre-commit run --from-ref origin/main --to-ref HEAD || { echo "pre-commit failed"; exit 1; }
+else
+  echo "origin/main not found (first push?). Running pre-commit on all files..."
+  pre-commit run --all-files || { echo "pre-commit failed"; exit 1; }
+fi
+
+echo "pre-commit passed. Running tests…"
+./scripts/ci.sh test
+
+echo "Running contract tests…"
+./scripts/ci.sh contracts
+
+echo "pre-push: OK"
