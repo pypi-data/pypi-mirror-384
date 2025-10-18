@@ -1,0 +1,268 @@
+# Prompt-Debugger
+
+A Python library for debugging LLM interactions with automatic issue detection, quality scoring, and actionable suggestions.
+
+[![PyPI version](https://badge.fury.io/py/prompt-debugger.svg)](https://badge.fury.io/py/prompt-debugger)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Overview
+
+**prompt-debugger** provides tools for analyzing and debugging interactions with Large Language Models. It detects common issues in prompts before API calls, analyzes response quality, and provides specific suggestions for improvement. The library works with any LLM provider and has **zero dependencies**.
+
+---
+
+## Installation
+
+pip install prompt-debugger
+
+text
+
+---
+
+## Quick Start
+
+from prompt_debugger import AIDebugger
+
+debugger = AIDebugger(verbose=True)
+
+result = debugger.debug_call(
+llm_function=your_llm_function,
+prompt="Your prompt here"
+)
+
+print(f"Prompt Quality: {result['prompt_analysis']['quality_score']}/10")
+print(f"Response Quality: {result['response_analysis']['quality_score']}/10")
+
+text
+
+**Output:**
+======================================================================
+Debug Report - Call 20251017_160000_1
+Status: SUCCESS
+Latency: 1.234s
+
+No prompt issues detected
+
+Response Quality: 8/10
+
+======================================================================
+
+text
+
+---
+
+## Features
+
+### **Prompt Analysis**
+
+prompt-debugger analyzes prompts before they are sent to the LLM, checking for:
+
+- Vague or ambiguous language
+- Insufficient context
+- Overly complex or conflicting instructions
+- Length issues (too short or too long)
+
+debugger = AIDebugger()
+result = debugger.debug_call(llm, "Tell me about stuff")
+
+text
+
+**Detects:**
+Prompt Issues:
+
+TOO_VAGUE: Contains 1 vague term
+
+Quality Score: 6/10
+
+text
+
+### **Response Analysis**
+
+Every response is analyzed for:
+
+- Empty or minimal responses
+- AI refusals or inability to answer
+- Low relevance to the original prompt
+- Incomplete answers
+- Potential hallucinations
+
+### **Automatic Improvements**
+
+Generate improved versions of problematic prompts:
+
+original = "Explain things"
+improved = debugger.get_improved_prompt(original)
+
+print(improved)
+
+text
+
+### **Complete Logging**
+
+All interactions are logged with metadata for later analysis:
+
+debugger.export_report("debug_session.json")
+
+summary = debugger.get_session_summary()
+print(f"Total calls: {summary['total_calls']}")
+print(f"Issues found: {summary['issues_found']}")
+
+text
+
+---
+
+## Usage Examples
+
+### **Example 1: Basic Usage with OpenAI**
+
+from prompt_debugger import AIDebugger
+import openai
+
+def call_gpt(prompt):
+response = openai.ChatCompletion.create(
+model="gpt-3.5-turbo",
+messages=[{"role": "user", "content": prompt}]
+)
+return response.choices.message.content
+
+debugger = AIDebugger(verbose=True)
+
+result = debugger.debug_call(
+llm_function=call_gpt,
+prompt="Write a Python function to sort a list"
+)
+
+text
+
+### **Example 2: Production Mode**
+
+debugger = AIDebugger(verbose=False)
+
+result = debugger.debug_call(llm, user_input)
+
+if result['prompt_analysis']['quality_score'] < 7:
+improved = debugger.get_improved_prompt(user_input)
+result = debugger.debug_call(llm, improved)
+
+text
+
+### **Example 3: Batch Processing**
+
+prompts = ["Prompt 1", "Prompt 2", "Prompt 3"]
+
+for prompt in prompts:
+result = debugger.debug_call(llm, prompt)
+print(f"Quality: {result['response_analysis']['quality_score']}/10")
+
+text
+
+---
+
+## Compatibility
+
+**prompt-debugger** works with any LLM provider:
+
+- **OpenAI** (GPT-3.5, GPT-4, GPT-4-turbo)
+- **Anthropic** (Claude, Claude-2, Claude-3)
+- **Google** (Gemini, PaLM)
+- **Local models** (Llama, Mistral, Ollama)
+- **Any custom LLM function**
+
+---
+
+## Architecture
+
+The library consists of four main components:
+
+| Component | Description |
+|-----------|-------------|
+| **PromptChecker** | Analyzes prompts for common issues |
+| **ResponseAnalyzer** | Evaluates response quality and relevance |
+| **DebugLogger** | Persistent logging of all interactions |
+| **AIDebugger** | Main interface coordinating all components |
+
+---
+
+## Requirements
+
+- **Python 3.8+**
+- **No external dependencies** (pure Python implementation)
+
+---
+
+## Advanced Usage
+
+### **Using Components Independently**
+
+from prompt_debugger import PromptChecker, ResponseAnalyzer
+
+checker = PromptChecker()
+analysis = checker.check_prompt("Your prompt here")
+
+analyzer = ResponseAnalyzer()
+quality = analyzer.analyze_response(prompt, response)
+
+text
+
+### **Accessing Debug Logs**
+
+from prompt_debugger import DebugLogger
+
+logger = DebugLogger()
+logs = logger.get_all_interactions()
+
+for log in logs:
+print(f"Call ID: {log['call_id']}")
+print(f"Quality: {log['prompt_analysis']['quality_score']}/10")
+
+text
+
+---
+
+## Author
+
+**Mohamed Imthiyas** - Creator and Maintainer
+
+- PyPI: [prompt-debugger](https://pypi.org/project/prompt-debugger/)
+
+---
+
+## Support
+
+For questions or support, please contact through PyPI.
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## Changelog
+
+### **Version 0.1.1 (2025-10-17)**
+- Updated author information
+- Improved documentation
+- Enhanced README with better examples
+
+### **Version 0.1.0 (2025-10-17)**
+- Initial release
+- Prompt quality analysis
+- Response quality scoring
+- Automatic suggestion generation
+- Complete interaction logging
+- Session tracking functionality
+
+---
+
+## Acknowledgments
+
+This project was developed to address the growing need for better debugging tools in LLM application development.
+
+---
+
+**If you find this useful, please consider giving it a positive review on PyPI!**
