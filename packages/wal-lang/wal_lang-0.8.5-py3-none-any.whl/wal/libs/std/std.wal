@@ -1,0 +1,210 @@
+;; core functions
+(defmacro defun args
+  (define name (first args))
+  (define params (second args))
+  (define body (rest (rest args)))
+  `(define ,name (fn ,params ,name ,@body)))
+
+(defmacro append [xs x]
+  (let ([tmp (gensym)])
+    `(+ ,xs (let ([,tmp ,x])
+	      (if (list? ,tmp) (list ,tmp) ,tmp)))))
+
+(defmacro for/list args
+	  (let [(sym args[0][0])
+	        (body (rest args))
+		(data args[0][1])]
+	    `(map (fn [,sym] (do ,@body)) ,data)))
+
+(defmacro for args
+	  (let [(sym args[0][0])
+          (temp (gensym))
+	        (body (rest args))
+		(data args[0][1])]
+    `(let ([,temp (map (fn [,sym] (do ,@body)) ,data)])
+          (if ,temp (last ,temp) '()))))
+
+(defun symbol-add args
+  (string->symbol
+    (fold +
+          ""
+          (for/list [arg args]
+                    (if (symbol? arg)
+                        (symbol->string arg)
+                        arg)))))
+
+(defun reverse [lst]
+  (if lst (append (reverse (rest lst)) (first lst)) '()))
+
+(defun filter [p xs]
+  (fold (fn [acc x] (if (p x) (append acc x) acc)) '() xs))
+
+(defun sort [xs]
+  "Sorts lists of numbers"
+  (cond [(= xs '()) xs]
+        [(= (length xs) 1) xs]
+        [#t (let ([pivot xs[0]]
+                  [smaller (fold (fn [acc x] (if (< x pivot) (+ acc x) acc)) '() (rest xs))]
+                  [larger (fold (fn [acc x] (if (>= x pivot) (+ acc x) acc)) '() (rest xs))])
+                 (+ (sort smaller) pivot (sort larger)))]))
+
+(defmacro when args
+  (let ([condition args[0]]
+	[body (rest args)])
+    `(if ,condition (do ,@body))))
+
+(defmacro unless args
+  (let ([condition args[0]]
+	[body (rest args)])
+    `(if (! ,condition) (do ,@body))))
+
+(defmacro dowhile args
+  (let ([body (slice args 0 (- (length args) 1))]
+	[condition (last args)])
+    `(do ,@body
+	 (while ,condition ,@body))))
+
+(defmacro until args
+  (let ([condition (first args)]
+	[body (rest args)])
+    `(while (! ,condition) ,@body)))
+
+(defmacro step-until [condition]
+    `(while (&& (! ,condition) (step)) INDEX))
+
+(defmacro step-while [condition]
+    `(while (&& ,condition (step)) INDEX))
+
+(defmacro always args `(whenever #t ,@args))
+
+(defmacro cond args
+	(fold (fn [acc branch]
+		(unless (&& (list? branch) (> (length branch) 1))
+		  (print "cond: arguments must be valid [condition action ...] pairs but was " branch)
+		  (exit 1))
+		(let ([condition (if (= branch[0] 'else) #t branch[0])]
+		      [then (rest branch)])
+		  (if acc
+		      `(if ,condition (do ,@then) ,acc)
+		      `(if ,condition (do ,@then)))))
+	'()
+	 (reverse args)))
+       
+(defmacro defunm args
+  `(set [,(first args) (fn ,(second args) (do ,@(rest (rest args))))]))
+
+(defmacro car [xs]
+  `(first ,xs))
+
+(defmacro cdr [xs]
+  `(rest ,xs))
+
+(defmacro cadr [xs]
+  `(car (cdr ,xs)))
+
+(defmacro partition [pred xs]
+  `(fold (fn [acc x] (if (,pred x)
+			 (list (append acc[0] x) acc[1])
+			 (list acc[0] (append acc[1] x))))
+	 '(() ())
+	  ,xs))
+
+;; Increment the value of a variable by one
+;; if variable is not defined bind it with value 1
+(defmacro inc-define symbols
+  (let ([assignments
+	 (for/list [symbol symbols]
+	      (cond [(symbol? symbol) `(,symbol (if (defined? ',symbol) (+ ,symbol 1) 1))]
+		    [else (print "inc: expected symbol but got " (type symbol)) (exit 1)]))])
+    `(set ,@ assignments)))
+
+(defmacro inc symbols
+  (let ([assignments
+	 (for/list [symbol symbols]
+	      (cond [(symbol? symbol) `(,symbol (+ ,symbol 1))]
+		    [else (print "inc: expected symbol but got " (type symbol)) (exit 1)]))])
+    `(set ,@ assignments)))
+
+;; Decrement the value of a variable by one
+;; if variable is not defined bind it with value -1
+(defmacro dec symbols
+  (let ([assignments
+	 (for [symbol symbols]
+	      (cond [(symbol? symbol) `(,symbol (if (defined? ',symbol) (- ,symbol 1) -1))]
+		    [else (print "dec: expected symbol but got " (type symbol)) (exit 1)]))])
+    `(set ,@ assignments)))
+
+(defmacro sum [xs]
+  `(fold + 0 ,xs))
+
+;; trace functions
+(defun ALL-INDICES []
+  (map (fn [t] (list t (get (+ t "^INDEX")))) (loaded-traces)))
+
+(defmacro timeframe body
+  (let ([TIMEFRAME-START (gensym)]
+	[RES (gensym)])
+    `(let ([TIMEFRAME-START (ALL-INDICES)]
+	   [,RES (do ,@body)])
+       (for [trace TIMEFRAME-START]
+	    (in-group (first trace) (step (- (second trace) INDEX))))
+       ,RES)))
+
+(defmacro rising [expr]
+  `(&& (= ,expr 0) (= (reval ,expr 1) 1)))
+
+(defmacro falling [expr]
+  `(&& (= ,expr 1) (= (reval ,expr 1) 0)))
+
+(defmacro unstable [expr]
+  `(!= ,expr (reval ,expr 1)))
+
+(defmacro stable [expr]
+  `(= ,expr (reval ,expr 1)))
+
+(defmacro signed [signal]
+  `(bits->sint (convert/bin ,signal (signal-width ',signal))))
+
+(defmacro count [condition]
+  `(length (find ,condition)))
+
+(defun trace-index [trace]
+   (in-group (+ trace "§") #INDEX))
+
+(defun set-index [i]
+  (cond [(< i 0) #f]
+	[(> i MAX-INDEX) #f]
+	[else (step (- i INDEX))]))
+
+(defun set-index/all [i]
+  (cond [(< i 0) #f]
+	[(> i MAX-INDEX) #f]
+	[else (for [trace (loaded-traces)]
+		 (step (- i (trace-index trace))))]))
+
+(defmacro set! [key value]
+  `(set [,key ,value]))
+
+;; (groups-excluding (including a b c) (excluding d))
+;; Find groups with a b c but exclude any group that also has d
+(defmacro groups-excluding xs
+  (when (!= (length xs) 2)
+        (print "groups-excluding: expects exactly two lists")
+        (exit 1))
+  (when (in #f (map (fn [x] (&& (list? x) (> (length x) 1))) xs))
+        (print "groups-excluding: expects exactly two lists")
+        (exit 1))
+  (define including (rest (first (filter (fn [x] (= (first x) 'including)) xs))))
+  (define excluding (rest (first (filter (fn [x] (= (first x) 'excluding)) xs))))
+  `(filter
+     ;; filter out all groups which contain atleast one of the excluded signals
+     (fn [g] (! (in #t (for/list [ex '(,@excluding)]
+                                 (signal? (+ g (symbol->string ex)))))))
+     (groups ,@including)))
+
+(defmacro geta/default [a default key]
+  (define array-sym (gensym))
+  `(let ([,array-sym ,a])
+        (if (in ,key ,array-sym)
+            (geta ,array-sym ,key)
+            ,default)))
