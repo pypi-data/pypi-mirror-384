@@ -1,0 +1,58 @@
+# DcisionAI MCP Server - Docker Compose for Easy Deployment
+version: '3.8'
+
+services:
+  dcisionai-mcp-server:
+    build: .
+    container_name: dcisionai-mcp-server
+    ports:
+      - "8000:8000"
+    environment:
+      # AWS Configuration (set these in .env file)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      
+      # AgentCore Gateway Configuration
+      - DCISIONAI_ACCESS_TOKEN=${DCISIONAI_ACCESS_TOKEN}
+      - DCISIONAI_GATEWAY_URL=${DCISIONAI_GATEWAY_URL}
+      - DCISIONAI_GATEWAY_TARGET=${DCISIONAI_GATEWAY_TARGET:-DcisionAI-Optimization-Tools-Fixed}
+      
+      # Optional: Custom configuration
+      - DCISIONAI_LOG_LEVEL=${DCISIONAI_LOG_LEVEL:-INFO}
+      - DCISIONAI_MAX_WORKERS=${DCISIONAI_MAX_WORKERS:-4}
+    volumes:
+      # Mount config directory for persistent configuration
+      - ./config:/app/config:ro
+      # Mount logs directory for log persistence
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "dcisionai-mcp-server", "health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - dcisionai-network
+
+  # Optional: Redis for caching (if needed for future features)
+  redis:
+    image: redis:7-alpine
+    container_name: dcisionai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - dcisionai-network
+    profiles:
+      - cache
+
+networks:
+  dcisionai-network:
+    driver: bridge
+
+volumes:
+  redis-data:
