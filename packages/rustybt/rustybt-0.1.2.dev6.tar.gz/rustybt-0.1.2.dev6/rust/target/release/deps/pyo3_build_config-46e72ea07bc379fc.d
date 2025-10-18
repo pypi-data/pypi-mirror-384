@@ -1,0 +1,14 @@
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/deps/pyo3_build_config-46e72ea07bc379fc.d: /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/lib.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/errors.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/impl_.rs /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config-file.txt /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config.txt
+
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/deps/libpyo3_build_config-46e72ea07bc379fc.rlib: /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/lib.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/errors.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/impl_.rs /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config-file.txt /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config.txt
+
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/deps/libpyo3_build_config-46e72ea07bc379fc.rmeta: /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/lib.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/errors.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/impl_.rs /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config-file.txt /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config.txt
+
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/lib.rs:
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/errors.rs:
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.26.0/src/impl_.rs:
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config-file.txt:
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out/pyo3-build-config.txt:
+
+# env-dep:CARGO_PKG_VERSION=0.26.0
+# env-dep:OUT_DIR=/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/pyo3-build-config-b59260d119f4d050/out
