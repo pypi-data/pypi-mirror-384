@@ -1,0 +1,272 @@
+layout:
+  rows: 3
+  columns: 6
+  configs:
+    row0: { "size": 0, "ratio": 1 }
+    row1: { "size": 0, "ratio": 2 }
+    row2: { "size": 0, "ratio": 2 }
+    row1-col4: { "size": 0, "ratio": 0 }
+    row1-col3: { "size": 0, "ratio": 0 }
+    row1-col5: { "size": 0, "ratio": 0 }
+    row2-col4: { "size": 0, "ratio": 0 }
+    row2-col5: { "size": 0, "ratio": 0 }
+  theme: matrix
+
+
+charts:
+  - type: single
+    spl: |
+      show rest "/api/v1/admin/internal/_cat/shards"
+      | eval sp=if(state == "STARTED" and prirep == "p", 1, 0)
+      | eval sr=if(state == "STARTED" and prirep == "r", 1, 0)
+      | eval up=if(state == "UNASSIGNED" and prirep == "p", 1, 0)
+      | eval ur=if(state == "UNASSIGNED" and prirep == "r", 1, 0)
+      | stats sum(sp) as sp, sum(sr) as sr, sum(up) as up, sum(ur) as ur
+      | eval sp=if(sp > 0, round(sp), 0), sr=if(sr > 0, round(sr), 0), up=if(up > 0, round(up), 0), ur=if(ur > 0, round(ur), 0), joinId="joinId"
+      | eval pc=round(floor(sp*100/(sp+up)), 2)
+      | join type="left" joinId [
+        show rest "/api/v1/admin/internal/_cluster/health"
+        | eval joinId="joinId"
+      ]
+      | eval '主本'=concat("可用：", sp, " 不可用：", up), '副本'=concat("可用：", sr, " 不可用：", ur), '分片'=concat("初始化：", initializing_shards, " 迁移中：", relocating_shards)
+    position: row0-col0
+    title: "可用性"
+    single_field: pc
+    extra_fields: [ 主本, 副本, 分片 ]
+    prefix: ""
+    suffix: "%"
+    start:
+    end:
+    style: bold
+    limit: 500
+    format: float
+    threshold:
+      bold green: [ 100, 100 ]
+      bold red: [ 0, 100 ]
+  - type: single
+    spl: |
+      show rest "api/v1/admin/internal/_cat/nodes?h=osavp,ip,load_1m"
+      | eval load_1m_avg=round(load_1m * 100 / osavp)
+      | stats avg(osavp) as osavp ,avg(load_1m) as load_1m, max(load_1m_avg) as load_max, min(load_1m_avg) as load_min by ip
+      | stats sum(osavp) as '核心数',sum(load_1m) as '总负载',max(load_max) as '最大负载',min(load_min) as '最小负载'
+      | eval percent = round('总负载' * 100 / '核心数')
+    position: row0-col1
+    title: "机器负载"
+    single_field: percent
+    extra_fields: [ '核心数', '总负载', '最大负载', '最小负载']
+    prefix: ""
+    suffix: "%"
+    start:
+    end:
+    limit: 500
+    style: bold
+    format: float
+    threshold:
+      bold green: [ 0, 100 ]
+      bold red: [ 100, null ]
+
+  - type: single
+    spl: |
+      show rest "/api/v1/devops/overview"
+      | eval docs=if(docs < 1000, concat(docs, ""), if(docs < 10000, concat(round(docs/1000, 2), "千"), if(docs < 100000000, concat(round(docs/10000, 2), "万"), concat(round(docs/100000000, 2), "亿"))))
+      | eval store=if(store < 1024, concat(store, "B"), if(store < 1024*1024, concat(round(store/1024), "KB"), if(store < 1024*1024*1024,concat(round(store/(1024*1024)), "MB"), if(store < 1024*1024*1024*1024,concat(round(store/(1024*1024*1024)), "GB"), concat(round(store/(1024*1024*1024*1024)), "TB")))))
+    position: row0-col2
+    title: "仓库信息"
+    single_field: repos
+    extra_fields: [ 'shards', 'docs', 'store' ]
+    prefix: ""
+    suffix: ""
+    start:
+    end:
+    limit: 500
+    style: bold
+    format: int
+
+  - type: single
+    spl: |
+      show rest "api/v1/admin/disk/explain?diskInfo=true&nodeInfo=true" jsonpath="$.nodes.*.diskInfo.*"
+      | stats max(usedPercentage) as duMax, min(usedPercentage) as duMin, sum(totalSpace) as dt, sum(usedSpace) as du, sum(freeSpace) as da
+      | eval duAvg = du / dt
+      | eval duMin = round(duMin,0), duMax = round(duMax,0)
+      | eval du=if(du < 1024, concat(du, "B"), if(du < 1024*1024, concat(round(du/1024), "KB"), if(du < 1024*1024*1024,concat(round(du/(1024*1024)), "MB"), if(du < 1024*1024*1024*1024,concat(round(du/(1024*1024*1024)), "GB"), concat(round(du/(1024*1024*1024*1024)), "TB")))))
+      | eval dt=if(dt < 1024, concat(dt, "B"), if(dt < 1024*1024, concat(round(dt/1024), "KB"), if(dt < 1024*1024*1024,concat(round(dt/(1024*1024)), "MB"), if(dt < 1024*1024*1024*1024,concat(round(dt/(1024*1024*1024)), "GB"), concat(round(dt/(1024*1024*1024*1024)), "TB")))))
+      | eval da=if(da < 1024, concat(da, "B"), if(da < 1024*1024, concat(round(da/1024), "KB"), if(da < 1024*1024*1024,concat(round(da/(1024*1024)), "MB"), if(da < 1024*1024*1024*1024,concat(round(da/(1024*1024*1024)), "GB"), concat(round(da/(1024*1024*1024*1024)), "TB")))))
+      | eval diskUsage=concat(du, " / ", dt)
+      | eval diskRange=concat(duMin, "% ~ ", duMax, "%")
+      | eval joinId="joinId"
+      | join type="left" joinId [
+        show rest "api/v1/admin/disk/explain"
+        | eval threshold=concat(settings.diskThresholdLow, ", ", settings.diskThresholdHigh, ", ", settings.diskThresholdFlood)
+        | eval joinId="joinId"
+      ]
+      | join type="left" joinId [
+        show rest "api/v1/admin/disk/explain?nodeInfo=true" jsonpath="$.nodes.*"
+        | stats sum(lowOverDiskCount) as lows, sum(highOverDiskCount) as highs, sum(floodOverDiskCount) as floods, sum(healthyDiskCount) as disk_healthy
+        | eval joinId="joinId"
+      ]
+      | eval healthy=concat(floor(disk_healthy), " / ", floor(disk_healthy + lows + highs + floods))
+      | eval healthPercent=disk_healthy/(disk_healthy + lows + highs + floods)
+      | eval diskThreshold=concat(floor(lows), ", ", floor(highs), ", ", floor(floods))
+      | fields + duAvg, threshold, healthy, healthPercent, diskUsage, diskRange, diskThreshold
+    position: row0-col3
+    title: "磁盘信息"
+    single_field: healthPercent
+    extra_fields: [ healthy, diskUsage, diskRange, threshold, diskThreshold ]
+    prefix: ""
+    suffix: "%"
+    start:
+    end:
+    limit: 500
+    format: percentage
+    style: bold
+    threshold:
+      bold green: [ 100, 100 ]
+      bold red: [ 0, 100 ]
+
+  - type: single
+    spl: |
+      show queries
+      | stats count() as queryCount, min(createTime) as earliestTime
+      | eval qpm = round(queryCount / ((now() - earliestTime) / 60000), 2)
+    position: row0-col4
+    title: "每分钟查询数"
+    single_field: qpm
+    extra_fields: [  ]
+    prefix: ""
+    suffix: " / 每分钟"
+    start:
+    end:
+    limit: 500
+    style: bold
+    format: float
+
+
+  - type: single
+    spl: |
+      show rest "api/v1/admin/internal/_cat/nodes?h=name,ip,osavp"
+      | stats count(ip) as instance,avg(osavp) as osavp by ip
+      | stats sum(instance) as instance,count(ip) as machine,avg(osavp) as osavp
+      | eval percent = round(instance * 1.0/machine, 2)
+    position: row0-col5
+    title: "实例部署"
+    single_field: percent
+    extra_fields: [ instance, machine, osavp]
+    prefix: ""
+    suffix: " 实例 / 机器"
+    start:
+    end:
+    limit: 500
+    style: bold
+    format: float
+
+  - type: line
+    spl: |
+      search2 repo="_internal" AND origin = "_collector"
+      | eval eventsNumPS = eventsNum / 30,failDocNum = failDocNum / 30,succDocNum = succDocNum / 30
+      | timechart span="30s" sum(eventsNumPS) as 'Total',sum(failDocNum) as 'Failure',sum(succDocNum) as 'Success'
+      | sort by _time asc
+    position: row1-col0
+    title: "每秒写入条数"
+    x_field: _time
+    y_field: [ Total,Success, Failure, ]
+    y_axis_label: "Count"
+    x_axis_label: "Time"
+    extra_configs: { }
+    start:
+    end:
+    limit: 500
+  - type: line
+    spl: |
+      search2 repo="_internal" AND origin = "_collector"
+      | eval kiloBytesPS=kiloBytes/30
+      | timechart span="30s" sum(kiloBytesPS) as 'Flow'
+      | sort by _time asc
+    position: row1-col1
+    title: "每秒写入流量"
+    x_field: _time
+    y_field: [ Flow ]
+    y_axis_label: "流量(kBs)"
+    x_axis_label: "Time"
+    extra_configs: { }
+  - type: line
+    spl: |
+      search2 repo="_internal" AND origin="_collector"
+      | timechart span="30s" avg(avgHandlingTimeInMilli) as 'HandlingTime'
+      | sort by _time asc
+    position: row1-col2
+    title: "平均写入时间"
+    x_field: _time
+    y_field: [ HandlingTime ]
+    y_axis_label: "响应时间(ms)"
+    x_axis_label: " Time"
+    extra_configs: { }
+
+  - type: bar
+    spl: |
+      show rest "/api/v1/admin/internal/_cat/thread_pool"
+      | append [
+      show thread_pools
+      | eval active=toString(active)
+      | fields active, name
+      ]
+      | where active > 0 and name != "management"
+      | stats sum(active) as active by name
+      | rename name as '线程名称'
+      | sort by active
+    position: row2-col0
+    title: "热点线程"
+    x_field: 线程名称
+    y_field: [ active ]
+    y_axis_label: "响应时间(ms)"
+    x_axis_label: " Time"
+    extra_configs: { width: 0.3 }
+
+  - type: bar
+    spl: |
+      show rest "/api/v1/admin/_cat/write_shards?v"
+      | eval ts=round((now() - substr(index, -13))/1000)
+      | eval bt=if (substr(store, -2) == "gb",round(substr(store, 0, len(store)-2) * 1024 * 1024 * 1024),if (substr(store, -2) == "mb",round(substr(store, 0, len(store)-2) * 1024 * 1024),if (substr(store, -2) == "kb",round(substr(store, 0, len(store)-2) * 1024),substr(store, 0, len(store)-1))))
+      | eval rt=bt/ts,repo=regexReplace(index, "app-(\w+)-(\w+)-\d+", "$1")
+      | stats sum(rt) as sumrt by repo
+      | eval 'Flow(kB/s)'=round(sumrt)
+      | sort by 'Flow(kB/s)' desc
+      | rename repo as '仓库'
+      | limit 5
+    position: row2-col1
+    title: "仓库流量"
+    x_field: 仓库
+    y_field: [ 'Flow(kB/s)' ]
+    extra_configs: { width: 0.3 }
+
+  - type: bar
+    spl: |
+      show rest "/api/v1/admin/_cat/write_shards?v"
+      | eval ts=round((now() - substr(index, -13))/1000)
+      | eval bt=if (substr(store, -2) == "gb",round(substr(store, 0, len(store)-2) * 1024 * 1024 * 1024),if (substr(store, -2) == "mb",round(substr(store, 0, len(store)-2) * 1024 * 1024),if (substr(store, -2) == "kb",round(substr(store, 0, len(store)-2) * 1024),substr(store, 0, len(store)-1))))
+      | eval rt=bt/ts, '磁盘路径'=concat(ip, ":", path)
+      | stats sum(rt) as sumrt by '磁盘路径'
+      | eval 'Flow(kB/s)'=round(sumrt)
+      | sort by 'Flow(kB/s)' desc
+      | limit 5
+    position: row2-col2
+    title: "磁盘流量"
+    x_field: 磁盘路径
+    y_field: [ 'Flow(kB/s)' ]
+    extra_configs: { width: 0.3 }
+
+  - type: bar
+    spl: |
+      show rest "/api/v1/admin/_cat/write_shards?v"
+      | eval ts=round((now() - substr(index, -13))/1000)
+      | eval bt=if (substr(store, -2) == "gb",round(substr(store, 0, len(store)-2) * 1024 * 1024 * 1024),if (substr(store, -2) == "mb",round(substr(store, 0, len(store)-2) * 1024 * 1024),if (substr(store, -2) == "kb",round(substr(store, 0, len(store)-2) * 1024),substr(store, 0, len(store)-1))))
+      | eval rt=bt/ts,repo=regexReplace(index, "app-(\w+)-(\w+)-\d+", "$1")
+      | eval '分片'=concat(repo, "[", shard, "]")
+      | stats sum(rt) as sumrt by '分片'
+      | eval 'Flow(kB/s)'=round(sumrt)
+      | sort by 'Flow(kB/s)' desc
+      | limit 20
+    position: row2-col3
+    title: "分片流量"
+    x_field: 分片
+    y_field: [ 'Flow(kB/s)' ]
+    extra_configs: { width: 0.3 }
