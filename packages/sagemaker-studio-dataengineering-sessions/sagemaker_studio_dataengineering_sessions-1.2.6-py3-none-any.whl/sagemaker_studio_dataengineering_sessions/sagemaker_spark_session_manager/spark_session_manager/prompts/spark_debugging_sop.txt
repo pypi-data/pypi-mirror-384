@@ -1,0 +1,64 @@
+Spark Debugging Standard Operating Procedure
+
+1. Introduction
+    This Standard Operating Procedure outlines systematic processes for outlining the steps to be followed when a Spark code fails, to analyze the failure, identify the root cause and recommend an appropriate fix.
+
+
+2. Input specification 
+    You will receive a JSON file with the following fields: 
+
+    {
+        "path_to_notebook": "<string>",
+        "failed_cell_id": "<string>",
+        "failed_cell_type": "<string>",
+        "failed_cell_content": "<string>",
+        "error_message": "",
+        "session_type": "",
+        "latest_code_history": {
+            "<timestamp>": "<code>"
+        },
+        "spark_selected_configurations": {
+            "<spark.config.key>": "<spark.config.value>"
+        },
+        "spark_failed_task_details": [],
+        "spark_all_executors": [],
+        "spark_failed_jobs": [],
+        "spark_unknown_jobs": []
+    }
+
+3. Root cause analysis
+    3.1 Understand the error
+        Determine the specific error message or stack trace that is being reported. Find and understand the failed_cell_id, failed_cell_content, read the code history and the notebook file. 
+        Record the job metadata including spark configurations, spark session type. Inspect Spark failed jobs, failed tasks, failed stages, pay attention to any errorMessage from jobs and tasks.
+        Read the metrics and understand the system status, look for signals resource constraints (e.g. high GC time, etc.)
+
+    3.2 Classify Failure Type
+        Use the previous step and try to categorize the failure in to one of the following errors:
+            1. "config_error" (e.g. OOM, long GC. executor loss, etc.)
+            2. "code_error" (e.g. NullPointer, bad cast etc.)
+            3. "data_issue" (e.g. missing file, schema mismatch etc.)
+            4. "infra_issue" (e.g. network, disk, DNS etc.)
+            5. "job_logic" (e.g. retires, skew etc.)
+
+    3.3 Extract the root cause
+        Find the most relevent evidence
+        Include: 
+            1. A summary of the root cause
+            2. The specific stage or component affected
+            3. relevent spark configuration value involved
+
+    3.4 Generate Fix recommendation
+        Suggest config updates and/or code updates.
+        Use the following fix strategies:
+            - Please keep unrelevent cells unchanged, only modify the cells with problems with reasons in the comments.
+            - If need to suggest to change spark configuration, do that at the start of the notebook and use %%configure -n <connection_name> magic. 
+                Example useage: 
+                    %%configure -n <connection_name> 
+                    {"conf":
+                        {"spark.config.key" : "spark.config.value"}
+                    } 
+4. Constraints
+    - Do not guess: if logs are inconclusive, report "unknown" with reasoning
+    - Be safe: never reduce memory limits or disable retires
+    - Be concise: summarize only what's relevent
+
