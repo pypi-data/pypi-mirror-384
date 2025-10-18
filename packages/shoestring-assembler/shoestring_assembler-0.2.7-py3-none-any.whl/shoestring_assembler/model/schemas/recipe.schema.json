@@ -1,0 +1,209 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://digitalshoestring.net/recipe.schema.json",
+    "title": "Shoestring Solution Recipe Schema",
+    "description": "Defines a recipe for a shoestring solution",
+    "type": "object",
+    "required": [
+        "recipe_vsn",
+        "solution",
+        "source",
+        "service_module"
+    ],
+    "properties": {
+        "recipe_vsn": {
+            "description": "Version of the recipe specification that has been used",
+            "type": "string",
+            "pattern": "^\\d+(?:\\.\\d+){2}$"
+        },
+        "solution": {
+            "description": "",
+            "type": "object",
+            "required": [
+                "name",
+                "slug",
+                "version"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Name of the solution this recipe is for",
+                    "type": "string"
+                },
+                "slug": {
+                    "description": "Name of the solution this recipe is for",
+                    "type": "string",
+                    "pattern": "^[a-z_]*$"
+                },
+                "version": {
+                    "description": "Version of the solution this recipe creates",
+                    "type": "string",
+                    "pattern": "^\\d+(?:\\.\\d+){2}$"
+                },
+                "description": {
+                    "description": "A description of the solution",
+                    "type": "string"
+                }
+            }
+        },
+        "source": {
+            "description": "Key-Value map relating source names to their source descriptions",
+            "type": "object",
+            "patternProperties": {
+                "^[\\w\\.][\\w\\.-]*$": {
+                    "description": "Source description",
+                    "type": "object",
+                    "properties": {
+                        "file": {
+                            "description": "File source description",
+                            "type": "object",
+                            "required": [
+                                "path"
+                            ],
+                            "properties": {
+                                "path": {
+                                    "description": "File system path for the source",
+                                    "type": "string"
+                                },
+                                "mode": {
+                                    "description": "Whether the source should be copied(default) or symlinked",
+                                    "enum": [
+                                        "copy",
+                                        "link"
+                                    ]
+                                }
+                            }
+                        },
+                        "git": {
+                            "description": "Git source description",
+                            "type": "object",
+                            "properties": {
+                                "path": {
+                                    "description": "Path to find the repository. If a url, use as is. If a <username or org>/<slug>, assume github. If a <slug>, assume DigitalShoestringSolutions on github",
+                                    "type": "string"
+                                },
+                                "tag": {
+                                    "description": "Specifies the tag to use when pulling the repository (has precedence over branch)",
+                                    "type": "string"
+                                },
+                                "branch": {
+                                    "description": "Specifies which branch to pull",
+                                    "type": "string"
+                                }
+                            },
+                            "$comment": "Ensures there is a (path and tag) or (path and branch) - will also be ok with all 3",
+                            "oneOf": [
+                                {
+                                    "required": [
+                                        "path",
+                                        "tag"
+                                    ]
+                                },
+                                {
+                                    "required": [
+                                        "path",
+                                        "branch"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    "$comment": "Ensures that either file or git are specified - will also be ok with both",
+                    "anyOf": [
+                        {
+                            "required": [
+                                "file"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "git"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "service_module": {
+            "description": "Key-Value map relating service module names to their module descriptions",
+            "type": "object",
+            "patternProperties": {
+                "^[\\w\\.][\\w\\.-]*$": {
+                    "$ref": "#/$defs/module_schema",
+                    "description": "module description"
+                }
+            }
+        },
+        "infrastructure": {
+            "description": "Key-Value map relating infrastructure module names to their module descriptions",
+            "type": "object",
+            "patternProperties": {
+                "^[\\w\\.][\\w\\.-]*$": {
+                    "$ref": "#/$defs/module_schema",
+                    "description": "module description"
+                }
+            }
+        }
+    },
+    "$defs": {
+        "module_schema": {
+            "description": "sub-schema for service module and infrastructure module definitions",
+            "type": "object",
+            "required":[
+                "source",
+                "containers"
+            ],
+            "properties": {
+                "source": {
+                    "description": "Reference to the source the module uses",
+                    "type": "string"
+                },
+                "containers": {
+                    "description": "Array of container names to include",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ports": {
+                    "description": "Key-value map of container name to named port",
+                    "type": "object",
+                    "patternProperties": {
+                        "^[\\w\\.][\\w\\.-]*$": {
+                            "description": "Key-value map of named port to port number",
+                            "type": "object",
+                            "patternProperties": {
+                                "^[\\w\\.][\\w\\.-]*$": {
+                                    "description": "port number",
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "alias": {
+                    "description": "Key-value map of container name to docker network alias",
+                    "type": "object",
+                    "patternProperties": {
+                        "^[\\w\\.][\\w\\.-]*$": {
+                            "description": "network alias to use (suffix '.docker.local' always added by assembler)",
+                            "type": "string"
+                        }
+                    }
+                },
+                "template": {
+                    "description": "Key-value map of template variables that are applied prior to parsing partial compose yaml for the module",
+                    "type": "object",
+                    "patternProperties": {
+                        "^[\\w\\.][\\w\\.-]*$": {
+                            "description": "value used to replace template variable",
+                            "type": [
+                                "integer",
+                                "string"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
