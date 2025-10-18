@@ -1,0 +1,414 @@
+name: Build and Deploy to Kubernetes
+
+on:
+  push:
+    branches:
+      - dv-stage # Trigger only on pushes to this specific branch.
+      - dv-main
+      - test/deployment_cache
+
+env:
+  PROJECT_ID: desivocalprod01
+  REGION: asia-south1
+  REPOSITORY: ${{ github.ref == 'refs/heads/dv-main' && 'ringg-registry-prod' || 'ringg-registry-stage' }}
+  IMAGE_NAME: dv-pipecat
+  # Determine cluster and secrets based on the target branch (dv-main for prod, others for stage)
+  CLUSTER: ${{ github.ref == 'refs/heads/dv-main' && 'desivocal-prod-us-e1-cluster' || 'desivocal-staging-cluster' }}
+  CLUSTER_ZONE: ${{ github.ref == 'refs/heads/dv-main' && 'us-east1' || 'asia-south1-a' }}
+  GITHUB_SHA: ${{ github.sha }}
+  # Assuming secrets are named like PROD_SECRETS_JSON / STAGE_SECRETS_JSON etc.
+  # SECRETS_JSON should contain a JSON object like {"VAR1": "value1", "VAR2": "value2"}
+  SECRETS_JSON: ${{ github.ref == 'refs/heads/dv-main' && secrets.PROD_SECRETS_JSON || secrets.STAGE_SECRETS_JSON }}
+  # CREDS_JSON should contain the raw content of the creds.json file
+  CREDS_JSON: ${{ github.ref == 'refs/heads/dv-main' && secrets.PROD_CREDS_JSON || secrets.STAGE_CREDS_JSON }}
+  # Helm release name
+  HELM_RELEASE_NAME: dv-pipecat
+
+jobs:
+  build-and-deploy:
+    # Skip dv-stage runs that are only the auto-bump commit we just pushed
+    if: github.ref != 'refs/heads/dv-stage' || !contains(github.event.head_commit.message, 'Auto-bump dv-pipecat-ai')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # Required for Workload Identity Federation
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+        fetch-depth: 0
+
+    # Integrated smart auto-release logic (moved from smart-auto-release.yml)
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install build tooling
+      if: github.ref == 'refs/heads/dv-stage'
+      run: |
+        python -m pip install --upgrade pip
+        pip install build requests packaging
+
+    - name: Check for src/pipecat changes (push diff)
+      if: github.ref == 'refs/heads/dv-stage'
+      id: check_changes
+      run: |
+        echo "Checking for changes in src/pipecat between ${{ github.event.before }} and ${{ github.sha }}..."
+        if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -q "^src/pipecat"; then
+          echo "has_pipecat_changes=true" >> $GITHUB_OUTPUT
+          echo "✅ Found changes in src/pipecat"
+        else
+          echo "has_pipecat_changes=false" >> $GITHUB_OUTPUT
+          echo "ℹ️  No changes in src/pipecat detected"
+        fi
+
+    - name: Get dv-pipecat-ai versions (before vs after)
+      if: github.ref == 'refs/heads/dv-stage' && steps.check_changes.outputs.has_pipecat_changes == 'true'
+      id: versions
+      env:
+        REQUIREMENTS_FILE: examples/ringg-chatbot/remote-requirements.txt
+        PACKAGE_NAME: dv-pipecat-ai
+      run: |
+        echo "Getting current and previous ${PACKAGE_NAME} versions from ${REQUIREMENTS_FILE}..."
+
+        # Current merged version (after)
+        if [ -f "$REQUIREMENTS_FILE" ]; then
+          MERGED_REQUIREMENTS_VERSION=$(grep "${PACKAGE_NAME}" "$REQUIREMENTS_FILE" | sed -n 's/.*==\([^]]*\).*/\1/p')
+        fi
+        if [ -z "$MERGED_REQUIREMENTS_VERSION" ]; then
+          MERGED_REQUIREMENTS_VERSION="0.0.0.dev0"
+        fi
+        echo "merged_requirements_version=$MERGED_REQUIREMENTS_VERSION" >> $GITHUB_OUTPUT
+
+        # Previous version (before)
+        git show ${{ github.event.before }}:"$REQUIREMENTS_FILE" > before_requirements.txt 2>/dev/null || echo "${PACKAGE_NAME}==0.0.0.dev0" > before_requirements.txt
+        BASE_REQUIREMENTS_VERSION=$(grep "${PACKAGE_NAME}" before_requirements.txt | sed -n 's/.*==\([^]]*\).*/\1/p')
+        if [ -z "$BASE_REQUIREMENTS_VERSION" ]; then
+          BASE_REQUIREMENTS_VERSION="0.0.0.dev0"
+        fi
+        echo "base_requirements_version=$BASE_REQUIREMENTS_VERSION" >> $GITHUB_OUTPUT
+
+        echo "📊 Version Status:"
+        echo "   Base (before) requirements version: $BASE_REQUIREMENTS_VERSION"
+        echo "   Merged (after) requirements version: $MERGED_REQUIREMENTS_VERSION"
+
+    - name: Decide auto-release action
+      if: github.ref == 'refs/heads/dv-stage' && steps.check_changes.outputs.has_pipecat_changes == 'true'
+      id: decision
+      run: |
+        BASE_VERSION="${{ steps.versions.outputs.base_requirements_version }}"
+        MERGED_VERSION="${{ steps.versions.outputs.merged_requirements_version }}"
+
+        echo "🤔 Decision Logic:"
+        echo "   Base version:   $BASE_VERSION"
+        echo "   Merged version: $MERGED_VERSION"
+
+        if [ "$BASE_VERSION" = "$MERGED_VERSION" ]; then
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "reason=Versions match between before/after - auto-bump needed" >> $GITHUB_OUTPUT
+          echo "✅ Decision: AUTO-RELEASE"
+        else
+          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "reason=Version already changed in the merge" >> $GITHUB_OUTPUT
+          echo "⏭️  Decision: SKIP (developer updated version)"
+        fi
+
+    - name: Build package (setuptools_scm)
+      if: github.ref == 'refs/heads/dv-stage' && steps.decision.outputs.should_release == 'true'
+      run: |
+        echo "🔨 Building package..."
+        python -m build
+        ls -la dist/
+
+    - name: Extract built version
+      if: github.ref == 'refs/heads/dv-stage' && steps.decision.outputs.should_release == 'true'
+      id: extract_version
+      run: |
+        WHEEL_FILE=$(ls dist/*.whl | head -1)
+        BUILT_VERSION=$(echo "$WHEEL_FILE" | sed -E 's/.*-([0-9]+\.[0-9]+\.[0-9]+\.dev[0-9]+)-.*/\1/')
+        echo "built_version=$BUILT_VERSION" >> $GITHUB_OUTPUT
+        echo "🔍 Built version: $BUILT_VERSION"
+        # Verify tar.gz matches
+        TAR_FILE=$(ls dist/*.tar.gz | head -1)
+        TAR_VERSION=$(echo "$TAR_FILE" | sed -E 's/.*-([0-9]+\.[0-9]+\.[0-9]+\.dev[0-9]+)\.tar\.gz/\1/')
+        [ "$BUILT_VERSION" = "$TAR_VERSION" ] || { echo "❌ Version mismatch"; exit 1; }
+
+    - name: Publish to PyPI
+      if: github.ref == 'refs/heads/dv-stage' && steps.decision.outputs.should_release == 'true'
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        print-hash: true
+        verbose: true
+
+    # - name: Update remote-requirements.txt with built version and push
+    #   if: github.ref == 'refs/heads/dv-stage' && steps.decision.outputs.should_release == 'true'
+    #   env:
+    #     REQUIREMENTS_FILE: examples/ringg-chatbot/remote-requirements.txt
+    #     PACKAGE_NAME: dv-pipecat-ai
+    #   run: |
+    #     BUILT_VERSION="${{ steps.extract_version.outputs.built_version }}"
+    #     echo "📝 Updating ${REQUIREMENTS_FILE} to ${PACKAGE_NAME}==${BUILT_VERSION} (preserve extras)"
+    #     CURRENT_DEPS=$(grep "${PACKAGE_NAME}" "$REQUIREMENTS_FILE" | sed -n 's/.*\[\([^]]*\)\].*/\1/p')
+    #     if [ -z "$CURRENT_DEPS" ]; then
+    #       # No extras bracket found; keep line format simple
+    #       sed -i.bak "s/${PACKAGE_NAME}==.*/${PACKAGE_NAME}==${BUILT_VERSION}/" "$REQUIREMENTS_FILE"
+    #     else
+    #       sed -i.bak "s/${PACKAGE_NAME}\[.*\]==.*/${PACKAGE_NAME}[$CURRENT_DEPS]==${BUILT_VERSION}/" "$REQUIREMENTS_FILE"
+    #     fi
+    #     grep "${PACKAGE_NAME}" "$REQUIREMENTS_FILE"
+
+    #     git config --local user.email "action@github.com"
+    #     git config --local user.name "GitHub Action"
+    #     git add "$REQUIREMENTS_FILE"
+    #     git commit -m "🤖 Auto-bump ${PACKAGE_NAME} to ${BUILT_VERSION}"
+    #     git push origin HEAD:dv-stage
+
+    # - name: Log auto-release skip reason
+    #   if: github.ref == 'refs/heads/dv-stage' && (steps.check_changes.outputs.has_pipecat_changes == 'false' || steps.decision.outputs.should_release == 'false')
+    #   run: |
+    #     if [ "${{ steps.check_changes.outputs.has_pipecat_changes }}" = "false" ]; then
+    #       echo "⏭️  SKIPPING auto-release: No src/pipecat changes detected"
+    #     else
+    #       echo "⏭️  SKIPPING auto-release: ${{ steps.decision.outputs.reason }}"
+    #     fi
+
+    # # Python already set up above
+
+    # - name: Install Python dependencies
+    #   run: |
+    #     python -m pip install --upgrade pip
+    #     pip install requests packaging
+
+    # - name: Verify PyPI package availability
+    #   run: |
+    #     echo "🔍 Verifying PyPI package availability..."
+        
+    #     # Get version from remote-requirements.txt
+    #     PIPECAT_VERSION=$(grep "dv-pipecat-ai" examples/ringg-chatbot/remote-requirements.txt | sed -n 's/.*==\([^]]*\).*/\1/p')
+    #     echo "📦 Required pipecat version: $PIPECAT_VERSION"
+        
+    #     # Verify package is available on PyPI with retry logic
+    #     MAX_ATTEMPTS=12
+    #     ATTEMPT=1
+    #     WAIT_TIME=5
+    #     PACKAGE_AVAILABLE=false
+
+    #     while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    #       echo "🔍 Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking PyPI for dv-pipecat-ai==$PIPECAT_VERSION"
+
+    #       if python scripts/check-pypi-package.py dv-pipecat-ai "$PIPECAT_VERSION"; then
+    #         PACKAGE_AVAILABLE=true
+    #         echo "✅ PyPI package verification successful!"
+    #         break
+    #       else
+    #         if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+    #           echo "❌ FAILED: Package dv-pipecat-ai==$PIPECAT_VERSION not available on PyPI after $MAX_ATTEMPTS attempts"
+    #           echo "🚨 This usually means:"
+    #           echo "   1. The auto-release workflow failed to publish"
+    #           echo "   2. PyPI is experiencing delays"
+    #           echo "   3. Version mismatch between requirements.txt and PyPI"
+    #           exit 1
+    #         else
+    #           echo "⏳ Package not yet available, waiting ${WAIT_TIME}s before retry..."
+    #           sleep $WAIT_TIME
+    #           # Exponential backoff with cap at 30s
+    #           if [ $WAIT_TIME -lt 30 ]; then
+    #             WAIT_TIME=$((WAIT_TIME * 2))
+    #             if [ $WAIT_TIME -gt 30 ]; then WAIT_TIME=30; fi
+    #           fi
+    #         fi
+    #       fi
+    #       ATTEMPT=$((ATTEMPT + 1))
+    #     done
+        
+    #     echo "PIPECAT_VERSION=$PIPECAT_VERSION" >> $GITHUB_ENV
+
+    # - name: Authenticate to GCP using Workload Identity Federation
+    #   id: auth
+    #   uses: google-github-actions/auth@v2
+    #   with:
+    #     workload_identity_provider: projects/623676891410/locations/global/workloadIdentityPools/desivocal-staging-pool/providers/github # TODO: Update for production if needed
+    #     service_account: gke-githubactions-svc-stage@desivocalprod01.iam.gserviceaccount.com # TODO: Update for production if needed
+
+    # - name: Configure gcloud
+    #   run: |
+    #     gcloud config set project $PROJECT_ID
+    #     gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+    # - name: Set up Docker Buildx
+    #   uses: docker/setup-buildx-action@v3
+
+    # - name: Build & push image (with GHA cache)
+    #   uses: docker/build-push-action@v6
+    #   with:
+    #     context: ./examples/ringg-chatbot
+    #     file: ./examples/ringg-chatbot/remote-Dockerfile
+    #     platforms: linux/${{ github.ref == 'refs/heads/dv-main' && 'arm64' || 'amd64' }}
+    #     push: true
+    #     tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ env.GITHUB_SHA }}
+    #     cache-from: type=gha,scope=${{ github.ref == 'refs/heads/dv-main' && 'arm64' || 'amd64' }}
+    #     cache-to: type=gha,mode=max,scope=${{ github.ref == 'refs/heads/dv-main' && 'arm64' || 'amd64' }}
+    #     provenance: 'false'
+
+    # # - name: Build Docker image
+    # #   run: |
+    # #     cd examples/ringg-chatbot
+    # #     docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA -f remote-Dockerfile .
+
+    # # - name: Push Docker image to Artifact Registry
+    # #   run: |
+    # #     docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$GITHUB_SHA
+
+    # - name: Install Helm
+    #   uses: azure/setup-helm@v4
+    #   with:
+    #     version: v3.13.3 # Specify Helm version if needed
+
+    # - name: Connect to GKE
+    #   uses: google-github-actions/get-gke-credentials@v2
+    #   with:
+    #     cluster_name: ${{ env.CLUSTER }}
+    #     location: ${{ env.CLUSTER_ZONE }}
+
+    # - name: Install KEDA (if not already installed)
+    #   run: |
+    #     echo "🔍 Checking if KEDA is already installed..."
+        
+    #     # Ensure KEDA Helm repository exists and is up-to-date for both install and upgrade paths
+    #     if ! helm repo list | grep -q '^kedacore\s'; then
+    #       helm repo add kedacore https://kedacore.github.io/charts
+    #     else
+    #       # Force update in case URL changed or local cache is stale
+    #       helm repo add kedacore https://kedacore.github.io/charts --force-update
+    #     fi
+    #     helm repo update
+        
+    #     # Install KEDA if needed
+    #     if ! kubectl get deployment -n keda keda-operator >/dev/null 2>&1; then
+    #       echo "🚀 Installing KEDA core..."
+          
+    #       # Install KEDA core (required before HTTP add-on) with 30s HTTP timeout
+    #       helm install keda kedacore/keda --namespace keda --create-namespace --wait --timeout=5m \
+    #         --set operator.extraEnvs[0].name=KEDA_HTTP_DEFAULT_TIMEOUT \
+    #         --set operator.extraEnvs[0].value="30000"
+            
+    #       echo "✅ KEDA core installation completed with 30s HTTP timeout"
+    #     else
+    #       echo "✅ KEDA core already installed"
+          
+    #       # Update existing KEDA installation to ensure HTTP timeout is set
+    #       echo "🔄 Updating KEDA configuration to ensure 30s HTTP timeout..."
+    #       helm upgrade keda kedacore/keda --namespace keda --reuse-values \
+    #         --set operator.extraEnvs[0].name=KEDA_HTTP_DEFAULT_TIMEOUT \
+    #         --set operator.extraEnvs[0].value="30000" \
+    #         --wait --timeout=5m
+          
+    #       echo "✅ KEDA configuration updated with 30s HTTP timeout"
+    #     fi
+        
+    #     # Verify KEDA CRDs are available
+    #     echo "🔍 Verifying KEDA CRDs..."
+    #     kubectl get crd | grep keda || {
+    #       echo "❌ KEDA CRDs not found, waiting for them to be ready..."
+    #       sleep 30
+    #       kubectl get crd | grep keda || {
+    #         echo "❌ KEDA CRDs still not available after waiting"
+    #         exit 1
+    #       }
+    #     }
+        
+    #     echo "✅ KEDA is ready"
+
+    # - name: Install jq (for parsing JSON secrets)
+    #   run: sudo apt-get update && sudo apt-get install -y jq
+
+    # - name: Create/Update GCP Credentials Secret
+    #   run: |
+    #     echo "Creating/Updating Kubernetes secret for GCP credentials..."
+    #     # Create secret with creds.json key from CREDS_JSON content
+    #     echo "$CREDS_JSON" | kubectl create secret generic ${{ env.HELM_RELEASE_NAME }}-gcp-creds --from-file=creds.json=/dev/stdin --dry-run=client -o yaml | kubectl apply -f - --overwrite
+    #   env:
+    #     CREDS_JSON: ${{ env.CREDS_JSON }}
+
+    # - name: Create/Update Application Secrets
+    #   run: |
+    #     echo "Creating/Updating Kubernetes secret for application environment variables..."
+    #     # Build the --from-literal arguments dynamically from the JSON object stored in SECRETS_JSON
+    #     # This creates one key in the secret for each key in the JSON, matching the file structure expected by read_secret
+    #     LITERAL_ARGS=$(echo "$SECRETS_JSON" | jq -r 'to_entries | .[] | "--from-literal=\(.key)=\(.value)"' | tr '\n' ' ')
+    #     if [ -z "$LITERAL_ARGS" ]; then
+    #       echo "SECRETS_JSON is empty or not valid JSON. Skipping secret creation."
+    #       # Handle error or create empty secret if absolutely required by envFrom (though optional should be fine)
+    #       # kubectl create secret generic ${{ env.HELM_RELEASE_NAME }}-app-secrets --dry-run=client -o yaml | kubectl apply -f - --overwrite
+    #     else
+    #       kubectl create secret generic ${{ env.HELM_RELEASE_NAME }}-app-secrets $LITERAL_ARGS --dry-run=client -o yaml | kubectl apply -f - --overwrite
+    #     fi
+    #   env:
+    #     SECRETS_JSON: ${{ env.SECRETS_JSON }}
+
+    # # Old code
+    # # - name: Deploy to GKE using Helm
+    # #   run: |
+    # #     if [ "${{ github.ref }}" == "refs/heads/dv-main" ]; then
+    # #       VALUES_FILE="values-prod.yaml"
+    # #       echo "Using production values: $VALUES_FILE"
+    # #     else
+    # #       VALUES_FILE="values-stage.yaml"
+    # #       echo "Using staging values: $VALUES_FILE"
+    # #     fi
+
+    # #     helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ./k8s/dv-pipecat \
+    # #         --set image.repository=$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME \
+    # #         --set image.tag=$GITHUB_SHA \
+    # #         --namespace default \
+    # #         -f ./k8s/dv-pipecat/$VALUES_FILE
+    # # ---------- DEPLOY ----------
+    # # 1) Deploy stage
+    # - name: Deploy stage service
+    #   if: github.ref == 'refs/heads/dv-stage'
+    #   run: |
+    #     STAGE_ADMIN_API_KEY=$(echo "$SECRETS_JSON" | jq -r '.ADMIN_API_KEY // empty')
+    #     if [ -z "$STAGE_ADMIN_API_KEY" ]; then
+    #       echo "❌ ADMIN_API_KEY not found in SECRETS_JSON"
+    #       exit 1
+    #     fi
+    #     STAGE_CALLING_BACKEND_URL=$(echo "$SECRETS_JSON" | jq -r '.CALLING_BACKEND_URL // empty')
+    #     if [ -z "$STAGE_CALLING_BACKEND_URL" ]; then
+    #       echo "❌ CALLING_BACKEND_URL not found in SECRETS_JSON"
+    #       exit 1
+    #     fi
+    #     helm upgrade --install $HELM_RELEASE_NAME ./k8s/dv-pipecat \
+    #       -f ./k8s/dv-pipecat/values-stage.yaml \
+    #       --set image.repository=$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME \
+    #       --set image.tag=$GITHUB_SHA \
+    #       --set ADMIN_API_KEY="${STAGE_ADMIN_API_KEY}" \
+    #       --set CALLING_BACKEND_URL="${STAGE_CALLING_BACKEND_URL}" \
+    #       --namespace default
+
+    # # 2) **ONLY** when branch is dv-main: deploy/update the CANARY release
+    # - name: Deploy canary service
+    #   if: github.ref == 'refs/heads/dv-main'
+    #   run: |
+    #     PROD_ADMIN_API_KEY=$(echo "$SECRETS_JSON" | jq -r '.ADMIN_API_KEY // empty')
+    #     if [ -z "$PROD_ADMIN_API_KEY" ]; then
+    #       echo "❌ ADMIN_API_KEY not found in SECRETS_JSON"
+    #       exit 1
+    #     fi
+    #     PROD_CALLING_BACKEND_URL=$(echo "$SECRETS_JSON" | jq -r '.CALLING_BACKEND_URL // empty')
+    #     if [ -z "$PROD_CALLING_BACKEND_URL" ]; then
+    #       echo "❌ CALLING_BACKEND_URL not found in SECRETS_JSON"
+    #       exit 1
+    #     fi
+    #     echo "🚀 Deploying canary service..."
+    #     helm upgrade --install ${HELM_RELEASE_NAME}-canary ./k8s/dv-pipecat \
+    #       -f ./k8s/dv-pipecat/values-prod.yaml \
+    #       -f ./k8s/dv-pipecat/values-canary.yaml \
+    #       --set image.repository=$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME \
+    #       --set image.tag=$GITHUB_SHA \
+    #       --set ADMIN_API_KEY="${PROD_ADMIN_API_KEY}" \
+    #       --set CALLING_BACKEND_URL="${PROD_CALLING_BACKEND_URL}" \
+    #       --namespace default
