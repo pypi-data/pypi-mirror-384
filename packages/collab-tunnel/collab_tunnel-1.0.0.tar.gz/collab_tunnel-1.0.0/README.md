@@ -1,0 +1,178 @@
+# Collaboration Tunnel Protocol - Python Client
+
+A Python library for efficiently crawling websites that implement the Collaboration Tunnel Protocol (TCT), achieving 60-90% bandwidth savings through sitemap-first discovery and conditional requests.
+
+## Installation
+
+```bash
+pip install collab-tunnel
+```
+
+## Quick Start
+
+```python
+from collab_tunnel import CollabTunnelCrawler
+
+# Initialize crawler
+crawler = CollabTunnelCrawler(user_agent="MyBot/1.0")
+
+# Fetch sitemap
+sitemap = crawler.fetch_sitemap("https://example.com/llm-sitemap.json")
+
+# Crawl items
+for item in sitemap.items:
+    if crawler.should_fetch(item):  # Zero-fetch optimization
+        content = crawler.fetch_content(item['mUrl'], item['contentHash'])
+        if content:
+            print(f"Title: {content['title']}")
+            print(f"Content: {content['content'][:200]}...")
+
+# View stats
+stats = crawler.get_stats()
+print(f"Bandwidth saved: {stats['savings_percentage']}%")
+print(f"Requests skipped: {stats['total_skips']}")
+```
+
+## Features
+
+- ✅ **Sitemap-First Discovery**: Skip 90%+ of unchanged URLs
+- ✅ **Conditional Requests**: 304 Not Modified support
+- ✅ **ETag Validation**: Verify content integrity
+- ✅ **Bandwidth Tracking**: Monitor savings vs traditional crawling
+- ✅ **Handshake Verification**: Validate C-URL ↔ M-URL mapping
+
+## Advanced Usage
+
+### Crawl Entire Site
+
+```python
+from collab_tunnel import crawl_site
+
+results = crawl_site(
+    "https://example.com/llm-sitemap.json",
+    limit=100,
+    user_agent="MyBot/1.0"
+)
+
+for result in results:
+    print(result['title'], result['canonical_url'])
+```
+
+### Filter by Date
+
+```python
+from datetime import datetime, timedelta
+from collab_tunnel import CollabTunnelCrawler
+
+crawler = CollabTunnelCrawler()
+sitemap = crawler.fetch_sitemap("https://example.com/llm-sitemap.json")
+
+# Get items modified in last 7 days
+recent_items = sitemap.filter_by_date(
+    datetime.now() - timedelta(days=7)
+)
+
+for item in recent_items:
+    content = crawler.fetch_content(item['mUrl'])
+    # Process recent content...
+```
+
+### Verify Protocol Compliance
+
+```python
+from collab_tunnel import ContentValidator
+
+validator = ContentValidator()
+
+# Check headers
+headers = {
+    'Content-Type': 'application/json',
+    'ETag': '"sha256-abc123..."',
+    'Link': '<https://example.com/post/>; rel="canonical"',
+    'Cache-Control': 'must-revalidate',
+    'Vary': 'Accept'
+}
+
+results = validator.check_headers(headers)
+if results['compliant']:
+    print("✅ Protocol compliant!")
+else:
+    print("❌ Errors:", results['errors'])
+```
+
+## Protocol Overview
+
+The Collaboration Tunnel Protocol (TCT) enables efficient content delivery through:
+
+1. **Bidirectional Handshake**
+   - C-URL (HTML page) → M-URL (JSON endpoint) via `<link rel="alternate">`
+   - M-URL → C-URL via `Link: <C-URL>; rel="canonical"` header
+
+2. **Template-Invariant Fingerprinting**
+   - Content normalized (lowercase, whitespace collapse)
+   - SHA-256 hash used as ETag
+   - Stable across theme changes
+
+3. **Sitemap-First Verification**
+   - JSON sitemap lists (cUrl, mUrl, contentHash)
+   - Skip fetch if hash unchanged (90%+ skip rate)
+
+4. **Conditional Request Discipline**
+   - If-None-Match takes precedence
+   - 304 Not Modified for unchanged content
+
+## API Reference
+
+### CollabTunnelCrawler
+
+**Methods:**
+
+- `fetch_sitemap(sitemap_url)` - Fetch and parse sitemap
+- `should_fetch(item)` - Check if item needs fetching (zero-fetch logic)
+- `fetch_content(m_url, expected_hash)` - Fetch M-URL with conditional request
+- `verify_handshake(c_url, m_url)` - Verify bidirectional handshake
+- `get_stats()` - Get bandwidth savings statistics
+
+### SitemapParser
+
+**Properties:**
+
+- `items` - List of sitemap items
+- `version` - Sitemap version
+- `count` - Total number of items
+
+**Methods:**
+
+- `filter_by_date(since)` - Filter items by modification date
+- `find_by_canonical(c_url)` - Find item by canonical URL
+- `get_stats()` - Get sitemap statistics
+
+### ContentValidator
+
+**Static Methods:**
+
+- `validate_etag(etag, content)` - Verify ETag matches content
+- `normalize_text(text)` - Normalize text following TCT spec
+- `check_headers(headers)` - Check protocol compliance
+- `validate_sitemap_item(item)` - Validate sitemap item structure
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Links
+
+- **Website**: https://llmpages.org
+- **GitHub**: https://github.com/antunjurkovic-collab/collab-tunnel-python
+- **PyPI**: https://pypi.org/project/collab-tunnel/
+- **Documentation**: https://llmpages.org/docs/python/
+- **Patent**: US 63/895,763 (Provisional, filed October 2025)
+
+## Contributing
+
+Contributions welcome! Please open an issue or submit a pull request.
+
+## Support
+
+- **Issues**: https://github.com/antunjurkovic-collab/collab-tunnel-python/issues
+- **Email**: antunjurkovic@gmail.com
