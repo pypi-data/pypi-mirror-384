@@ -1,0 +1,153 @@
+Metadata-Version: 2.1
+Name: kubernetes-watch
+Version: 0.1.11
+Summary: 
+Author: bmotevalli
+Author-email: b.motevalli@gmail.com
+Requires-Python: >=3.10,<3.14
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Dist: GitPython (>=3.1.43,<4.0.0)
+Requires-Dist: PyYAML (>=6.0.1,<7.0.0)
+Requires-Dist: boto3 (>=1.34.68,<2.0.0)
+Requires-Dist: humps (>=0.2.2,<0.3.0)
+Requires-Dist: hvac (>=2.1.0,<3.0.0)
+Requires-Dist: kubernetes (>=29.0.0,<30.0.0)
+Requires-Dist: prefect (==3.4.18)
+Requires-Dist: psycopg2 (>=2.9.10,<3.0.0)
+Requires-Dist: pydantic (>=2.11.7,<3.0.0)
+Requires-Dist: requests (>=2.32.3,<3.0.0)
+Description-Content-Type: text/markdown
+
+# kube_watch
+
+# To setup the project:
+
+- `poetry install`
+- `poetry shell`
+
+# To install package to your environment locally:
+
+python setup.py install
+
+# To publish
+
+`poetry config pypi-token.pypi your-api-token`
+`poetry build`
+`poetry publish`
+
+
+# Description
+The kube_watch library is build on top of <a href='https://docs.prefect.io/latest/'>Prefect</a>. The library is designed to define workflows in a declaritive and flexible fashion. Originally, workflows in Prefect are defined via decorators such as @flow and @task. In kube_watch, workflows can be defined in a declaritive form via yaml files. The library is mainly focused on running scheduled workflows in kubernetes environment. However, it can easily be extended to be used for any purpose requiring a workflow. The workflow manifest has the following generic structure:
+
+```
+workflow:
+  name: Dummy Workflow
+  runner: concurrent
+  tasks:
+    - name: Task_A
+      module: <module_path>
+      task: <func_name>
+      inputsArgType: arg
+      inputs:
+        parameters:
+          - name: x1
+            value: y1
+          - name: x2
+            value: y2
+          - name: x3
+            type: env
+            value: Y3
+
+    - name: Task_B
+      module: <module_path>
+      task: <func_name>
+      inputsArgType: arg
+      inputs:
+        parameters:
+          - name: xx1
+            value: yy1
+          - name: xx2
+            value: yy2
+      dependency:
+        - taskName: Task_A
+          inputParamName: xx3
+
+    - name: Task_C
+      module: <module_path>
+      task: <func_name>
+      inputsArgType: arg
+      conditional:
+        tasks: ["Task_B"]
+
+    - name: Task_external
+      module: <module_external_path>
+      plugin_path: <path_to_module>
+      task: <func_name>
+      inputsArgType: arg
+      conditional:
+        tasks: ["Task_B"]
+```
+
+
+**runner**: concurrent | sequential: if concurrent selected, tasks will be run concurrently.
+
+**module**: all modules are located in 'modules' directory in kube_watch. This is where you can extend the library and add new tasks / modules. Below modules, there are submodules such as providers, clusters, and logic. Within each of this submodules, specific modules are defined. For example: providers.aws contains a series of tasks related to AWS. In this case, <module_path> = providers.aws. To add new tasks, add a new module with a similar pattern and refer the path in your task block. 
+
+**plugin_path**: you can add new funtions outside the library without needing to modify this library. If plugin_path is defined, the
+library assumes you are referring to a module outside the library (e.g. in your app or workflow). The plugin_path is path to your
+py script (the folder). Then, provide your script name as module and function name as task.
+
+**task**: task is simply the name function that you put in the <module_path>. i.e. as you define a function in a module, you can simply start to use it in your manifests.
+
+**inputArgType**: arg | dict | list: if the task functions accept known-fixed number of parameters, then use arg. 
+
+**dependency**: this block defines dependency of a child task to its parent. If **inputParamName** is defined, then OUTPUT of the parent task is passed to the child with an argument name defined by inputParamName.
+
+**IMPORTATN NOTE**: A strict assumption is that task functions return a single output. If there are cases with multiple output, wrap them into a dictionary and unwrap them in the child task.
+
+**conditional**: These are blocks where you can define when a task runs depending on the outcome of its parent. The parent task should return True or False.
+
+
+Parameters have also a type entry: env | static. static is default value. If type is defined as env, the parameter value is loaded from Environment Variables. In this case, value should be the name of the corresponding env var. 
+
+In above examples:
+
+```
+def Task_A(x1, x2, x3):
+    # do something
+    return output_A
+
+def Task_B(xx1, xx2, xx3):
+    # do something else
+    return output_B
+
+def Task_C():
+    # do another thing
+    return output_C
+```
+
+
+
+# Batch workflows
+kube_watch also enables to run workflows in batch. A separate manifest with following form is required:
+
+batchFlows:
+  runner: sequential
+  items:
+    - path: path_to_flow_A.yaml
+    - path: path_to_flow_B.yaml
+    - path: path_to_flow_C.yaml
+
+
+# cron_app
+The cron_app folder contains an example use case of kube_watch library. The cron_app can be used to deploy a CronJob in a kubernetes environment. The app assumes the manifests are located in a separate repository. It will clone the repo and read the manifests and runs the workflows.
+
+# Connect to a server
+## Start Server
+`prefect server start`
+## To Connect
+To connect to a server, simply set the following environment variable: `PREFECT_API_URL`
+
