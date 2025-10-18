@@ -1,0 +1,110 @@
+Metadata-Version: 2.4
+Name: mcp-server-excel-sql
+Version: 0.1.0
+Summary: MCP server that exposes Excel files as SQL-queryable tables via DuckDB
+Author-email: Ivan <ivan@eriad.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/ivan-loh/mcp-excel
+Project-URL: Repository, https://github.com/ivan-loh/mcp-excel
+Project-URL: Issues, https://github.com/ivan-loh/mcp-excel/issues
+Keywords: mcp,excel,sql,duckdb,server
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Database
+Classifier: Topic :: Office/Business
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: fastmcp>=1.0.0
+Requires-Dist: duckdb>=1.0.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: click>=8.1
+Requires-Dist: pandas>=2.1
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: watchdog>=3.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
+Requires-Dist: pytest-cov>=4.1; extra == "dev"
+Dynamic: license-file
+
+# mcp-excel
+
+MCP server exposing Excel files as SQL-queryable tables via DuckDB.
+
+
+## Features
+
+- SQL queries on Excel via DuckDB
+- RAW (as-is) or ASSISTED (cleanup rules) modes
+- Multi-row headers, type hints, unpivot transforms
+- System views (`__files`, `__tables`)
+- File watching with auto-refresh
+
+## Installation
+
+```bash
+pip install mcp-excel
+```
+
+## Usage
+
+```bash
+mcp-excel --path /data/excel --watch --overrides config.yaml
+```
+
+## MCP Tools
+
+**load_dir** - Load Excel files from directory
+**query** - Execute SQL (read-only)
+**list_tables** - List loaded tables
+**get_schema** - Get table schema
+**refresh** - Reload data
+
+## Modes
+
+**RAW**: Load as VARCHAR, no processing
+**ASSISTED**: Apply overrides (skip_rows, type_hints, unpivot, etc.)
+
+Example override:
+```yaml
+sales.xlsx:
+  sheet_overrides:
+    Summary:
+      skip_rows: 3
+      type_hints:
+        amount: "DECIMAL(10,2)"
+      unpivot:
+        id_vars: ["Region"]
+        value_vars: ["Jan", "Feb"]
+```
+
+## Table Naming
+
+`<alias>__<relpath>__<sheet>` (lowercased, alphanumeric only)
+
+Example: `sales/Q1.xlsx` → `excel__sales_q1__summary`
+
+## System Views
+
+`<alias>____files` - File metadata
+`<alias>____tables` - Table metadata
+
+## Security
+
+Read-only, path-confined, SELECT-only queries, timeout/row limits
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest --cov=src tests/
+python -m build
+```
+
+## License
+
+MIT
