@@ -1,0 +1,813 @@
+import json
+import logging
+import os
+import time
+from collections.abc import Generator
+from contextlib import contextmanager
+from functools import wraps
+from pathlib import Path
+from threading import Lock
+from typing import Any
+from typing import Literal
+
+import paramiko.sftp_client
+from fabric import Connection
+from invoke import UnexpectedExit
+from paramiko.ssh_exception import NoValidConnectionsError
+from pydantic import BaseModel
+
+from ..logger import close_logger
+from ..logger import get_logger
+from ..logger import set_logger
+from fractal_server.string_tools import validate_cmd
+
+
+SSH_MONITORING_LOGGER_NAME = "ssh-log"
+
+
+class FractalSSHTimeoutError(RuntimeError):
+    pass
+
+
+class FractalSSHConnectionError(RuntimeError):
+    pass
+
+
+class FractalSSHCommandError(RuntimeError):
+    pass
+
+
+class FractalSSHUnknownError(RuntimeError):
+    pass
+
+
+class SSHConfig(BaseModel):
+    host: str
+    user: str
+    key_path: str
+
+
+def retry_if_socket_error(func):
+    @wraps(func)
+    def func_with_retry(*args, **kwargs):
+        self = args[0]
+        try:
+            return func(*args, **kwargs)
+        except NoValidConnectionsError as e:
+            self.logger.warning(
+                f"Socket error type: {e.__class__.__name__}, {e}"
+            )
+            self.logger.warning("Now refresh connection")
+            self.refresh_connection()
+            self.logger.warning(f"Now retry {func.__name__}")
+            return func(*args, **kwargs)
+        except OSError as e:
+            self.logger.warning(f"Something goes wrong,{e}")
+            if "Socket is closed" in str(e):
+                self.logger.warning("Now refresh connection")
+                self.refresh_connection()
+                self.logger.warning(f"Now retry {func.__name__}")
+                return func(*args, **kwargs)
+            raise e
+
+    return func_with_retry
+
+
+@contextmanager
+def _acquire_lock_with_timeout(
+    lock: Lock,
+    label: str,
+    timeout: float,
+    pid: int,
+    logger_name: str,
+) -> Generator[Literal[True], Any, None]:
+    """
+    Given a `threading.Lock` object, try to acquire it within a given timeout.
+
+    Args:
+        lock:
+        label:
+        timeout:
+        logger_name:
+    """
+    logger = get_logger(logger_name)
+    ssh_logger = get_logger(SSH_MONITORING_LOGGER_NAME)
+    logger.info(f"Trying to acquire lock for '{label}', with {timeout=}")
+    t_lock_request = time.perf_counter()
+    result = lock.acquire(timeout=timeout)
+    try:
+        if not result:
+            logger.error(f"Lock for '{label}' was *not* acquired.")
+            raise FractalSSHTimeoutError(
+                f"Failed to acquire lock for '{label}' within "
+                f"{timeout} seconds"
+            )
+        t_lock_acquisition = time.perf_counter()
+        elapsed = t_lock_acquisition - t_lock_request
+        logger.info(f"Lock for '{label}' was acquired - {elapsed=:.4f} s")
+        yield result
+    finally:
+        if result:
+            lock.release()
+            logger.info(f"Lock for '{label}' was released.")
+            t_lock_release = time.perf_counter()
+            lock_was_acquired = 1
+        else:
+            t_lock_release = time.perf_counter()
+            t_lock_acquisition = t_lock_release
+            lock_was_acquired = 0
+        lock_waiting_time = t_lock_acquisition - t_lock_request
+        lock_holding_time = t_lock_release - t_lock_acquisition
+        ssh_logger.info(
+            f"{pid} {lock_waiting_time:.6e} {lock_holding_time:.6e} {lock_was_acquired} {label.replace(' ', '_')}"  # noqa
+        )
+
+
+class FractalSSH:
+    """
+    Wrapper of `fabric.Connection` object, enriched with locks.
+
+    Note: methods marked as `_unsafe` should not be used directly,
+    since they do not enforce locking.
+
+    Attributes:
+        _lock:
+        _connection:
+        default_lock_timeout:
+        sftp_get_prefetch:
+        sftp_get_max_requests:
+        logger_name:
+    """
+
+    _lock: Lock
+    _connection: Connection
+    default_lock_timeout: float
+    sftp_get_prefetch: bool
+    sftp_get_max_requests: int
+    logger_name: str
+    _pid: int
+
+    def __init__(
+        self,
+        connection: Connection,
+        default_timeout: float = 500.0,
+        sftp_get_prefetch: bool = False,
+        sftp_get_max_requests: int = 64,
+        logger_name: str = __name__,
+    ):
+        self._lock = Lock()
+        self._connection = connection
+        self.default_lock_timeout = default_timeout
+        self.sftp_get_prefetch = sftp_get_prefetch
+        self.sftp_get_max_requests = sftp_get_max_requests
+        self.logger_name = logger_name
+        set_logger(self.logger_name)
+        set_logger(SSH_MONITORING_LOGGER_NAME)
+        self._pid = os.getpid()
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connection.is_connected
+
+    @property
+    def logger(self) -> logging.Logger:
+        return get_logger(self.logger_name)
+
+    def log_and_raise(self, *, e: Exception, message: str) -> None:
+        """
+        Log and re-raise an exception from a FractalSSH method.
+
+        Args:
+            message: Additional message to be logged.
+            e: Original exception
+        """
+        try:
+            self.logger.error(message)
+            self.logger.error(f"Original Error {type(e)} : \n{str(e)}")
+            # Handle the specific case of `NoValidConnectionsError`s from
+            # paramiko, which store relevant information in the `errors`
+            # attribute
+            if hasattr(e, "errors"):
+                self.logger.error(f"{type(e)=}")
+                for err in e.errors:
+                    self.logger.error(f"{err}")
+        except Exception as exception:
+            # Handle unexpected cases, e.g. (1) `e` has no `type`, or
+            # (2) `errors` is not iterable.
+            self.logger.error(
+                "Unexpected Error while handling exception above: "
+                f"{str(exception)}"
+            )
+
+        raise e
+
+    def _run(
+        self,
+        *args,
+        label: str,
+        lock_timeout: float | None = None,
+        **kwargs,
+    ) -> Any:
+        actual_lock_timeout = self.default_lock_timeout
+        if lock_timeout is not None:
+            actual_lock_timeout = lock_timeout
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            label=label,
+            timeout=actual_lock_timeout,
+            pid=self._pid,
+            logger_name=self.logger_name,
+        ):
+            return self._connection.run(*args, **kwargs)
+
+    def _sftp_unsafe(self) -> paramiko.sftp_client.SFTPClient:
+        """
+        This is marked as unsafe because you should only use its methods
+        after acquiring a lock.
+        """
+        return self._connection.sftp()
+
+    @retry_if_socket_error
+    def read_remote_json_file(self, filepath: str) -> dict[str, Any]:
+        self.logger.info(f"START reading remote JSON file {filepath}.")
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            timeout=self.default_lock_timeout,
+            logger_name=self.logger_name,
+            pid=self._pid,
+            label=f"read_remote_json_file({filepath})",
+        ):
+            try:
+                with self._sftp_unsafe().open(filepath, "r") as f:
+                    data = json.load(f)
+            except Exception as e:
+                self.log_and_raise(
+                    e=e,
+                    message=(
+                        f"Error in `read_remote_json_file`, for {filepath=}."
+                    ),
+                )
+        self.logger.info(f"END reading remote JSON file {filepath}.")
+        return data
+
+    @retry_if_socket_error
+    def read_remote_text_file(self, filepath: str) -> dict[str, Any]:
+        """
+        Read a remote text file into a string.
+
+        Note from paramiko docs:
+        > The Python 'b' flag is ignored, since SSH treats all files as binary.
+        """
+        self.logger.info(f"START reading remote text file {filepath}.")
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            label=f"read_remote_text_file({filepath})",
+            timeout=self.default_lock_timeout,
+            pid=self._pid,
+            logger_name=self.logger_name,
+        ):
+            try:
+                with self._sftp_unsafe().open(filepath, "r") as f:
+                    data = f.read().decode()
+            except Exception as e:
+                self.log_and_raise(
+                    e=e,
+                    message=(
+                        f"Error in `read_remote_text_file`, for {filepath=}."
+                    ),
+                )
+        self.logger.info(f"END reading remote text file {filepath}.")
+        return data
+
+    def check_connection(self) -> None:
+        """
+        Open the SSH connection and handle exceptions.
+
+        This method should always be called at the beginning of background
+        operations that use FractalSSH, so that:
+
+        1. We try to restore unusable connections (e.g. due to closed socket).
+        2. We provide an informative error if connection cannot be established.
+        """
+        self.logger.debug(
+            f"[check_connection] {self._connection.is_connected=}"
+        )
+        if self._connection.is_connected:
+            # Even if the connection appears open, it could be broken for
+            # external reasons (e.g. the socket is closed because the SSH
+            # server was restarted). In these cases, we catch the error and
+            # try to re-open the connection.
+            try:
+                self.logger.info(
+                    "[check_connection] Run dummy command to check connection."
+                )
+                # Run both an SFTP and an SSH command, as they correspond to
+                # different sockets
+                self.remote_exists("/dummy/path/")
+                self.run_command(cmd="whoami")
+                self.logger.info(
+                    "[check_connection] SSH connection is already OK, exit."
+                )
+                return
+            except (OSError, EOFError) as e:
+                self.logger.warning(
+                    f"[check_connection] Detected error {str(e)}, re-open."
+                )
+        # Try opening the connection (if it was closed) or to re-open it (if
+        # an error happened).
+        self.refresh_connection()
+
+    def refresh_connection(self) -> None:
+        try:
+            self.close()
+            with _acquire_lock_with_timeout(
+                lock=self._lock,
+                label="FractalSSH._connection.{open,open_sftp}()",
+                timeout=self.default_lock_timeout,
+                logger_name=self.logger_name,
+                pid=self._pid,
+            ):
+                self._connection.open()
+                self._connection.client.open_sftp()
+                self.logger.info(
+                    "[check_connection] SSH connection opened, exit."
+                )
+
+        except Exception as e:
+            raise RuntimeError(
+                f"Cannot open SSH connection. Original error:\n{str(e)}"
+            )
+
+    def close(self) -> None:
+        """
+        Aggressively close `self._connection`.
+
+        When `Connection.is_connected` is `False`, `Connection.close()` does
+        not call `Connection.client.close()`. Thus we do this explicitly here,
+        because we observed cases where `is_connected=False` but the underlying
+        `Transport` object was not closed.
+        """
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            label="FractalSSH._connection.close()",
+            timeout=self.default_lock_timeout,
+            pid=self._pid,
+            logger_name=self.logger_name,
+        ):
+            self._connection.close()
+            if self._connection.client is not None:
+                self._connection.client.close()
+        close_logger(get_logger(self.logger_name))
+        close_logger(get_logger(SSH_MONITORING_LOGGER_NAME))
+
+    @retry_if_socket_error
+    def run_command(
+        self,
+        *,
+        cmd: str,
+        allow_char: str | None = None,
+        lock_timeout: int | None = None,
+    ) -> str:
+        """
+        Run a command within an open SSH connection.
+
+        Args:
+            cmd: Command to be run
+            allow_char: Forbidden chars to allow for this command
+            max_attempts:
+            base_interval:
+            lock_timeout:
+
+        Returns:
+            Standard output of the command, if successful.
+        """
+
+        validate_cmd(cmd, allow_char=allow_char)
+
+        actual_lock_timeout = self.default_lock_timeout
+        if lock_timeout is not None:
+            actual_lock_timeout = lock_timeout
+
+        t_0 = time.perf_counter()
+        try:
+            # Case 1: Command runs successfully
+            res = self._run(
+                cmd,
+                label=cmd,
+                lock_timeout=actual_lock_timeout,
+                hide=True,
+                in_stream=False,
+            )
+            t_1 = time.perf_counter()
+            self.logger.info(
+                f"END   running '{cmd}' over SSH, elapsed={t_1 - t_0:.3f}"
+            )
+            self.logger.debug("STDOUT:")
+            self.logger.debug(res.stdout)
+            self.logger.debug("STDERR:")
+            self.logger.debug(res.stderr)
+            return res.stdout
+        # Case 2: Command fails with a connection error
+        except NoValidConnectionsError as e:
+            raise NoValidConnectionsError(errors=e.errors)
+        except UnexpectedExit as e:
+            # Case 3: Command fails with an actual error
+            error_msg = (
+                f"Running command `{cmd}` over SSH failed.\n"
+                f"Original error:\n{str(e)}."
+            )
+            self.logger.error(error_msg)
+            raise FractalSSHCommandError(error_msg)
+        except FractalSSHTimeoutError as e:
+            raise e
+        except Exception as e:
+            self.logger.error(
+                f"Running command `{cmd}` over SSH failed.\n"
+                f"Original Error:\n{str(e)}."
+            )
+            raise FractalSSHUnknownError(f"{type(e)}: {str(e)}")
+
+    @retry_if_socket_error
+    def send_file(
+        self,
+        *,
+        local: str,
+        remote: str,
+        lock_timeout: float | None = None,
+    ) -> None:
+        """
+        Transfer a file via SSH
+
+        Args:
+            local: Local path to file.
+            remote: Target path on remote host.
+            lock_timeout: Timeout for lock acquisition (overrides default).
+        """
+        try:
+            self.logger.info(
+                f"[send_file] START transfer of '{local}' over SSH."
+            )
+            actual_lock_timeout = self.default_lock_timeout
+            if lock_timeout is not None:
+                actual_lock_timeout = lock_timeout
+            with _acquire_lock_with_timeout(
+                lock=self._lock,
+                label=f"send_file({local},{remote})",
+                timeout=actual_lock_timeout,
+                pid=self._pid,
+                logger_name=self.logger_name,
+            ):
+                self._sftp_unsafe().put(local, remote)
+            self.logger.info(
+                f"[send_file] END transfer of '{local}' over SSH."
+            )
+        except Exception as e:
+            self.log_and_raise(
+                e=e,
+                message=(
+                    "Error in `send_file`, while "
+                    f"transferring {local=} to {remote=}."
+                ),
+            )
+
+    @retry_if_socket_error
+    def fetch_file(
+        self,
+        *,
+        local: str,
+        remote: str,
+        lock_timeout: float | None = None,
+    ) -> None:
+        """
+        Transfer a file via SSH
+
+        Args:
+            local: Local path to file.
+            remote: Target path on remote host.
+            lock_timeout: Timeout for lock acquisition (overrides default).
+        """
+        try:
+            prefix = "[fetch_file] "
+            self.logger.info(f"{prefix} START fetching '{remote}' over SSH.")
+            actual_lock_timeout = self.default_lock_timeout
+            if lock_timeout is not None:
+                actual_lock_timeout = lock_timeout
+            with _acquire_lock_with_timeout(
+                lock=self._lock,
+                label=f"fetch_file({local},{remote})",
+                timeout=actual_lock_timeout,
+                pid=self._pid,
+                logger_name=self.logger_name,
+            ):
+                self._sftp_unsafe().get(
+                    remote,
+                    local,
+                    prefetch=self.sftp_get_prefetch,
+                    max_concurrent_prefetch_requests=self.sftp_get_max_requests,  # noqa E501
+                )
+            self.logger.info(f"{prefix} END fetching '{remote}' over SSH.")
+        except Exception as e:
+            self.log_and_raise(
+                e=e,
+                message=(
+                    "Error in `fetch_file`, while "
+                    f"Transferring {remote=} to {local=}."
+                ),
+            )
+
+    def mkdir(self, *, folder: str, parents: bool = True) -> None:
+        """
+        Create a folder remotely via SSH.
+
+        Args:
+            folder:
+            parents:
+        """
+        if parents:
+            cmd = f"mkdir -p {folder}"
+        else:
+            cmd = f"mkdir {folder}"
+        self.run_command(cmd=cmd)
+
+    def remove_folder(
+        self,
+        *,
+        folder: str,
+        safe_root: str,
+    ) -> None:
+        """
+        Removes a folder remotely via SSH.
+
+        This functions calls `rm -r`, after a few checks on `folder`.
+
+        Args:
+            folder: Absolute path to a folder that should be removed.
+            safe_root: If `folder` is not a subfolder of the absolute
+                `safe_root` path, raise an error.
+        """
+        validate_cmd(folder)
+        validate_cmd(safe_root)
+
+        if " " in folder:
+            raise ValueError(f"folder='{folder}' includes whitespace.")
+        elif " " in safe_root:
+            raise ValueError(f"safe_root='{safe_root}' includes whitespace.")
+        elif not Path(folder).is_absolute():
+            raise ValueError(f"{folder=} is not an absolute path.")
+        elif not Path(safe_root).is_absolute():
+            raise ValueError(f"{safe_root=} is not an absolute path.")
+        elif not (
+            Path(folder).resolve().is_relative_to(Path(safe_root).resolve())
+        ):
+            raise ValueError(f"{folder=} is not a subfolder of {safe_root=}.")
+        else:
+            cmd = f"rm -r {folder}"
+            self.run_command(cmd=cmd)
+
+    @retry_if_socket_error
+    def write_remote_file(
+        self,
+        *,
+        path: str,
+        content: str,
+        lock_timeout: float | None = None,
+    ) -> None:
+        """
+        Open a remote file via SFTP and write it.
+
+        Args:
+            path: Absolute path of remote file.
+            content: Contents to be written to file.
+            lock_timeout: Timeout for lock acquisition (overrides default).
+        """
+        t_start = time.perf_counter()
+        self.logger.info(f"[write_remote_file] START ({path}).")
+        actual_lock_timeout = self.default_lock_timeout
+        if lock_timeout is not None:
+            actual_lock_timeout = lock_timeout
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            label=f"write_remote_file({path})",
+            timeout=actual_lock_timeout,
+            pid=self._pid,
+            logger_name=self.logger_name,
+        ):
+            try:
+                with self._sftp_unsafe().open(filename=path, mode="w") as f:
+                    f.write(content)
+            except Exception as e:
+                self.log_and_raise(
+                    e=e, message=f"Error in `write_remote_file`, for {path=}."
+                )
+
+        elapsed = time.perf_counter() - t_start
+        self.logger.info(f"[write_remote_file] END, {elapsed=} s ({path}).")
+
+    @retry_if_socket_error
+    def remote_exists(self, path: str) -> bool:
+        """
+        Return whether a remote file/folder exists
+        """
+        self.logger.info(f"START remote_file_exists {path}")
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            label=f"remote_file_exists({path})",
+            timeout=self.default_lock_timeout,
+            pid=self._pid,
+            logger_name=self.logger_name,
+        ):
+            try:
+                self._sftp_unsafe().stat(path)
+                self.logger.info(f"END   remote_file_exists {path} / True")
+                return True
+            except FileNotFoundError:
+                self.logger.info(f"END   remote_file_exists {path} / False")
+                return False
+            except Exception as e:
+                self.log_and_raise(
+                    e=e, message=f"Error in `remote_exists`, for {path=}."
+                )
+
+
+class FractalSSHList:
+    """
+    Collection of `FractalSSH` objects
+
+    Attributes are all private, and access to this collection must be
+    through methods (mostly the `get` one).
+
+    Attributes:
+        _data:
+            Mapping of unique keys (the SSH-credentials tuples) to
+            `FractalSSH` objects.
+        _lock:
+            A `threading.Lock object`, to be acquired when changing `_data`.
+        _timeout: Timeout for `_lock` acquisition.
+        _logger_name: Logger name.
+    """
+
+    _data: dict[tuple[str, str, str], FractalSSH]
+    _lock: Lock
+    _timeout: float
+    _logger_name: str
+    _pid: int
+
+    def __init__(
+        self,
+        *,
+        timeout: float = 5.0,
+        logger_name: str = "fractal_server.FractalSSHList",
+    ):
+        self._lock = Lock()
+        self._data = {}
+        self._timeout = timeout
+        self._logger_name = logger_name
+        set_logger(self._logger_name)
+        self._pid = os.getpid()
+
+    @property
+    def logger(self) -> logging.Logger:
+        """
+        This property exists so that we never have to propagate the
+        `Logger` object.
+        """
+        return get_logger(self._logger_name)
+
+    @property
+    def size(self) -> int:
+        """
+        Number of current key-value pairs in `self._data`.
+        """
+        return len(self._data.values())
+
+    def get(self, *, host: str, user: str, key_path: str) -> FractalSSH:
+        """
+        Get the `FractalSSH` for the current credentials, or create one.
+
+        Note: Changing `_data` requires acquiring `_lock`.
+
+        Args:
+            host:
+            user:
+            key_path:
+        """
+        key = (host, user, key_path)
+        fractal_ssh = self._data.get(key, None)
+        if fractal_ssh is not None:
+            self.logger.info(
+                f"Return existing FractalSSH object for {user}@{host}"
+            )
+            return fractal_ssh
+        else:
+            self.logger.info(f"Add new FractalSSH object for {user}@{host}")
+            connection = Connection(
+                host=host,
+                user=user,
+                forward_agent=False,
+                connect_kwargs={
+                    "key_filename": key_path,
+                    "look_for_keys": False,
+                    "banner_timeout": 30,
+                    "auth_timeout": 30,  # default value
+                    "channel_timeout": 60 * 60,  # default value
+                },
+            )
+            with _acquire_lock_with_timeout(
+                lock=self._lock,
+                label="FractalSSHList.get",
+                timeout=self._timeout,
+                pid=self._pid,
+                logger_name=self._logger_name,
+            ):
+                self._data[key] = FractalSSH(connection=connection)
+                return self._data[key]
+
+    def contains(
+        self,
+        *,
+        host: str,
+        user: str,
+        key_path: str,
+    ) -> bool:
+        """
+        Return whether a given key is present in the collection.
+
+        Args:
+            host:
+            user:
+            key_path:
+        """
+        key = (host, user, key_path)
+        return key in self._data.keys()
+
+    def remove(
+        self,
+        *,
+        host: str,
+        user: str,
+        key_path: str,
+    ) -> None:
+        """
+        Remove a key from `_data` and close the corresponding connection.
+
+        Note: Changing `_data` requires acquiring `_lock`.
+
+        Args:
+            host:
+            user:
+            key_path:
+        """
+        key = (host, user, key_path)
+        with _acquire_lock_with_timeout(
+            lock=self._lock,
+            timeout=self._timeout,
+            label="FractalSSHList.remove",
+            pid=self._pid,
+            logger_name=self._logger_name,
+        ):
+            self.logger.info(
+                f"Removing FractalSSH object for {user}@{host} "
+                "from collection."
+            )
+            fractal_ssh_obj = self._data.pop(key)
+            self.logger.info(
+                f"Closing FractalSSH object for {user}@{host} "
+                f"({fractal_ssh_obj.is_connected=})."
+            )
+            fractal_ssh_obj.close()
+
+    def close_all(self, *, timeout: float = 5.0):
+        """
+        Close all `FractalSSH` objects in the collection.
+
+        Args:
+            timeout:
+                Timeout for `FractalSSH._lock` acquisition, to be obtained
+                before closing.
+        """
+        for key, fractal_ssh_obj in self._data.items():
+            host, user, _ = key[:]
+            self.logger.info(
+                f"Closing FractalSSH object for {user}@{host} "
+                f"({fractal_ssh_obj.is_connected=})."
+            )
+            fractal_ssh_obj.close()
+
+
+@contextmanager
+def SingleUseFractalSSH(
+    *,
+    ssh_config: SSHConfig,
+    logger_name: str,
+) -> Generator[FractalSSH, Any, None]:
+    """
+    Get a new FractalSSH object (with a fresh connection).
+
+    Args:
+        ssh_config:
+        logger_name:
+    """
+    _fractal_ssh_list = FractalSSHList(logger_name=logger_name)
+    _fractal_ssh = _fractal_ssh_list.get(**ssh_config.model_dump())
+    yield _fractal_ssh
+    _fractal_ssh.close()
