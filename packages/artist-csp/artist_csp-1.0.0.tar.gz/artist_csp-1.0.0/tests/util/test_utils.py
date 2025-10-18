@@ -1,0 +1,946 @@
+import math
+import pathlib
+
+import pytest
+import torch
+
+from artist import ARTIST_ROOT
+from artist.util import config_dictionary, utils
+
+
+@pytest.mark.parametrize(
+    "east_translation, north_translation, up_translation, expected",
+    [
+        (
+            torch.tensor([1.0]),
+            torch.tensor([2.0]),
+            torch.tensor([3.0]),
+            torch.tensor(
+                [
+                    [
+                        [1.0, 0.0, 0.0, 1.0],
+                        [0.0, 1.0, 0.0, 2.0],
+                        [0.0, 0.0, 1.0, 3.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                ]
+            ),
+        ),
+        (
+            torch.tensor([1.0, 0.0, 0.0]),
+            torch.tensor([0.0, 1.0, 0.0, 1.0]),
+            torch.tensor([0.0, 0.0, 1.0, 1.0]),
+            None,
+        ),
+        (
+            torch.tensor([1.0, 0.0, 0.0, 0.0]),
+            torch.tensor([0.0, 1.0, 0.0]),
+            torch.tensor([0.0, 0.0, 1.0, 1.0]),
+            None,
+        ),
+        (
+            torch.tensor([1.0, 0.0, 0.0, 0.0]),
+            torch.tensor([0.0, 1.0, 0.0, 0.0]),
+            torch.tensor([0.0, 0.0, 1.0]),
+            None,
+        ),
+    ],
+)
+def test_translate_enu(
+    east_translation: torch.Tensor,
+    north_translation: torch.Tensor,
+    up_translation: torch.Tensor,
+    expected: torch.Tensor,
+    device: torch.device,
+) -> None:
+    """
+    Test that the correct translation matrix is created.
+
+    Parameters
+    ----------
+    east_translation : torch.Tensor
+        The translation in east direction.
+    north_translation : torch.Tensor
+        The translation in north direction.
+    up_translation : torch.Tensor
+        The translation in up direction.
+    expected : torch.Tensor
+        The expected overall translation or ``None`` if an error is expected.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    # Check if the ValueError is thrown as expected.
+    if expected is None:
+        with pytest.raises(ValueError) as exc_info:
+            utils.translate_enu(
+                e=east_translation.to(device),
+                n=north_translation.to(device),
+                u=up_translation.to(device),
+                device=device,
+            )
+        assert (
+            "The three tensors containing the east, north, and up translations must have the same shape."
+            in str(exc_info.value)
+        )
+    else:
+        # Check if the translation matrix is correct.
+        translation_matrix = utils.translate_enu(
+            e=east_translation.to(device),
+            n=north_translation.to(device),
+            u=up_translation.to(device),
+            device=device,
+        )
+        torch.testing.assert_close(
+            translation_matrix, expected.to(device), rtol=1e-4, atol=1e-4
+        )
+
+
+@pytest.mark.parametrize(
+    "point, expected",
+    [
+        (
+            torch.tensor([1.0, 0.0, 0.0]),
+            torch.tensor([1.0, 0.0, 0.0, 1.0]),
+        ),
+        (
+            torch.tensor([1.0, 0.0]),
+            None,
+        ),
+        (
+            torch.tensor([1.0, 0.0, 0.0, 0.0]),
+            None,
+        ),
+    ],
+)
+def test_3d_point_converter(
+    point: torch.Tensor, expected: torch.Tensor | None, device: torch.device
+) -> None:
+    """
+    Test the 3d to 4d point converter.
+
+    Parameters
+    ----------
+    point : torch.Tensor
+        A 3d point.
+    expected : torch.Tensor | None
+        A 4d point or ``None`` if an error is expected.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    # Check if the ValueError is thrown as expected.
+    if expected is None:
+        with pytest.raises(ValueError) as exc_info:
+            utils.convert_3d_points_to_4d_format(
+                points=point.to(device),
+                device=device,
+            )
+        assert f"Expected 3D points but got points of shape {point.shape}!" in str(
+            exc_info.value
+        )
+    else:
+        # Check if the 4d point is correct.
+        point_4d = utils.convert_3d_points_to_4d_format(
+            points=point.to(device),
+            device=device,
+        )
+        torch.testing.assert_close(point_4d, expected.to(device), rtol=1e-4, atol=1e-4)
+
+
+@pytest.mark.parametrize(
+    "direction, expected",
+    [
+        (
+            torch.tensor([1.0, 0.0, 0.0]),
+            torch.tensor([1.0, 0.0, 0.0, 0.0]),
+        ),
+        (
+            torch.tensor([1.0, 0.0]),
+            None,
+        ),
+        (
+            torch.tensor([1.0, 0.0, 0.0, 0.0]),
+            None,
+        ),
+    ],
+)
+def test_3d_direction_converter(
+    direction: torch.Tensor, expected: torch.Tensor | None, device: torch.device
+) -> None:
+    """
+    Test the 3d to 4d point converter.
+
+    Parameters
+    ----------
+    direction : torch.Tensor
+        A 3d direction.
+    expected : torch.Tensor | None
+        A 4d direction or ``None`` if an error is expected.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    # Check if the ValueError is thrown as expected.
+    if expected is None:
+        with pytest.raises(ValueError) as exc_info:
+            utils.convert_3d_directions_to_4d_format(
+                directions=direction.to(device),
+                device=device,
+            )
+        assert (
+            f"Expected 3D directions but got directions of shape {direction.shape}!"
+            in str(exc_info.value)
+        )
+    else:
+        # Check if the 4d point is correct.
+        direction_4d = utils.convert_3d_directions_to_4d_format(
+            directions=direction.to(device),
+            device=device,
+        )
+        torch.testing.assert_close(
+            direction_4d, expected.to(device), rtol=1e-4, atol=1e-4
+        )
+
+
+@pytest.mark.parametrize(
+    "e_distortions, u_distortions, rays_to_rotate, expected_distorted_rays",
+    [
+        (  # Rotate single ray in the east direction.
+            torch.tensor([[[math.pi / 2]]]),
+            torch.tensor([[[0.0]]]),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            torch.tensor([[[[1.0, -1.0, 1.0, 0.0]]]]),
+        ),
+        (  # Rotate single ray in the up direction.
+            torch.tensor([[[0.0]]]),
+            torch.tensor([[[math.pi / 2]]]),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            torch.tensor([[[[-1.0, 1.0, 1.0, 0.0]]]]),
+        ),
+        (  # Rotate single ray in the east and then up direction.
+            torch.tensor([[[math.pi / 2]]]),
+            torch.tensor([[[math.pi / 2]]]),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            torch.tensor([[[[-1.0, -1.0, 1.0, 0.0]]]]),
+        ),
+        (  # Consider multiple rotations for a single ray in the east direction.
+            torch.tensor(
+                [[[math.pi / 2]], [[math.pi]], [[math.pi / 4]], [[2 * math.pi]]]
+            ),
+            torch.tensor([[[0]], [[0]], [[0]], [[0]]]),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            torch.tensor(
+                [
+                    [[[1.000000, -1.000000, 1.000000, 0.000000]]],
+                    [[[1.000000, -1.000000, -1.000000, 0.000000]]],
+                    [[[1.000000, 0.000000, 1.414214, 0.000000]]],
+                    [[[1.000000, 1.000000, 1.000000, 0.000000]]],
+                ]
+            ),
+        ),
+        (  # Consider multiple rotations for a single ray in the up direction.
+            torch.tensor([[[0]], [[0]], [[0]], [[0]]]),
+            torch.tensor(
+                [[[math.pi / 2]], [[math.pi]], [[math.pi / 4]], [[2 * math.pi]]]
+            ),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            torch.tensor(
+                [
+                    [[[-1.000000, 1.000000, 1.000000, 0.000000]]],
+                    [[[-1.000000, -1.000000, 1.000000, 0.000000]]],
+                    [[[0.000000, 1.414214, 1.000000, 0.000000]]],
+                    [[[1.000000, 1.000000, 1.000000, 0.000000]]],
+                ]
+            ),
+        ),
+        (  # Consider multiple rotations for a single ray in the east and then up direction.
+            torch.tensor(
+                [[[math.pi / 2]], [[math.pi]], [[math.pi / 4]], [[2 * math.pi]]]
+            ),
+            torch.tensor(
+                [[[math.pi / 2]], [[math.pi]], [[math.pi / 4]], [[2 * math.pi]]]
+            ),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            torch.tensor(
+                [
+                    [[[-1.000000, -1.000000, 1.000000, 0.000000]]],
+                    [[[-1.000000, 1.000000, -1.000000, 0.000000]]],
+                    [[[0.000000, 0.292893, 1.707107, 0.000000]]],
+                    [[[1.000000, 1.000000, 1.000000, 0.000000]]],
+                ]
+            ),
+        ),
+        (  # Consider multiple rotations for multiple rays in the east direction.
+            torch.tensor(
+                [
+                    [[math.pi, math.pi / 2, math.pi / 4]],
+                    [[math.pi / 4, math.pi, math.pi / 2]],
+                ]
+            ),
+            torch.tensor([[[0, 0, 0]], [[0, 0, 0]]]),
+            torch.tensor(
+                [[[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]]]
+            ),
+            torch.tensor(
+                [
+                    [
+                        [
+                            [1.000000e00, -9.999999e-01, -1.000000e00, 0.000000e00],
+                            [2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [3.000000e00, -5.960464e-08, 4.242640e00, 0.000000e00],
+                        ]
+                    ],
+                    [
+                        [
+                            [1.000000e00, 0.000000e00, 1.414214e00, 0.000000e00],
+                            [2.000000e00, -2.000000e00, -2.000000e00, 0.000000e00],
+                            [3.000000e00, -3.000000e00, 3.000000e00, 0.000000e00],
+                        ]
+                    ],
+                ]
+            ),
+        ),
+        (  # Consider multiple rotations for multiple rays in the up direction.
+            torch.tensor([[[0, 0, 0]], [[0, 0, 0]]]),
+            torch.tensor(
+                [
+                    [[math.pi, math.pi / 2, math.pi / 4]],
+                    [[math.pi / 4, math.pi, math.pi / 2]],
+                ]
+            ),
+            torch.tensor(
+                [[[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]]]
+            ),
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-9.999999e-01, -1.000000e00, 1.000000e00, 0.000000e00],
+                            [-2.000000e00, 2.000000e00, 2.000000e00, 0.000000e00],
+                            [-5.960464e-08, 4.242640e00, 3.000000e00, 0.000000e00],
+                        ]
+                    ],
+                    [
+                        [
+                            [0.000000e00, 1.414214e00, 1.000000e00, 0.000000e00],
+                            [-2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [-3.000000e00, 3.000000e00, 3.000000e00, 0.000000e00],
+                        ]
+                    ],
+                ]
+            ),
+        ),
+        (  # Consider multiple rotations for multiple rays in the east and then up direction.
+            torch.tensor(
+                [
+                    [[math.pi, math.pi / 2, math.pi / 4]],
+                    [[math.pi / 4, math.pi, math.pi / 2]],
+                ]
+            ),
+            torch.tensor(
+                [
+                    [[math.pi, math.pi / 2, math.pi / 4]],
+                    [[math.pi / 4, math.pi, math.pi / 2]],
+                ]
+            ),
+            torch.tensor(
+                [[[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]]]
+            ),
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-9.999999e-01, 1.000000e00, -9.999999e-01, 0.000000e00],
+                            [-2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [-5.960464e-08, 8.786795e-01, 5.121320e00, 0.000000e00],
+                        ]
+                    ],
+                    [
+                        [
+                            [0.000000e00, 2.928932e-01, 1.707107e00, 0.000000e00],
+                            [-2.000000e00, 2.000000e00, -2.000000e00, 0.000000e00],
+                            [-3.000000e00, -3.000000e00, 3.000000e00, 0.000000e00],
+                        ]
+                    ],
+                ]
+            ),
+        ),
+        (  # Consider multiple rotations for multiple rays on four facets in the east and then up direction.
+            torch.tensor(
+                [
+                    [
+                        [math.pi, math.pi / 2, math.pi / 4],
+                        [math.pi, math.pi / 2, math.pi / 4],
+                        [math.pi, math.pi / 2, math.pi / 4],
+                        [math.pi, math.pi / 2, math.pi / 4],
+                    ],
+                    [
+                        [math.pi / 4, math.pi, math.pi / 2],
+                        [math.pi / 4, math.pi, math.pi / 2],
+                        [math.pi / 4, math.pi, math.pi / 2],
+                        [math.pi / 4, math.pi, math.pi / 2],
+                    ],
+                ]
+            ),
+            torch.tensor(
+                [
+                    [
+                        [math.pi, math.pi / 2, math.pi / 4],
+                        [math.pi, math.pi / 2, math.pi / 4],
+                        [math.pi, math.pi / 2, math.pi / 4],
+                        [math.pi, math.pi / 2, math.pi / 4],
+                    ],
+                    [
+                        [math.pi / 4, math.pi, math.pi / 2],
+                        [math.pi / 4, math.pi, math.pi / 2],
+                        [math.pi / 4, math.pi, math.pi / 2],
+                        [math.pi / 4, math.pi, math.pi / 2],
+                    ],
+                ]
+            ),
+            torch.tensor(
+                [
+                    [[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]],
+                    [[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]],
+                    [[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]],
+                    [[1.0, 1.0, 1.0, 0.0], [2.0, 2.0, 2.0, 0.0], [3.0, 3.0, 3.0, 0.0]],
+                ]
+            ),
+            torch.tensor(
+                [
+                    [
+                        [
+                            [-9.999999e-01, 1.000000e00, -9.999999e-01, 0.000000e00],
+                            [-2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [-5.960464e-08, 8.786795e-01, 5.121320e00, 0.000000e00],
+                        ],
+                        [
+                            [-9.999999e-01, 1.000000e00, -9.999999e-01, 0.000000e00],
+                            [-2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [-5.960464e-08, 8.786795e-01, 5.121320e00, 0.000000e00],
+                        ],
+                        [
+                            [-9.999999e-01, 1.000000e00, -9.999999e-01, 0.000000e00],
+                            [-2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [-5.960464e-08, 8.786795e-01, 5.121320e00, 0.000000e00],
+                        ],
+                        [
+                            [-9.999999e-01, 1.000000e00, -9.999999e-01, 0.000000e00],
+                            [-2.000000e00, -2.000000e00, 2.000000e00, 0.000000e00],
+                            [-5.960464e-08, 8.786795e-01, 5.121320e00, 0.000000e00],
+                        ],
+                    ],
+                    [
+                        [
+                            [0.000000e00, 2.928932e-01, 1.707107e00, 0.000000e00],
+                            [-2.000000e00, 2.000000e00, -2.000000e00, 0.000000e00],
+                            [-3.000000e00, -3.000000e00, 3.000000e00, 0.000000e00],
+                        ],
+                        [
+                            [0.000000e00, 2.928932e-01, 1.707107e00, 0.000000e00],
+                            [-2.000000e00, 2.000000e00, -2.000000e00, 0.000000e00],
+                            [-3.000000e00, -3.000000e00, 3.000000e00, 0.000000e00],
+                        ],
+                        [
+                            [0.000000e00, 2.928932e-01, 1.707107e00, 0.000000e00],
+                            [-2.000000e00, 2.000000e00, -2.000000e00, 0.000000e00],
+                            [-3.000000e00, -3.000000e00, 3.000000e00, 0.000000e00],
+                        ],
+                        [
+                            [0.000000e00, 2.928932e-01, 1.707107e00, 0.000000e00],
+                            [-2.000000e00, 2.000000e00, -2.000000e00, 0.000000e00],
+                            [-3.000000e00, -3.000000e00, 3.000000e00, 0.000000e00],
+                        ],
+                    ],
+                ]
+            ),
+        ),
+        (  # Test raise ValueError
+            torch.tensor([[[math.pi / 2]]]),
+            torch.tensor([[[0.0], [0.0]]]),
+            torch.tensor([[[1.0, 1.0, 1.0, 0.0]]]),
+            None,
+        ),
+    ],
+)
+def test_distortion_rotations(
+    e_distortions: torch.Tensor,
+    u_distortions: torch.Tensor,
+    rays_to_rotate: torch.Tensor,
+    expected_distorted_rays: torch.Tensor,
+    device: torch.device,
+) -> None:
+    """
+    Test the rotation function used for scattering rays by considering various rotations.
+
+    Parameters
+    ----------
+    e_distortions : torch.Tensor
+        The distortions in the east direction used in the rotation matrix.
+    u_distortions : torch.Tensor
+        The distortions in the upper direction used in the rotation matrix.
+    rays_to_rotate : torch.Tensor
+        The rays to rotate given the distortions.
+    expected_distorted_rays : torch.Tensor
+        The expected distorted rays after rotation.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    if expected_distorted_rays is None:
+        with pytest.raises(ValueError) as exc_info:
+            distorted_rays = (
+                utils.rotate_distortions(
+                    e=e_distortions.to(device),
+                    u=u_distortions.to(device),
+                    device=device,
+                )
+                @ rays_to_rotate.to(device).unsqueeze(-1)
+            ).squeeze(-1)
+        assert (
+            "The two tensors containing angles for the east and up rotation must have the same shape."
+            in str(exc_info.value)
+        )
+    else:
+        distorted_rays = (
+            utils.rotate_distortions(
+                e=e_distortions.to(device), u=u_distortions.to(device), device=device
+            )
+            @ rays_to_rotate.to(device).unsqueeze(-1)
+        ).squeeze(-1)
+
+        torch.testing.assert_close(distorted_rays, expected_distorted_rays.to(device))
+
+
+def test_normalize_bitmaps(device: torch.device) -> None:
+    """
+    Test the normalization for bitmaps.
+
+    Parameters
+    ----------
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    bitmap_path = (
+        pathlib.Path(ARTIST_ROOT)
+        / "tests/data/expected_optimized_motor_positions/distribution.pt"
+    )
+
+    bitmap = torch.load(bitmap_path, map_location=device, weights_only=True).unsqueeze(
+        0
+    )
+
+    normalized_bitmaps = utils.normalize_bitmaps(
+        flux_distributions=bitmap,
+        target_area_widths=torch.full(
+            (bitmap.shape[0],),
+            config_dictionary.utis_crop_width,
+            device=device,
+        ),
+        target_area_heights=torch.full(
+            (bitmap.shape[0],),
+            config_dictionary.utis_crop_height,
+            device=device,
+        ),
+        number_of_rays=bitmap.sum(dim=[1, 2]),
+    )
+
+    expected_path = (
+        pathlib.Path(ARTIST_ROOT)
+        / "tests/data/expected_normalized_bitmaps"
+        / f"bitmaps_{device.type}.pt"
+    )
+
+    expected = torch.load(expected_path, map_location=device, weights_only=True)
+
+    torch.testing.assert_close(normalized_bitmaps, expected, atol=5e-4, rtol=5e-4)
+
+
+@pytest.mark.parametrize(
+    "total_width, slope_width, plateau_width, expected",
+    [
+        (8, 2, 4, torch.tensor([0.25, 0.75, 1.0, 1.0, 1.0, 1.0, 0.75, 0.25])),
+        (4, 2, 4, torch.tensor([1.0, 1.0, 1.0, 1.0])),
+        (1, 2, 3, torch.tensor([1.0])),
+        (
+            10,
+            2,
+            2,
+            torch.tensor([0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 0.75, 0.25, 0.0, 0.0]),
+        ),
+    ],
+)
+def test_trapezoid_distribution(
+    total_width: int,
+    slope_width: int,
+    plateau_width: int,
+    expected: torch.Tensor,
+    device: torch.device,
+) -> None:
+    """
+    Test that the trapezoid distribution works as expected.
+
+    Parameters
+    ----------
+    total_width : int
+        The total width of the trapezoid.
+    slope_width : int
+        The width of the slope of the trapezoid.
+    plateau_width : int
+        The width of the plateau.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    trapezoid = utils.trapezoid_distribution(
+        total_width=total_width,
+        slope_width=slope_width,
+        plateau_width=plateau_width,
+        device=device,
+    )
+
+    torch.testing.assert_close(trapezoid, expected.to(device), atol=5e-4, rtol=5e-4)
+
+
+@pytest.mark.parametrize(
+    "image, crop_width, crop_height, target_width, target_height, expected_cropped",
+    [
+        # Center of mass exactly at the geometric center -> cropping full plane should be identity.
+        (
+            torch.tensor([[[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]]),
+            3.0,
+            3.0,
+            torch.tensor([3.0]),
+            torch.tensor([3.0]),
+            torch.tensor([[[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]]),
+        ),
+        # Symmetric intensities -> Center of mass at center -> identity expected.
+        (
+            torch.tensor([[[1.0, 2.0, 1.0], [2.0, 3.0, 2.0], [1.0, 2.0, 1.0]]]),
+            3.0,
+            3.0,
+            torch.tensor([3.0]),
+            torch.tensor([3.0]),
+            torch.tensor([[[1.0, 2.0, 1.0], [2.0, 3.0, 2.0], [1.0, 2.0, 1.0]]]),
+        ),
+    ],
+)
+def test_crop_flux_distributions_around_center_centering(
+    image: torch.Tensor,
+    crop_width: float,
+    crop_height: float,
+    target_width: torch.Tensor,
+    target_height: torch.Tensor,
+    expected_cropped: torch.Tensor,
+    device: torch.device,
+) -> None:
+    """
+    Test that cropping is identity when the center of mass is at the geometric center.
+
+    When the center of mass is located at the geometric center of the image
+    and the crop dimensions span the full target plane, the cropping operation
+    should return the image unchanged.
+
+    Parameters
+    ----------
+    image : torch.Tensor
+        Input image tensor to be cropped.
+        Tensor of shape [number_of_bitmaps, bitmap_resolution_e, bitmap_resolution_u].
+    crop_width : float
+        Desired crop width in meters.
+    crop_height : float
+        Desired crop height in meters.
+    target_width : torch.Tensor
+        Target plane widths in meters.
+        Tensor of shape [number_of_bitmaps].
+    target_height : torch.Tensor
+        Target plane heights in meters.
+        Tensor of shape [number_of_bitmaps].
+    expected_cropped : torch.Tensor
+        The expected output image tensor after cropping.
+        Tensor of shape [number_of_bitmaps, bitmap_resolution_e, bitmap_resolution_u].
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    cropped = utils.crop_flux_distributions_around_center(
+        flux_distributions=image.to(device),
+        crop_width=crop_width,
+        crop_height=crop_height,
+        target_plane_widths=target_width.to(device),
+        target_plane_heights=target_height.to(device),
+        device=device,
+    )
+    torch.testing.assert_close(
+        cropped, expected_cropped.to(device), rtol=1e-4, atol=1e-4
+    )
+    assert not torch.isnan(cropped).any()
+
+
+@pytest.mark.parametrize(
+    "height, width, brightest_pixel_row, brightest_pixel_column, crop_width, crop_height, target_width, target_height, tolerance_pixel, min_peak",
+    [
+        # Small offset near top-right.
+        (33, 33, 3, 29, 1.0, 1.0, torch.tensor([3.0]), torch.tensor([3.0]), 1.0, 0.5),
+        # Closer to center.
+        (65, 65, 30, 34, 1.2, 1.2, torch.tensor([3.0]), torch.tensor([3.0]), 1.0, 0.5),
+        # Far corner to stress interpolation and centering.
+        (64, 64, 1, 62, 0.8, 0.8, torch.tensor([3.0]), torch.tensor([3.0]), 1.0, 0.5),
+        # Rectangular image.
+        (48, 96, 5, 90, 1.0, 1.5, torch.tensor([4.0]), torch.tensor([2.0]), 1.0, 0.5),
+    ],
+    ids=[
+        "33x33_top-right",
+        "65x65_near-center",
+        "64x64_far-corner",
+        "48x96_rectangular",
+    ],
+)
+def test_crop_flux_distributions_around_center_offcenter(
+    height: int,
+    width: int,
+    brightest_pixel_row: int,
+    brightest_pixel_column: int,
+    crop_width: float,
+    crop_height: float,
+    target_width: torch.Tensor,
+    target_height: torch.Tensor,
+    tolerance_pixel: float,
+    min_peak: float,
+    device: torch.device,
+) -> None:
+    """
+    Test cropping behavior when the center of mass is off-center.
+
+    Parameters
+    ----------
+    height : int
+        The height of the input image in pixels.
+    width : int
+        The width of the input image in pixels.
+    brightest_pixel_row : int
+        The row index of the brightest pixel before cropping.
+    brightest_pixel_column : int
+        The column index of the brightest pixel before cropping.
+    crop_width : float
+        The desired crop width in meters.
+    crop_height : float
+        The desired crop height in meters.
+    target_width : torch.Tensor
+        Target plane widths in meters.
+        Tensor of shape [number_of_bitmaps].
+    target_height : torch.Tensor
+        Target plane heights in meters.
+        Tensor of shape [number_of_bitmaps].
+    tolerance_pixel : float
+        The pixel tolerance allowed between the peak pixel position and the geometric center.
+    min_peak : float
+        The minimum acceptable peak intensity after cropping and interpolation.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If the test does not complete as expected.
+    """
+    # Build image with a single bright pixel.
+    image = torch.zeros((1, height, width), dtype=torch.float32)
+    # Clamp to valid range just in case parameters push to boundary.
+    brightest_pixel_row_index = int(max(0, min(height - 1, brightest_pixel_row)))
+    brightest_pixel_column_index = int(max(0, min(width - 1, brightest_pixel_column)))
+    image[0, brightest_pixel_row_index, brightest_pixel_column_index] = 1.0
+
+    cropped = utils.crop_flux_distributions_around_center(
+        flux_distributions=image.to(device),
+        crop_width=crop_width,
+        crop_height=crop_height,
+        target_plane_widths=target_width.to(device),
+        target_plane_heights=target_height.to(device),
+        device=device,
+    )
+
+    assert cropped.shape == image.shape[-3:]
+    assert not torch.isnan(cropped).any()
+
+    maximum_value = torch.amax(cropped)
+    positions_of_maximum_values = torch.nonzero(
+        cropped == maximum_value, as_tuple=False
+    )[0]
+    _, row_index_of_maximum, column_index_of_maximum = (
+        positions_of_maximum_values.tolist()
+    )
+    height_cropped, width_cropped = cropped.shape[-2], cropped.shape[-1]
+    center_row = (height_cropped - 1) / 2.0
+    center_column = (width_cropped - 1) / 2.0
+
+    # Allow a little extra slack on even dimensions due to half-pixel center with align_corners=False.
+    tolerance_row = tolerance_pixel + (0.5 if (height_cropped % 2 == 0) else 0.0)
+    tolerance_column = tolerance_pixel + (0.5 if (width_cropped % 2 == 0) else 0.0)
+
+    assert abs(row_index_of_maximum - center_row) <= tolerance_row, (
+        f"max row {row_index_of_maximum} not centered (H={height_cropped})"
+    )
+    assert abs(column_index_of_maximum - center_column) <= tolerance_column, (
+        f"max col {column_index_of_maximum} not centered (W={width_cropped})"
+    )
+
+    assert maximum_value >= min_peak
+
+
+@pytest.mark.parametrize(
+    "wgs84_coordinates, reference_point, expected_enu_coordinates",
+    [
+        # Coordinates of Juelich power plant and multi-focus tower.
+        (
+            (
+                torch.tensor(
+                    [[50.91339645088695, 6.387574436728054, 138.97975]],
+                    dtype=torch.float64,
+                ),
+                torch.tensor(
+                    [50.913421630859, 6.387824755874856, 87.000000000000],
+                    dtype=torch.float64,
+                ),
+                torch.tensor([[-17.6045, -2.8012, 51.9798]]),
+            )
+        ),
+    ],
+)
+def test_wgs84_to_enu_converter(
+    wgs84_coordinates: torch.Tensor,
+    reference_point: torch.Tensor,
+    expected_enu_coordinates: torch.Tensor,
+    device: torch.device,
+) -> None:
+    """
+    Test the WGS84 to ENU conversion.
+
+    Parameters
+    ----------
+    wgs84_coordinates : torch.Tensor
+        The coordinates in latitude, longitude, altitude that are to be transformed.
+    reference_point : torch.Tensor
+        The center of origin of the ENU coordinate system in WGS84 coordinates.
+    expected_enu_coordinates : torch.Tensor
+        The expected enu coordinates.
+    device : torch.device| str
+        The device on which to initialize tensors (default is cuda).
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    calculated_enu_coordinates = utils.convert_wgs84_coordinates_to_local_enu(
+        wgs84_coordinates.to(device), reference_point.to(device), device
+    )
+
+    torch.testing.assert_close(
+        calculated_enu_coordinates, expected_enu_coordinates.to(device)
+    )
+
+
+@pytest.mark.parametrize(
+    "azimuth, elevation, degree, expected",
+    [
+        (
+            torch.tensor([-45.0, -45.0, 45.0, 135.0, 225.0, 315.0]),
+            torch.tensor([0.0, 45.0, 45.0, 45.0, 45.0, 45.0]),
+            True,
+            torch.tensor(
+                [
+                    [
+                        -1 / torch.sqrt(torch.tensor([2.0])),
+                        -1 / torch.sqrt(torch.tensor([2.0])),
+                        0.0,
+                    ],
+                    [
+                        -0.5,
+                        -0.5,
+                        1 / torch.sqrt(torch.tensor([2.0])),
+                    ],
+                    [0.5, -0.5, 1 / torch.sqrt(torch.tensor([2.0]))],
+                    [0.5, 0.5, 1 / torch.sqrt(torch.tensor([2.0]))],
+                    [-0.5, 0.5, 1 / torch.sqrt(torch.tensor([2.0]))],
+                    [-0.5, -0.5, 1 / torch.sqrt(torch.tensor([2.0]))],
+                ]
+            ),
+        ),
+        (
+            torch.tensor([-torch.pi / 4, torch.pi / 4]),
+            torch.tensor([torch.pi / 4, torch.pi / 4]),
+            False,
+            torch.tensor(
+                [
+                    [-0.5, -0.5, 1 / torch.sqrt(torch.tensor([2.0]))],
+                    [0.5, -0.5, 1 / torch.sqrt(torch.tensor([2.0]))],
+                ]
+            ),
+        ),
+    ],
+)
+def test_azimuth_elevation_to_enu(
+    azimuth: torch.Tensor,
+    elevation: torch.Tensor,
+    degree: bool,
+    expected: torch.Tensor,
+    device: torch.device,
+) -> None:
+    """
+    Test the azimuth, elevation to east, north, up converter.
+
+    Parameters
+    ----------
+    azimuth : torch.Tensor
+        The azimuth angle.
+    elevation : torch.Tensor
+        The elevation angle.
+    degree : bool
+        Angles in degree.
+    expected : torch.Tensor
+        The expected coordinates in the ENU (east, north, up) coordinate system.
+    device : torch.device
+        The device on which to initialize tensors.
+
+    Raises
+    ------
+    AssertionError
+        If test does not complete as expected.
+    """
+    enu_coordinates = utils.azimuth_elevation_to_enu(
+        azimuth=azimuth, elevation=elevation, degree=degree, device=device
+    )
+    torch.testing.assert_close(
+        enu_coordinates, expected.to(device), rtol=1e-4, atol=1e-4
+    )
