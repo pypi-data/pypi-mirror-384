@@ -1,0 +1,151 @@
+identity_validation:
+  reset_password: 
+    jwt_secret: "hsdklfh!$!£4DFDFGGsdgsdfghdfkg907aksdfm9875jksldflgddjdfghlk23470a-s[mneri£$%SDf]"
+
+server:
+  address: 'tcp://:9091'
+  endpoints:
+    authz:
+      forward-auth:
+        implementation: 'ForwardAuth'
+
+log:
+  level: debug
+
+authentication_backend:
+  # file:
+  #   path: /config/users_database.yaml
+
+  # Password reset through authelia works normally.
+  password_reset:
+    disable: false
+  # How often authelia should check if there is an user update in LDAP
+  refresh_interval: 1m
+  ldap:
+    implementation: custom
+    # Pattern is ldap://HOSTNAME-OR-IP:PORT
+    # Normal ldap port is 389, standard in LLDAP is 3890
+    address: ldap://lldap:3890
+    # The dial timeout for LDAP.
+    timeout: 5s
+    # Use StartTLS with the LDAP connection, TLS not supported right now
+    start_tls: false
+    #tls:
+    #  skip_verify: false
+    #  minimum_version: TLS1.2
+    # Set base dn, like dc=google,dc.com
+    base_dn: dc=easyrunner,dc=xyz
+    # You need to set this to ou=people, because all users are stored in this ou!
+    additional_users_dn: ou=people
+    # To allow sign in both with username and email, one can use a filter like
+    # (&(|({username_attribute}={input})({mail_attribute}={input}))(objectClass=person))
+    users_filter: "(&({username_attribute}={input})(objectClass=person))"
+    # Set this to ou=groups, because all groups are stored in this ou
+    additional_groups_dn: ou=groups
+    # The groups are not displayed in the UI, but this filter works.
+    groups_filter: "(member={dn})"
+    # The attribute holding the name of the group.
+    attributes:
+      display_name: displayName
+      username: uid
+      group_name: cn
+      mail: mail
+      # distinguished_name: distinguishedName
+      # member_of: memberOf
+
+    # The username and password of the bind user.
+    # "bind_user" should be the username you created for authentication with the "lldap_strict_readonly" permission. It is not recommended to use an actual admin account here.
+    # If you are configuring Authelia to change user passwords, then the account used here needs the "lldap_password_manager" permission instead.
+    user: uid=authelia_bind_user,ou=people,dc=easyrunner,dc=xyz
+    # Password can also be set using a secret: https://www.authelia.com/docs/configuration/secrets.html
+    password: 'testtesttest'
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: auth.easyrunner.local
+      policy: bypass
+    - domain: "*.easyrunner.local"
+      policy: one_factor
+
+#
+# Session Provider Configuration
+#
+# The session cookies identify the user once logged in.
+# The available providers are: `memory`, `redis`. Memory is the provider unless redis is defined.
+session:
+  # The secret to encrypt the session data. This is only used with Redis / Redis Sentinel.
+  # Secret can also be set using a secret: https://www.authelia.com/c/secrets
+  secret: 'k34587fg98dfghkjdfgkjslhfdkiriqywt[cbAWERWTSDVz£^$&^&%^&jhwero438789sfasdf'
+
+  # Cookies configures the list of allowed cookie domains for sessions to be created on.
+  # Undefined values will default to the values below.
+  cookies:
+    -
+      # The name of the session cookie.
+      name: 'authelia_session'
+
+      # The domain to protect.
+      # Note: the Authelia portal must also be in that domain.
+      domain: 'easyrunner.local'
+
+      # Required. The fully qualified URI of the portal to redirect users to on proxies that support redirections.
+      # Rules:
+      #   - MUST use the secure scheme 'https://'
+      #   - The above 'domain' option MUST either:
+      #      - Match the host portion of this URI.
+      #      - Match the suffix of the host portion when prefixed with '.'.
+      authelia_url: 'https://auth.easyrunner.local'
+
+      # Optional. The fully qualified URI used as the redirection location if the portal is accessed directly. Not
+      # configuring this option disables the automatic redirection behaviour.
+      #
+      # Note: this parameter is optional. If not provided, user won't be redirected upon successful authentication
+      # unless they were redirected to Authelia by the proxy.
+      #
+      # Rules:
+      #   - MUST use the secure scheme 'https://'
+      #   - MUST not match the 'authelia_url' option.
+      #   - The above 'domain' option MUST either:
+      #      - Match the host portion of this URI.
+      #      - Match the suffix of the host portion when prefixed with '.'.
+      #default_redirection_url: 'https://easyrunner.xyz'
+
+      # Sets the Cookie SameSite value. Possible options are none, lax, or strict.
+      # Please read https://www.authelia.com/c/session#same_site
+      same_site: 'lax'
+
+      # The value for inactivity, expiration, and remember_me are in seconds or the duration common syntax.
+      # All three of these values affect the cookie/session validity period. Longer periods are considered less secure
+      # because a stolen cookie will last longer giving attackers more time to spy or attack.
+
+      # The inactivity time before the session is reset. If expiration is set to 1h, and this is set to 5m, if the user
+      # does not select the remember me option their session will get destroyed after 1h, or after 5m since the last
+      # time Authelia detected user activity.
+      inactivity: '5 minutes'
+
+      # The time before the session cookie expires and the session is destroyed if remember me IS NOT selected by the
+      # user.
+      expiration: '1 hour'
+
+      # The time before the cookie expires and the session is destroyed if remember me IS selected by the user. Setting
+      # this value to -1 disables remember me for this session cookie domain. If allowed and the user uses the remember
+      # me checkbox this overrides the expiration option and disables the inactivity option.
+      remember_me: '1 month'
+
+
+regulation:
+  max_retries: 3
+  find_time: 120
+  ban_time: 300
+
+storage:
+  encryption_key: ksjhdf,ncvlapwepruWERWErszyoi239$%&^fsl12ASJwrdf~@356$%635()+=£Sdvzz}][perfsad]
+  local:    
+    path: /config/db.sqlite3
+
+notifier:
+  filesystem:
+    filename: /config/notification.txt
+
+theme: grey
