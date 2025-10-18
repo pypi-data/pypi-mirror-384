@@ -1,0 +1,84 @@
+from fastapi import APIRouter, Depends, Path, HTTPException
+from sqlalchemy.orm import Session
+from uuid import UUID
+
+from app.{{ name }}.infrastructure.repositories.{{ name }}_repository_impl import {{ pascal_case }}RepositoryImpl
+from app.{{ name }}.application.services.{{ name }}_service import {{ pascal_case }}Service
+
+from app.{{ name }}.application.use_cases.get_{{ name }}_by_id import Get{{ pascal_case }}ById
+from app.{{ name }}.application.use_cases.create_{{ name }} import Create{{ pascal_case }}
+from app.{{ name }}.application.use_cases.delete_{{ name }} import Delete{{ pascal_case }}
+from app.{{ name }}.application.use_cases.update_{{ name }} import Update{{ pascal_case }}
+from app.{{ name }}.application.use_cases.get_{{ name_plural }} import Get{{ name_plural_capitalized }}
+
+from app.components.filter.infrastructure.dto.input_filter import InputFilter
+from app.{{ name }}.infrastructure.dto.input_{{ name }} import Input{{ pascal_case }}, InputUpdate{{ pascal_case }}
+from app.{{ name }}.infrastructure.dto.output_{{ name }} import Output{{ pascal_case }}
+
+from app.{{ name }}.infrastructure.validations.insert import {{ pascal_case }}InsertValidation
+from app.{{ name }}.infrastructure.validations.update import {{ pascal_case }}UpdateValidation
+
+from config.database.connections import db_client
+
+class {{ pascal_case }}API:
+    def __init__(self):
+        self.router = APIRouter(prefix="/{{ name }}", tags=["{{ pascal_case }}"])
+        self._setup_routes()
+
+    def _setup_routes(self):
+        self.router.get("")(self.get_{{ name }})
+        self.router.get("/{id}")(self.get_{{ name }}_by_id)
+        self.router.post("")(self.create_{{ name }})
+        self.router.put("/{id}")(self.update_{{ name }})
+        self.router.delete("/{id}")(self.delete_{{ name }})
+
+    @staticmethod
+    def _get_{{ name }}_update_validation(
+        {{ name }}: InputUpdate{{ pascal_case }},
+        id: UUID = Path(..., description="ID del usuario a actualizar"),
+        db: Session = Depends(db_client)
+    ):
+        return {{ pascal_case }}UpdateValidation.validate({{ name }}, id, db)
+
+    async def get_{{ name }}(self, payload: InputFilter = Depends(InputFilter.from_request_body), db: Session = Depends(db_client)):
+        repository = {{ pascal_case }}RepositoryImpl(db)
+        service = {{ pascal_case }}Service(repository)
+        use_case = Get{{ name_plural_capitalized }}(service)
+        {{ name_plural }} = use_case.execute(**payload.model_dump())
+        return {{ name_plural }}
+
+    def get_{{ name }}_by_id(self, id: UUID, db: Session = Depends(db_client)):
+        repository = {{ pascal_case }}RepositoryImpl(db)
+        service = {{ pascal_case }}Service(repository)
+        use_case = Get{{ pascal_case }}ById(service)
+        {{ name }} = use_case.execute(id)
+        if {{ name }} is None:
+            raise HTTPException(status_code=404, detail="No hay resultados")
+        return Output{{ pascal_case }}.model_validate({{ name }}.to_dict())
+
+    def create_{{ name }}(self, {{ name }}: Input{{ pascal_case }} = Depends({{ pascal_case }}InsertValidation.validate), db: Session = Depends(db_client)):
+        repository = {{ pascal_case }}RepositoryImpl(db)
+        service = {{ pascal_case }}Service(repository)
+        use_case = Create{{ pascal_case }}(service)
+        created_{{ name }} = use_case.execute({{ name }})
+        return Output{{ pascal_case }}.model_validate(created_{{ name }}.to_dict())
+
+    def update_{{ name }}(self, id: UUID, {{ name }}: InputUpdate{{ pascal_case }} = Depends(_get_{{ name }}_update_validation), db: Session = Depends(db_client)):
+        repository = {{ pascal_case }}RepositoryImpl(db)
+        service = {{ pascal_case }}Service(repository)
+        use_case = Update{{ pascal_case }}(service)
+        updated_{{ name }} = use_case.execute(id, {{ name }})
+        if updated_{{ name }} is None:
+            raise HTTPException(status_code=404, detail="No hay datos para actualizar")
+        return Output{{ pascal_case }}.model_validate(updated_{{ name }}.to_dict())
+
+    def delete_{{ name }}(self, id: UUID, db: Session = Depends(db_client)):
+        repository = {{ pascal_case }}RepositoryImpl(db)
+        service = {{ pascal_case }}Service(repository)
+        use_case = Delete{{ pascal_case }}(service)
+        deleted_{{ name }} = use_case.execute(id)
+        if deleted_{{ name }} is None:
+            raise HTTPException(status_code=404, detail="No hay datos para eliminar")
+        return Output{{ pascal_case }}.model_validate(deleted_{{ name }}.to_dict())
+
+router = {{ pascal_case }}API().router

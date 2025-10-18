@@ -1,0 +1,158 @@
+from typing import Dict, Callable, Generator, Type
+
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
+from fastapi import Request, HTTPException
+
+from config.secret import SecretManager
+from config.database.settings import Settings
+
+class DatabaseManager:
+    def __init__(self):
+        self.settings = Settings()
+        self.engines: Dict[str, Engine] = {}
+        self.sessions: Dict[str, sessionmaker] = {}
+        self._setup_engines_and_sessions()
+
+    def _setup_engines_and_sessions(self):
+        for name, conf in self.settings.connections.items():
+            db_url = self._build_url_from_template(
+                conf.driver,
+                conf.username,
+                conf.password,
+                conf.host,
+                conf.port,
+                conf.database
+            )
+            self.engines[name] = create_engine(db_url)
+            self.sessions[name] = self._create_session(self.engines[name])
+
+    def _create_session(self, engine: Engine) -> sessionmaker:
+        return sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+    def _get_template(self, driver: str) -> str:
+        templates = {
+            "mysql": "mysql+pymysql://{username}:{password}@{host}:{port}/{database}",
+            "pgsql": "postgresql://{username}:{password}@{host}:{port}/{database}",
+            "postgresql": "postgresql://{username}:{password}@{host}:{port}/{database}",
+            "sqlite": "sqlite:///{database}",
+            "mariadb": "mariadb+pymysql://{username}:{password}@{host}:{port}/{database}",
+            "sqlsrv": "mssql+pyodbc://{username}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
+        }
+        template = templates.get(driver.lower())
+        if not template:
+            raise ValueError(f"Unsupported driver: {driver}")
+        return template
+
+    def _build_url_from_template(self, driver: str, username: str, password: str, host: str, port: str, database: str) -> str:
+        template = self._get_template(driver)
+        return template.format(
+            username=username,
+            password=password,
+            host=host,
+            port=port,
+            database=database
+        )
+
+    def create_connection(self, name: str) -> None:
+        connection_data = self._fetch_connection_data_from_global(name)
+        db_url = self._build_decrypted_connection_url(connection_data)
+        self._register_client_engine_and_session(db_url)
+
+    def create_connection_from_request(self, request: Request) -> None:
+        name = getattr(request.state, 'connection', None)
+        if name == 'global':
+            return  # No need to create a new connection for global
+        connection_name = self._get_connection_name_from_request(request)
+        connection_data = self._fetch_connection_data_from_global(connection_name)
+        db_url = self._build_decrypted_connection_url(connection_data)
+        self._register_client_engine_and_session(db_url)
+
+    def _get_connection_name_from_request(self, request: Request) -> str:
+        name = getattr(request.state, 'connection', None)
+        if not name:
+            raise HTTPException(status_code=400, detail="DB Connection not found in request.")
+        return name
+
+    def _fetch_connection_data_from_global(self, name: str):
+        db_gen = self.get_db_dependency("global")()
+        session = next(db_gen)
+        try:
+            result = session.execute(
+                text("SELECT * FROM connections WHERE connection = :name"),
+                {"name": name}
+            ).fetchone()
+        finally:
+            session.close()
+
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Connection '{name}' not found in the database.")
+
+        return result
+
+    def _decrypt_connection_field(self, record, field: str) -> str:
+        return SecretManager.decrypt(getattr(record, field))
+
+    def _build_decrypted_connection_url(self, record) -> str:
+        return self._build_url_from_template(
+            driver=self._decrypt_connection_field(record, "driver"),
+            username=self._decrypt_connection_field(record, "username"),
+            password=self._decrypt_connection_field(record, "password"),
+            host=self._decrypt_connection_field(record, "host"),
+            port=self._decrypt_connection_field(record, "port"),
+            database=self._decrypt_connection_field(record, "database"),
+        )
+
+    def _register_client_engine_and_session(self, db_url: str) -> None:
+        self.engines["client"] = create_engine(db_url)
+        self.sessions["client"] = self._create_session(self.engines["client"])
+
+    def get_engine(self, name: str) -> Engine:
+        if name not in self.engines:
+            return None
+        return self.engines[name]
+
+    def get_sqlalchemy_url(self, name: str) -> str:
+        engine = self.get_engine(name)
+        if not engine:
+            return None
+        return self.get_engine(name).url.render_as_string(hide_password=False)
+
+    def get_session(self, name: str) -> sessionmaker:
+        if name not in self.sessions:
+            raise ValueError(f"Database session '{name}' is not configured.")
+        return self.sessions[name]
+
+    def get_db_dependency(self, name: str) -> Callable[[], Generator[Session, None, None]]:
+        def _get_db() -> Generator[Session, None, None]:
+            session = self.get_session(name)()
+            try:
+                yield session
+            finally:
+                session.close()
+        return _get_db
+
+    def get_db(self) -> Callable[[], Generator[Session, None, None]]:
+        return self.get_db_dependency("global")
+
+    def get_db_by_name(self) -> Callable[[Request], Generator[Session, None, None]]:
+        def _get_connection(request: Request) -> Generator[Session, None, None]:
+            name = getattr(request.state, 'connection', None)
+            name = name == 'global' and 'global' or 'client'
+            self.create_connection_from_request(request)
+            session = self.get_session(name)()
+            try:
+                yield session
+            finally:
+                session.close()
+        return _get_connection
+
+    def get_base(self) -> Type:
+        return declarative_base()
+
+Base = DatabaseManager().get_base()
+db_global = DatabaseManager().get_db()
+db_client = DatabaseManager().get_db_by_name()

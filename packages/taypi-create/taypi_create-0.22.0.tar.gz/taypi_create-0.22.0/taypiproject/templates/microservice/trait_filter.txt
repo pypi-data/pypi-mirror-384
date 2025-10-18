@@ -1,0 +1,78 @@
+from sqlalchemy.orm import Query
+from sqlalchemy import or_, and_, not_
+from typing import List, Dict, Any, Union, Callable, Optional
+
+class Filterable:
+    def __init__(self):
+        self.columns_change = {}
+
+    def apply_filters(self, query: Query, filters: Dict[str, Any], global_fields: Optional[Dict[str, Any]] = None) -> Query:
+        #self.columns_change = {field: field for field in global_fields}
+        self.columns_change = global_fields or {}
+        # Global filter
+        if filters['global_'] is not None:
+            fields = list(self.columns_change.values())
+            query = self.apply_global_filter(query, filters['global_'], fields)
+        # Field filters
+        if filters["other_filters"] is not None:
+            for field, filter_data in filters["other_filters"].items():
+                if field in self.columns_change:
+                    query = self.apply_field_filter(query, self.columns_change[field], filter_data)
+        return query
+
+    def apply_global_filter(self, query: Query, global_filter: Dict[str, Any], global_fields: List[str]) -> Query:
+        operator = global_filter.get('operator', 'or')
+        constraints = global_filter['constraints']
+        condition_group = []
+        for constraint in constraints:
+            field_conditions = []
+            for field in global_fields:
+                condition = self.apply_constraint_to_field(field, constraint)
+                field_conditions.append(condition)
+            condition_group.append(or_(*field_conditions) if operator == 'or' else and_(*field_conditions))
+        return query.filter(or_(*condition_group))
+
+    def apply_field_filter(self, query: Query, field: str, filter_data: Dict[str, Any]) -> Query:
+        operator = filter_data.get('operator', 'and')
+        constraints = filter_data['constraints']
+        real_field = self.columns_change.get(field, field)
+        field_conditions = []
+        for constraint in constraints:
+            condition = self.apply_constraint_to_field(real_field, constraint)
+            field_conditions.append(condition)
+        if operator == 'or':
+            return query.filter(or_(*field_conditions))
+        else:
+            return query.filter(and_(*field_conditions))
+
+    def apply_constraint_to_field(self, field: Union[str, Callable], constraint: Dict[str, Any]):
+        value = constraint.get('value')
+        match_mode = constraint.get('matchMode', 'equals')
+        condition_func = self.resolve_match_mode(match_mode, value)
+        return condition_func(field)
+
+    def resolve_match_mode(self, match_mode: str, value: Any) -> Callable:
+        def func(field):
+            if match_mode == 'startsWith':
+                return field.startswith(value)
+            elif match_mode == 'contains':
+                return field.contains(value)
+            elif match_mode == 'endsWith':
+                return field.endswith(value)
+            elif match_mode == 'equals':
+                return field == value
+            elif match_mode == 'notEquals':
+                return field != value
+            elif match_mode == 'in':
+                return field.in_(value if isinstance(value, list) else [value])
+            elif match_mode == 'lt':
+                return field < value
+            elif match_mode == 'lte':
+                return field <= value
+            elif match_mode == 'gt':
+                return field > value
+            elif match_mode == 'gte':
+                return field >= value
+            else:
+                raise ValueError(f"Match mode '{match_mode}' no soportado.")
+        return func

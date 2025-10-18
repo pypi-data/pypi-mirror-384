@@ -1,0 +1,85 @@
+from typing import Dict, Any
+from pathlib import Path
+import importlib.util
+import argparse
+import sys
+
+COMMANDS_DIR = Path(__file__).parent / "commands"
+
+def load_commands() -> Dict[str, Any]:
+    commands = {}
+    command_aliases = {}
+
+    for file in COMMANDS_DIR.rglob("*.py"):
+        if file.name.startswith("__") or not file.suffix == ".py":
+            continue
+
+        module_name = file.with_suffix('').relative_to(COMMANDS_DIR).as_posix().replace("/", "_")
+        module = _import_module_from_path(file, module_name)
+
+        if hasattr(module, "Command"):
+            command_instance = module.Command()
+            commands[command_instance.name] = command_instance
+
+            for alias in getattr(command_instance, "commands", []):
+                command_aliases[alias] = command_instance.name
+                commands[alias] = command_instance
+
+    return commands, command_aliases
+
+
+def _import_module_from_path(file_path: Path, module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load spec for module {module_name}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def create_parser(commands: Dict[str, Any]) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="command", description="CLI for managing FastAPI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    for name, command_obj in commands.items():
+        sub_parser = subparsers.add_parser(name, help=getattr(command_obj, "help", ""))
+        sub_parser.set_defaults(func=command_obj.handle)
+
+    return parser
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("[ERROR] No command provided.\n")
+        print("Available commands:")
+        _print_available_commands()
+        sys.exit(1)
+
+    commands, aliases = load_commands()
+    original_args = sys.argv[1:]
+
+    # Handle alias remapping
+    if original_args[0] in aliases:
+        aliased_command = aliases[original_args[0]]
+        original_args = [aliased_command, original_args[0]] + original_args[1:]
+
+    parser = create_parser(commands)
+    args, unknown_args = parser.parse_known_args(original_args)
+
+    if hasattr(args, "func"):
+        args.func(unknown_args)
+    else:
+        parser.print_help()
+        sys.exit(1)
+
+
+def _print_available_commands():
+    commands, _ = load_commands()
+    for name in sorted(commands.keys()):
+        print(f"  - {name}")
+
+
+if __name__ == "__main__":
+    main()
