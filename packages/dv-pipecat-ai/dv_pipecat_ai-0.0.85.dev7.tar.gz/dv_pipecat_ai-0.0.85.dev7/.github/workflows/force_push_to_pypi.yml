@@ -1,0 +1,72 @@
+name: Force Push to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build and publish to PyPI"
+        required: true
+        default: "dv-stage"
+        type: string
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build requests packaging
+
+      - name: Build package (setuptools_scm)
+        run: |
+          echo "Building package from branch: ${{ github.event.inputs.branch }}"
+          python -m build
+          ls -la dist/
+
+      - name: Extract built version
+        id: extract_version
+        run: |
+          WHEEL_FILE=$(ls dist/*.whl | head -1)
+          BUILT_VERSION=$(echo "$WHEEL_FILE" | sed -E 's/.*-([0-9]+\.[0-9]+\.[0-9]+\.dev[0-9]+)-.*/\1/')
+          echo "built_version=$BUILT_VERSION" >> $GITHUB_OUTPUT
+          echo "Built version: $BUILT_VERSION"
+
+          # Verify tar.gz matches
+          TAR_FILE=$(ls dist/*.tar.gz | head -1)
+          TAR_VERSION=$(echo "$TAR_FILE" | sed -E 's/.*-([0-9]+\.[0-9]+\.[0-9]+\.dev[0-9]+)\.tar\.gz/\1/')
+
+          if [ "$BUILT_VERSION" != "$TAR_VERSION" ]; then
+            echo "Version mismatch between wheel and tar.gz"
+            exit 1
+          fi
+
+          echo "Package ready to publish: dv-pipecat-ai version $BUILT_VERSION"
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          print-hash: true
+          verbose: true
+
+      - name: Summary
+        run: |
+          echo "Successfully published dv-pipecat-ai version ${{ steps.extract_version.outputs.built_version }} to PyPI"
+          echo "Branch: ${{ github.event.inputs.branch }}"
+          echo "Commit: ${{ github.sha }}"
