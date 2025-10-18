@@ -1,0 +1,112 @@
+framework:
+  name: compute_eval
+  pkg_name: compute_eval
+  full_name: ComputeEval
+  description: "ComputeEval: Evaluating Large Language Models for CUDA Code Generation"
+  url: "https://github.com/nvidia/compute-eval"
+  source: "https://gitlab-master.nvidia.com/dl/JoC/competitive_evaluation/compute-eval"
+
+defaults:
+  command: >-
+    {% if target.api_endpoint.api_key is not none %}export NEMO_API_KEY=${{target.api_endpoint.api_key}} && {% endif %}
+    compute_eval generate_samples 
+    --problem_file data/{{config.params.extra.problem_file}}
+    --sample_file {{config.output_dir}}/samples.jsonl
+    {% if config.params.extra.num_samples_per_problem is not none %}
+    --num_samples_per_problem {{config.params.extra.num_samples_per_problem}}
+    {% endif %}
+    {% if config.params.limit_samples is not none %}
+    --limit_samples {{config.params.limit_samples}}
+    {% endif %}
+    {% if config.params.extra.n_workers is not none %}
+    --n_workers {{config.params.extra.n_workers}}
+    {% endif %}
+    {% if config.params.extra.system_prompt is not none %}
+    --system_prompt "{{config.params.extra.system_prompt}}"
+    {% endif %}
+    {% if config.params.extra.print_completions is not none %}
+    --print_completions {{config.params.extra.print_completions}}
+    {% endif %}
+    {% if config.params.extra.include_header_files is not none %}
+    --include_header_files {{config.params.extra.include_header_files}}
+    {% endif %}
+    {% if config.params.extra.model_type is not none %}
+    --model_type {{config.params.extra.model_type}}
+    {% endif %}
+    {% if config.params.temperature is not none or config.params.top_p is not none or config.params.max_new_tokens is not none or config.params.request_timeout is not none or config.params.max_retries is not none %}
+    --params='{"temperature": {{config.params.temperature | default(0.0)}}, "top_p": {{config.params.top_p | default(1e-5)}}, "max_tokens": {{config.params.max_new_tokens | default(2048)}}{% if config.params.request_timeout is not none %}, "timeout": {{config.params.request_timeout}}{% endif %}{% if config.params.max_retries is not none %}, "max_retries": {{config.params.max_retries}}{% endif %}}'
+    {% endif %}
+    --custom_model='{"api_endpoint": "{{target.api_endpoint.url}}", "model_id": "{{target.api_endpoint.model_id}}"}'
+    && compute_eval evaluate_functional_correctness
+    --sample_file {{config.output_dir}}/samples.jsonl
+    --problem_file data/{{config.params.extra.problem_file}}
+    --allow-execution
+    {% if config.params.extra.k is not none %}
+    --k {{config.params.extra.k}}
+    {% endif %}
+    {% if config.params.parallelism is not none %}
+    --n_workers {{config.params.parallelism}}
+    {% endif %}
+    {% if config.params.extra.save_completions_dir is not none %}
+    --save_completions_dir {{config.params.extra.save_completions_dir}}
+    {% endif %}
+    {% if config.params.limit_samples is not none %}
+    --limit_samples {{config.params.limit_samples}}
+    {% endif %}
+    --metrics_output_file {{config.output_dir}}/metrics.json
+  config:
+    params:
+      limit_samples: null
+      temperature: 0.0
+      top_p: 1e-5
+      max_new_tokens: 2048
+      parallelism: 1
+      max_retries: 2
+      request_timeout: 3600
+      extra:
+        n_workers: null
+        num_samples_per_problem: null
+        system_prompt: null
+        print_completions: null
+        include_header_files: null
+        model_type: null
+        k: null
+        eval_n_workers: null
+        save_completions_dir: null
+  target:
+    api_endpoint: {} # required to add: url, model_id, api_key
+evaluations:
+- name: cuda_problems
+  description: "CUDA Programming Problems Evaluation (Original Dataset - 78 problems)"
+  defaults:
+    config:
+      type: cuda_problems
+      supported_endpoint_types:
+      - chat
+      params:
+        task: cuda_problems
+        extra:
+          problem_file: "cuda_problems_033125.jsonl"
+- name: cccl_problems
+  description: "CCCL Programming Problems Evaluation (Original Dataset - 50 problems)"
+  defaults:
+    config:
+      type: cccl_problems
+      supported_endpoint_types:
+      - chat
+      params:
+        task: cccl_problems
+        extra:
+          problem_file: "cccl_problems_033125.jsonl"
+- name: combined_problems
+  description: "Combined CUDA and CCCL Programming Problems Evaluation (Original Dataset - 78 + 50 = 128 problems)"
+  defaults:
+    config:
+      type: combined_problems
+      supported_endpoint_types:
+      - chat
+      params:
+        task: combined_problems
+        extra:
+          problem_file: "combined_problems_033125.jsonl"
+
