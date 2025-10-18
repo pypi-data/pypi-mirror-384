@@ -1,0 +1,1 @@
+/Users/macci/questdb/repos/py-questdb-client/rpyutils/target/release/librpyutils.a: /Users/macci/questdb/repos/py-questdb-client/rpyutils/src/active_senders.rs /Users/macci/questdb/repos/py-questdb-client/rpyutils/src/lib.rs /Users/macci/questdb/repos/py-questdb-client/rpyutils/src/pystr_to_utf8.rs
