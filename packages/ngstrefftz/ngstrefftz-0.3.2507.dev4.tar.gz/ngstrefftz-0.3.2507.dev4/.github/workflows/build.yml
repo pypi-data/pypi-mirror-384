@@ -1,0 +1,316 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'build level'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - test_only
+        - quick
+        - full
+  push:
+    branches: ["main**"]
+  release:
+    types: [created]
+    
+
+jobs:
+  check_formatting:
+    name: Check Formatting with Clang Format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          path: "NGSTrefftz"
+          fetch-depth: 0 # otherwise, you will fail to push refs to dest repo
+      - uses: RafikFarhad/clang-format-github-action@v4
+        with:
+          sources: "src/**/*.hpp,src/**/*.cpp,test/**/*.cpp"
+          style: file
+
+  test_linux:
+    name: Test on Linux
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: setup
+        run: pacman -Syu --noconfirm && pacman -S --noconfirm python python-pip python-setuptools git gcc make cmake python-numpy python-scipy
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          path: "NGSTrefftz"
+          fetch-depth: 0 # otherwise, you will fail to push refs to dest repo
+      #- uses: actions/setup-python@v5
+      #with:
+      #python-version: "3.12"
+      - name: install ngstrefftz
+        #env:
+        #NGSTREFFTZ_USE_GTEST: 'ON'
+        run: cd NGSTrefftz && pip install --break-system-packages . -v
+      - name: run test
+        run: cd $GITHUB_WORKSPACE/NGSTrefftz/test && python3 -m doctest -v *.py
+
+  gtest_linux:
+    name: Test GTest on Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          path: "NGSTrefftz"
+          fetch-depth: 0 # otherwise, you will fail to push refs to dest repo
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Bacondish2023/setup-googletest@v1
+        with:
+          tag: v1.15.2
+      - name: install ngsolve
+        run: |
+          cd NGSTrefftz
+          pip install numpy scipy  mkl-devel==2025.* mkl==2025.*
+          pip install ngsolve
+      - name: build ngstrefftz gtest
+        run: |
+          mkdir $GITHUB_WORKSPACE/NGSTrefftz/make
+          cd $GITHUB_WORKSPACE/NGSTrefftz/make
+          cmake .. -DNGSTREFFTZ_USE_GTEST=ON
+          make
+      - name: run gtest
+        run: $GITHUB_WORKSPACE/NGSTrefftz/make/trefftz_gtest
+
+  build_wheels:
+    if: ${{ inputs.level != 'test_only' }}
+    name: Build wheels on ${{ matrix.os }}
+    needs: [test_linux, gtest_linux]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-13, ubuntu-latest]
+        doit: 
+          - ${{ inputs.level != 'quick' }}
+        cibw_build: 
+          - cp39-* cp310-* cp311-* cp312-* cp313-*
+        include:
+          - os: ubuntu-latest
+            doit: ${{ inputs.level == 'quick' }}
+            cibw_build: cp313-*
+          - os: windows-2022
+            cibw-arch: AMD64
+            cmake-generator: "Visual Studio 16 2019"
+            cmake_generator_platform: "x64"
+            doit: ${{ inputs.level != 'quick' }}
+            cibw_build: cp39-* cp310-* cp311-* cp312-* cp313-*
+    env:
+      CIBW_BUILD: ${{ matrix.cibw_build }}
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ matrix.doit }}
+        with:
+          submodules: true
+          fetch-tags: true
+          fetch-depth: 0
+      - name: Build wheels
+        if: ${{ matrix.doit }}
+        uses: pypa/cibuildwheel@v2.23.2
+        env:
+          CIBW_BUILD_VERBOSITY: 1
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.doit }}
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: Build source distribution
+    if: ${{ inputs.level != 'quick' }}
+    needs: [test_linux, gtest_linux]
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-tags: true
+          fetch-depth: 0
+      - name: Build sdist
+        run: pipx run build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz
+
+  upload_pypi:
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+        with:
+          skip-existing: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        if: github.ref == 'refs/heads/main-dev'
+        with:
+          skip-existing: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          repository-url: https://test.pypi.org/legacy/
+
+  docker:
+    needs: [upload_pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - name: clear cache
+        run: rm -rf /opt/hostedtoolcache
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: paulstdocker/ngstrefftz
+          # generate Docker tags based on the following events/attributes
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        if: github.event_name == 'release' && github.event.action == 'created'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: "Dockerfile"
+          push: ${{ github.event_name == 'release' && github.event.action == 'created' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          #labels: ${{ steps.meta.outputs.labels }}
+
+  pyodide:
+    #needs: [publish-pypi]
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: clear cache
+        run: rm -rf /opt/hostedtoolcache
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # otherwise, you will failed to push refs to dest repo
+          submodules: true
+          path: "NGSTrefftz"
+      - name: install pkgs
+        run: sudo apt-get update && DEBIAN_FRONTEND="noninteractive" sudo apt-get -y install docker
+      - name: build docker
+        run: cd $GITHUB_WORKSPACE/NGSTrefftz && docker build -t ngstpyodide -f .github/workflows/pyodide/Dockerfile .
+      - name: retrieve tar
+        run: id=$(docker create ngstpyodide) && docker cp $id:/root/output/ngstrefftz_pyodide.tar.bz2 $GITHUB_WORKSPACE/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build the JupyterLite site
+        run: |
+          cd $GITHUB_WORKSPACE/NGSTrefftz/.github/workflows/pyodide && python -m pip install -r requirements.txt
+          cd $GITHUB_WORKSPACE && jupyter lite build --pyodide ngstrefftz_pyodide.tar.bz2 --contents ./NGSTrefftz/docs/notebooks/ --output-dir ngst-pyodide
+        #uses: actions/upload-pages-artifact@v3
+      #- name: upload
+      - name: Store the sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: ngst-pyodide
+          path: ./ngst-pyodide
+
+  docs:
+    needs: [build_wheels]
+    runs-on: ubuntu-latest
+    container: python:3.13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # otherwise, you will failed to push refs to dest repo
+          submodules: true
+          path: "NGSTrefftz"
+      - name: pip install requirements
+        run: |
+          apt update -y && DEBIAN_FRONTEND="noninteractive" apt install -y git pandoc
+          pip install -r $GITHUB_WORKSPACE/NGSTrefftz/docs/requirements.txt
+        # cd $GITHUB_WORKSPACE/NGSTrefftz && pip install .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-wheels-ubuntu*
+          path: wheels
+          merge-multiple: true
+      - name: Display structure of downloaded files
+        run: ls -R $GITHUB_WORKSPACE/wheels
+      - name: install ngstrefftz
+        run: pip install $GITHUB_WORKSPACE/wheels/*-cp313-cp313-manylinux_2_28_x86_64.manylinux2014_x86_64.whl
+      - name: Build and Commit
+        uses: sphinx-notes/pages@v2
+        with:
+          repository_path: "NGSTrefftz"
+          #requirements_path: ./docs/requirements.txt
+      - name: Download pyodide stuff
+        if: false
+        uses: actions/download-artifact@v4
+        with:
+          name: ngst-pyodide
+          path: NGSTrefftz/ngst-pyodide
+      #- run: tree -d .
+      - name: Upload
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "NGSTrefftz/"
+
+  deploy-docs:
+    needs: docs
+    permissions:
+      pages: write # to deploy to Pages
+      id-token: write # to verify the deployment originates from an appropriate source
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    #if: github.event_name == 'release' && github.event.action == 'created'
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  paper:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.level != 'quick' || inputs.level != 'test_only' }}
+    name: Paper Draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build draft PDF
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          paper-path: docs/paper/paper.md
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: joss_paper
+          path: docs/paper/paper.pdf
