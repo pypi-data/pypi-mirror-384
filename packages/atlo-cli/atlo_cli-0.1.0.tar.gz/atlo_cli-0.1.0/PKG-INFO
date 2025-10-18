@@ -1,0 +1,664 @@
+Metadata-Version: 2.4
+Name: atlo-cli
+Version: 0.1.0
+Summary: Run Atlantis workflows locally - Local Terraform plan execution with parallel support, smart filtering, and beautiful output
+Author-email: Jon Savage <jonwsavage@users.noreply.github.com>
+License: MIT
+Project-URL: Homepage, https://github.com/jonwsavage/atlo
+Project-URL: Issues, https://github.com/jonwsavage/atlo/issues
+Project-URL: PyPI, https://pypi.org/project/atlo-cli/
+Keywords: terraform,atlantis,infrastructure,devops,automation,ci-cd,iac,terraform-plan,terraform-automation,infrastructure-as-code
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: System Administrators
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: Topic :: System :: Systems Administration
+Classifier: Topic :: Utilities
+Classifier: Environment :: Console
+Classifier: Typing :: Typed
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: typer>=0.9.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: rich>=13.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Dynamic: license-file
+
+# Atlo
+
+[![PyPI version](https://badge.fury.io/py/atlo-cli.svg)](https://badge.fury.io/py/atlo-cli)
+[![Tests](https://github.com/jonwsavage/atlo/actions/workflows/test.yml/badge.svg)](https://github.com/jonwsavage/atlo/actions/workflows/test.yml)
+[![codecov](https://codecov.io/github/jonwsavage/atlo/branch/main/graph/badge.svg?token=Q62INZDRR2)](https://codecov.io/github/jonwsavage/atlo)
+[![Lint](https://github.com/jonwsavage/atlo/actions/workflows/lint.yml/badge.svg)](https://github.com/jonwsavage/atlo/actions/workflows/lint.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+> Run Atlantis workflows locally
+
+Atlo is a CLI tool that lets you run [Atlantis](https://www.runatlantis.io/) workflows on your local machine, using your existing `atlantis.yaml` configuration.
+
+## Features
+
+- 🔍 **Auto-detect changed projects** - Automatically detects which projects need planning based on git changes
+- ⚡ **Parallel execution** - Run multiple projects concurrently with configurable workers (1-10)
+- 🎯 **Smart filtering** - Filter projects by glob patterns with `--filter` and `--exclude`
+- 📊 **Terraform plan parsing** - Extracts and displays resource changes (adds/changes/destroys)
+- 📈 **Progress estimation** - Shows ETA based on historical run times
+- 📤 **Export formats** - Export results to JSON, JUnit XML, Markdown, or GitHub Actions format
+- 🔀 **Diff viewing** - Compare results between two runs
+- 🚀 Run Terraform workflows defined in `atlantis.yaml` locally
+- 🎨 Beautiful terminal output with Rich formatting and live progress tables
+- 📝 Comprehensive logging - saves full terraform output for later review
+- 🔧 Optional `.atlo.yaml` for custom overrides
+- 🧪 Dry-run mode to preview commands before execution
+- 💻 Shell completion support for bash, zsh, fish, and PowerShell
+- 🔒 State lock management for safe local development
+- 📦 Simple installation via PyPI
+
+## Installation
+
+```bash
+pip install atlo-cli
+```
+
+### Development Installation
+
+```bash
+git clone https://github.com/jonwsavage/atlo.git
+cd atlo
+pip install -e .
+```
+
+## Quick Start
+
+```bash
+# Initialize configuration
+atlo init
+
+# Auto-detect and plan changed projects
+atlo plan
+
+# View logs from last run
+atlo logs
+```
+
+## Usage
+
+### Initialize Configuration
+
+Create a `.atlo.yaml` configuration file with sensible defaults:
+
+```bash
+# Interactive setup
+atlo init
+
+# Use defaults without prompts
+atlo init --yes
+```
+
+### Auto-Detect Changed Projects
+
+The killer feature! Run `atlo plan` without arguments to automatically detect which projects need planning based on git changes:
+
+```bash
+# Auto-detect changed projects (compares against main/master)
+atlo plan
+
+# Compare against a different branch
+atlo plan --base-branch develop
+
+# Plan all projects (ignore git changes)
+atlo plan --all
+
+# Run 4 projects in parallel
+atlo plan --parallel 4
+
+# Filter to only production projects
+atlo plan --filter "envs/prod/*"
+
+# All core projects except test environments
+atlo plan --all --filter "envs/*/core" --exclude "envs/test/*"
+
+# Dry run to see what would be planned
+atlo plan --dry-run
+
+# Show full terraform output for each project
+atlo plan --verbose
+```
+
+This works just like Atlantis - it:
+1. Detects changed files using `git diff`
+2. Matches files against `autoplan.when_modified` patterns in `atlantis.yaml`
+3. Runs plan for all affected projects
+4. Shows a nice progress table
+5. Saves full logs for later review
+
+### Manual Mode (Single Project)
+
+Run plan for a specific project:
+
+```bash
+# Specify directory and workspace
+atlo plan --dir terraform/api --workspace stage
+
+# Dry run to see what would execute
+atlo plan --dir terraform/api --workspace stage --dry-run
+
+# Force init even if already initialized
+atlo plan --dir terraform/api --force-init
+```
+
+### View Logs
+
+Review terraform output from previous runs:
+
+```bash
+# Show summary of last run
+atlo logs
+
+# View specific project logs
+atlo logs envs/dev
+
+# View only failed project logs
+atlo logs --failures
+
+# View all logs from last run
+atlo logs --all
+
+# View logs from a specific run
+atlo logs --run 2025-10-17_14-30-45
+```
+
+### Compare Runs
+
+Compare results between two runs to see what changed:
+
+```bash
+# Compare last two runs
+atlo diff
+
+# Compare specific runs
+atlo diff 2025-10-17_14-30-45 2025-10-17_15-45-30
+```
+
+Shows:
+- Success/failure rate changes
+- Resource changes (adds/changes/destroys)
+- Duration differences
+- New or removed projects
+
+### Export Results
+
+Export run results in various formats for reporting and CI/CD integration:
+
+```bash
+# Export as JSON
+atlo export json
+
+# Export as Markdown report
+atlo export markdown --output report.md
+
+# Export as JUnit XML (for CI/CD)
+atlo export junit --output test-results.xml
+
+# Export as GitHub Actions step summary
+atlo export github
+
+# Export specific run
+atlo export json --run 2025-10-17_14-30-45
+```
+
+**Supported formats:**
+- **JSON**: Machine-readable results with full metadata
+- **JUnit XML**: Test results format for CI/CD systems
+- **Markdown**: Human-readable reports with tables and summaries
+- **GitHub Actions**: Formatted step summary with emojis and collapsible sections
+
+### Shell Completion
+
+Enable tab completion for commands, directories, and workspaces:
+
+```bash
+# Show instructions for all shells
+atlo completion
+
+# Install for your shell
+atlo completion bash --install
+atlo completion zsh --install
+atlo completion fish --install
+
+# Or manually add to your shell config
+eval "$(atlo completion bash)"
+```
+
+Completion works for:
+- Project directories (from `atlantis.yaml`)
+- Workspace names
+- Workflow names
+
+### Show Workflow Configuration
+
+Display the steps in a specific workflow:
+
+```bash
+# Show default workflow
+atlo show-workflow
+
+# Show a named workflow
+atlo show-workflow --name custom
+```
+
+### List Projects
+
+List all projects defined in your `atlantis.yaml`:
+
+```bash
+atlo list-projects
+```
+
+### Show Version
+
+```bash
+atlo version
+# or
+atlo --version
+```
+
+## Configuration
+
+### atlantis.yaml
+
+Atlo reads your existing `atlantis.yaml` file. Here's an example:
+
+```yaml
+version: 3
+
+projects:
+  - name: api-stage
+    dir: terraform/api
+    workspace: stage
+    workflow: default
+
+  - name: api-prod
+    dir: terraform/api
+    workspace: prod
+    workflow: default
+
+workflows:
+  default:
+    plan:
+      steps:
+        - init
+        - plan
+    apply:
+      steps:
+        - apply
+```
+
+### .atlo.yaml (Optional)
+
+Create a `.atlo.yaml` file in your repository root for local overrides:
+
+```yaml
+# Parallel execution (default: 1)
+# Run up to 4 projects concurrently
+max_parallel_projects: 4
+
+# Disable Terraform state locking for local runs (default: true)
+# This is recommended for local sanity checks to avoid lock conflicts
+disable_state_lock: true
+
+# Skip init if .terraform/ directory exists (default: true)
+# Speeds up repeated runs
+skip_init_if_present: true
+
+# Custom terraform binary path
+terraform_binary: terraform  # or 'tofu' for OpenTofu
+
+# Command wrapper - prepends a command before terraform
+# Useful for environment injection tools
+# Example: command_wrapper: your-env-tool
+command_wrapper: null
+
+# Default var file to use for plan/apply
+default_var_file: env.auto.tfvars
+
+# Extra terraform flags applied to all commands
+extra_terraform_flags:
+  - "-out=tfplan"
+
+# Auto-create workspaces if they don't exist (default: true)
+workspace_auto_create: true
+
+# Continue workflow even if a step fails (default: false)
+continue_on_error: false
+
+# Max execution time per step in seconds (optional)
+step_timeout: 300
+
+# Custom environment variables
+env:
+  TF_LOG: INFO
+  AWS_PROFILE: dev
+
+# Project-specific overrides
+projects:
+  api-stage:
+    var_file: env.stage.tfvars
+    disable_state_lock: false  # Override per project
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `atlo init` | Initialize `.atlo.yaml` configuration file |
+| `atlo plan` | Run Terraform plan (auto-detect or manual mode) |
+| `atlo logs` | View logs from previous runs |
+| `atlo diff` | Compare results between two runs |
+| `atlo export` | Export results to JSON, JUnit, Markdown, or GitHub format |
+| `atlo list-projects` | List all projects in atlantis.yaml |
+| `atlo show-workflow` | Display workflow configuration |
+| `atlo completion` | Show or install shell completion |
+| `atlo version` | Show Atlo version |
+
+### Options for `atlo plan`
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--dir` | `-d` | Project directory (manual mode) |
+| `--workspace` | `-w` | Terraform workspace (manual mode) |
+| `--workflow` | | Workflow name to use (default: `default`) |
+| `--base-branch` | | Base branch for git diff (default: auto-detect main/master) |
+| `--all` | | Plan all projects (ignore git changes) |
+| `--parallel` | | Max parallel projects (1-10, overrides config) |
+| `--filter` | `-f` | Only run projects matching glob pattern (multiple allowed) |
+| `--exclude` | `-e` | Exclude projects matching glob pattern (multiple allowed) |
+| `--verbose` | | Show full terraform output for each project |
+| `--debug` | | Enable debug output |
+| `--dry-run` | | Show commands without executing |
+| `--force-init` | | Force terraform init even if already initialized |
+
+## Key Features
+
+### ⚡ Parallel Execution
+
+Run multiple projects concurrently to dramatically speed up plan operations:
+
+```bash
+# Run 4 projects in parallel (CLI flag)
+atlo plan --parallel 4
+
+# Or configure in .atlo.yaml
+# max_parallel_projects: 4
+```
+
+Perfect for large repositories with many projects. The progress table updates in real-time showing which projects are running.
+
+### 🎯 Smart Filtering
+
+Filter projects by glob patterns to run only what you need:
+
+```bash
+# Only production environments
+atlo plan --filter "envs/prod/*"
+
+# Multiple filters - all staging and prod
+atlo plan --filter "envs/staging/*" --filter "envs/prod/*"
+
+# Complex filtering - all core projects except test
+atlo plan --all --filter "envs/*/core" --exclude "envs/test/*"
+
+# Filter by project name
+atlo plan --filter "*api*"
+```
+
+Filters match against both project directories and project names.
+
+### 📊 Terraform Change Tracking
+
+Atlo automatically parses Terraform plan output and tracks resource changes:
+
+```
+Planning Complete
+
+Summary: 12 successful, 0 failed in 2m 34s
+
+Total Changes:
+  15 to add, 8 to change, 2 to destroy
+```
+
+All change data is saved to the manifest and available via:
+- The summary after each run
+- `atlo export json` for machine-readable data
+- `atlo diff` to compare runs
+
+### 📈 Progress Estimation
+
+Atlo learns from your historical run times to provide accurate ETAs:
+
+```
+Running 25 project(s) (4 parallel)
+Estimated time: ~3m 45s (based on 22/25 projects)
+
+Progress: 12/25 • ETA: 1m 52s
+```
+
+The ETA updates in real-time as projects complete, giving you accurate time remaining estimates.
+
+### 📤 Multiple Export Formats
+
+Export results for reporting, CI/CD integration, or documentation:
+
+```bash
+# JSON for programmatic access
+atlo export json --output results.json
+
+# JUnit XML for CI/CD test reporting
+atlo export junit --output test-results.xml
+
+# Markdown for documentation
+atlo export markdown --output PLAN_REPORT.md
+
+# GitHub Actions step summary
+atlo export github --output $GITHUB_STEP_SUMMARY
+```
+
+**Use cases:**
+- **JSON**: Parse results in scripts, store in databases, feed to dashboards
+- **JUnit**: Publish as test results in Jenkins, GitLab CI, CircleCI, etc.
+- **Markdown**: Add to PR comments, commit to repo as documentation
+- **GitHub Actions**: Beautiful formatted output in workflow summaries
+
+### 🔀 Run Comparison
+
+Compare two runs to see what changed:
+
+```bash
+atlo diff
+```
+
+Shows:
+- Which projects went from passing to failing (or vice versa)
+- Changes in resource counts (adds/changes/destroys)
+- Duration improvements or regressions
+- New projects added or removed from the set
+
+Perfect for:
+- Comparing before/after a refactor
+- Validating changes didn't break other projects
+- Performance tracking across runs
+
+### 💻 Shell Completion
+
+Tab completion for a better CLI experience:
+
+```bash
+atlo completion zsh --install
+
+# Now you can tab-complete:
+atlo plan --dir <TAB>           # Shows project directories
+atlo plan --workspace <TAB>     # Shows workspace names
+atlo show-workflow --name <TAB> # Shows workflow names
+```
+
+### 🔒 Automatic State Lock Disabling
+
+By default, `atlo` disables Terraform state locking (`-lock=false`) for local runs. This is perfect for local sanity checks and avoids lock conflicts with your team.
+
+```bash
+# Automatically includes -lock=false
+atlo plan --dir terraform/api
+# → terraform init -chdir=terraform/api -lock=false
+# → terraform plan -chdir=terraform/api -lock=false
+```
+
+### ⚡ Smart Init Detection
+
+`atlo` automatically skips `terraform init` if the `.terraform/` directory exists, speeding up repeated runs:
+
+```bash
+# First run - runs init
+atlo plan --dir terraform/api
+# → terraform init ...
+# → terraform plan ...
+
+# Second run - skips init
+atlo plan --dir terraform/api
+# i Terraform already initialized, skipping init (use --force-init to override)
+# → terraform plan ...
+```
+
+### 🔧 Command Wrapper Support
+
+Need to inject environment variables or use a wrapper tool? Configure it in `.atlo.yaml`:
+
+```yaml
+command_wrapper: your-env-wrapper
+```
+
+This prepends your wrapper before all terraform commands:
+```bash
+→ your-env-wrapper terraform init ...
+→ your-env-wrapper terraform plan ...
+```
+
+### 📁 Automatic Var-File Support
+
+Configure a default var file to use for all plan/apply operations:
+
+```yaml
+default_var_file: env.auto.tfvars
+```
+
+```bash
+atlo plan --dir terraform/api
+# → terraform plan -chdir=terraform/api -var-file=env.auto.tfvars
+```
+
+### 🎯 Flexible Usage - With or Without Project Definitions
+
+`atlo` works whether you have explicit project definitions in `atlantis.yaml` or just workflow definitions:
+
+**Option 1: With project definitions** (matches a project by dir/workspace)
+```yaml
+# atlantis.yaml
+version: 3
+projects:
+  - name: api-stage
+    dir: terraform/api
+    workspace: stage
+    workflow: default
+```
+```bash
+atlo plan --dir terraform/api --workspace stage
+# Uses the "api-stage" project configuration
+```
+
+**Option 2: Without project definitions** (uses workflow directly)
+```yaml
+# atlantis.yaml
+version: 3
+workflows:
+  default:
+    plan:
+      steps:
+        - init
+        - plan
+```
+```bash
+# Run from any directory
+cd terraform/api
+atlo plan --workspace stage
+
+# Or specify directory
+atlo plan --dir terraform/api --workspace stage
+# Uses the "default" workflow with specified dir/workspace
+```
+
+This flexibility allows you to use `atlo` in various ways depending on your repository structure.
+
+## Development
+
+### Running Tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+### Project Structure
+
+```
+atlo/
+├── atlo/
+│   ├── __init__.py      # Package initialization
+│   ├── cli.py           # CLI entrypoint with Typer
+│   ├── parser.py        # Atlantis YAML parser
+│   ├── config.py        # Config management (.atlo.yaml)
+│   ├── workflow.py      # Workflow execution engine
+│   ├── detector.py      # Git change detection & project matching
+│   ├── multi_runner.py  # Multi-project parallel runner
+│   ├── logs.py          # Log management
+│   ├── export.py        # Export formats (JSON, JUnit, Markdown, GitHub)
+│   ├── diff.py          # Run comparison
+│   ├── progress.py      # Progress estimation & ETA
+│   └── utils.py         # Rich formatting utilities
+├── tests/
+│   ├── test_parser.py
+│   ├── test_workflow.py
+│   └── fixtures/
+│       └── atlantis.yaml
+├── pyproject.toml
+└── README.md
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+Built with:
+- [Typer](https://typer.tiangolo.com/) - CLI framework
+- [Rich](https://rich.readthedocs.io/) - Terminal formatting
+- [PyYAML](https://pyyaml.org/) - YAML parsing
+
+Inspired by [Atlantis](https://www.runatlantis.io/)
