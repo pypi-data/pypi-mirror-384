@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""
+Simplified SystemVerilog Power Management Module
+
+This module provides minimal power management logic generation for PCIe devices,
+focusing on essential D-state transitions and PME support using a simplified approach
+based on the pmcsr_stub.sv module design.
+
+Simplified Power Management feature for the PCILeechFWGenerator project.
+"""
+
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
+
+from ..string_utils import generate_sv_header_comment
+from .advanced_sv_features import PowerState, TransitionCycles
+from .sv_constants import SV_CONSTANTS
+from .template_renderer import TemplateRenderer
+
+
+@dataclass
+class PowerManagementConfig:
+    """Configuration for power management features."""
+
+    # Clock frequency for timing calculations
+    clk_hz: int = SV_CONSTANTS.DEFAULT_CLOCK_HZ  # 100 MHz default
+
+    # Transition timeout (nanoseconds) - PCIe spec allows up to 10ms
+    transition_timeout_ns: int = (
+        SV_CONSTANTS.DEFAULT_POWER_TRANSITION_TIMEOUT_NS
+    )  # 10 ms
+
+    # Enable PME (Power Management Event) support
+    enable_pme: bool = True
+
+    # Enable wake event support
+    enable_wake_events: bool = False
+
+    # Interface signal configuration
+    has_interface_signals: bool = True
+
+    # Transition cycle counts
+    transition_cycles: TransitionCycles = field(default_factory=TransitionCycles)
+
+
+class PowerManagementGenerator:
+    """Generator for simplified power management SystemVerilog logic."""
+
+    def __init__(self, config: Optional[PowerManagementConfig] = None):
+        """Initialize the power management generator."""
+        self.config = config or PowerManagementConfig()
+        self.renderer = TemplateRenderer()
+
+    def _get_template_context(self) -> dict:
+        """Get template context variables from configuration."""
+        return {
+            "clk_hz": self.config.clk_hz,
+            "tr_ns": self.config.transition_timeout_ns,
+            "timeout_ms": self.config.transition_timeout_ns // 1_000_000,
+            "enable_pme": self.config.enable_pme,
+            "enable_wake_events": self.config.enable_wake_events,
+            # Provide transition cycles context for templates that need it
+            "transition_cycles": {
+                "d0_to_d1": self.config.transition_cycles.d0_to_d1,
+                "d1_to_d0": self.config.transition_cycles.d1_to_d0,
+                "d0_to_d3": self.config.transition_cycles.d0_to_d3,
+                "d3_to_d0": self.config.transition_cycles.d3_to_d0,
+            },
+            "pmcsr_bits": {
+                "power_state_msb": SV_CONSTANTS.PMCSR_POWER_STATE_MSB,
+                "power_state_lsb": SV_CONSTANTS.PMCSR_POWER_STATE_LSB,
+                "pme_enable_bit": SV_CONSTANTS.PMCSR_PME_ENABLE_BIT,
+                "pme_status_bit": SV_CONSTANTS.PMCSR_PME_STATUS_BIT,
+            },
+        }
+
+    def _render_template(
+        self,
+        template_name: str,
+        *,
+        header: Optional[str] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Render a template with shared context and optional overrides."""
+
+        context = self._get_template_context()
+        if overrides:
+            context.update(overrides)
+        if header is not None:
+            context["header"] = header
+        return self.renderer.render_template(template_name, context)
+
+    def generate_pmcsr_stub_module(self) -> str:
+        """Generate the complete pmcsr_stub module based on the provided design."""
+        header = generate_sv_header_comment(
+            "PMCSR Stub Module",
+            description=(
+                "Simplified representation of the PCIe power management CSR logic"
+            ),
+        )
+        return self._render_template("sv/pmcsr_stub.sv.j2", header=header)
+
+    def generate_power_management_integration(self) -> str:
+        """Generate integration code for the power management module."""
+        return self._render_template("sv/components/power_integration.sv.j2", header="")
+
+    def generate_power_declarations(self) -> str:
+        """Generate minimal power management signal declarations."""
+        return self._render_template(
+            "sv/components/power_declarations.sv.j2", header=""
+        )
+
+    def generate_power_monitoring(self) -> str:
+        """Generate monitoring and status assignments for power management."""
+
+        return self._render_template("sv/components/power_monitoring.sv.j2", header="")
+
+    def generate_complete_power_management(self) -> str:
+        """Generate complete simplified power management logic."""
+
+        header = generate_sv_header_comment(
+            "Simplified Power Management Module",
+            description="Based on minimal pmcsr_stub design for essential PCIe power management",
+        )
+
+        # Generate the individual components using templates
+        declarations = self.generate_power_declarations()
+        integration = self.generate_power_management_integration()
+        monitoring = self.generate_power_monitoring()
+
+        components = (
+            [
+                header,
+                "",
+                declarations,
+                "",
+                integration,
+                "",
+            ]
+            + [monitoring]
+            + [""]
+        )
+
+        return "\n".join(components)
+
+    def get_module_dependencies(self) -> list:
+        """Return list of module dependencies."""
+        return ["pmcsr_stub"]
+
+    def get_config_space_requirements(self) -> dict:
+        """Return config space requirements for power management."""
+        return {
+            # Absolute capability offset must be discovered from donor; we only expose
+            # the fixed relative PMCSR offset within the capability structure.
+            "pmcsr_rel_offset": f"0x{SV_CONSTANTS.PMCSR_REL_OFFSET:02x}",
+            "pmcsr_size": "16 bits",
+            "description": "Power Management Control/Status Register",
+        }
