@@ -1,0 +1,107 @@
+name: Create Release on Version Change
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
+
+jobs:
+  detect-version:
+    name: Detect version change
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.tagcheck.outputs.changed }}
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse version
+        id: parse
+        run: |
+          set -e
+          CURR=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$CURR" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: tagcheck
+        run: |
+          set -e
+          VER='v'${{ steps.parse.outputs.version }}
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/$VER" >/dev/null; then
+            echo "Tag $VER already exists; skipping release"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "No tag $VER; proceeding with release"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    if: needs.detect-version.outputs.changed == 'true'
+    needs: detect-version
+    name: Build distribution 📦
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+    - name: Install pypa/build
+      run: >-
+        python3 -m
+        pip install
+        build
+        --user
+    - name: Build a binary wheel and a source tarball
+      run: python3 -m build
+    - name: Store the distribution packages
+      uses: actions/upload-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+
+  publish-to-pypi:
+    name: Publish Python 🐍 distribution 📦 to PyPI
+    needs:
+    - detect-version
+    - build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/audio-metrics
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        name: python-package-distributions
+        path: dist/
+    - name: Publish distribution 📦 to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+
+  release:
+    if: needs.detect-version.outputs.changed == 'true'
+    needs:
+    - detect-version
+    - publish-to-pypi
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.detect-version.outputs.version }}
+          name: v${{ needs.detect-version.outputs.version }}
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
