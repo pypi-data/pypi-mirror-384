@@ -1,0 +1,107 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unaiverse"
+version = "0.1.6"
+requires-python = ">3.10"
+dependencies = [
+    "opencv-python",
+    "Flask",
+    "flask_cors",
+    "graphviz",
+    "ntplib",
+    "numpy",
+    "Pillow",
+    "protobuf",
+    "psutil",
+    "PyJWT",
+    "cryptography",
+    "Requests",
+    "torch",
+    "torchvision",
+    "transformers"
+]
+license-files = ["LICENSE"]
+keywords = ["UNaIVERSE", "Collectionless AI", "AI", "Agentic AI", "Agents", "Machine Learning", "Learning Over Time"]
+description = "UNaIVERSE: A Collectionless AI Project. The new web of humans & AI Agents, built on privacy, control, and reduced energy consumption."
+readme = "README.md"
+authors = [
+    { name = "Stefano Melacci", email = "stefano.melacci@unisi.it" },
+    { name = "Christian Di Maio", email = "christian.dimaio@phd.unipi.it" },
+    { name = "Tommaso Guidi", email = "tommaso.guidi.1998@gmail.com" }
+]
+maintainers = [
+    { name = "Stefano Melacci", email = "stefano.melacci@unisi.it" },
+    { name = "Christian Di Maio", email = "christian.dimaio@phd.unipi.it" },
+    { name = "Tommaso Guidi", email = "tommaso.guidi.1998@gmail.com" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+[tool.setuptools.package-data]
+"unaiverse" = ["utils/lone_wolf.json", "utils/ask_lone_wolf.json"]
+
+[project.urls]
+A-Homepage = "https://unaiverse.io"
+B-CollectionlessAI = "https://collectionless.ai"
+C-Source = "https://github.com/collectionlessai/unaiverse-src"
+D-Starting = "https://github.com/collectionlessai/unaiverse-src/blob/main/README.md"
+E-Examples = "https://github.com/collectionlessai/unaiverse-examples"
+F-Documentation = "https://github.com/collectionlessai/unaiverse-src/blob/main/README.md"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+# --- CIBUILDWHEEL CONFIGURATION ---
+[tool.cibuildwheel]
+# Skip 32-bit builds to save CI time
+skip = ["*-win32", "*-manylinux_i686"]
+
+# Platform-specific configurations
+[tool.cibuildwheel.linux]
+# Step 1: Install the correct version of Go for the machine's architecture.
+before-all = '''
+    set -euxo pipefail
+    
+    # Detect architecture and set the corresponding Go arch name
+    case "$(uname -m)" in
+        x86_64)
+            GO_ARCH=amd64
+            ;;
+        aarch64)
+            GO_ARCH=arm64
+            ;;
+        *)
+            echo "Unsupported architecture: $(uname -m)"
+            exit 1
+            ;;
+    esac
+
+    # Download and install the correct Go binary
+    curl -L -o go.tar.gz "https://go.dev/dl/go1.24.5.linux-${GO_ARCH}.tar.gz"
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf go.tar.gz
+    rm go.tar.gz
+'''
+# Step 2: Persistently add Go to the PATH for all subsequent steps.
+environment = { PATH = "/usr/local/go/bin:$PATH" }
+
+[tool.cibuildwheel.macos]
+# Step 1: Install Go once on the runner.
+before-all = "brew install go@1.24"
+# Step 2: Persistently add the correct Go version to the PATH.
+environment = { PATH = "$(brew --prefix go@1.24)/bin:$PATH" }
+
+[tool.cibuildwheel.windows]
+# On Windows, choco handles the PATH modification automatically,
+# so we just need to install it once.
+before-all = "choco install golang --version 1.24.5 -y"
