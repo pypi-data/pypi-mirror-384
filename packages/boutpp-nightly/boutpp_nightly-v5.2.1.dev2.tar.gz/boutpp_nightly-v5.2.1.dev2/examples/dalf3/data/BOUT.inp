@@ -1,0 +1,142 @@
+
+ShiftXderivs = true # use shifted radial derivatives?
+twistshift = true   # use twist-shift condition?
+ShiftOrder = 0      # interpolation order (1 = nearest neighbour, 0=FFT)
+TwistOrder = 0      # order of twist-shift interpolation
+
+MZ = 64             # number of points in z direction (2^n + 1)
+zperiod = 10        # Fraction of a torus to simulate
+
+MXG = 2
+MYG = 2
+restart_format = "nc"   # Restart file format
+
+[mesh]
+
+staggergrids = false    # Use staggered grids (EXPERIMENTAL)
+
+file = "cbm18_8_y064_x516_090309.nc"  # Grid file
+
+##################################################
+# derivative methods
+
+[mesh:ddx]
+
+first = C4  # order of first x derivatives (options are 2 or 4)
+second = C4 # order of second x derivatives (2 or 4)
+upwind = W3 # order of upwinding method (1, 4, 0 = TVD (DO NOT USE), 3 = WENO)
+
+[mesh:ddy]
+
+first = C4
+second = C4
+upwind = W3
+
+[mesh:ddz]
+
+first = C4  # Z derivatives can be done using FFT
+second = C4
+upwind = W3
+
+##################################################
+# Communications
+# Fastest setting depends on machine and MPI
+# implementation. Do not affect result.
+
+[comms]
+
+async = false           # Use asyncronous sends?
+pre_post = false        # Post receives as early as possible
+group_nonblock = false  # Use non-blocking group operations?
+
+##################################################
+# Solver settings
+
+[solver]
+
+# mudq, mldq, mukeep, mlkeep preconditioner options
+atol = 1e-08 # absolute tolerance
+rtol = 1e-05  # relative tolerance
+
+use_precon = false    # Use preconditioner: User-supplied or BBD
+use_jacobian = false  # Use user-supplied Jacobian
+
+mxstep = 5000   # Number of internal steps between outputs
+adams_moulton = false # Use Adams-Moulton method (default is BDF)
+func_iter = false     # Functional iteration (default is Newton)
+output_step = 10.0       # time between outputs
+# DALF3 model settings
+
+##################################################
+# Global settings used by the core code
+
+nout = 100          # number of time-steps
+
+##################################################
+
+[dalf3]
+
+estatic = false     # Set Apar = 0
+ZeroElMass = false  # Set electron mass to zero
+
+jpar_noderiv = false
+
+curv_kappa = true  # Use bxcv vector in grid file, otherwise log(B)
+
+flat_resist = false # Flat resistivity profile
+mul_resist = 1.0    # Multiply resistivity by this
+
+nonlinear = true
+
+filter_z = false # Keep only lowest harmonic
+
+bracket_method = 2  # 0 = std, 2 = arakawa, 3 = ctu
+
+viscosity = 0.01
+viscosity_par = 1.0
+
+[phiSolver]
+inner_boundary_flags = 1 + 4 # INVERT_DC_GRAD + INVERT_AC_LAP
+outer_boundary_flags = 1 + 4 # INVERT_DC_GRAD + INVERT_AC_LAP
+
+[aparSolver]
+inner_boundary_flags = 1 + 4 # INVERT_DC_GRAD + INVERT_AC_LAP
+outer_boundary_flags = 1 + 4 # INVERT_DC_GRAD + INVERT_AC_LAP
+
+split_n0 = true # Split into n=0 and n != 0
+
+[all]
+scale = 0.0 # default size of initial perturbations
+function = gauss(x - 0.5, 0.1) * gauss(y - pi, 0.3*pi) * sin(z)
+
+# boundary conditions
+# -------------------
+# dirichlet    - Zero value
+# neumann      - Zero gradient
+# zerolaplace  - Laplacian = 0, decaying solution
+# constlaplace - Laplacian = const, decaying solution
+#
+# relax( )   - Make boundary condition relaxing
+
+bndry_all = neumann
+
+########### Evolving variables
+
+[Vort]   # vorticity
+
+scale = 1e-05
+
+[Vpar]   # Parallel velocity
+
+bndry_pf = dirichlet
+bndry_sol = dirichlet
+
+########### Auxilliary variables
+
+[apar]
+bndry_xin = none   # Radial boundaries specified in inversion
+bndry_xout = none
+
+[phi]
+bndry_xin = none   # Radial boundaries specified in inversion
+bndry_xout = none
