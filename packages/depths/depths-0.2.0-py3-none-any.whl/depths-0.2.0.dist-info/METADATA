@@ -1,0 +1,338 @@
+Metadata-Version: 2.4
+Name: depths
+Version: 0.2.0
+Summary: S3-native OpenTelemetry compatible observability layer
+Project-URL: Homepage, https://github.com/depths-ai/depths
+Project-URL: Documentation, https://docs.depthsai.com
+Project-URL: Issues, https://github.com/depths-ai/depths/issues
+Author-email: Depths AI <admin@depthsai.com>
+License-File: LICENSE
+Requires-Python: >=3.12
+Requires-Dist: boto3>=1.40.36
+Requires-Dist: deltalake==1.1.4
+Requires-Dist: fastapi>=0.118.0
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: polars==1.33.1
+Requires-Dist: psutil>=7.1.0
+Requires-Dist: pyarrow==21.0.0
+Requires-Dist: python-dotenv>=1.1.1
+Requires-Dist: typer>=0.19.2
+Requires-Dist: uvicorn>=0.37.0
+Provides-Extra: proto
+Requires-Dist: opentelemetry-proto>=1.37.0; extra == 'proto'
+Requires-Dist: protobuf>=6.32.1; extra == 'proto'
+Description-Content-Type: text/markdown
+
+# Depths
+
+Everything you need to build your observability stack — unified, OTel-compatible, S3-native telemetry. Built by **Depths AI**.
+
+Depths covers the entire journey from ingestion of telemetry signals to persistence on S3 for cost optimization, and an efficient querying plan, including stats rollup to get snappy dashboards without having to touch raw logs.
+
+Docs live at **https://docs.depthsai.com**.
+
+---
+
+## Why Depths
+
+* **OTel first** – accept standard OTLP JSON today, add protobuf by installing an extra  
+* **Delta Lake by default** – predictable schema across six OTel tables  
+* **S3 native** – seal a past UTC day, upload, verify rowcounts, then clean local state  
+* **Polars inside** – fast typed DataFrames and LazyFrames for compact reads  
+* **Real-time + rollups** – in-memory tail (SSE) and generalized stats sidecars (categorical & numeric)  
+* **Simple to start** – `depths init` then `depths start`
+
+---
+
+## Install
+
+```bash
+# core (JSON ingest)
+pip install depths
+
+# optional protobuf ingest (OTLP x-protobuf)
+pip install "depths[proto]"
+````
+
+---
+
+## Quick start
+
+### 1) Initialize an instance
+
+```bash
+# plain init
+depths init
+
+# or initialize with schema add-ons
+depths init --addons http,genai,db
+```
+
+This lays out `./depths_data/default` with `configs`, `index`, day `staging`, and a local `stats` area (created on first use). When you pass `--addons`, your choices are saved to `configs/options.json` and applied automatically at runtime.
+
+### 2) Start the OTLP HTTP server
+
+```bash
+# foreground
+depths start -F
+
+# or background
+depths start
+```
+
+By default the service listens on `0.0.0.0:4318` and picks up the `default` instance **without re-running init**, using the options saved earlier (including any add-ons).
+
+Customize:
+
+```bash
+depths start -F -I default -H 0.0.0.0 -P 4318
+```
+
+The server exposes:
+
+* OTLP ingest: `POST /v1/traces`, `POST /v1/logs`, `POST /v1/metrics`
+* Health: `GET /healthz`
+* Reads:
+
+  * Raw: `GET /api/spans`, `GET /api/logs`, `GET /api/metrics/points`, `GET /api/metrics/hist`
+  * **Stats (v0.2.0)**:
+
+    * Register/remove:
+
+      * `POST /api/stats/categorical/add`
+      * `POST /api/stats/numeric/add`
+      * `POST /api/stats/remove`
+    * Query:
+
+      * `GET /api/stats/categorical`
+      * `GET /api/stats/numeric`
+  * Real-time: `GET /rt/{signal}` where `{signal}` is `traces | logs | metrics`
+
+### 3) Point your SDK or Collector
+
+Most OTLP HTTP exporters default to port `4318`. Example cURL for JSON:
+
+```bash
+curl -X POST http://localhost:4318/v1/logs \
+  -H 'content-type: application/json' \
+  -d '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"demo"}}]},"scopeLogs":[{"scope":{},"logRecords":[{"timeUnixNano":"1710000000000000000","body":{"stringValue":"hello depths"}}]}]}]}'
+```
+
+If you installed the protobuf extra, you can send `application/x-protobuf` too.
+
+---
+
+## The six Delta tables (layout)
+
+Depths writes one Delta table per OTel family under a day root:
+
+```
+<instance_root>/staging/days/<YYYY-MM-DD>/otel/
+  spans/
+  span_events/
+  span_links/
+  logs/
+  metrics_points/
+  metrics_hist/
+```
+
+### Real-time stream (SSE)
+
+Peek at the newest telemetry as it arrives (before persistence). This is a best-effort tail; some items may never persist.
+
+```bash
+# logs stream
+curl -N 'http://localhost:4318/rt/logs?n=100&heartbeat_s=10'
+```
+
+---
+
+## Schema add-ons 
+
+Depths can promote custom attributes to **first-class columns** across the six tables. 
+
+```python
+from depths.core.logger import DepthsLogger
+from depths.core.config import DepthsLoggerOptions
+from depths.core.schema import SchemaDelta
+
+# add a custom top-level column on logs (example)
+custom = SchemaDelta(
+    name="my_app",
+    columns={"region": str, "tenant_id": str, "tags": ("list", str)}
+)
+
+opts = DepthsLoggerOptions(addons={"logs": [custom, "http", "genai"]})
+lg = DepthsLogger(options=opts)
+```
+
+Any *remaining* `gen_ai.*`, `http.*`, `rpc.*`, `db.*`, or `geo.*` attributes not promoted are preserved in their `*_attrs_json` column.
+
+---
+
+## Generalized Stats sidecars (v0.2.0)
+
+### What you get
+
+Two local Delta tables under `./stats/` that you control (opt-in per column):
+
+```
+<instance_root>/stats/
+  stats_categorical/   # histograms for string/categorical columns
+  stats_numeric/       # measures for numeric columns
+```
+
+Both tables are partitioned by: `project_id / window / otel_table / column` and roll per **UTC minute** buckets. The **window** controls the roll-up granularity: choose any of `1m, 5m, 15m, 30m, 1h, 1d` per column.
+
+**Categorical rows (per bucket)** carry:
+
+* `categories: list[str]`
+* `counts: list[int]`
+
+**Numeric rows (per bucket)** carry population measures:
+
+* `event_count, value_min, value_max, value_mean, value_std, value_sum`
+
+### Add/remove tracking (code)
+
+```python
+from depths.core.logger import DepthsLogger
+
+lg = DepthsLogger()
+
+# Start histograms for a string column (multiple windows at once)
+lg.stats_add_category(
+    project_id="demo",
+    otel_table="logs",
+    column="http_method",
+    windows=["1m","1h"]
+)
+
+# Start numeric measures for an int/float column
+lg.stats_add_numeric(
+    project_id="demo",
+    otel_table="metrics_points",
+    column="value",             # any numeric top-level column
+    windows=["5m","1h","1d"]
+)
+
+# Stop a single (project/table/column/window) task at the next UTC minute
+lg.stats_remove(project_id="demo", otel_table="logs", column="http_method", window="1m")
+```
+
+**Notes**
+
+* Each window per column is an independent task; activation/deactivation happens on the next UTC minute boundary.
+* Categorical aggregation learns categories on the fly; to avoid memory blow-ups, new categories beyond `max_categories` (default 200) are silently ignored.
+* Stats sidecar can be disabled via options; sensible defaults mean most users won’t need to tweak `StatsConfig` directly.
+
+### Querying stats (HTTP)
+
+```bash
+# categorical: latest buckets for a column/window
+curl 'http://localhost:4318/api/stats/categorical?project_id=demo&otel_table=logs&column=http_method&window=1h&latest_only=true&select=minute_ts,categories,counts'
+
+# numeric: time-range query (epoch ms)
+curl 'http://localhost:4318/api/stats/numeric?project_id=demo&otel_table=metrics_points&column=value&window=5m&start_ms=1710000000000&end_ms=1710086400000&select=minute_ts,event_count,value_mean,value_std'
+```
+
+### Querying stats (Python)
+
+```python
+# dicts (default)
+rows = lg.read_categorical_stats(project_id="demo", otel_table="logs", column="http_method", window="1h", max_rows=100)
+
+# Polars DataFrame
+df = lg.read_numeric_stats(project_id="demo", otel_table="metrics_points", column="value", window="5m",
+                           select=["minute_ts","event_count","value_mean","value_std"], return_as="dataframe")
+```
+
+---
+
+## Reading your data (raw tables)
+
+Each endpoint accepts useful filters and returns JSON rows.
+
+```bash
+# last 100 logs with severity >= 9 that contain "error"
+curl 'http://localhost:4318/api/logs?severity_ge=9&body_like=error&max_rows=100'
+```
+
+```bash
+# metric points for a gauge/sum instrument
+curl 'http://localhost:4318/api/metrics/points?project_id=demo&instrument_name=req_latency_ms&max_rows=100'
+```
+
+Programmatic reads:
+
+```python
+from depths.core.logger import DepthsLogger
+
+logger = DepthsLogger()
+rows = logger.read_logs(body_like="timeout", max_rows=50)
+print(rows[:3])
+```
+
+---
+
+## Identity context (opt-in)
+
+Depths can enrich rows with **session** and **user** identity, following current OpenTelemetry attribute conventions. It’s **off by default**.
+
+Enable via options (Python) or by editing `configs/options.json`:
+
+```python
+from depths.core.logger import DepthsLogger
+from depths.core.config import DepthsLoggerOptions
+
+opts = DepthsLoggerOptions(
+    add_session_context=True,
+    add_user_context=True,
+)
+
+lg = DepthsLogger(options=opts)
+```
+
+When enabled, Depths reads these keys from event attributes first (then resource attributes):
+
+* `session.id` → `session_id`
+* `session.previous_id` → `session_previous_id`
+* `user.id` → `user_id`
+* `user.name` → `user_name`
+* `user.roles` (list of strings) → `user_roles_json` (JSON-encoded)
+
+When disabled, the columns remain empty.
+
+---
+
+## S3 shipping
+
+Turn on shipping and the background worker will seal completed days and upload them to S3, then verify remote rowcounts and clean the local day on a match.
+
+S3 is configured from environment variables. A typical flow is:
+
+1. Run with S3 configured in the environment
+2. Depths rolls over at UTC midnight and enqueues yesterday for shipping
+3. Shipper seals each Delta table, uploads, verifies, and cleans the local day
+
+---
+
+## Configuration
+
+* Instance identity and data dir come from `DEPTHS_INSTANCE_ID` and `DEPTHS_INSTANCE_DIR` (the CLI sets these).
+* S3 configuration is read from environment variables.
+* Runtime knobs (queues, flush triggers, shipper timeouts, stats cadence, real-time caps, identity context, and **schema add-ons**) live in the options object (`depths.core.config.DepthsLoggerOptions`). Add-on names or custom deltas are stored under `addons` in `configs/options.json`.
+
+---
+
+## Development notes
+
+* Package import is `depths` and can be installed with the protobuf extra using `depths[proto]`.
+* The service lives at `depths.cli.app:app` for uvicorn.
+* CLI commands are available as `depths init`, `depths start`, and `depths stop`.
+
+---
+
+## Status
+
+Version `v0.2.0`. Adds **generalized stats sidecars** (categorical histograms and numeric measures with minute buckets, partitions by project/window/table/column, and developer-chosen windows `1m…1d`), **custom schema add-ons** at init or via code, while keeping the real-time stream and the small read API.
