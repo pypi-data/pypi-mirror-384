@@ -1,0 +1,118 @@
+"""JWT authentication and security utilities."""
+
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
+import jwt
+from jwt import PyJWKClient
+from fastapi import HTTPException, status
+
+from core.config import settings
+
+
+# Initialize JWK client for remote key verification (if JWKS is configured)
+# This will be None by default, set USE_JWKS=true and JWKS_URL in .env to enable
+jwk_client = None
+try:
+    if hasattr(settings, 'USE_JWKS') and settings.USE_JWKS and settings.JWKS_URL:
+        jwk_client = PyJWKClient(settings.JWKS_URL)
+except Exception:
+    pass
+
+
+def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    """
+    Create a JWT access token.
+    
+    Args:
+        data: Data to encode in the token
+        expires_delta: Token expiration time delta
+    
+    Returns:
+        Encoded JWT token
+    """
+    to_encode = data.copy()
+    
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    
+    return encoded_jwt
+
+
+async def verify_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Verify and decode a JWT token.
+    
+    Args:
+        token: JWT token to verify
+    
+    Returns:
+        Decoded token payload or None if invalid
+    """
+    try:
+        # Use JWK for verification if available
+        if jwk_client:
+            signing_key = jwk_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=[settings.ALGORITHM],
+                audience=getattr(settings, 'AUDIENCE', None),
+                issuer=getattr(settings, 'ISSUER', None),
+                options={"verify_exp": True},
+            )
+        else:
+            # Use secret key for verification
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+            )
+        
+        return payload
+    
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.JWTClaimsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token claims",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Authentication error: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def decode_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Decode a JWT token without verification (for debugging).
+    
+    Args:
+        token: JWT token to decode
+    
+    Returns:
+        Decoded token payload
+    """
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+        return payload
+    except Exception:
+        return None

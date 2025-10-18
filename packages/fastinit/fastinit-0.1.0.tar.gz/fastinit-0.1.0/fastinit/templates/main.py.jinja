@@ -1,0 +1,64 @@
+"""FastAPI application entry point."""
+
+from fastapi import FastAPI
+{% if use_logging %}
+import logging
+{% endif %}
+{% if use_db %}
+from contextlib import asynccontextmanager
+
+from db.session import engine
+from db.base import Base
+{% endif %}
+from api.routes import health
+from core.config import settings
+
+{% if use_logging %}
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+{% endif %}
+
+{% if use_db %}
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    # Create tables on startup
+    {% if use_logging %}
+    logger.info("Creating database tables...")
+    {% endif %}
+    Base.metadata.create_all(bind=engine)
+    yield
+    # Cleanup on shutdown
+    {% if use_logging %}
+    logger.info("Shutting down...")
+    {% endif %}
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description=settings.DESCRIPTION,
+    lifespan=lifespan,
+)
+{% else %}
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description=settings.DESCRIPTION,
+)
+{% endif %}
+
+# Include routers
+app.include_router(health.router, prefix="/api", tags=["health"])
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": f"Welcome to {settings.PROJECT_NAME}",
+        "version": settings.VERSION,
+        "docs": "/docs",
+    }

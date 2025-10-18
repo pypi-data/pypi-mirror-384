@@ -1,0 +1,60 @@
+"""{{ service_name }} service."""
+
+from typing import List, Optional
+from sqlalchemy.orm import Session
+
+from models.{{ model_name | lower }} import {{ model_name }}
+
+
+class {{ service_name }}:
+    """Service for {{ model_name }} business logic."""
+    
+    @staticmethod
+{% if pagination_type == 'limit-offset' %}    def get_all(db: Session, skip: int = 0, limit: int = 100) -> List[{{ model_name }}]:
+        """Get all {{ model_name }} records."""
+        return db.query({{ model_name }}).offset(skip).limit(limit).all()
+{% elif pagination_type == 'cursor' %}    def get_all(db: Session, cursor: Optional[int] = None, limit: int = 100) -> List[{{ model_name }}]:
+        """Get all {{ model_name }} records with cursor pagination."""
+        query = db.query({{ model_name }})
+        if cursor:
+            query = query.filter({{ model_name }}.id > cursor)
+        return query.order_by({{ model_name }}.id).limit(limit).all()
+{% else %}    def get_all(db: Session) -> List[{{ model_name }}]:
+        """Get all {{ model_name }} records."""
+        return db.query({{ model_name }}).all()
+{% endif %}
+    
+    @staticmethod
+    def get_by_id(db: Session, id: int) -> Optional[{{ model_name }}]:
+        """Get a {{ model_name }} by ID."""
+        return db.query({{ model_name }}).filter({{ model_name }}.id == id).first()
+    
+    @staticmethod
+    def create(db: Session, **kwargs) -> {{ model_name }}:
+        """Create a new {{ model_name }}."""
+        obj = {{ model_name }}(**kwargs)
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        return obj
+    
+    @staticmethod
+    def update(db: Session, id: int, **kwargs) -> Optional[{{ model_name }}]:
+        """Update a {{ model_name }}."""
+        obj = db.query({{ model_name }}).filter({{ model_name }}.id == id).first()
+        if obj:
+            for key, value in kwargs.items():
+                setattr(obj, key, value)
+            db.commit()
+            db.refresh(obj)
+        return obj
+    
+    @staticmethod
+    def delete(db: Session, id: int) -> bool:
+        """Delete a {{ model_name }}."""
+        obj = db.query({{ model_name }}).filter({{ model_name }}.id == id).first()
+        if obj:
+            db.delete(obj)
+            db.commit()
+            return True
+        return False
