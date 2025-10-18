@@ -1,0 +1,312 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Rust Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+        include:
+          - rust: nightly
+            allow_failure: true
+    continue-on-error: ${{ matrix.allow_failure || false }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.rust }}
+
+    - name: Configure crate-type for platform
+      shell: bash
+      run: |
+        # Update Cargo.toml with platform-specific crate-type
+        # Ubuntu runners are used for the main test job
+        sed -i 's/^crate-type = .*/crate-type = ["rlib", "cdylib"]/' Cargo.toml
+        echo "Updated Cargo.toml crate-type for Ubuntu:"
+        grep "crate-type" Cargo.toml
+
+    # - name: Check code formatting
+    #   run: cargo fmt --all -- --check
+
+
+    # - name: Run Clippy lints
+    #   run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Build library
+      run: cargo build --verbose
+
+    - name: Build library with all features
+      run: cargo build --verbose --all-features
+
+    - name: Build binary
+      run: cargo build --verbose --bin json-tools-rs
+
+    - name: Run tests
+      run: cargo test --verbose
+
+    - name: Run tests with all features
+      run: cargo test --verbose --all-features
+
+    - name: Run examples
+      run: |
+        cargo run --example basic_usage
+        cargo run --example advance_usage
+
+    - name: Build documentation
+      run: cargo doc --no-deps --all-features
+
+  cross-platform:
+    name: Cross Platform Build
+    strategy:
+      matrix:
+        include:
+          # x86_64 targets (existing)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            crate_types: '["rlib", "cdylib"]'
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            crate_types: '["rlib", "cdylib"]'
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            crate_types: '["rlib"]'
+          
+          # ARM64 targets (new)
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            crate_types: '["rlib", "cdylib"]'
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            crate_types: '["rlib", "cdylib"]'
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            crate_types: '["rlib", "cdylib"]'
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+        targets: ${{ matrix.target }}
+
+    - name: Configure Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.os }}-${{ matrix.target }}
+
+    # Install cross-compilation dependencies for ARM on Linux
+    - name: Install cross-compilation dependencies
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+
+    - name: Configure crate-type for platform
+      shell: bash
+      run: |
+        if [[ "${{ matrix.target }}" == *"apple"* ]]; then
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            sed -i '' 's/^crate-type = .*/crate-type = ${{ matrix.crate_types }}/' Cargo.toml
+          else
+            sed -i 's/^crate-type = .*/crate-type = ${{ matrix.crate_types }}/' Cargo.toml
+          fi
+        else
+          sed -i 's/^crate-type = .*/crate-type = ${{ matrix.crate_types }}/' Cargo.toml
+        fi
+        echo "Updated Cargo.toml crate-type for ${{ matrix.target }}:"
+        grep "crate-type" Cargo.toml
+
+    - name: Build for ${{ matrix.target }}
+      run: cargo build --verbose --target ${{ matrix.target }}
+
+    - name: Test on ${{ matrix.target }} (native only)
+      if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-msvc' || (matrix.target == 'x86_64-apple-darwin' && runner.arch == 'X64') || (matrix.target == 'aarch64-apple-darwin' && runner.arch == 'ARM64')
+      run: cargo test --verbose --target ${{ matrix.target }}
+
+  # python-bindings:
+  #   name: Python Bindings
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v4
+
+  #   - name: Set up Python ${{ matrix.python-version }}
+  #     uses: actions/setup-python@v4
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+
+  #   - name: Install Rust toolchain
+  #     uses: dtolnay/rust-toolchain@v1
+  #     with:
+  #       toolchain: stable
+
+  #   - name: Configure Rust cache
+  #     uses: Swatinem/rust-cache@v2
+  #     with:
+  #       key: python-${{ matrix.python-version }}
+
+  #   - name: Configure crate-type for Python bindings
+  #     shell: bash
+  #     run: |
+  #       # Update Cargo.toml with cdylib for Python bindings
+  #       sed -i 's/^crate-type = .*/crate-type = ["rlib", "cdylib"]/' Cargo.toml
+  #       echo "Updated Cargo.toml crate-type for Python bindings:"
+  #       grep "crate-type" Cargo.toml
+
+  #   - name: Install maturin
+  #     run: pip install maturin[patchelf]
+
+  #   - name: Build Python bindings
+  #     run: maturin build --features python
+
+  #   - name: Install development dependencies
+  #     run: pip install -r requirements-dev.txt
+
+  #   - name: Install built wheel
+  #     run: pip install target/wheels/*.whl
+
+  #   - name: Run Python tests
+  #     run: python -m pytest python/tests/ -v
+
+
+  # build-wheels:
+  #   name: Build Wheels
+  #   runs-on: ${{ matrix.os }}
+  #   needs: [test, cross-platform, python-bindings]
+  #   # Only run on tags or manual dispatch for actual releases
+  #   # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         # Linux x86_64
+  #         - os: ubuntu-latest
+  #           target: x86_64-unknown-linux-gnu
+  #           manylinux: auto
+  #         # Linux ARM64
+  #         - os: ubuntu-latest
+  #           target: aarch64-unknown-linux-gnu
+  #           manylinux: auto
+  #         # Windows x86_64
+  #         - os: windows-latest
+  #           target: x86_64-pc-windows-msvc
+  #         # macOS x86_64
+  #         - os: macos-latest
+  #           target: x86_64-apple-darwin
+  #         # macOS ARM64 (Apple Silicon)
+  #         - os: macos-latest
+  #           target: aarch64-apple-darwin
+
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v4
+
+  #   - name: Set up Python
+  #     uses: actions/setup-python@v4
+  #     with:
+  #       python-version: '3.11'  # Use a single Python version for building
+
+  #   - name: Install Rust toolchain
+  #     uses: dtolnay/rust-toolchain@v1
+  #     with:
+  #       toolchain: stable
+  #       targets: ${{ matrix.target }}
+
+  #   - name: Configure Rust cache
+  #     uses: Swatinem/rust-cache@v2
+  #     with:
+  #       key: wheels-${{ matrix.os }}-${{ matrix.target }}
+
+  #   # Setup QEMU for cross-compilation on Linux ARM64
+  #   - name: Setup QEMU
+  #     if: matrix.target == 'aarch64-unknown-linux-gnu'
+  #     uses: docker/setup-qemu-action@v3
+
+  #   - name: Configure crate-type for wheel building
+  #     shell: bash
+  #     run: |
+  #       if [[ "${{ runner.os }}" == "macOS" ]]; then
+  #         sed -i '' 's/^crate-type = .*/crate-type = ["rlib", "cdylib"]/' Cargo.toml
+  #       else
+  #         sed -i 's/^crate-type = .*/crate-type = ["rlib", "cdylib"]/' Cargo.toml
+  #       fi
+  #       echo "Updated Cargo.toml crate-type for wheel building:"
+  #       grep "crate-type" Cargo.toml
+
+  #   - name: Build wheels using maturin-action
+  #     uses: PyO3/maturin-action@v1
+  #     with:
+  #       command: build
+  #       args: --release --features python --out dist --interpreter 3.9 3.10 3.11 3.12 3.13 #3.8 
+  #       target: ${{ matrix.target }}
+  #       manylinux: ${{ matrix.manylinux || 'auto' }}
+  #       # Enable sccache for faster builds
+  #       sccache: 'true'
+
+  #   # Upload wheels as artifacts
+  #   - name: Upload wheels as artifacts
+  #     uses: actions/upload-artifact@v4
+  #     with:
+  #       name: wheels-${{ matrix.os }}-${{ matrix.target }}
+  #       path: dist/*.whl
+
+  # publish-to-pypi:
+  #   name: Publish to PyPI
+  #   runs-on: ubuntu-latest
+  #   needs: [build-wheels]
+  #   # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+  #   environment: pypi  # Use GitHub environment for additional security
+  #   permissions:
+  #     contents: read
+
+  #   steps:
+  #   - name: Download all wheel artifacts
+  #     uses: actions/download-artifact@v4
+  #     with:
+  #       pattern: wheels-*
+  #       path: dist
+  #       merge-multiple: true
+
+  #   - name: List downloaded artifacts
+  #     run: ls -la dist/
+
+  #   - name: Publish to PyPI using API token
+  #     uses: PyO3/maturin-action@v1
+  #     with:
+  #       command: upload
+  #       args: --non-interactive --skip-existing dist/*
+  #     env:
+  #       MATURIN_PYPI_TOKEN: ${{ secrets.PIP_API_TOKEN }}
+
+
