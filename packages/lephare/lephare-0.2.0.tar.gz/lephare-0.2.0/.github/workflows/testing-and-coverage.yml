@@ -1,0 +1,56 @@
+# This workflow will install Python dependencies, run tests and report code coverage with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: Unit test and code coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    env:
+      INCLUDE_COVERAGE: TRUE
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        submodules: recursive
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -yy lcov
+        python -m pip install --upgrade pip
+        python -m pip install .[dev]
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Run unit tests with pytest
+      run: |
+        python -m pytest -s tests --cov=lephare --cov-report=lcov
+
+    - name: Collect C++ coverage
+      run: |
+        find build -name '_bindings.cc.gcda' -delete
+        geninfo --ignore-errors gcov --debug build --keep-going --exclude '/home/runner/work/lephare/lephare/src/lib/_bindings.cc'
+        lcov --output-file coverage.cpp --capture --directory build
+        lcov --output-file coverage.cpp --extract coverage.cpp $PWD/src/"*"
+        cat coverage.lcov coverage.cpp > coverage.txt
+
+    - name: Upload coverage report to codecov
+      uses: codecov/codecov-action@v5
+      with:
+        files: coverage.txt
+        token: ${{ secrets.CODECOV_TOKEN }}
