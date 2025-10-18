@@ -1,0 +1,183 @@
+@prefix dcat: <http://www.w3.org/ns/dcat#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix oink: <https://somanyaircraft.com/data/schema/oink#> .
+@prefix sma: <https://somanyaircraft.com/data/schema/core#> .
+@prefix manifest: <https://somanyaircraft.com/data/schema/manifest#> .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:Catalog ;
+    sh:property [
+        sh:path dcat:dataset ;
+        sh:message "A catalog must have at least one dataset or dataset series" ;
+        sh:minCount 1 ;
+        sh:or (
+            [ sh:class dcat:Dataset ]
+            [ sh:class dcat:DatasetSeries ]
+        )
+    ] ;
+    sh:property [
+        sh:path dcat:license ;
+        sh:message "A catalog can have at most one license file" ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path dcat:catalog ;
+        sh:message "When linking to other catalogs we assume they are in other manifest files" ;
+        sh:nodeKind sh:IRI
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:DatasetSeries ;
+    sh:property [
+        sh:path dcat:inSeries ;
+        sh:message "A dataset series may only be part of at most one (parent) series" ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:class dcat:DatasetSeries
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:Dataset ;
+    sh:severity sh:Info ;
+    sh:property [
+        sh:path dcat:theme ;
+        sh:message "A dataset should have a theme, either a skos:Concept or one of OINK's source classifications" ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:or (
+            [ sh:hasValue manifest:DataSource ]
+            [ sh:hasValue manifest:OntologySource ]
+            [ sh:hasValue manifest:UncategorizedSource ]
+            [ sh:class skos:Concept ]
+        ) ;
+        sh:severity sh:Info ;
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:Dataset ;
+    sh:property [
+        sh:path dcat:distribution ;
+        sh:message "A dataset can have at most one distribution" ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:class dcat:Distribution ;
+        rdfs:comment "Possibly more distributions in a future version"
+    ] ;
+    sh:property [
+        sh:path dcat:inSeries ;
+        sh:message "A dataset may belong to at most one dataset series" ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+        sh:class dcat:DatasetSeries
+    ] ;
+    sh:property [
+        sh:path sh:declare ;
+        sh:message "A dataset may only declare its own namespace (at most one)" ;
+        sh:maxCount 1 ;
+        sh:node [
+            a sh:NodeShape ;
+            sh:closed true ;
+            sh:property [
+                sh:path sh:namespace ;
+                sh:message "A namespace declaration may only specify one namespace" ;
+                sh:minCount 1 ;
+                sh:maxCount 1 ;
+                sh:nodeKind sh:IRI ;
+            ] ;
+            sh:property [
+                sh:path sh:prefix ;
+                sh:message "A namespace declaration may specify at most one prefix" ;
+                sh:maxCount 1 ;
+                sh:datatype xsd:string
+            ] ;
+            sh:property [
+                sh:path manifest:alternateNamespace ;
+                sh:message "A namespace declaration may specify at most one alternate URI" ;
+                sh:maxCount 1 ;
+                sh:nodeKind sh:IRI
+            ] ;
+            # TODO: This should go away someday
+            sh:property [
+                sh:path oink:alternateNamespace ;
+                sh:message "A namespace declaration may specify at most one alternate URI" ;
+                sh:maxCount 1 ;
+                sh:nodeKind sh:IRI
+            ]
+        ]
+    ] ;
+    sh:property [
+        sh:path sh:shapesGraph ;
+        sh:message "A shapes graph against which to validate has to be an IRI" ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "Every dataset has to be a member of some catalog or dataset series" ;
+        sh:select """
+            SELECT $this {
+                FILTER NOT EXISTS { $this dcat:inSeries|(^dcat:dataset) ?parent }
+            }
+        """ ;
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:Dataset ;
+    sh:severity sh:Info ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "A declared namespace URI should in most cases be the URI of the dataset" ;
+        sh:select """
+            SELECT $this ?uri {
+                $this sh:declare/sh:namespace ?uri
+                FILTER ($this != ?uri)
+            }
+        """ ;
+        sh:severity sh:Info
+    ] .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:Distribution ;
+    sh:property [
+        sh:path dcat:downloadURL ;
+        sh:message "A distribution must have exactly one download URL" ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI
+    ] ;
+    sh:property [
+        sh:path dcat:mediaType ;
+        sh:message "A distribution may specifty at most one media type" ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:or (
+        sh:property [
+            sh:path dcat:packageFormat ;
+            sh:maxCount 0
+        ]
+        sh:property [
+            sh:path dcat:packageFormat ;
+            sh:message "Value must be manifest:Directory if property present" ;
+            sh:minCount 1 ;
+            sh:maxCount 1 ;
+            sh:hasValue manifest:Directory
+        ]
+    ) .
+
+[] a sh:NodeShape ;
+    sh:targetClass dcat:Distribution ;
+    sh:sparql [
+        a sh:SPARQLConstraint ;
+        sh:message "If dcat:packageFormat has value manifest:Directory, then dcat:downloadURL must be a file: URL" ;
+        sh:select """
+            PREFIX manifest: <https://somanyaircraft.com/data/schema/manifest#>
+            SELECT $this ?url {
+                $this dcat:packageFormat manifest:Directory ; dcat:downloadURL ?url
+                FILTER (!STRSTARTS(?url, "file://"))
+            }
+        """ ;
+    ] .
