@@ -1,0 +1,43 @@
+name: Publish to PyPI on tag
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  id-token: write     # needed for OIDC
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, fetch-tags: true }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Build artifacts
+        run: |
+          rm -rf dist
+          export SETUPTOOLS_SCM_PRETEND_VERSION="${GITHUB_REF_NAME#v}"
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist/* }
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Remove the next line once PyPI project is configured for trusted publishing.
+          # skip-existing: true
+          verbose: true
