@@ -1,0 +1,21 @@
+.PHONY: help docker-build
+.DEFAULT: help
+
+tag="fmriprep"
+BASE_IMAGE := $(shell grep BASE_IMAGE= Dockerfile | cut -d= -f2)
+
+help:
+	@echo "Premade recipes"
+	@echo
+	@echo "make docker-build [tag=TAG]"
+	@echo "\tBuilds a docker image from source. Defaults to 'fmriprep' tag."
+
+
+docker-build: docker-base
+	docker build --rm -t $(tag) \
+	--build-arg BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"` \
+	--build-arg VCS_REF=`git rev-parse --short HEAD` \
+	--build-arg VERSION=`hatch version` .
+
+docker-base:
+	docker pull $(BASE_IMAGE) || docker build -t $(BASE_IMAGE) -f Dockerfile.base .
