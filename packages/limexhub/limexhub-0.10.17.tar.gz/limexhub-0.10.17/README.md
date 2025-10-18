@@ -1,0 +1,80 @@
+# Limexhub
+ <a target="new" href="https://pypi.python.org/pypi/limexhub"><img border=0 src="https://img.shields.io/badge/python-2.7,%203.6+-blue.svg?style=flat" alt="Python version"></a>
+ <a target="new" href="https://pypi.python.org/pypi/limexhub"><img border=0 src="https://img.shields.io/pypi/v/limexhub?maxAge=60%" alt="PyPi version"></a>
+ <a target="new" href="https://pypi.python.org/pypi/limexhub"><img border=0 src="https://img.shields.io/pypi/dm/limexhub.svg?maxAge=2592000&label=installs&color=%2327B1FF" alt="PyPi downloads"></a>
+ <a target="new" href="https://github.com/Limex-com/limexhub-python"><img border=0 src="https://img.shields.io/github/stars/Limex-com/limexhub-python.svg?style=social&label=Star&maxAge=60" alt="Star this repo"></a>
+
+`limexhub` is a comprehensive Python library designed to simplify interactions with the financial data and services provided by Limex DataHub. It provides an easy-to-use interface for fetching various types of financial data, including instruments, candles, fundamentals, news, events, and predictive signals.
+ 
+## Features
+ 
+- **Ease of Use**: The `limexhub` library has a straightforward, intuitive interface that enables quick access to Limex DataHub.
+- **Comprehensive Data Coverage**: Access a wide range of financial data, from market instruments and historical candlestick charts to company fundamentals and latest news.
+- **Predictive Signals**: Leverage advanced machine learning models and signals to inform your financial decisions.
+- **Customization**: Easily customize your data queries with flexible parameters suitable for different analysis and trading strategies.
+- **Efficiency**: The library is designed for efficiency, minimizing the amount of code needed to make requests and handle responses.
+ 
+## Installation
+ 
+Install `limexhub` with pip:
+ 
+```r
+pip install limexhub
+```
+
+
+
+### Getting Started
+
+The library needs to be configured with an API key from your account. [Sign up](https://datahub.limex.com) for free and you will automatically receive a set of API keys to start with.
+``` r
+import limexhub
+api_token = 'your_api_key'
+client = limexhub.RestAPI(token=api_token)
+
+
+
+instruments = client.instruments(assets='stocks')
+
+DJI_constituents = client.constituents(index = 'DJI')
+SP500_constituents = client.constituents()
+
+
+candles = client.candles(symbols = ["AAPL", "NVDA"],
+                         start="2024-01-01", 
+                         end="2025-01-01", 
+                         interval = "1d",
+                         pivot=False)
+                         
+
+fundamental = client.fundamental(symbol="AAPL", 
+                                 from_date="2023-01-01",
+                                 to_date="2024-01-01",
+                                 fields='roa')
+
+fundamental = client.fundamental(symbol="AAPL", 
+                                 from_date="2010-01-01",
+                                 to_date="2024-01-01",
+                                 fields=None)
+
+fundamental = client.fundamental(fields='roa',
+                                 quarter='Q2-2023')
+            
+                                 
+events = client.events(symbol="AAPL",
+                       from_date="2023-01-01", 
+                       to_date="2024-01-01",
+                       event_type="dividends")
+
+news = client.news(symbol="AAPL", 
+                   from_date="2023-03-01",
+                   to_date="2024-03-03")
+
+models = client.models(vendor = 'boosted')
+
+signals = client.signals(vendor="boosted", 
+                         model=models[0]['id'], 
+                         symbol="AAPL", 
+                         from_date="2023-01-01")
+
+```
