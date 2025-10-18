@@ -1,0 +1,230 @@
+<script>
+    // Notifier temporarily disabled
+    // window.NOTIFIER_MODAL_CONFIG = {
+    //     url_list_available_notifiers: "{{ widget.url_list_available_notifiers }}",
+    //     mode: "{{ widget.mode }}"
+    // };
+
+    window.TASK_FORM_CONFIG = {
+        url_list_available_tasks: "{{ widget.url_list_available_tasks }}",
+        availableTasks: [],
+        defaultTask: ""
+    };
+</script>
+
+<script src="/app_static/tasks_worker/js/task_form_builder.js"></script>
+{# Notifier modal disabled for now #}
+{# <script src="/app_static/tasks_worker/js/notifier_modal.js"></script> #}
+{# <link rel="stylesheet" href="/app_static/tasks_worker/css/notifier_modal.css"> #}
+
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col">
+            <div class="card">
+                <form onsubmit="submitTaskForm(event)">
+                    <div class="card-header">
+                        <h3 class="card-title">{{ widget.modal_title or "Task Form" }}</h3>
+                    </div>
+                    <div class="card-body">
+
+                        {% if mode == "schedule_task" %}
+                            <div class="mb-3">
+                                <label for="task-name" class="form-label">Name</label>
+                                <input type="text" class="form-control" id="task-name" required>
+                            </div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            <label for="task-function" class="form-label">Task</label>
+                            <select class="form-select" id="task-function" name="task-function" required
+                                    onchange="updateTaskFormFromSelection()">
+                                <option value="">Loading tasks...</option>
+                            </select>
+                        </div>
+
+                        {% if mode == "schedule_task" %}
+                            <div class="mb-3">
+                                <label class="form-label">Schedule Type</label>
+                                <ul class="nav nav-tabs" id="schedule-tab" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="cron-tab" data-bs-toggle="tab"
+                                                data-bs-target="#cron-tab-pane" type="button" role="tab"
+                                                aria-controls="cron-tab-pane" aria-selected="true">
+                                            CRON Expression
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="interval-tab" data-bs-toggle="tab"
+                                                data-bs-target="#interval-tab-pane" type="button" role="tab"
+                                                aria-controls="interval-tab-pane" aria-selected="false">
+                                            Interval (minutes)
+                                        </button>
+                                    </li>
+                                </ul>
+
+                                <div class="tab-content border rounded-bottom p-3" id="schedule-tab-content">
+                                    <div class="tab-pane fade show active" id="cron-tab-pane" role="tabpanel"
+                                         aria-labelledby="cron-tab" tabindex="0">
+                                        <input type="text" class="form-control" id="task-cron" value="*/5 * * * *">
+                                        <small class="form-hint">Example: <code>*/5 * * * *</code> runs every 5 minutes</small>
+                                    </div>
+                                    <div class="tab-pane fade" id="interval-tab-pane" role="tabpanel"
+                                         aria-labelledby="interval-tab" tabindex="0">
+                                        <input type="number" class="form-control" id="task-interval" value="5" min="1">
+                                    </div>
+                                </div>
+                            </div>
+                        {% endif %}
+                        <div class="hr-text">Parameters</div>
+
+                        <div id="task-param-fields"></div>
+
+                        <div class="hr-text">Advanced</div>
+
+                        <div class="mb-3">
+                            <label for="task-topic" class="form-label">Topic</label>
+                            <input type="text" class="form-control" id="task-topic" placeholder="auto (defaults to task)">
+                            <small class="form-hint">Broker topic/queue to publish to. Defaults to the task's configured topic or its name.</small>
+                        </div>
+
+                        {# Notifier UI disabled for now #}
+                        {#
+                        <input type="hidden" id="notify-on-data" value="[]">
+                        <div class="mb-3">
+                            <label class="form-label">Configure Notifications</label>
+                            <ul id="configured-notifiers" class="list-group mb-2"></ul>
+                            <button type="button" class="btn btn-outline-primary" onclick="openAddNotifierModal()">Add
+                                Notifier
+                            </button>
+                        </div>
+                        #}
+
+                    </div>
+                    <div class="card-footer text-end">
+                        <button type="submit" class="btn btn-primary">
+                            {{ "Schedule" if widget.mode == "schedule_task" else "Run" }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Notifier modal disabled for now
+{% include 'tasks_worker/widgets/notifier_modal.html.j2' %}
+#}
+
+<script>
+    function updateTaskFormFromSelection() {
+        const selected = document.getElementById("task-function")?.value;
+        const taskMeta = (window.TASK_FORM_CONFIG.availableTasks || []).find(t => t.name === selected);
+        if (taskMeta && taskMeta.params) {
+            renderTaskForm("task-param-fields", taskMeta.params);
+        } else {
+            document.getElementById("task-param-fields").innerHTML = "<p class='text-muted'>No parameters required.</p>";
+        }
+        // Set default topic: taskMeta.topic if provided, otherwise use selected task's name
+        const topicInput = document.getElementById("task-topic");
+        if (topicInput) {
+            const def = (taskMeta && taskMeta.topic) ? taskMeta.topic : (selected || "");
+            topicInput.value = def || "";
+        }
+    }
+
+    async function submitTaskForm(e) {
+        e.preventDefault();
+
+        const functionName = document.getElementById("task-function").value;
+        const kwargs = collectFormValues("task-param-fields");
+        // Notifier disabled for now
+        // const notify = JSON.parse(document.getElementById("notify-on-data")?.value || "[]");
+
+        const body = {
+            function: functionName,
+            kwargs,
+        };
+        const topicField = document.getElementById("task-topic");
+        if (topicField && topicField.value) {
+            body.topic = topicField.value;
+        }
+
+        // if (notify.length) body.notify_on = notify;
+
+        {% if mode == "schedule_task" %}
+            body.name = document.getElementById("task-name").value;
+            const activeTabId = document.querySelector("#schedule-tab .nav-link.active")?.id;
+            if (activeTabId === "cron-tab") {
+                body.cron = document.getElementById("task-cron").value;
+                body.interval = null;
+            } else if (activeTabId === "interval-tab") {
+                const interval = parseInt(document.getElementById("task-interval").value);
+                body.cron = null;
+                body.interval = interval
+            }
+        {% endif %}
+
+        const response = await fetch("{{ widget.submit_url }}?method=json", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(body)
+        });
+
+        const data = await response.json();
+
+        if (data.task_id) {
+            window.location.href = "{{ widget.url_task_details }}".replace("TASK_ID_REPLACE", data.task_id);
+        } else {
+            // TODO: flash notification
+            window.location.href = "{{ widget.url_after_submit or '/' }}";
+        }
+    }
+
+    async function loadAvailableTasks() {
+        try {
+            const response = await fetch(window.TASK_FORM_CONFIG.url_list_available_tasks);
+            if (!response.ok) throw new Error('Failed to fetch tasks');
+
+            const tasks = await response.json();
+            window.TASK_FORM_CONFIG.availableTasks = tasks;
+            window.TASK_FORM_CONFIG.defaultTask = tasks.length > 0 ? tasks[0].name : '';
+
+            // Group tasks by package
+            const tasksByPackage = {};
+            tasks.forEach(task => {
+                const pkg = task.module || 'unknown';
+                if (!tasksByPackage[pkg]) {
+                    tasksByPackage[pkg] = [];
+                }
+                tasksByPackage[pkg].push(task);
+            });
+
+            // Populate the select dropdown
+            const selectElement = document.getElementById('task-function');
+            if (selectElement) {
+                selectElement.innerHTML = '';
+                Object.entries(tasksByPackage).forEach(([pkg, pkgTasks]) => {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = pkg;
+                    pkgTasks.forEach(task => {
+                        const option = document.createElement('option');
+                        option.value = task.name;
+                        option.textContent = `${task.name} – ${task.description || task.qualified_name}`;
+                        optgroup.appendChild(option);
+                    });
+                    selectElement.appendChild(optgroup);
+                });
+            }
+
+            updateTaskFormFromSelection();
+        } catch (error) {
+            console.error('Error loading available tasks:', error);
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        loadAvailableTasks();
+        // Notifier disabled for now
+        // loadAvailableNotifiersAndDefaults();
+    });
+</script>
