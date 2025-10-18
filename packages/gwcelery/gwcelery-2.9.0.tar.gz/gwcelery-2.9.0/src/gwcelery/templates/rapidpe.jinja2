@@ -1,0 +1,158 @@
+[General]
+output_parent_directory={{ rundir }}
+#submit_only_at_exact_signal_position=1
+#Note: if use_skymap is set, set the skymap directory/file pattern to match in the [Event] section
+use_skymap=0
+use_event_spin=True
+cProfile={{ use_cprofile }}
+
+gracedb_url={{ gracedb_url }}
+
+getenv = {{ getenv | tojson }}
+environment = {{ environment | tojson }}
+
+#If you want to perform multiple studies on a single event, you can set this. And command line arguments passed to create_submit_dag will be ignored. If you do NOT set this = 1, the [Event] section in the config file will be ignored, and command line arguments with event specific information is required
+event_parameters_in_config_file=0
+
+#was n_samples_per_job in old RIT code. This defines how many iterations of rapidPE are run. Before each new iteration a new grid is generated which is finer than the previous grid, and covers a smaller region of intrinsic parameter space (hopefully around the signal)
+n_iterations_per_job=2
+
+#You need to specify an accounting group when submitting jobs to condor. Use this link to determine your accounting tag: https://ldas-gridmon.ligo.caltech.edu/ldg_accounting/user
+accounting_group={{ accounting_group }}
+accounting_group_user=caitlin.rose
+
+#If the candidate output sub_directory, under the parent directory, it will not be overwritten by default. But if you're just testing things and not making submissions, you can force the overwrite with this option. default=0
+overwrite_existing_event_dag=1
+
+#If this is set, the script will submit the dag. set=0 if not sure everything is working
+submit_dag=0
+#If this is set, an email will be sent to this address once all jobs are complete, and the plotting scripts have run. If you don't want an email per event (likely if you're doing injections studies)  dont set it
+#email_address_for_job_complete_notice = soichiro.morisaki@ligo.org
+
+#TO DO: Make these paths be optional for development, default just from rapidpe install. also move this
+#WARNING: This should be an absolute path. It's up to you to make sure you have the correct environemnt loaded
+#This is the script that integrates over the extrinsic parameters for each intrinsic point. It is called once per intrinsic grid point.
+#exe_integration_extrinsic_likelihood = /home/caitlin.rose/miniconda3/envs/py3p8/bin/rapidpe_integrate_extrinsic_likelihood
+# if rift ile
+exe_integration_extrinsic_likelihood=integrate_likelihood_extrinsic_batchmode
+# if rapidpe ile
+#exe_integration_extrinsic_likelihood=rapidpe_integrate_extrinsic_likelihood
+
+#exe_grid_refine = /home/caitlin.rose/miniconda3/envs/py3p8/bin/rapidpe_compute_intrinsic_grid
+exe_grid_refine=rapidpe_compute_intrinsic_grid
+
+
+#This is the script which sets up the dag to run the integration for every intrinsic grid point. It is run once per iteration of rapidPE.
+#exe_create_event_dag = /home/caitlin.rose/miniconda3/envs/py3p8/bin/rapidpe_create_event_dag
+exe_create_event_dag=rapidpe_create_event_dag
+
+#TO DO: only define params key once
+#If you want to include spin, you need to specify the list of intrinsic param to search here
+#WARNING: this needs to be sed here and in [GridRefine], unless you want it to refine only in mass space
+intrinsic_param_to_search=[mass1,mass2]
+
+web_dir={{ webdir }}
+
+[Event]
+superevent_id={{ superevent_id }}
+run_mode={{ run_mode }}
+frame_data_types={{ frame_data_types | tojson }}
+query_shm=True
+
+{% if gracedb_host=='gracedb-playground.ligo.org' %}
+mdc_event_injection_file =/home/vinaya.valsan/rapidPE/RapidPE_RIFT_Developments/RapidPE-RIFT_fork/gracedb_playground_events/injection_campaign_studies/lowlatency-replay-distributions/minSNR-4/injections-minSNR-4.xml.gz
+mdc_time_offset=119040000
+{% endif %}
+
+#Anything specified in this section is passed verbatim to rapidpe_compute_intrinsic_grid in generate_initial_grid_based_of_gstlal_O2_overlaps.py
+[InitialGridOnly]
+#mc-min = 5
+#mc-max = 61
+total-points=100
+
+[InitialGridSetup]
+#The arguments in this section are passed directly to the command line in the condor dag job which does the grid refinement. Do not include any arguments which change per iteration or per node.
+##NOTE: The script is currently setup to work with rapidpe_compute_intrinsic_grid or util_ConstructIntrinsicPosterior.py
+
+[GridRefine]
+no-exact-match=
+#distance-coordinates=tau0_tau3
+distance-coordinates=mchirp_q
+#distance-coordinates=mchirp_q
+overlap-thresh=0.99
+verbose=
+#get rid of this one intrinsic-param=[mass1,mass2]
+intrinsic-param=[mass1,mass2]
+
+#here you define information needed as input to the rapidpe scripts which computes the likelihood
+#The arguments in this section are passed directly to the command line in the condor dag job. Use any variable that your exe_ntegration_extrinsic_likelihood can take.  arg_a will be converted to arg-a automatically.
+##NOTE: Do not include any arguments which change per iteration or per node or per event. Note that since these variable argumnets are set in the script, naming must be consistent with what is in use. Specifically, your integration script should take the input intrinsic_grid.xml as --template-bank-xml,the naming of the output file should be set by --output-file, and event time is set by --event-time. Everything else should be static and set below.
+#If the same argument is defined multiple times in the exe command line, pass it as a list. eg arga=[input1,input2]. do not set separately arga=input1 arga=input2, only input2 will be read.
+[LikelihoodIntegration]
+#enable time marginalised integration. The time marg integration runs faster than the unmarginalised integration, and is often used.
+time-marginalization=
+#default is 0
+#amp-order=0
+# Weights will be raised to this power to prevent overconvergence
+#value used by rift
+#adapt-weight-exponent=0.1
+#value used by chris
+adapt-weight-exponent=0.8
+#save_P is the threshold on cumulative probability contribution to cache sample. If this is not zero, you might get < save-samples points in output. If you care about extrinsic params, set this = 0.0.
+#chris used default of 0
+save-P=1e-7
+#save-P=0.0
+#lmax is the largest l-index of any h_lm mode considered. default is 2
+#l-max=2
+
+# The new sampling distribution at the end of each chunk will be floor_level-weighted average of a uniform distribution and the (L^tempering_exp p/p_s)-weighted histogram of sampled points. default 0.1
+#adapt-floor-level=0.1
+#Threshold on deltalnL for points preserved in output file. default is inf.
+#save-deltalnL=inf
+
+#rift used 100.0, chirs used 0
+#reference-freq=100.0
+reference-freq=0.0
+#The default fmax is the max frequency in the psd that comes with the event
+#fmax=7900.0
+fmin-template=20.0
+#This defines the max number of extrinsic posterior points you want to calculate the likelihood for per intrinsic grid point. The best choice is unclear: if it's too small random sampling on the intrinsic grid won't have a chance to converge on the true maximum but the bigger you make it the longer the code runs
+n-max=5000
+#This is what's referred to as the effective number of templates (aka intrinsic grid points). As the rapidpe code iterates through the intrinsic grid, it calculates the effective number of templates/grid points for which the likelihood has been calculated so far. I assume this calculation is based on the overlap between templates, and effective number of templates is the same as saying the number of effectively independent templates, but I haven't confirmed this. If rapidpe reaches n_eff before reaching n_max, the calculations finish. In the way it has been used so far, n_eff is rarely reached before n_max. If n_eff is small when you reach n_max it's probably a bad thing, it indicates the intrinsic parameter space is not well sampled. What number would be considered small you ask? I don't know.
+n-eff=1000
+#Number of samples per chunk is min(n-chunk,n-max). I'm assuming once the limit on samples per chunk is reached the code jumps to another part of extrinsic space before continuing
+n-chunk=1000
+#per extrinsic grid point, the likelihood is calculated for many combinations of intrinsic grid points. This option defines how many intrinsic points are save in the output _samples.xml file. It its set to 0 or not set, no samples saved. If you want all samples saved set = n-max #was save_samples
+save-samples=5000
+#%(n-max)s
+#WARNING: is save_samples/n-chunk is small (~1-3) and you have a loud signal, the extrinsic posteriors wont cover the full extrinsic parameter space and may be bad.
+
+##commands which exist in RIT and UWM code, but have different names in each
+#d_max in RIT. distance_maximum in UWM. I think this is the maximum distance (in Mpc) to include in the sampled intrinsic parameter space.
+#distance-minimum=5.0
+#distance-maximum=484.0
+
+d-max=3000.0
+d-min=1.0
+
+distance-marginalization=
+# TODO: determine where to store the look-up table
+distance-marginalization-lookup-table=/home/caitlin.rose/shared_config/dist_lookup_table/distance_marginalization_lookup_v1.npz
+vectorized=
+gpu=
+force-xpy=
+sampler-method=adaptive_cartesian_gpu
+
+{% if not high_snr_trigger %}
+manual-logarithm-offset=
+no-adapt=
+{% else %}
+internal-use-lnL=
+{% endif %}
+
+[Pastro]
+category_rates={"BNS": 3.040442568596489e-07,"NSBH": 2.187249638130701e-07,"BBH": 2.1323454514234493e-06}
+
+category_rates_inj={"BNS": 3.040442568596489e-07,"NSBH": 2.187249638130701e-07,"BBH": 2.1323454514234493e-06}
+
+prior_boundary={"m_max_bank": 200.0,"m_min_bank": 0.98,"m_max_ns": 3.0,"q_min_bank": 0.05,"q_max_bank": 1}
