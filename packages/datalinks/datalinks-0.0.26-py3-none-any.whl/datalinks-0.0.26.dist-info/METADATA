@@ -1,0 +1,179 @@
+Metadata-Version: 2.4
+Name: datalinks
+Version: 0.0.26
+Summary: Base package to build indexing scripts for DataLinks
+Project-URL: Homepage, https://datalinks.com
+Author-email: Rui Lopes <rui.lopes@datasetlinks.com>, Francisco Ferreira <francisco@datasetlinks.com>, Andrzej Grzesik <ags@datasetlinks.com>, Rui Valente <rui.valente@datasetlinks.com>
+License-File: LICENSE
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.11
+Requires-Dist: caseutil==0.7.1
+Requires-Dist: pytest==8.3.4
+Requires-Dist: python-dotenv>=1.0.1
+Requires-Dist: requests>=2.32
+Requires-Dist: sphinx-autodoc2[cli]>=0.5.0
+Requires-Dist: sphinx-markdown-builder>=0.6.8
+Requires-Dist: sphinx<8.2
+Requires-Dist: tox>=4.19
+Description-Content-Type: text/markdown
+
+
+The **DataLinks Python SDK** is designed to simplify data ingestion, normalization, linking, and querying processes with DataLinks. 
+It integrates with the DataLinks API to provide a seamless development experience for managing data workflows, including entity resolution and inference steps, with robust configuration options.
+
+This SDK is designed to accelerate the development of applications with DataLinks by wrapping the API integrations with a Pythonic interface, supporting flexible chaining of inference and validation steps.
+
+---
+
+## Features
+
+- **Ingestion API**: Easily ingest data into namespaces with built-in batching and retry mechanisms.
+- **Inference Workflow Management**: Define custom chains of inference and validation steps.
+- **Entity Resolution**: Match entities using configurable exact or geo-based matching methods.
+- **Namespace Management**: Create and manage namespaces with privacy options.
+- **Data Querying**: Query data with options to include/exclude metadata.
+- **Custom Loaders**: Load custom data formats like JSON into defined workflows.
+- **CLI Tool**: Standardized command-line interface for managing ingestion pipelines quickly.
+
+---
+
+## Installation
+
+To install the SDK, simply use `pip`:
+
+```shell script
+pip install datalinks
+```
+
+If you want to install the package in an editable development mode:
+
+1. Clone the repository from your version-control system.
+2. Create a virtual environment with your tool/distro of choice.
+3. Run the following:
+
+```shell script
+pip install -e .
+```
+
+---
+
+## Quick Start
+
+Here’s how to get started with the DataLinks SDK:
+
+1. **Configuration**
+   Ensure you have your required environment variables set up for the DataLinks API:
+   - `HOST`
+   - `DL_API_KEY`
+   - `NAMESPACE`
+   - `OBJECT_NAME` (optional)
+
+   Alternatively, you can use a `.env` file in the root of your project for configuration.
+
+2. **Basic Example**
+
+   Import the SDK and initialize the configuration:
+
+```python
+from datalinks.api import DataLinksAPI, DLConfig
+
+# Initialize configuration
+config = DLConfig.from_env()
+
+# Instantiate API client
+client = DataLinksAPI(config=config)
+
+# Query data
+data = client.query_data(query="*", include_metadata=False)
+print(data)
+```
+
+3. **CLI Usage**
+
+   The SDK also provides a built-in CLI that can be extended:
+
+```shell script
+datalinks-client [-h] --verbose <input-folder>
+```
+
+---
+
+## Components
+
+### 1. **DLConfig**
+`DLConfig` reads configurations (e.g., API keys) via environment variables or `.env` files. This enables dynamic adaptation across deployment environments.
+
+### 2. **DataLinksAPI**
+`DataLinksAPI` handles interactions with the API. You can:
+   - Ingest data.
+   - Query or retrieve data with complex parameters.
+   - Manage namespaces.
+
+### 3. **Inference Workflow**
+Use a chain of inference and validation steps defined through classes like `ProcessUnstructured`, `Normalize`, and `Validate` to automate data preparation workflows.
+
+```python
+from datalinks.pipeline import Pipeline, ProcessUnstructured, Normalize, Validate, ValidateModes
+
+# Define an inference pipeline
+inference_steps = Pipeline(
+   ProcessUnstructured(derive_from="source_field", helper_prompt="This extracts tables."),
+   Normalize(target_cols={"email": "email_address"}, mode="all-in-one"),
+   Validate(mode=ValidateModes.FIELDS, columns=["email", "phone"]),
+)
+```
+
+### 4. **Entity Resolution**
+Supports multiple resolution strategies, configurable via `MatchTypeConfig`:
+
+```python
+from datalinks.links import MatchTypeConfig, ExactMatch
+
+entity_resolution = MatchTypeConfig(
+   # parameters are optional    
+    exact_match=ExactMatch(minVariation=0.2, minDistinct=0.3)
+)
+```
+
+### 5. **Loaders**
+Abstract base loaders (e.g., `JSONLoader`) allow seamless data ingestion from custom file formats like `.json`.
+
+### 6. **Parametrize LLms**
+You can choose the model and provider to be used in inference steps (eg.: `ProcessUnstructured`, `Normalize`, `Validate`).
+
+```python
+
+from datalinks.pipeline import Pipeline, ProcessUnstructured
+
+steps = Pipeline(
+        ProcessUnstructured(
+            derive_from="text",
+            helper_prompt="If you find a numeric field use only the value and omit the rest.",
+            model="gpt-4.1-nano-2025-04-14",
+            provider="openai"
+        )
+    )
+```
+
+---
+
+## Run Unit Tests
+
+Run tests to verify your implementation:
+```shell script
+tox
+```
+
+---
+
+## License
+
+**DataLinks Python SDK** is licensed under the MIT License. See the [LICENSE](/python-SDK/LICENSE) file for more details.
+
+---
+
+## Support
+
+For questions or support, please [contact us](https://datalinks.com/newsletter).
