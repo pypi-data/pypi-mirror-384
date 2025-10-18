@@ -1,0 +1,14 @@
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/deps/serde-7cfca9807b9a763b.d: /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/serde-c0f6db295363f2c2/out/private.rs
+
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/deps/libserde-7cfca9807b9a763b.rlib: /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/serde-c0f6db295363f2c2/out/private.rs
+
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/deps/libserde-7cfca9807b9a763b.rmeta: /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/serde-c0f6db295363f2c2/out/private.rs
+
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/jerryinyang/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/serde-c0f6db295363f2c2/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/jerryinyang/Code/bmad-dev/rustybt/rust/target/release/build/serde-c0f6db295363f2c2/out
