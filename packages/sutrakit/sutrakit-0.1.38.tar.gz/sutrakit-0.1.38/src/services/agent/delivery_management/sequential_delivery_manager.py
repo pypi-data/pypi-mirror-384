@@ -1,0 +1,393 @@
+"""Sequential delivery manager for chunks and nodes."""
+
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+from loguru import logger
+
+
+@dataclass
+class DeliveryItem:
+    """Represents a single item to be delivered sequentially."""
+
+    item_id: str
+    data: Dict[str, Any]
+    node_index: Optional[int] = None
+    chunk_index: Optional[int] = None
+    total_items: Optional[int] = None
+    item_type: Optional[str] = None
+    query_signature: Optional[str] = None
+
+
+class DeliveryManager:
+    """Manages sequential delivery of chunks and nodes for repeated queries."""
+
+    def __init__(self):
+        self._delivery_queues: Dict[str, List[DeliveryItem]] = {}
+        self._queue_positions: Dict[str, int] = {}
+        self._completed_deliveries: Dict[str, bool] = {}
+        self._last_query_signature: Optional[str] = None
+
+    def _generate_query_signature(
+        self, action_type: str, parameters: Dict[str, Any]
+    ) -> str:
+        """Generate a unique signature for a query to identify repeated calls."""
+        key_params = {}
+
+        if action_type == "database":
+            key_params = {
+                "query_name": parameters.get("query_name"),
+                "file_path": parameters.get("file_path"),
+                "node_name": parameters.get("node_name"),
+                "start_line": parameters.get("start_line"),
+                "end_line": parameters.get("end_line"),
+            }
+        elif action_type == "semantic_search":
+            key_params = {
+                "query": parameters.get("query"),
+            }
+
+        filtered_params = {k: v for k, v in key_params.items() if v is not None}
+        signature_parts = [action_type] + [
+            f"{k}:{v}" for k, v in sorted(filtered_params.items())
+        ]
+        return "|".join(signature_parts)
+
+    def register_delivery_queue(
+        self, action_type: str, parameters: Dict[str, Any], items: List[Dict[str, Any]]
+    ) -> str:
+        """Register a new delivery queue for sequential processing."""
+        logger.debug(
+            f"📦 Registering delivery queue: {action_type} with {len(items)} items"
+        )
+
+        query_signature = self._generate_query_signature(action_type, parameters)
+        logger.debug(f"🔍 TRACE MANAGER: Generated signature: {query_signature}")
+        logger.debug(f"🔍 TRACE MANAGER: Last signature: {self._last_query_signature}")
+
+        # Simple logic: if signature changes, clear old data
+        if self._last_query_signature and self._last_query_signature != query_signature:
+            logger.debug(f"📦 Query changed - clearing old data")
+            self.clear_all_queues()
+
+        # Update last query signature
+        self._last_query_signature = query_signature
+        logger.debug(
+            f"🔍 TRACE MANAGER: Setting last query signature to: {query_signature}"
+        )
+
+        # If queue already exists for same signature, check if it's completed
+        if query_signature in self._delivery_queues:
+            existing_size = len(self._delivery_queues[query_signature])
+            is_complete = self._completed_deliveries.get(query_signature, False)
+
+            # If queue is complete, reset it for re-use
+            if is_complete:
+                logger.debug(
+                    f"Resetting completed queue for re-registration: {query_signature}"
+                )
+                self._queue_positions[query_signature] = 0
+                self._completed_deliveries[query_signature] = False
+                logger.debug("Queue reset complete - ready for reuse")
+                return query_signature
+
+            # If queue is not complete and has sufficient items, skip registration
+            if existing_size >= len(items):
+                logger.debug(
+                    f"📦 Skipping duplicate registration - existing queue has {existing_size} items"
+                )
+                return query_signature
+
+        delivery_items = []
+
+        for i, item in enumerate(items):
+            delivery_item = DeliveryItem(
+                item_id=str(uuid.uuid4()),
+                item_type=f"{action_type}_item",
+                data=item,
+                query_signature=query_signature,
+                node_index=item.get("node_index"),
+                chunk_index=item.get("chunk_index"),
+                total_items=len(items),
+            )
+            delivery_items.append(delivery_item)
+
+        # Since we cleared old data if query changed, we can simply register the new queue
+        self._delivery_queues[query_signature] = delivery_items
+        self._queue_positions[query_signature] = 0
+        self._completed_deliveries[query_signature] = False
+        logger.debug(f"📦 Registered new queue for {query_signature}")
+
+        final_position = self._queue_positions[query_signature]
+        final_complete = self._completed_deliveries[query_signature]
+        logger.debug(
+            f"📦 Registered delivery queue for {query_signature} with {len(items)} items - current position: {final_position}, complete: {final_complete}"
+        )
+
+        return query_signature
+
+    def get_next_item_from_existing_queue(self) -> Optional[Dict[str, Any]]:
+        """Get the next item from the most recently used delivery queue without changing query signature."""
+        if not self._last_query_signature:
+            logger.debug("📦 No previous query signature found")
+            return None
+
+        query_signature = self._last_query_signature
+
+        if query_signature not in self._delivery_queues:
+            logger.debug(f"📦 No delivery queue found for {query_signature}")
+            return None
+
+        is_complete = self._completed_deliveries.get(query_signature, False)
+        current_pos = self._queue_positions.get(query_signature, 0)
+        queue_length = len(self._delivery_queues.get(query_signature, []))
+
+        logger.debug(
+            f"📦 Existing queue state: pos={current_pos}, len={queue_length}, complete={is_complete}"
+        )
+
+        # If queue is complete, return None - don't auto-reset
+        if is_complete:
+            logger.debug(
+                f"Delivery already complete for {query_signature} - position: {current_pos}, queue_length: {queue_length}"
+            )
+            return None
+
+        current_pos = self._queue_positions[query_signature]
+        queue = self._delivery_queues[query_signature]
+
+        if current_pos >= len(queue):
+            logger.debug(
+                f"📦 No more items - position {current_pos} >= queue length {len(queue)}"
+            )
+            return None
+
+        next_item = queue[current_pos]
+
+        new_position = current_pos + 1
+        self._queue_positions[query_signature] = new_position
+        logger.debug(
+            f"📦 Advanced position from {current_pos} to {new_position} (queue length: {len(queue)})"
+        )
+
+        if new_position >= len(queue):
+            self._completed_deliveries[query_signature] = True
+            logger.debug(
+                f"📦 MARKING COMPLETE: Queue complete after delivering item {current_pos + 1}/{len(queue)}"
+            )
+
+        delivery_data = next_item.data.copy()
+        delivery_data.update(
+            {
+                "delivery_info": {
+                    "item_index": current_pos + 1,
+                    "total_items": len(queue),
+                    "query_signature": query_signature,
+                    "is_last_item": current_pos + 1 == len(queue),
+                }
+            }
+        )
+
+        logger.debug(f"📦 Delivering item {current_pos + 1}/{len(queue)}")
+
+        return delivery_data
+
+    def get_next_item(
+        self, action_type: str, parameters: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Get the next item for a given query, or None if queue is complete."""
+        query_signature = self._generate_query_signature(action_type, parameters)
+
+        if self._last_query_signature and self._last_query_signature != query_signature:
+            logger.debug(f"📦 Query changed - clearing old data")
+            self.clear_all_queues()
+
+        self._last_query_signature = query_signature
+
+        if query_signature not in self._delivery_queues:
+            logger.debug(f"📦 No delivery queue found for {query_signature}")
+            return None
+
+        current_pos = self._queue_positions[query_signature]
+        queue = self._delivery_queues[query_signature]
+        is_complete = self._completed_deliveries.get(query_signature, False)
+
+        logger.debug(
+            f"📦 Queue state check: signature={query_signature[:50]}..., pos={current_pos}, "
+            f"queue_len={len(queue)}, is_complete={is_complete}"
+        )
+
+        # If queue is complete, check if we should reset it for reuse
+        if is_complete:
+            logger.debug(
+                f"📦 Queue was complete, resetting for reuse - position: {current_pos}, queue_length: {len(queue)}"
+            )
+            self._queue_positions[query_signature] = 0
+            self._completed_deliveries[query_signature] = False
+            current_pos = 0
+
+        if current_pos >= len(queue):
+            logger.debug(
+                f"📦 No more items - position {current_pos} >= queue length {len(queue)}"
+            )
+            return None
+
+        next_item = queue[current_pos]
+
+        new_position = current_pos + 1
+        self._queue_positions[query_signature] = new_position
+        logger.debug(
+            f"📦 Advanced position from {current_pos} to {new_position} (queue length: {len(queue)})"
+        )
+
+        if new_position >= len(queue):
+            self._completed_deliveries[query_signature] = True
+            logger.debug(
+                f"📦 MARKING COMPLETE: Queue complete after delivering item {current_pos + 1}/{len(queue)}"
+            )
+
+        delivery_data = next_item.data.copy()
+        delivery_data.update(
+            {
+                "delivery_info": {
+                    "item_index": current_pos + 1,
+                    "total_items": len(queue),
+                    "query_signature": query_signature,
+                    "is_last_item": (current_pos + 1) >= len(queue),
+                }
+            }
+        )
+
+        logger.debug(
+            f"📦 Delivering item {current_pos + 1}/{len(queue)} for {query_signature}"
+        )
+        return delivery_data
+
+    def has_pending_items(self, action_type: str, parameters: Dict[str, Any]) -> bool:
+        """Check if there are pending items for a given query."""
+        query_signature = self._generate_query_signature(action_type, parameters)
+
+        if query_signature not in self._delivery_queues:
+            return False
+
+        current_pos = self._queue_positions[query_signature]
+        queue_length = len(self._delivery_queues[query_signature])
+
+        return current_pos < queue_length
+
+    def get_queue_status(
+        self, action_type: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Get status information about a delivery queue."""
+        query_signature = self._generate_query_signature(action_type, parameters)
+
+        if query_signature not in self._delivery_queues:
+            return {"exists": False}
+
+        current_pos = self._queue_positions[query_signature]
+        total_items = len(self._delivery_queues[query_signature])
+        is_complete = self._completed_deliveries.get(query_signature, False)
+
+        return {
+            "exists": True,
+            "query_signature": query_signature,
+            "current_position": current_pos,
+            "total_items": total_items,
+            "remaining_items": max(0, total_items - current_pos),
+            "is_complete": is_complete,
+            "progress_percentage": (
+                (current_pos / total_items * 100) if total_items > 0 else 0
+            ),
+        }
+
+    def clear_queue(self, action_type: str, parameters: Dict[str, Any]) -> bool:
+        """Clear a specific delivery queue."""
+        query_signature = self._generate_query_signature(action_type, parameters)
+
+        if query_signature in self._delivery_queues:
+            del self._delivery_queues[query_signature]
+            del self._queue_positions[query_signature]
+            del self._completed_deliveries[query_signature]
+            logger.debug(f"📦 Cleared delivery queue for {query_signature}")
+            return True
+        return False
+
+    def clear_all_queues(self) -> int:
+        """Clear all delivery queues and return the number cleared."""
+        count = len(self._delivery_queues)
+        self._delivery_queues.clear()
+        self._queue_positions.clear()
+        self._completed_deliveries.clear()
+        self._last_query_signature = None
+        logger.debug(f"📦 Cleared all {count} delivery queues")
+        return count
+
+    def get_next_item_info(
+        self, action_type: str, parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Get information about the next item without consuming it."""
+        query_signature = self._generate_query_signature(action_type, parameters)
+
+        if query_signature not in self._delivery_queues:
+            return {
+                "has_next": False,
+                "total_items": 0,
+                "current_position": 0,
+                "remaining_items": 0,
+            }
+
+        current_pos = self._queue_positions[query_signature]
+        total_items = len(self._delivery_queues[query_signature])
+        remaining_items = max(0, total_items - current_pos)
+        is_complete = self._completed_deliveries.get(query_signature, False)
+
+        # If complete but has remaining items, it will be reset on next access
+        effective_has_next = remaining_items > 0 or (is_complete and total_items > 0)
+
+        return {
+            "has_next": effective_has_next,
+            "total_items": total_items,
+            "current_position": current_pos,
+            "remaining_items": remaining_items,
+            "is_complete": is_complete,
+        }
+
+    def reset_queue(self, action_type: str, parameters: Dict[str, Any]) -> bool:
+        """Explicitly reset a delivery queue for debugging and recovery."""
+        query_signature = self._generate_query_signature(action_type, parameters)
+
+        if query_signature not in self._delivery_queues:
+            logger.debug(f"Cannot reset - queue not found: {query_signature[:50]}...")
+            return False
+
+        self._queue_positions[query_signature] = 0
+        self._completed_deliveries[query_signature] = False
+        total_items = len(self._delivery_queues[query_signature])
+
+        logger.info(
+            f"RESET: Queue reset for {query_signature[:50]}... ({total_items} items, position reset to 0)"
+        )
+        return True
+
+    def get_all_queue_statuses(self) -> Dict[str, Dict[str, Any]]:
+        """Get status of all registered queues for debugging."""
+        statuses = {}
+        for signature, queue in self._delivery_queues.items():
+            current_pos = self._queue_positions.get(signature, 0)
+            is_complete = self._completed_deliveries.get(signature, False)
+
+            statuses[signature[:50] + "..."] = {
+                "total_items": len(queue),
+                "current_position": current_pos,
+                "remaining_items": max(0, len(queue) - current_pos),
+                "is_complete": is_complete,
+                "progress_percentage": (
+                    (current_pos / len(queue) * 100) if len(queue) > 0 else 0
+                ),
+            }
+
+        return statuses
+
+
+delivery_manager = DeliveryManager()
