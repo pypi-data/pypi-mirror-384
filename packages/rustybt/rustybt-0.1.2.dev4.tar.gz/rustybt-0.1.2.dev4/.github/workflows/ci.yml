@@ -1,0 +1,351 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  # Quick smoke test - runs first for fast feedback
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install numpy Cython>=0.29.21 setuptools-rust
+
+      - name: Install package (non-editable for proper module exposure)
+        run: |
+          python -m pip install . --verbose
+
+      - name: Verify package structure after installation
+        run: |
+          # Change directory to ensure we import the installed package, not the workspace source
+          cd /tmp
+          echo "=== Checking installed package location ==="
+          python -c "import rustybt, os; print(f'RustyBT location: {os.path.dirname(rustybt.__file__)}')"
+
+          echo ""
+          echo "=== Checking for compiled extensions (.so/.pyd files) ==="
+          python -c "import rustybt, os, glob; base = os.path.dirname(rustybt.__file__); so_files = glob.glob(os.path.join(base, '**/*.so'), recursive=True) + glob.glob(os.path.join(base, '**/*.pyd'), recursive=True); print(f'Found {len(so_files)} compiled extension(s):'); [print(f'  - {os.path.relpath(f, base)}') for f in sorted(so_files)[:10]]; print(f'  ... and {len(so_files) - 10} more' if len(so_files) > 10 else '')"
+
+          echo ""
+          echo "=== Checking for gens package ==="
+          python - <<'PY'
+          import os, importlib
+          import rustybt
+          base = os.path.dirname(rustybt.__file__)
+          gens = os.path.join(base, 'gens')
+          print(f"gens directory exists: {os.path.exists(gens)}")
+          print(f"gens __init__.py exists: {os.path.exists(os.path.join(gens, '__init__.py'))}")
+          try:
+            sim_engine = importlib.import_module('rustybt.gens.sim_engine')
+            print(f"✅ sim_engine importable: {sim_engine}")
+            print(f"✅ sim_engine location: {getattr(sim_engine, '__file__', '<n/a>')}")
+          except Exception as e:
+            print(f"❌ sim_engine import failed in verify phase: {e}")
+          PY
+
+          echo ""
+          echo "=== Skipping direct sim_engine import here; will validate in smoke test step ==="
+
+      - name: Run smoke test (from different directory to avoid source import)
+        run: |
+          cd /tmp
+          python -c "import rustybt; print(f'RustyBT version: {rustybt.__version__}')"
+          python -c "import rustybt; import os; print(f'RustyBT location: {os.path.dirname(rustybt.__file__)}')"
+          python -c "import polars, structlog, pydantic; print('Core dependencies OK')"
+          python -c "from rustybt.lib.labelarray import LabelArray; print('✅ labelarray import OK')"
+          python -c "from rustybt.gens.sim_engine import SESSION_END; print('✅ sim_engine import OK')"
+
+  # Code quality checks
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    needs: smoke-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache mypy cache
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: ${{ runner.os }}-mypy-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-mypy-
+
+      - name: Install dependencies
+        run: |
+          uv pip install -e ".[dev]" --system
+
+      - name: Run black
+        run: black --check rustybt/ tests/ --line-length 100
+
+      - name: Run ruff
+        run: ruff check rustybt/ tests/
+
+      - name: Run mypy
+        run: mypy rustybt/ --strict
+
+  # Full test suite
+  test:
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: smoke-test
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies (including setuptools-rust)
+        run: |
+          uv pip install setuptools-rust --system
+          uv pip install -e ".[dev,test]" --system
+
+      - name: Check Rust compilation
+        run: |
+          cd rust
+          cargo check --workspace --verbose
+          cargo clippy --workspace -- -D warnings
+
+      - name: Verify Rust extension is built
+        run: |
+          python -c "from rustybt import rust_sum; print(f'rust_sum(2, 3) = {rust_sum(2, 3)}')"
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v --cov=rustybt --cov-report=xml --cov-report=term-missing --cov-report=html --maxfail=50
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-rustybt
+          fail_ci_if_error: false
+        # env:
+        #   CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+
+  # Build check
+  build:
+    name: Build Distribution
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          uv pip install build wheel --system
+
+      - name: Build distribution
+        run: python -m build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # Security checks
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: smoke-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv pip install bandit[toml] safety --system
+
+      - name: Run bandit
+        run: bandit -r rustybt/ -c pyproject.toml || true
+        continue-on-error: true
+
+      - name: Run safety check
+        run: safety check --ignore 70612 || true
+        continue-on-error: true
+
+  # Performance regression tests (only on main branch)
+  performance-regression:
+    name: Performance Regression Tests
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies
+        run: |
+          uv pip install setuptools-rust --system
+          uv pip install -e ".[dev,test]" --system
+
+      - name: Setup profiling bundles
+        run: |
+          python scripts/profiling/setup_profiling_data.py
+
+      - name: Run performance regression tests
+        run: |
+          pytest tests/regression/ -v -m regression --tb=short
+        continue-on-error: true
+
+      - name: Upload performance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-regression-results
+          path: |
+            tests/regression/performance_baselines.json
+            docs/performance/benchmark-results.json
+
+  # Summary job - all checks must pass
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [smoke-test, lint, test, build, security]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.smoke-test.result }}" != "success" ]]; then
+            echo "Smoke test failed"
+            exit 1
+          fi
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "Lint failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "Tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "Build failed"
+            exit 1
+          fi
+          echo "All CI checks passed!"
