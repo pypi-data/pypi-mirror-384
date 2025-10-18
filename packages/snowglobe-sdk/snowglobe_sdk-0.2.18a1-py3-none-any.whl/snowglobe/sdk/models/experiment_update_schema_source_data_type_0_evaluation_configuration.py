@@ -1,0 +1,75 @@
+from collections.abc import Mapping
+from typing import Any, TypeVar, TYPE_CHECKING
+
+from attrs import define as _attrs_define
+from attrs import field as _attrs_field
+
+
+if TYPE_CHECKING:
+    from ..models.experiment_update_schema_source_data_type_0_evaluation_configuration_additional_property import (
+        ExperimentUpdateSchemaSourceDataType0EvaluationConfigurationAdditionalProperty,
+    )
+
+
+T = TypeVar("T", bound="ExperimentUpdateSchemaSourceDataType0EvaluationConfiguration")
+
+
+@_attrs_define
+class ExperimentUpdateSchemaSourceDataType0EvaluationConfiguration:
+    """ """
+
+    additional_properties: dict[
+        str,
+        "ExperimentUpdateSchemaSourceDataType0EvaluationConfigurationAdditionalProperty",
+    ] = _attrs_field(init=False, factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        field_dict: dict[str, Any] = {}
+        for prop_name, prop in self.additional_properties.items():
+            field_dict[prop_name] = prop.to_dict()
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.experiment_update_schema_source_data_type_0_evaluation_configuration_additional_property import (
+            ExperimentUpdateSchemaSourceDataType0EvaluationConfigurationAdditionalProperty,
+        )
+
+        d = dict(src_dict)
+        experiment_update_schema_source_data_type_0_evaluation_configuration = cls()
+
+        additional_properties = {}
+        for prop_name, prop_dict in d.items():
+            additional_property = ExperimentUpdateSchemaSourceDataType0EvaluationConfigurationAdditionalProperty.from_dict(
+                prop_dict
+            )
+
+            additional_properties[prop_name] = additional_property
+
+        experiment_update_schema_source_data_type_0_evaluation_configuration.additional_properties = additional_properties
+        return experiment_update_schema_source_data_type_0_evaluation_configuration
+
+    @property
+    def additional_keys(self) -> list[str]:
+        return list(self.additional_properties.keys())
+
+    def __getitem__(
+        self, key: str
+    ) -> (
+        "ExperimentUpdateSchemaSourceDataType0EvaluationConfigurationAdditionalProperty"
+    ):
+        return self.additional_properties[key]
+
+    def __setitem__(
+        self,
+        key: str,
+        value: "ExperimentUpdateSchemaSourceDataType0EvaluationConfigurationAdditionalProperty",
+    ) -> None:
+        self.additional_properties[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.additional_properties[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.additional_properties
