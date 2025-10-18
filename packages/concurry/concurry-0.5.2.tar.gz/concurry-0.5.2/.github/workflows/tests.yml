@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+    branches: [ "mainline" ]
+  pull_request:
+    branches: [ "mainline" ]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out concurry repo
+        uses: actions/checkout@v4
+        with:
+          path: concurry
+
+      - name: Check out morphic repo
+        uses: actions/checkout@v4
+        with:
+          repository: adivekar-utexas/morphic
+          path: morphic
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test requirements
+        # Install morphic first from local checkout, then concurry with all dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade uv
+          python -m uv pip install --upgrade pytest
+          python -m uv pip install -e "./morphic[all]"
+          python -m uv pip install -e "./concurry[all]"
+
+      - name: Run tests
+        # Skip performance tests and progress tests (via pytestmark) on CI
+        env:
+          CI: true
+        run: |
+          cd concurry
+          pytest tests --verbose -m "not performance"
