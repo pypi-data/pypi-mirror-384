@@ -1,0 +1,122 @@
+from google.ads.googleads.client import GoogleAdsClient
+import pandas as pd
+from google.ads.googleads.errors import GoogleAdsException
+from re import match
+import enum
+
+class GoogleAdsDataFetcher:
+    def __init__(self, customer_id, config_path=None):
+        self.customer_id = customer_id.replace('-', '')
+        if config_path:
+            self.client = GoogleAdsClient.load_from_storage(config_path)
+        else:
+            self.client = GoogleAdsClient.load_from_storage()
+        self.ga_service = self.client.get_service("GoogleAdsService")
+
+    def fetch_data(self, query):
+        search_request = self.client.get_type("SearchGoogleAdsStreamRequest")
+        search_request.customer_id = self.customer_id
+        search_request.query = query
+        response = self.ga_service.search_stream(search_request)
+        return response
+
+class GoogleAdsQueryBuilder:
+    def generate_query(self, select, from_resource_name, start_date=None, end_date=None, where=None, remove_zero_impressions=True):
+        fields = ",\n".join(select.keys())
+        statement = f"""
+        SELECT \n{fields} 
+        FROM 
+            {from_resource_name}
+        """
+        # Construct WHERE clause
+        if where:
+            statement += f"""
+            WHERE 
+                {where}
+            """
+
+        # Add filter for removing zero impressions
+        if remove_zero_impressions:
+            if 'WHERE' in statement:
+                statement += """
+                AND 
+                    metrics.impressions > 0
+                """
+            else:
+                statement += """
+                WHERE 
+                    metrics.impressions > 0
+                """
+        # Add date range filters
+        if start_date:
+            if 'WHERE' in statement:
+                statement += f"""
+                AND 
+                    segments.date >= '{start_date}'
+                """
+            else:
+                statement += f"""
+                WHERE 
+                    segments.date >= '{start_date}'
+                """
+        if end_date:
+            if 'WHERE' in statement:
+                statement += f"""
+                AND 
+                    segments.date <= '{end_date}'
+                """
+            else:
+                statement += f"""
+                WHERE 
+                    segments.date <= '{end_date}'
+                """
+        return statement
+
+class GoogleAdsDataProcessor:
+    def process_response(self, response, attributes, headers = None):
+        data = create_dict(attributes)
+        for batch in response:
+            for row in batch.results:
+                for key in attributes.keys():
+                    data[key].append(self.extract_data(row, key))
+        df = pd.DataFrame(data)
+        if headers:
+            df.columns = headers
+        return df
+
+    def extract_data(self, row, key):
+        # Extract data from the row based on the key
+        data = row
+        for sub_key in key.split('.'):
+            data = getattr(data, sub_key)
+            # Check if an object is an instance of any enum type
+            if is_enum(data):
+                data = data.name
+        # If the key indicates a micros value, convert it to a regular number
+        if match(pattern='.*(_micros)$|.*(cost).*|.*(_cpa)$', string=key):
+            data /= 1e6
+        return data
+
+class GoogleAdsDataRetriever:
+    def __init__(self, customer_id, config_path=None):
+        self.data_fetcher = GoogleAdsDataFetcher(customer_id, config_path)
+        self.query_builder = GoogleAdsQueryBuilder()
+        self.data_processor = GoogleAdsDataProcessor()
+
+    def get_data(self, query_fields, from_resource_name, headers=None, start_date=None, end_date=None, where=None, remove_zero_impressions=True):
+        query = self.query_builder.generate_query(query_fields, from_resource_name, start_date, end_date, where, remove_zero_impressions)
+        response = self.data_fetcher.fetch_data(query)
+        data = self.data_processor.process_response(response, query_fields, headers=headers)
+        return data
+
+def create_dict(input_list):
+    return {key: [] for key in input_list}
+
+# Function to check if an object is an instance of any enum type
+def is_enum(obj):
+    for name in dir(enum):
+        member = getattr(enum, name)
+        if isinstance(member, type) and issubclass(member, enum.Enum):
+            if isinstance(obj, member):
+                return True
+    return False
