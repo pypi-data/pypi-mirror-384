@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+
+# Copyright 2021-2024 Ping Data Intelligence
+
+import logging
+import os
+import pprint
+import time
+from timeit import default_timer as timer
+from typing import IO, NotRequired, TypedDict, overload, Unpack
+
+import click
+import requests
+
+from pingintel_api.api_client_base import APIClientBase
+
+from .. import constants as c
+from ..utils import raise_for_status
+from . import types as t
+
+logger = logging.getLogger(__name__)
+
+
+class PingMapsAPIClient(APIClientBase):
+    api_subdomain = "app"
+    api_base_domain = "pingintel.com"
+    auth_token_env_name = "SOVFIXER_AUTH_TOKEN"
+    product = "pingmaps"
+
+    def get_policy_locations(
+        self, **kwargs: Unpack[t.PingMapsPolicyLocationRequest]
+    ) -> t.PingMapsPolicyLocationResponse:
+        url = self.api_url + "/api/v1/pli/policy"
+
+        response = self.get(url, params=kwargs)
+
+        raise_for_status(response)
+        response_data = response.json()
+        return response_data
+
+    def get_policy_breakdown(self, **kwargs: Unpack[t.PingMapsPolicyBreakdownRequest]):
+        url = self.api_url + "/api/v1/pli/policy_breakdown"
+        response = self.get(url, params=kwargs)
+        raise_for_status(response)
+        response_data = response.json()
+        return response_data
+
+    def get_settings(
+        self,
+        delegate_to_team: str | None = None,
+        delegate_to_company: str | None = None,
+    ) -> t.UserSettings:
+        params = {}
+        if delegate_to_team is not None:
+            params["delegate_to_team"] = delegate_to_team
+        if delegate_to_company is not None:
+            params["delegate_to_company"] = delegate_to_company
+        url = self.api_url + "/api/v1/pli/settings"
+        response = self.get(url, params=params)
+        raise_for_status(response)
+        response_data = response.json()
+        return response_data
