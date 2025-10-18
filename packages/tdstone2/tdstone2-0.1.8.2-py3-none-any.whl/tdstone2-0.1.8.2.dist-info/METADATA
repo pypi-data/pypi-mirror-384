@@ -1,0 +1,146 @@
+Metadata-Version: 2.1
+Name: tdstone2
+Version: 0.1.8.2
+Summary: A package for Script Table Operator that applies set theory to machine learning in Python.
+Author: Denis Molin
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+Requires-Dist: teradataml>=17.20
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: sqlparse
+Requires-Dist: torch
+Requires-Dist: plotly
+Requires-Dist: transformers
+Requires-Dist: sentence-transformers
+Requires-Dist: onnx
+Requires-Dist: onnxruntime
+Requires-Dist: optimum
+
+# `tdstone2` Package
+
+## Overview
+
+The `tdstone2` package is designed to simplify the operationalization of Python code for data analysis and machine learning on the Teradata Vantage system. It leverages the massive parallel processing architecture of Teradata Vantage to run hundreds of Python scripts across hundreds of data partitions. This approach enables the industrialization, lineage, and reproducibility of millions of custom models while minimizing data movement.
+
+## Features
+
+- **Hyper-segmented Model Deployment**: Deploy scikit-learn pipelines or custom Python functions across segmented datasets for parallel execution.
+- **Model Lineage and Reproducibility**: Automatically track the lineage of models and ensure reproducibility across different data partitions.
+- **Efficient Data Handling**: Minimize data movement by leveraging Teradata's parallel processing capabilities to execute models directly on the database.
+
+## Installation
+
+To install `tdstone2`, use pip:
+
+```bash
+pip install tdstone2
+```
+
+Ensure you have access to a Teradata Vantage system and the necessary credentials to connect and execute queries.
+
+## Usage
+
+### Hyper-segmented Model Deployment
+
+#### 3.1 Engineering of the Scikit-learn Classifier Pipeline
+
+```python
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+
+# Example usage
+steps_classifier = [
+    ('scaler', StandardScaler()),
+    ('classifier', RandomForestClassifier(max_depth=5, n_estimators=95))
+]
+```
+
+#### 3.2 Deployment of the Scikit-learn Pipeline
+
+```python
+from tdstone2.tdshypermodel import HyperModel
+from tdstone2.tdstone import TDStone
+
+sto = TDStone(schema_name=Param['database'], SEARCHUIFDBPATH=Param['user'])
+model_parameters = {
+    "target": 'Y2',
+    "column_categorical": ['flag', 'Y2'],
+    "column_names_X": ['X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'X8', 'X9', 'flag']
+}
+
+model = HyperModel(
+    tdstone=sto,
+    metadata={'project': 'test'},
+    skl_pipeline_steps=steps_classifier,
+    model_parameters=model_parameters,
+    dataset=tdml.in_schema(Param['database'], 'dataset_00'),
+    id_row='ID',
+    id_partition='Partition_ID',
+    id_fold='FOLD',
+    fold_training='train',
+    convert_to_onnx=False, # <-- set to True if you want to get the ONNX version of your trained models
+    store_pickle=True, # <-- to store your full object in pickle format
+)
+
+# Model deployment outputs
+```
+
+#### 3.3 Local Execution for Validation/Debugging
+
+```python
+exec(code_and_data['code'])
+local_model = MyModel(**code_and_data['arguments'])
+df_local = code_and_data['data']
+df_local['flag'] = df_local['flag'].astype('category')
+df_local['Y2'] = df_local['Y2'].astype('category')
+local_model.fit(code_and_data['data'])
+local_model.score(code_and_data['data'])
+```
+
+### Execution of the Deployed Hypermodel
+
+#### 4.1 Models Training
+
+```python
+model.train()
+# Outputs: Trained models are inserted into the specified repository
+```
+This training operation launches as many training there are data partitions identified by the id_partition column list, and belonging to the training FOLD.
+
+#### 4.2 Model Scoring
+
+```python
+model.score()
+# Outputs: Model scores are inserted into the specified scores table
+```
+This runs the scoring on all the data, using the latest model available for the corresponding data partition.
+
+### Reuse of the Hyper-segmented Model
+
+#### 2. Retrieve the Hyper-segmented Model
+
+```python
+sto = TDStone(schema_name=Param['database'], SEARCHUIFDBPATH=Param['user'])
+sto.list_hyper_models()
+# Outputs: List of hyper models with their metadata
+
+id = '0286d259-ecde-4cd0-ae4a-bcb3191383d1'  # Example model ID
+existing_model = HyperModel(tdstone=sto)
+existing_model.download(id=id)
+```
+Note that the model is not actually downloaded, but this just establish a connection between the model hosted in Vantage and the python client.
+
+#### 3. Update the Training
+
+```python
+existing_model.train()
+# Outputs: Updated trained models are inserted into the specified repository
+```
+
+#### 4. Update the Scoring
+
+```python
+existing_model.score()
+# Outputs: Updated scores are inserted into the specified scores table
+```
