@@ -1,0 +1,82 @@
+{
+    email contact@janaka.co.uk
+	
+    order authenticate before respond
+	order authorize before basicauth
+
+	security {
+
+        local identity store localdb {
+            realm local
+            path /data/user_identity_store2.json
+        }
+
+		oauth identity provider google {
+			realm google
+			driver google
+			client_id {env.GOOGLE_CLIENT_ID}
+			client_secret {env.GOOGLE_CLIENT_SECRET}
+			scopes openid email profile
+		}
+
+		authentication portal myportal {
+			crypto default token lifetime 3600
+			crypto key sign-verify {env.JWT_SHARED_KEY}
+			enable identity provider google
+            enable identity store localdb
+            # enable identity provider basic
+			cookie domain easyrunner.xyz
+			ui {
+                theme basic
+                logo description "EasyRunner"
+				links {
+					"Profile" "/auth/profile/" icon "las la-user"
+				}
+			}
+
+			transform user {
+				match realm google
+				match email janaka.abeywardhana@gmail.com
+				action add role authp/admin authp/user
+			}
+		}
+
+		authorization policy mypolicy {
+			set auth url https://auth-local.easyrunner.xyz
+			crypto key verify {env.JWT_SHARED_KEY}
+			allow roles authp/admin authp/user
+			validate bearer header
+			inject headers with claims
+		}
+	}
+}
+
+(auth) {
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Authorization, Content-Type"
+    }
+}
+
+*.easyrunner.xyz {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+}
+
+auth-local.easyrunner.xyz {
+	authenticate with myportal
+}
+
+demoapp1.easyrunner.xyz {
+    import auth
+    authorize with mypolicy
+    reverse_proxy app:8080
+}
+
+demoapp2.easyrunner.xyz {
+    import auth
+    authorize with mypolicy
+    reverse_proxy app:8080
+}
