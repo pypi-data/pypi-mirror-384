@@ -1,0 +1,447 @@
+syntax = "proto3";
+
+option go_package = "github.com/opencord/device-management-interface/v3/go/dmi";
+package dmi;
+
+import "dmi/commons.proto";
+import "dmi/hw.proto";
+import "google/protobuf/empty.proto";
+
+// Protos for the management of a hardware and it's components
+
+message PhysicalInventoryRequest {
+    Uuid device_uuid = 1;
+}
+
+message PhysicalInventoryResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        DEVICE_UNREACHABLE = 3;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    Hardware inventory = 3;
+    // It is recommended that upstream components/users of the DMI interface
+    // do not really interpret/parse the reson_detail, but rather use it for
+    // display purposes to the end user or use it for logging the error
+    string reason_detail = 4;
+}
+
+message HWComponentInfoGetRequest {
+    Uuid device_uuid = 1;
+    Uuid component_uuid = 2;
+    string component_name = 3;
+}
+
+message HWComponentInfoGetResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        UNKNOWN_COMPONENT = 2;
+        INTERNAL_ERROR = 3;
+        DEVICE_UNREACHABLE = 4;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    Component component = 3;
+    string reason_detail = 4;
+}
+
+message HWComponentInfoSetRequest {
+    Uuid device_uuid = 1;
+    Uuid component_uuid = 2;
+    string component_name = 3;
+    ModifiableComponent changes = 4;
+}
+
+message HWComponentInfoSetResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        UNKNOWN_COMPONENT = 2;
+        INVALID_PARAMS = 3;
+        INTERNAL_ERROR = 4;
+        DEVICE_UNREACHABLE = 5;
+        SET_UNSUPPORTED = 6;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string reason_detail = 3;
+}
+
+message StartManagingDeviceResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        // DEVICE_ALREADY_MANAGED is returned when StartManagingDevice is called again for the same name AFTER a previously
+        // successful StartManagingDevice operation
+        DEVICE_ALREADY_MANAGED = 1;
+        // OPERATION_ALREADY_IN_PROGRESS is returned when StartManagingDevice is called again for the same name BEFORE
+        // a previous StartManagingDevice operation has completed
+        OPERATION_ALREADY_IN_PROGRESS = 2;
+        INVALID_PARAMS = 3;
+        INTERNAL_ERROR = 4;
+        // AUTHENTICATION_FAILURE is returned when the device management software/server is not able to connect to the underlying
+        // hardware because of authentication failures
+        AUTHENTICATION_FAILURE = 5;
+        // INCOMPATIBLE_DEVICE is returned when there is a mismatch between the device management software/server and the underlying
+        // hardware
+        INCOMPATIBLE_DEVICE = 6;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    Uuid device_uuid = 3;
+    string reason_detail = 4;
+}
+
+message StopManagingDeviceRequest {
+    string name = 1;
+}
+
+message StopManagingDeviceResponse {
+    // The only case in which an error is expected is if the name of the
+    // device to be stopped is not found
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        // DEVICE_UNREACHABLE is to be returned when the device manager cannot reach the device and stop managing it
+        DEVICE_UNREACHABLE = 2;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string reason_detail = 3;
+}
+
+message ManagedDeviceInfo {
+    ModifiableComponent info = 1;
+    Uuid device_uuid = 2;
+}
+
+message ManagedDevicesResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        INTERNAL_ERROR = 1;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    repeated ManagedDeviceInfo devices = 3;
+}
+
+message SetLoggingEndpointRequest {
+    Uuid device_uuid = 1;
+    string logging_endpoint = 2;
+    string logging_protocol = 3;
+}
+
+message SetRemoteEndpointResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        LOGGING_ENDPOINT_ERROR = 3;
+        LOGGING_ENDPOINT_PROTOCOL_ERROR = 4;
+        MSGBUS_ENDPOINT_ERROR = 5;
+        DEVICE_UNREACHABLE = 6;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string reason_detail = 3;
+}
+
+message GetLoggingEndpointResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        DEVICE_UNREACHABLE = 3;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string logging_endpoint = 3;
+    string logging_protocol = 4;
+    string reason_detail = 5;
+}
+
+message SetMsgBusEndpointRequest {
+    string msgbus_endpoint = 1;
+}
+
+message GetMsgBusEndpointResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        INTERNAL_ERROR = 1;
+        DEVICE_UNREACHABLE = 2;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string msgbus_endpoint = 3;
+    string reason_detail = 4;
+}
+
+message EntitiesLogLevel {
+    LogLevel logLevel = 1;
+    repeated string entities = 2;
+}
+
+message SetLogLevelRequest {
+    Uuid device_uuid = 1;
+    repeated EntitiesLogLevel loglevels = 2;
+}
+
+message SetLogLevelResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        UNKNOWN_LOG_ENTITY = 3;
+        DEVICE_UNREACHABLE = 4;
+    }
+    Uuid device_uuid = 1;
+    Status status = 2;
+    Reason reason = 3;
+    string reason_detail = 4;
+}
+
+message GetLogLevelRequest {
+    Uuid device_uuid = 1;
+    repeated string entities = 2;
+}
+
+message GetLogLevelResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        UNKNOWN_LOG_ENTITY = 3;
+        DEVICE_UNREACHABLE = 4;
+    }
+    Uuid device_uuid = 1;
+    repeated EntitiesLogLevel logLevels = 2;
+    Status status = 3;
+    Reason reason = 4;
+    string reason_detail = 5;
+}
+
+message GetLoggableEntitiesRequest {
+    Uuid device_uuid = 1;
+}
+
+message SetDmLogLevelRequest {
+    LogLevel level = 1;
+}
+
+message SetDmLogLevelResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        INTERNAL_ERROR = 1;
+        UNKNOWN_LOG_LEVEL = 2;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string reason_detail = 3;
+}
+
+message GetDmLogLevelRequest {
+}
+
+message GetDmLogLevelResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        INTERNAL_ERROR = 1;
+    }
+
+    LogLevel level = 1;
+    Status status = 2;
+    Reason reason = 3;
+    string reason_detail = 4;
+}
+
+message Heartbeat {
+    fixed32 heartbeat_signature = 1;
+}
+
+message RebootDeviceRequest {
+    Uuid device_uuid = 1;
+}
+
+message RebootDeviceResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        DEVICE_UNREACHABLE = 3;
+        DEVICE_IN_WRONG_STATE = 4; // This reason would be returned by the Device Manager if doing the reboot could lead the device to an inconsistent state.
+                                   // For example, if a RebootRequest is issued while the startup configuration is being updated
+    }
+    Status status = 3;
+    Reason reason = 4;
+    string reason_detail = 5;
+}
+
+// Request to disable a hardware component on a device.
+// At least one of component_name or component_uuid must be provided, along with device_uuid.
+message DisableHWComponentRequest {
+    // UUID of the device containing the component to disable (required)
+    Uuid device_uuid = 1;
+    // UUID of the component to disable (optional, but either this or component_name must be set)
+    Uuid component_uuid = 2;
+    // Name of the component to disable (optional, but either this or component_uuid must be set)
+    string component_name = 3;
+}
+
+// Response for DisableHWComponent RPC.
+message DisableHWComponentResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        UNKNOWN_COMPONENT = 2;
+        INTERNAL_ERROR = 3;
+        DEVICE_UNREACHABLE = 4;
+        DISABLE_UNSUPPORTED = 5; // Disabling this component is not supported
+        INVALID_PARAMS = 6;      // Neither component_name nor component_uuid provided
+    }
+    // Indicates whether the operation was successful or not.
+    Status status = 1;
+    // Reason for failure, if any
+    Reason reason = 2;
+    // Human-readable details for logging or display
+    string reason_detail = 3;
+}
+
+// Request to reset a hardware component on a device.
+// At least one of component_name or component_uuid must be provided, along with device_uuid.
+message ResetHWComponentRequest {
+    // UUID of the device containing the component to reset (required)
+    Uuid device_uuid = 1;
+    // UUID of the component to reset (optional, but either this or component_name must be set)
+    Uuid component_uuid = 2;
+    // Name of the component to reset (optional, but either this or component_uuid must be set)
+    string component_name = 3;
+}
+
+// Response for ResetHWComponent RPC.
+message ResetHWComponentResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        UNKNOWN_COMPONENT = 2;
+        INTERNAL_ERROR = 3;
+        DEVICE_UNREACHABLE = 4;
+        RESET_UNSUPPORTED = 5; // Resetting this component is not supported
+        INVALID_PARAMS = 6;    // Neither component_name nor component_uuid provided
+    }
+    // Indicates whether the operation was successful or not.
+    Status status = 1;
+    // Reason for failure, if any
+    Reason reason = 2;
+    // Human-readable details for logging or display
+    string reason_detail = 3;
+}
+
+// Request to enable a hardware component on a device.
+// At least one of component_name or component_uuid must be provided, along with device_uuid.
+message EnableHWComponentRequest {
+    // UUID of the device containing the component to enable (required)
+    Uuid device_uuid = 1;
+    // UUID of the component to enable (optional, but either this or component_name must be set)
+    Uuid component_uuid = 2;
+    // Name of the component to enable (optional, but either this or component_uuid must be set)
+    string component_name = 3;
+}
+
+// Response for EnableHWComponent RPC.
+message EnableHWComponentResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        UNKNOWN_COMPONENT = 2;
+        INTERNAL_ERROR = 3;
+        DEVICE_UNREACHABLE = 4;
+        ENABLE_UNSUPPORTED = 5; // Enabling this component is not supported
+        INVALID_PARAMS = 6;     // Neither component_name nor component_uuid provided
+    }
+    // Indicates whether the operation was successful or not.
+    Status status = 1;
+    // Reason for failure, if any
+    Reason reason = 2;
+    // Human-readable details for logging or display
+    string reason_detail = 3;
+}
+
+service NativeHWManagementService {
+    // Initializes context for a device and sets up required states
+    // In the call to StartManagingDevice, the fields of ModifiableComponent which are relevant
+    // and their meanings in this context is mentioned below:
+    // name = The unique name that needs to be assigned to this hardware;
+    // class = COMPONENT_TYPE_UNDEFINED;
+    // parent = nil;
+    // alias = Optional;
+    // asset_id = Optional;
+    // uri = IP Address of the Hardware;
+    rpc StartManagingDevice(ModifiableComponent) returns(stream StartManagingDeviceResponse);
+
+    // Stop management of a device and clean up any context and caches for that device
+    // This rpc can be called at any time, even before the StartManagingDevice operation
+    // has completed, and should be able to cleanup.
+    rpc StopManagingDevice(StopManagingDeviceRequest) returns(StopManagingDeviceResponse);
+
+    // Returns an object containing a list of devices managed by this entity
+    rpc GetManagedDevices(google.protobuf.Empty) returns(ManagedDevicesResponse);
+
+    // Get the HW inventory details of the Device
+    rpc GetPhysicalInventory(PhysicalInventoryRequest) returns(stream PhysicalInventoryResponse);
+
+    // Get the details of a particular HW component
+    rpc GetHWComponentInfo(HWComponentInfoGetRequest) returns(stream HWComponentInfoGetResponse);
+
+    // Sets the permissible attributes of a HW component
+    rpc SetHWComponentInfo(HWComponentInfoSetRequest) returns(HWComponentInfoSetResponse);
+
+    // Sets the location to which logs need to be shipped
+    rpc SetLoggingEndpoint(SetLoggingEndpointRequest) returns(SetRemoteEndpointResponse);
+
+    // Gets the configured location to which the logs are being shipped
+    rpc GetLoggingEndpoint(HardwareID) returns(GetLoggingEndpointResponse);
+
+    // Sets the location of the Message Bus to which events and metrics are shipped
+    rpc SetMsgBusEndpoint(SetMsgBusEndpointRequest) returns(SetRemoteEndpointResponse);
+
+    // Gets the configured location to which the events and metrics are being shipped
+    rpc GetMsgBusEndpoint(google.protobuf.Empty) returns(GetMsgBusEndpointResponse);
+
+    // Gets the entities of a device on which log can be configured. A few are expected, like OS, PON Management etc.
+    // In general an entity is any item within an hardware system that can emit logs, e.g. service, process, subsystem,
+    // interface, package etc.
+    rpc GetLoggableEntities(GetLoggableEntitiesRequest) returns(GetLogLevelResponse);
+
+    // Sets the log level of the device, for each given entity to a certain level.
+    // If only one EntitiesLogLevel is provided for the device and that request contains only a log level with
+    // no entity in the list it's assumed that the caller wants to set that level for all the entities.
+    rpc SetLogLevel(SetLogLevelRequest) returns(SetLogLevelResponse);
+
+    // Gets the configured log level for a certain entity on a certain device.
+    // If no entity is specified in the request all the entities with their log level should be returned.
+    rpc GetLogLevel(GetLogLevelRequest) returns(GetLogLevelResponse);
+
+    // Performs the heartbeat check
+    rpc HeartbeatCheck(google.protobuf.Empty) returns (Heartbeat);
+
+    // Performs the reboot of the device
+    rpc RebootDevice(RebootDeviceRequest) returns(RebootDeviceResponse);
+
+    // Sets the log level of the Device Manager itself
+    rpc SetDmLogLevel(SetDmLogLevelRequest) returns(SetDmLogLevelResponse);
+
+    // Gets the log level at which the Device Manager is running
+    rpc GetDmLogLevel(GetDmLogLevelRequest) returns(GetDmLogLevelResponse);
+
+    // Disables a hardware component on a device.
+    rpc DisableHWComponent(DisableHWComponentRequest) returns(DisableHWComponentResponse);
+
+    // Resets a hardware component on a device.
+    rpc ResetHWComponent(ResetHWComponentRequest) returns(ResetHWComponentResponse);
+
+    // Enables a hardware component on a device.
+    rpc EnableHWComponent(EnableHWComponentRequest) returns(EnableHWComponentResponse);
+}

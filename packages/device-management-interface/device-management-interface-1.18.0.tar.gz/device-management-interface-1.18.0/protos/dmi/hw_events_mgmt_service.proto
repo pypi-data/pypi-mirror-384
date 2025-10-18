@@ -1,0 +1,267 @@
+syntax = "proto3";
+
+option go_package = "github.com/opencord/device-management-interface/v3/go/dmi";
+package dmi;
+
+import "dmi/commons.proto";
+import "dmi/hw.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Management of Events and protos for encoding of Events
+
+enum EventIds {
+    EVENT_NAME_UNDEFINED = 0;
+
+    // Events from the Transceivers
+    EVENT_TRANSCEIVER_PLUG_OUT = 100;
+    EVENT_TRANSCEIVER_PLUG_IN = 101;
+    // The threshold based events on the transceivers should be configured on
+    // the port components of that transceiver and not on the transceiver
+    // component itself. This is because there could be different thresholds
+    // on the different ports of a transceiver (for example for a transceiver of
+    // type COMBO_GPON_XGSPON the power thresholds could be different for the
+    // GPON and XGSPON ports)
+    EVENT_TRANSCEIVER_VOLTAGE_ABOVE_THRESHOLD = 102;
+    EVENT_TRANSCEIVER_VOLTAGE_BELOW_THRESHOLD = 103;
+    EVENT_TRANSCEIVER_TEMPERATURE_ABOVE_THRESHOLD = 104;
+    EVENT_TRANSCEIVER_TEMPERATURE_BELOW_THRESHOLD = 105;
+    EVENT_TRANSCEIVER_CURRENT_ABOVE_THRESHOLD = 106;
+    EVENT_TRANSCEIVER_CURRENT_BELOW_THRESHOLD = 107;
+    EVENT_TRANSCEIVER_RX_POWER_ABOVE_THRESHOLD = 108;
+    EVENT_TRANSCEIVER_RX_POWER_BELOW_THRESHOLD = 109;
+    EVENT_TRANSCEIVER_TX_POWER_ABOVE_THRESHOLD = 110;
+    EVENT_TRANSCEIVER_TX_POWER_BELOW_THRESHOLD = 111;
+    EVENT_TRANSCEIVER_FAILURE = 112;
+    EVENT_TRANSCEIVER_VOLTAGE_ABOVE_THRESHOLD_RECOVERED = 113;
+    EVENT_TRANSCEIVER_VOLTAGE_BELOW_THRESHOLD_RECOVERED = 114;
+    EVENT_TRANSCEIVER_TEMPERATURE_ABOVE_THRESHOLD_RECOVERED = 115;
+    EVENT_TRANSCEIVER_TEMPERATURE_BELOW_THRESHOLD_RECOVERED = 116;
+    EVENT_TRANSCEIVER_CURRENT_ABOVE_THRESHOLD_RECOVERED = 117;
+    EVENT_TRANSCEIVER_CURRENT_BELOW_THRESHOLD_RECOVERED = 118;
+    EVENT_TRANSCEIVER_RX_POWER_ABOVE_THRESHOLD_RECOVERED = 119;
+    EVENT_TRANSCEIVER_RX_POWER_BELOW_THRESHOLD_RECOVERED = 120;
+    EVENT_TRANSCEIVER_TX_POWER_ABOVE_THRESHOLD_RECOVERED = 121;
+    EVENT_TRANSCEIVER_TX_POWER_BELOW_THRESHOLD_RECOVERED = 122;
+    EVENT_TRANSCEIVER_FAILURE_RECOVERED = 123;
+
+    // Events from the PSU
+    EVENT_PSU_PLUG_OUT = 200;
+    EVENT_PSU_PLUG_IN = 201;
+    EVENT_PSU_FAILURE = 202;
+    EVENT_PSU_FAILURE_RECOVERED = 203;
+
+    // Events for the Fans
+    EVENT_FAN_FAILURE = 300;
+    EVENT_FAN_PLUG_OUT = 301;
+    EVENT_FAN_PLUG_IN = 302;
+    EVENT_FAN_FAILURE_RECOVERED = 303;
+
+    // Events for the CPUs
+    EVENT_CPU_TEMPERATURE_ABOVE_CRITICAL = 400;
+    EVENT_CPU_TEMPERATURE_ABOVE_FATAL = 401;
+    EVENT_CPU_TEMPERATURE_ABOVE_CRITICAL_RECOVERED = 402;
+    EVENT_CPU_TEMPERATURE_ABOVE_FATAL_RECOVERED = 403;
+    EVENT_CPU_USAGE_ABOVE_THRESHOLD = 404;
+    EVENT_CPU_USAGE_ABOVE_THRESHOLD_RECOVERED = 405;
+
+    // Events for the complete HW Device
+    EVENT_HW_DEVICE_RESET = 500;
+    EVENT_HW_DEVICE_TEMPERATURE_ABOVE_CRITICAL = 501;
+    EVENT_HW_DEVICE_TEMPERATURE_ABOVE_FATAL = 502;
+    EVENT_HW_DEVICE_TEMPERATURE_ABOVE_CRITICAL_RECOVERED = 503;
+    EVENT_HW_DEVICE_TEMPERATURE_ABOVE_FATAL_RECOVERED = 504;
+    EVENT_HW_DEVICE_REBOOT = 505;
+    EVENT_HW_TEMPERATURE_SENSOR_FAILED = 506;
+    EVENT_HW_ALL_TEMPERATURE_SENSORS_FAILED = 507;
+    EVENT_HW_DISK_USAGE_ABOVE_THRESHOLD = 508;
+    EVENT_HW_DISK_USAGE_ABOVE_THRESHOLD_RECOVERED = 509;
+    EVENT_HW_MEMORY_USAGE_ABOVE_THRESHOLD = 510;
+    EVENT_HW_MEMORY_USAGE_ABOVE_THRESHOLD_RECOVERED = 511;
+    EVENT_HW_NTP_SYNC_FAILURE = 512;
+    EVENT_HW_NTP_SYNC_FAILURE_RECOVERED = 513;
+
+    // Events for the line cards on the HW Device
+    EVENT_LINE_CARD_PLUG_OUT = 600;
+    EVENT_LINE_CARD_PLUG_IN = 601;
+
+    // Indicates that the a state of a component has changed.
+    // The StateChangeInfo message inside the event conveys the old and new states.
+    EVENT_COMPONENT_ADMIN_STATE_CHANGED = 700;
+    EVENT_COMPONENT_OPER_STATE_CHANGED = 701;
+    EVENT_COMPONENT_ALARM_STATE_CHANGED = 702;
+    EVENT_COMPONENT_USAGE_STATE_CHANGED = 703;
+    EVENT_COMPONENT_STANDBY_STATE_CHANGED = 704;
+    // Generic event about a component, the payload contains GenericEventInfo in this case
+    // Use this event id only for events which do not have already a specific event id
+    EVENT_COMPONENT_GENERIC_EVENT = 705; 
+    // More to be added
+}
+
+message ValueType {
+    // For val no multiples of units shall be used.
+    // For example, for memory val should be in bytes and not in kilobytes or any
+    // other multiple of the unit byte.
+    oneof val{
+        int64 int_val = 1;
+        uint64 uint_val = 2;
+        float float_val = 3;
+    }
+
+    DataValueType typeOfVal = 4;
+}
+
+message WaterMarks {
+    ValueType high = 1;
+    ValueType low = 2;
+}
+
+message Thresholds {
+    oneof threshold {
+        WaterMarks upper = 1;
+        WaterMarks lower = 2;
+    }
+}
+
+message ThresholdInformation {
+    ValueType observed_value = 1;
+    Thresholds thresholds = 2;
+}
+
+message EventCfg {
+    EventIds event_id = 1;
+    bool is_configured = 2;
+    // Optional threshold values, applicable only for some specific events
+    // If an event needs thresholds but the user does not pass the thresholds here, the Device Manager implementations
+    // could choose to use defaults applicable for the specific component (recommended) or return an error for such
+    // an EventConfigurationRequest with reason as INVALID_CONFIG
+    Thresholds thresholds = 3;
+    // For events which can be configured on a particular component this id can be used to identify the component
+    // For e.g. for events of the transceivers
+    Uuid component_uuid = 4;
+}
+
+message EventsCfg {
+    repeated EventCfg items = 1;
+}
+
+message ListEventsResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        DEVICE_UNREACHABLE = 3;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    EventsCfg events = 3;
+    string reason_detail = 4;
+}
+
+message EventsConfigurationRequest {
+    Uuid device_uuid = 1;
+    oneof operation {
+        EventsCfg changes = 2;
+        bool reset_to_default = 3;
+    }
+}
+
+message EventsConfigurationResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        INVALID_CONFIG = 3;
+        DEVICE_UNREACHABLE = 4;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string reason_detail = 3;
+}
+
+message EventMetaData {
+    Uuid device_uuid = 1;
+    // uuid of the component
+    Uuid component_uuid = 2;
+    string component_name = 3;
+}
+
+message AdminStateChange {
+    ComponentAdminState old = 1;
+    ComponentAdminState new = 2;
+}
+
+message OperStateChange {
+    ComponentOperState old = 1;
+    ComponentOperState new = 2;
+}
+
+message AlarmStateChange {
+    ComponentAlarmState old = 1;
+    ComponentAlarmState new = 2;
+}
+
+message UsageStateChange {
+    ComponentUsageState old = 1;
+    ComponentUsageState new = 2;
+}
+
+message StandbyStateChange {
+    ComponentStandbyState old = 1;
+    ComponentStandbyState new = 2;
+}
+
+message StateChangeInfo {
+    oneof state_change {
+        AdminStateChange admin_state_change = 1;
+        OperStateChange oper_state_change = 2;
+        AlarmStateChange alarm_state_change = 3;
+        UsageStateChange usage_state_change = 4;
+        StandbyStateChange standby_state_change = 5;
+    }
+}
+
+message GenericEventInfo {
+    string message = 1;                // Human-readable message
+    string message_code = 2;           // Related events should have the same code
+ 
+    enum EventSeverity {
+        EVENT_SEVERITY_UNSPECIFIED = 0;
+        CRITICAL = 1;
+        MAJOR = 2;
+        MINOR = 3;
+        NORMAL = 4;
+        INFO = 5;
+    }
+
+    EventSeverity severity = 3;        // Severity of the event       
+}
+// The Events are conveyed to external systems either by submitting them on a message bus or using gRPC server streaming.
+// The message bus topic to which are Events are submitted would be configured as startup
+// configuration of the components
+
+message Event {
+    EventMetaData event_metadata = 1;
+    EventIds event_id = 2;
+    google.protobuf.Timestamp raised_ts = 3;
+    // Optional threshold information for an event
+    ThresholdInformation threshold_info = 4;
+    // Any additional info regarding the event
+    string add_info = 5; // Stringified JSON with extra details
+    StateChangeInfo state_change_info = 6; // Only set for state change events
+    GenericEventInfo generic_event_info = 7; // Only set for event_id = EVENT_COMPONENT_GENERIC_EVENT
+}
+
+service NativeEventsManagementService {
+
+    // List the supported events for the passed device
+    rpc ListEvents(HardwareID) returns(ListEventsResponse);
+
+    // Updates the configuration of the list of events in the request
+    // The default behavior of the device is to report all the supported events
+    // This configuration is persisted across reboots of the device or the device manager
+    rpc UpdateEventsConfiguration(EventsConfigurationRequest) returns(EventsConfigurationResponse);
+
+    // Initiate the server streaming of the events
+    rpc StreamEvents(google.protobuf.Empty) returns(stream Event);
+}

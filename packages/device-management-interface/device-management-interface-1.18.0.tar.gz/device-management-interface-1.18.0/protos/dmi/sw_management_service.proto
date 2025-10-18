@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+option go_package = "github.com/opencord/device-management-interface/v3/go/dmi";
+package dmi;
+
+import "dmi/commons.proto";
+import "dmi/hw.proto";
+import "dmi/sw_image.proto";
+
+// The software management concept described here is aligned with WT-383a3 (Revision: 06 April 2020).
+// In particular Section 11 Software management
+// TODO check model
+
+// Protos for managing the software on a hardware device
+
+message SoftwareVersionInformation {
+    repeated ImageVersion active_versions = 1;
+    repeated ImageVersion standby_versions = 2;
+}
+
+message GetSoftwareVersionInformationResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        DEVICE_UNREACHABLE = 3;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    SoftwareVersionInformation info = 3;
+    string reason_detail = 4;
+}
+
+message DownloadImageRequest {
+    Uuid device_uuid = 1;
+    ImageInformation image_info = 2;
+}
+
+message ConfigRequest {
+    Uuid device_uuid = 1;
+    // Location of the configuration file, authentication (user/pass) if any should be in the url string
+    // The config_url would contain the protocol, credentials, the IP address/DNS of the server and the path of the file
+    // e.g. sftp://download_user:download_pass@192.168.0.1:22/OLT-configs/config-v1.2.3.xml
+    string config_url = 2;
+}
+
+message ConfigResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        ERROR_FETCHING_CONFIG = 3;
+        INVALID_CONFIG = 4;
+        OPERATION_ALREADY_IN_PROGRESS = 5;
+        DEVICE_UNREACHABLE = 6;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    string reason_detail = 3;
+}
+
+message StartupConfigInfoRequest {
+    Uuid device_uuid = 1;
+}
+
+message StartupConfigInfoResponse {
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        DEVICE_UNREACHABLE = 3;
+    }
+    Status status = 1;
+    Reason reason = 2;
+    // The config_url is an optional attribute, the device manager could return the location from
+    // where the config was downloaded. Also it would not be present/empty for a fresh device into which the
+    // startup config would have been installed in the factory.
+    string config_url = 3;
+    // The version of the startup configuration. It is recommended to use semVer, but the DM implementations
+    // and operators could choose any other format as well.
+    string version = 4;
+    string reason_detail = 5;
+}
+
+message UploadDebugInfoRequest {
+    Uuid device_uuid = 1;
+    // location_url is the remote location where the information needed for troubleshooting should be uploaded.
+    // Authentication (user/pass) if any should be in the location_url string
+    // The locaion_url would contain the protocol, credentials, the IP address/DNS of the server and the path of the directory
+    // e.g. sftp://upload_user:upload_pass@192.168.0.1:22/hw_debug_info/
+    string location_url = 3;
+}
+
+// Implementations would be expected to stream multiple UploadDebugInfoStatus indicating the progress of the upload
+message UploadDebugInfoStatus {
+    Uuid device_uuid = 1;
+
+    enum UploadStatus {
+        UNDEFINED_UPLOAD_STATUS = 0;
+        COMPLETE = 1;
+        IN_PROGRESS = 2;
+        ERROR = 3;
+    }
+
+    UploadStatus status = 2;
+    // percent_uploaded is the percentage of the upload that is done
+    // should be a value between 0 and 100 when status is IN_PROGRESS
+    // should be 100 when status is COMPLETE
+    // can be set to -1 if the device manager implementations cannot support
+    // the progress percentage
+    int32 percent_uploaded = 3;
+
+    enum Reason {
+        UNDEFINED_REASON = 0;
+        UNKNOWN_DEVICE = 1;
+        INTERNAL_ERROR = 2;
+        // The DM implementations should have retry mechanisms (timeout values dependant on specific implementations)
+        // and even after those if the operation cannot be completed/reached then return error with reason as DEVICE_NOT_REACHABLE
+        DEVICE_NOT_REACHABLE = 3;
+        REMOTE_LOCATION_UNREACHABLE = 4;
+        REMOTE_LOCATION_PERMISSION_DENIED = 5;
+        ERROR_DURING_UPLOAD = 6;
+        DEVICE_BUSY = 7;
+        // wrong location_url in the request
+        ERROR_IN_REQUEST = 8;
+        DEVICE_IN_WRONG_STATE = 9;
+        OPERATION_ALREADY_IN_PROGRESS = 10;
+    }
+    Reason reason = 4; // reason specifies why the status is ERROR
+    string location_url = 5;
+    // file_name is the file at location_url where the debug information was uploaded.
+    // Implementations need to ensure that file_name is unique at the remote location.
+    // file_name to be shared in the response stream when the upload begins.
+    string file_name = 6;
+}
+
+service NativeSoftwareManagementService {
+    // Get the software version information of the Active and Standby images
+    rpc GetSoftwareVersion(HardwareID) returns(GetSoftwareVersionInformationResponse);
+
+    // Downloads and installs the image in the standby partition, returns the status/progress of the Install
+    rpc DownloadImage(DownloadImageRequest) returns(stream ImageStatus);
+
+    // Activates and runs the OLT with the image in the standby partition. If things are fine this image will
+    // henceforth be marked as the Active Partition. The old working image would remain on the Standby partition.
+    // Any possibly required (sub-)steps like "commit" are left to the "Device Manager"
+    rpc ActivateImage(HardwareID) returns(stream ImageStatus);
+
+    // Marks the image in the Standby as Active and reboots the device, so that it boots from that image which was in the standby.
+    // This API is to be used if operator wants to go back to the previous software
+    rpc RevertToStandbyImage(HardwareID) returns(stream ImageStatus);
+
+    // This API can be used to let the devices pickup their properitary configuration which they need at startup.
+    rpc UpdateStartupConfiguration(ConfigRequest) returns(stream ConfigResponse);
+
+    // This API can be used to retrieve information about the current startup configuration that a device is using
+    rpc GetStartupConfigurationInfo(StartupConfigInfoRequest) returns(StartupConfigInfoResponse);
+
+    // This API can be used to upload to a remote location, information useful for troubleshooting problems on the hardware
+    rpc UploadDebugInfo(UploadDebugInfoRequest) returns(stream UploadDebugInfoStatus);
+
+    // If needed we can add this later
+    //rpc SubscribeToEvents() returns (stream );
+}
