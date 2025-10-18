@@ -1,0 +1,263 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sagemaker-studio-dataengineering-sessions"
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+description = 'A python Package to run Spark code in different AWS Compute'
+
+authors = [
+  { name = "Amazon Web Services" },
+]
+maintainers = [
+  { name = "sagemaker-unified-studio" },
+]
+
+keywords = [
+  "AWS", "Amazon", "SageMaker", "SageMaker Unified Studio", "Data Engineering"
+]
+
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: Apache Software License",
+]
+
+dependencies = [
+  # Put your dependencies here!
+    "boto3",
+    "pytest",
+    "pytest-cov",
+    "ipython",
+    # database session manager
+    "amazon_sagemaker_sql_execution>=0.0.7,<1",
+    "pandas",
+    "sqlparse>=0.4.0",
+    # spark session manager
+    "sparkmagic",
+    "botocore",
+    # connection magic
+    "panel>=1.6.0",
+    "sagemaker-studio-sparkmagic-lib",
+    "pyarrow"
+]
+
+[tool.hatch.version]
+path = "src/sagemaker_studio_dataengineering_sessions/__init__.py"
+
+[tool.hatch.envs.default]
+# This controls what version of Python you want to be the default
+# when running any scripts or tools to do things like debug test failures
+# or do general development.  It's lockfile is ./requirements.txt
+python = "3.11"
+dependencies = [
+    "pytest",
+#    "mypy",
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "--durations=5",
+    "--color=yes",
+    "--cov-report=term-missing",
+    "--cov-branch",
+    "--cov-report=html:private/brazil-documentation/coverage",
+    "--cov-report=xml:private/brazil-documentation/coverage/coverage.xml",
+    "--cov-fail-under=68"
+]
+testpaths = [ "tests" ]
+
+[tool.coverage.run]
+source_pkgs = ["sagemaker_studio_dataengineering_sessions"]
+branch = true
+parallel = true
+
+[tool.coverage.paths]
+"sagemaker_studio_dataengineering_sessions" = ["src/sagemaker_studio_dataengineering_sessions", "**/site-packages/sagemaker_studio_dataengineering_sessions"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+show_missing = true
+
+[tool.coverage.xml]
+output = "private/brazil-documentation/coverage/coverage.xml"
+
+[tool.coverage.html]
+directory = "private/brazil-documentation/coverage/"
+
+[tool.ruff.lint]
+isort.known-first-party = ["sagemaker_studio_dataengineering_sessions"]
+exclude = [ "./build", ".hatch", "private" ]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use magic values, assertions, and relative imports
+"tests/**/*" = ["PLR2004", "S101", "TID252"]
+
+[tool.hatch.build]
+directory = "./external-distribution"
+
+[tool.hatch.build.targets.sdist]
+ignore-vcs = true
+include = ["src/sagemaker_studio_dataengineering_sessions"]
+
+[tool.hatch.build.targets.wheel]
+ignore-vcs = true
+packages = ["src/sagemaker_studio_dataengineering_sessions"]
+
+[tool.hatch.build.hooks.custom]
+path = "src/sagemaker_studio_dataengineering_sessions/scripts/build_hooks.py"
+
+[tool.hatch.env]
+requires = [ "hatch-pip-compile" ]
+
+[tool.hatch.envs.default.scripts]
+# These are scripts you can run using `brazil-build run <script-name>`
+#typing = [
+#  "mkdir -p .mypy_cache",
+#  "mypy --install-types --non-interactive src/sagemaker_studio_dataengineering_sessions tests"
+#]
+
+# This command is for updating all your lock files across all environments 
+update = [ "hatch-pip-compile --upgrade --all" ]
+
+# this is actual pre-build according to https://code.amazon.com/packages/PeruHatch/blobs/cb3985992425d46b316c25b9157386ba54a6ff7a/--/public/bin/peru-hatch#L93-L96
+release = [
+#    "typing",
+#    "hatch test --all --cover",
+    "pytest tests --cov",
+    "src/sagemaker_studio_dataengineering_sessions/scripts/update_version.sh"
+]
+
+force-update-version = [
+  "src/sagemaker_studio_dataengineering_sessions/scripts/update_version.sh --force"
+]
+
+update-version = [
+  "src/sagemaker_studio_dataengineering_sessions/scripts/update_version.sh"
+]
+
+pypi-publish = [
+  "src/sagemaker_studio_dataengineering_sessions/scripts/publish.sh patch"
+]
+
+pypi-publish-minor = [
+  "src/sagemaker_studio_dataengineering_sessions/scripts/publish.sh minor"
+]
+
+pypi-publish-major = [
+  "src/sagemaker_studio_dataengineering_sessions/scripts/publish.sh major"
+]
+
+pypi-publish-custom-branch = [
+  "src/sagemaker_studio_dataengineering_sessions/scripts/publish.sh custom-branch"
+]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+# This defines multiple variables you can generate combinations
+# to test underneath different environments.  A separate environment and 
+# lock file will be created for every combination located in `./requirements/`
+python = ["3.11", "3.12"]
+
+## This environment is used solely to generate a lock file on hatch,
+# and hatch-pip-compile that can be automatically updated
+[tool.hatch.envs.build-tools]
+# This version states what version your build tools build with.  To change it,
+# you will need to:
+# * Remove the `requirements/requirements-build-tools.txt` file
+# * Run `brazil-build run update` to generate a new lock file for the environment
+python = "3.11"
+detached = true
+skip-install = true
+dependencies = [
+  "hatch",
+  "hatch-pip-compile",
+  "aws_embedded_metrics"
+]
+
+# PeruHatch repository and package locking plugin
+[tool.hatch.env.collectors.custom]
+path = ".hatch/hatch_plugin.py"
+
+# This is necessary to use 'uv' as the resolver if this is the top-level package
+# in a monorepo (which is usually the case).  Remove this if copying the
+# package into a monorepo
+[tool.uv.workspace]
+
+[tool.semantic_release]
+version_variables = ["src/sagemaker_studio_dataengineering_sessions/__init__.py:__version__"]
+assets = []
+build_command_env = []
+commit_message = "{version}\n\nAutomatically generated by python-semantic-release"
+logging_use_named_masks = false
+major_on_zero = true
+allow_zero_version = true
+repo_dir = "."
+no_git_verify = false
+tag_format = "{version}"
+commit_parser = "custom_commit_parser.py:CustomCommitParser"
+
+[tool.semantic_release.branches.main]
+match = "(mainline|master)"
+prerelease_token = "rc"
+prerelease = false
+
+[tool.semantic_release.branches."1.0.x"]
+match = "1.0.x"
+prerelease = false
+
+[tool.semantic_release.branches."1.1.x"]
+match = "1.1.x"
+prerelease = false
+
+[tool.semantic_release.branches."1.2.x"]
+match = "1.2.x"
+prerelease = false
+
+[changelog.default_templates.changelog_file]
+changelog_file = ""
+exclude_commit_patterns = []
+mode = "init"
+insertion_flag = "<!-- version list -->"
+template_dir = "templates"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
+output_format = "md"
+mask_initial_release = false
+
+[tool.semantic_release.changelog.environment]
+block_start_string = "{%"
+block_end_string = "%}"
+variable_start_string = "{{"
+variable_end_string = "}}"
+comment_start_string = "{#"
+comment_end_string = "#}"
+trim_blocks = false
+lstrip_blocks = false
+newline_sequence = "\n"
+keep_trailing_newline = false
+extensions = []
+autoescape = false
+
+[tool.semantic_release.commit_author]
+env = "GIT_COMMIT_AUTHOR"
+default = "semantic-release <semantic-release>"
+
+[tool.semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+other_allowed_tags = ["build", "chore", "ci", "docs", "style", "refactor", "test"]
+allowed_tags = ["feat", "fix", "perf", "build", "chore", "ci", "docs", "style", "refactor", "test"]
+default_bump_level = 0
+parse_squash_commits = false
+ignore_merge_commits = false
+
