@@ -1,0 +1,800 @@
+Metadata-Version: 2.4
+Name: redis-cache-toolkit
+Version: 0.1.0
+Summary: Advanced Redis caching decorators with support for Pydantic models, geohash-based location caching, and multiple Redis configurations
+Author-email: Umutcan Kalkan <umutcan.kalkan@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/UmutcanKalkan/redis-cache-toolkit
+Project-URL: Documentation, https://github.com/UmutcanKalkan/redis-cache-toolkit#readme
+Project-URL: Repository, https://github.com/UmutcanKalkan/redis-cache-toolkit
+Project-URL: Issues, https://github.com/UmutcanKalkan/redis-cache-toolkit/issues
+Keywords: redis,cache,caching,decorator,pydantic,geohash,location
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Database
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: redis>=4.0.0
+Requires-Dist: pygeohash>=1.2.0
+Provides-Extra: pydantic
+Requires-Dist: pydantic>=2.0.0; extra == "pydantic"
+Provides-Extra: sentinel
+Requires-Dist: redis[sentinel]>=4.0.0; extra == "sentinel"
+Provides-Extra: cluster
+Requires-Dist: redis-py-cluster>=2.1.0; extra == "cluster"
+Provides-Extra: all
+Requires-Dist: pydantic>=2.0.0; extra == "all"
+Requires-Dist: redis[sentinel]>=4.0.0; extra == "all"
+Requires-Dist: redis-py-cluster>=2.1.0; extra == "all"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: types-redis>=4.0.0; extra == "dev"
+Dynamic: license-file
+
+# Redis Cache Toolkit
+
+[![PyPI version](https://badge.fury.io/py/redis-cache-toolkit.svg)](https://badge.fury.io/py/redis-cache-toolkit)
+[![Python Versions](https://img.shields.io/pypi/pyversions/redis-cache-toolkit.svg)](https://pypi.org/project/redis-cache-toolkit/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/yourusername/redis-cache-toolkit/workflows/tests/badge.svg)](https://github.com/yourusername/redis-cache-toolkit/actions)
+
+Advanced Redis caching decorators for Python with support for:
+
+- 🚀 **Simple decorators** for function result caching
+- 📦 **Pydantic model support** for type-safe caching
+- 🌍 **Geohash-based location caching** for geographic data
+- 🔄 **Multiple Redis configurations** (standalone, sentinel, cluster)
+- 🎯 **Type-safe cache keys** with automatic serialization
+- ⚡ **Production-ready** with comprehensive test coverage
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Features](#features)
+  - [Basic Caching](#basic-caching)
+  - [Pydantic Model Caching](#pydantic-model-caching)
+  - [Geohash Location Caching](#geohash-location-caching)
+  - [Redis Configurations](#redis-configurations)
+- [Advanced Usage](#advanced-usage)
+- [API Reference](#api-reference)
+- [Examples](#examples)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Installation
+
+### Basic Installation
+
+```bash
+pip install redis-cache-toolkit
+```
+
+### With Optional Dependencies
+
+```bash
+# With Pydantic support
+pip install redis-cache-toolkit[pydantic]
+
+# With Sentinel support
+pip install redis-cache-toolkit[sentinel]
+
+# With Cluster support
+pip install redis-cache-toolkit[cluster]
+
+# All features
+pip install redis-cache-toolkit[all]
+
+# Development dependencies
+pip install redis-cache-toolkit[dev]
+```
+
+## Quick Start
+
+```python
+from redis_cache_toolkit import cached
+
+# Simple function caching
+@cached(timeout=300)
+def get_user_data(user_id: int):
+    # Expensive database or API call
+    return fetch_user_from_db(user_id)
+
+# First call - executes function
+user = get_user_data(123)
+
+# Second call - returns from cache
+user = get_user_data(123)  # ⚡ Fast!
+```
+
+## Features
+
+### Basic Caching
+
+Cache any function result with a simple decorator:
+
+```python
+from redis_cache_toolkit import cached
+
+@cached(timeout=60)
+def expensive_operation(x: int, y: int):
+    """This function result will be cached for 60 seconds."""
+    import time
+    time.sleep(5)  # Simulate expensive operation
+    return x + y
+
+# First call takes 5 seconds
+result = expensive_operation(10, 20)
+
+# Subsequent calls are instant!
+result = expensive_operation(10, 20)  # From cache
+```
+
+#### Advanced Caching Options
+
+```python
+from redis_cache_toolkit import cached, RedisConfig
+
+# Custom cache key prefix
+@cached(timeout=300, key_prefix="api_v1")
+def fetch_api_data(endpoint: str):
+    return requests.get(endpoint).json()
+
+# Type-sensitive caching
+@cached(timeout=60, typed=True)
+def calculate(x):
+    return x * 2
+
+calculate(5)    # Cached separately
+calculate(5.0)  # Different cache entry due to different type
+
+# Custom Redis configuration
+redis_config = RedisConfig(
+    host="redis.example.com",
+    port=6379,
+    password="secret",
+    db=1
+)
+
+@cached(timeout=300, redis_config=redis_config)
+def fetch_from_custom_redis():
+    return expensive_operation()
+```
+
+### Pydantic Model Caching
+
+Type-safe caching with automatic Pydantic model validation:
+
+```python
+from pydantic import BaseModel
+from redis_cache_toolkit import cached_model
+
+class User(BaseModel):
+    id: int
+    name: str
+    email: str
+    is_active: bool = True
+
+@cached_model(User, timeout=300)
+def get_user_profile(user_id: int):
+    """Returns a validated User instance."""
+    return {
+        "id": user_id,
+        "name": "John Doe",
+        "email": "john@example.com"
+    }
+
+# Returns a validated Pydantic User instance
+user = get_user_profile(123)
+assert isinstance(user, User)
+print(user.name)  # Type hints work perfectly!
+```
+
+#### Benefits of Model Caching
+
+- ✅ Automatic validation on cache retrieval
+- ✅ Type safety with IDE autocomplete
+- ✅ Data consistency guarantees
+- ✅ Graceful error handling
+
+```python
+from pydantic import BaseModel, field_validator
+from redis_cache_toolkit import cached_model
+
+class Product(BaseModel):
+    id: int
+    name: str
+    price: float
+    
+    @field_validator('price')
+    def price_must_be_positive(cls, v):
+        if v <= 0:
+            raise ValueError('Price must be positive')
+        return v
+
+@cached_model(Product, timeout=600, return_none_on_error=True)
+def get_product(product_id: int):
+    # If cached data is invalid, returns None instead of raising
+    return fetch_product_from_api(product_id)
+```
+
+### Geohash Location Caching
+
+Efficient caching for geographic data using geohash encoding:
+
+```python
+from redis_cache_toolkit import geohash_cached
+
+@geohash_cached("city_id", precision=5, timeout=1800)
+def get_city_from_coordinates(lat: float, lon: float):
+    """
+    Reverse geocoding with geohash-based caching.
+    Nearby coordinates share the same cache!
+    """
+    return reverse_geocode_api(lat, lon)
+
+# First call - API request
+city_id = get_city_from_coordinates(41.0082, 28.9784)
+
+# Nearby location - uses same cache (within ~4.9km)
+city_id = get_city_from_coordinates(41.0083, 28.9785)  # Cache hit!
+```
+
+#### Geohash Precision Guide
+
+| Precision | Cell Width | Cell Height | Use Case |
+|-----------|------------|-------------|----------|
+| 3 | ~156km | ~156km | Country/Region |
+| 4 | ~39km | ~19km | City |
+| 5 | ~4.9km | ~4.9km | District/Neighborhood |
+| 6 | ~1.2km | ~0.6km | Street |
+| 7 | ~153m | ~153m | Building |
+| 8 | ~38m | ~19m | Precise location |
+
+#### Geohash Manager for Manual Control
+
+```python
+from redis_cache_toolkit import GeohashCacheManager
+
+manager = GeohashCacheManager(precision=5, timeout=1800)
+
+# Store location data
+lat, lon = 41.0082, 28.9784
+manager.set_location_data(lat, lon, "city_id", 34)
+manager.set_location_data(lat, lon, "weather", {"temp": 20, "condition": "sunny"})
+
+# Retrieve location data
+city_id = manager.get_location_data(lat, lon, "city_id")
+weather = manager.get_location_data(lat, lon, "weather")
+
+# Delete location data
+manager.delete_location_data(lat, lon, "city_id")
+
+# Encode/decode geohash
+geohash = manager.encode_location(lat, lon)  # 'sxk3z'
+decoded_lat, decoded_lon = manager.decode_location(geohash)
+```
+
+### Redis Configurations
+
+#### Standalone Redis
+
+```python
+from redis_cache_toolkit import RedisConfig, RedisConnectionType
+
+config = RedisConfig(
+    connection_type=RedisConnectionType.STANDALONE,
+    host="localhost",
+    port=6379,
+    db=0,
+    password="your_password",
+    ssl=True,
+)
+```
+
+#### Redis Sentinel
+
+```python
+config = RedisConfig(
+    connection_type=RedisConnectionType.SENTINEL,
+    sentinel_hosts=["sentinel1:26379", "sentinel2:26379", "sentinel3:26379"],
+    sentinel_name="mymaster",
+    password="your_password",
+)
+```
+
+#### Redis Cluster
+
+```python
+config = RedisConfig(
+    connection_type=RedisConnectionType.CLUSTER,
+    cluster_nodes=[
+        {"host": "node1", "port": 6379},
+        {"host": "node2", "port": 6379},
+        {"host": "node3", "port": 6379},
+    ],
+    password="your_password",
+)
+```
+
+## Advanced Usage
+
+### Utility Decorators
+
+#### Exception Handling
+
+```python
+from redis_cache_toolkit import capture_exception_decorator, cached
+
+@capture_exception_decorator(fallback_value={}, log_errors=True)
+@cached(timeout=60)
+def fetch_config():
+    """If cache fails, returns {} instead of raising."""
+    return get_config_from_api()
+```
+
+#### List Unpacking
+
+```python
+from redis_cache_toolkit import dont_unpack_list, cached
+
+@dont_unpack_list
+@cached(timeout=60)
+def get_latest_item():
+    """Returns first item from list."""
+    return [1, 2, 3, 4, 5]
+
+result = get_latest_item()  # Returns 1, not [1, 2, 3, 4, 5]
+```
+
+#### Default Values
+
+```python
+from redis_cache_toolkit import default_positive_int, cached
+
+@default_positive_int
+@cached(timeout=60)
+def get_counter():
+    """Returns 1 if cache is empty."""
+    return redis.get('counter')
+
+count = get_counter()  # Returns 1 on cache miss
+```
+
+### Combining Decorators
+
+```python
+from redis_cache_toolkit import cached, capture_exception_decorator, dont_unpack_list
+
+@capture_exception_decorator(fallback_value=None)
+@dont_unpack_list
+@cached(timeout=300)
+def get_top_result(query: str):
+    """
+    - Caches results for 5 minutes
+    - Returns first item from list
+    - Returns None on any error
+    """
+    results = search_api(query)
+    return results
+```
+
+### Custom Cache Key Generation
+
+```python
+from redis_cache_toolkit import cached
+
+# Automatic key generation from function name and arguments
+@cached(timeout=60)
+def process_data(user_id: int, include_metadata: bool = False):
+    # Cache key: "cache:process_data:{hash of arguments}"
+    return expensive_processing(user_id, include_metadata)
+
+# Custom prefix for better organization
+@cached(timeout=60, key_prefix="api_v2")
+def api_call(endpoint: str):
+    # Cache key: "cache:api_v2:{hash of arguments}"
+    return requests.get(endpoint).json()
+```
+
+## API Reference
+
+### Decorators
+
+#### `@cached(timeout, typed, key_prefix, redis_config)`
+
+General-purpose caching decorator.
+
+**Parameters:**
+- `timeout` (int): Cache timeout in seconds
+- `typed` (bool): Cache separately for different argument types (default: False)
+- `key_prefix` (str): Custom prefix for cache keys (default: function name)
+- `redis_config` (RedisConfig): Redis configuration (default: localhost)
+
+**Returns:** Decorated function
+
+---
+
+#### `@cached_model(model_class, timeout, typed, key_prefix, redis_config, return_none_on_error)`
+
+Caching with Pydantic model validation.
+
+**Parameters:**
+- `model_class` (Type[BaseModel]): Pydantic model class
+- `timeout` (int): Cache timeout in seconds
+- `typed` (bool): Type-sensitive caching (default: False)
+- `key_prefix` (str): Custom cache key prefix
+- `redis_config` (RedisConfig): Redis configuration
+- `return_none_on_error` (bool): Return None on validation error (default: True)
+
+**Returns:** Decorated function returning model instances
+
+---
+
+#### `@geohash_cached(key_suffix, precision, timeout, lat_arg, lon_arg, redis_config)`
+
+Geohash-based location caching decorator.
+
+**Parameters:**
+- `key_suffix` (str): Suffix for cache keys (e.g., "city_id")
+- `precision` (int): Geohash precision 1-12 (default: 5)
+- `timeout` (int): Cache timeout in seconds (default: 1800)
+- `lat_arg` (str): Latitude argument name (default: "lat")
+- `lon_arg` (str): Longitude argument name (default: "lon")
+- `redis_config` (RedisConfig): Redis configuration
+
+**Returns:** Decorated function
+
+---
+
+### Classes
+
+#### `RedisConfig`
+
+Configuration for Redis connections.
+
+```python
+RedisConfig(
+    connection_type=RedisConnectionType.STANDALONE,
+    host="localhost",
+    port=6379,
+    db=0,
+    password=None,
+    username=None,
+    ssl=False,
+    decode_responses=True,
+    sentinel_hosts=None,
+    sentinel_name=None,
+    cluster_nodes=None,
+    socket_timeout=5,
+    socket_connect_timeout=5,
+    **kwargs
+)
+```
+
+---
+
+#### `GeohashCacheManager`
+
+Manager for geohash-based location caching.
+
+**Methods:**
+- `set_location_data(lat, lon, key_suffix, value, timeout, precision)`: Cache location data
+- `get_location_data(lat, lon, key_suffix, precision)`: Retrieve location data
+- `delete_location_data(lat, lon, key_suffix, precision)`: Delete location data
+- `encode_location(lat, lon, precision)`: Encode coordinates to geohash
+- `decode_location(geohash)`: Decode geohash to coordinates
+
+---
+
+### Functions
+
+#### `get_redis_connection(config, decode_responses, force_new)`
+
+Get or create a Redis connection.
+
+**Parameters:**
+- `config` (RedisConfig): Redis configuration
+- `decode_responses` (bool): Decode responses to strings (default: True)
+- `force_new` (bool): Force new connection (default: False)
+
+**Returns:** Redis connection instance
+
+---
+
+#### `reset_connections()`
+
+Reset global Redis connections. Useful for testing or configuration changes.
+
+## Examples
+
+### Example 1: E-commerce Product Caching
+
+```python
+from pydantic import BaseModel
+from redis_cache_toolkit import cached_model
+
+class Product(BaseModel):
+    id: int
+    name: str
+    price: float
+    stock: int
+    category: str
+
+@cached_model(Product, timeout=300)
+def get_product(product_id: int):
+    """Cache product data for 5 minutes."""
+    return db.query(Product).filter(Product.id == product_id).first()
+
+product = get_product(123)
+print(f"{product.name}: ${product.price}")
+```
+
+### Example 2: Geolocation Service
+
+```python
+from redis_cache_toolkit import geohash_cached
+
+@geohash_cached("city_name", precision=5, timeout=3600)
+def get_city_name(lat: float, lon: float):
+    """Cache city names for 1 hour with geohash precision."""
+    response = requests.get(
+        f"https://api.geocode.com/reverse?lat={lat}&lon={lon}"
+    )
+    return response.json()["city"]
+
+# Efficient caching for location-based queries
+city1 = get_city_name(41.0082, 28.9784)  # API call
+city2 = get_city_name(41.0085, 28.9786)  # Cache hit (nearby)
+```
+
+### Example 3: API Response Caching
+
+```python
+from redis_cache_toolkit import cached, capture_exception_decorator
+import requests
+
+@capture_exception_decorator(fallback_value={"error": "Service unavailable"})
+@cached(timeout=600, key_prefix="github_api")
+def fetch_github_user(username: str):
+    """Cache GitHub API responses for 10 minutes."""
+    response = requests.get(f"https://api.github.com/users/{username}")
+    response.raise_for_status()
+    return response.json()
+
+user_data = fetch_github_user("torvalds")
+```
+
+### Example 4: Multi-tier Caching
+
+```python
+from redis_cache_toolkit import cached, geohash_cached
+from pydantic import BaseModel
+
+class Restaurant(BaseModel):
+    id: int
+    name: str
+    cuisine: str
+    rating: float
+
+@cached(timeout=1800, key_prefix="restaurant")
+def get_restaurant_by_id(restaurant_id: int):
+    """Cache individual restaurant data."""
+    return fetch_restaurant(restaurant_id)
+
+@geohash_cached("nearby_restaurants", precision=6, timeout=600)
+def get_nearby_restaurants(lat: float, lon: float, radius: int = 1000):
+    """Cache nearby restaurants by location."""
+    return search_restaurants_nearby(lat, lon, radius)
+```
+
+### Example 5: Database Query Caching
+
+```python
+from redis_cache_toolkit import cached
+from typing import List, Dict
+
+@cached(timeout=300)
+def get_user_orders(user_id: int, status: str = "all") -> List[Dict]:
+    """Cache user orders for 5 minutes."""
+    query = db.query(Order).filter(Order.user_id == user_id)
+    
+    if status != "all":
+        query = query.filter(Order.status == status)
+    
+    return [order.to_dict() for order in query.all()]
+
+# Different cache for different arguments
+pending_orders = get_user_orders(123, status="pending")
+all_orders = get_user_orders(123, status="all")
+```
+
+## Testing
+
+Run the test suite:
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=redis_cache_toolkit --cov-report=html
+
+# Run specific test file
+pytest tests/test_decorators.py
+
+# Run with verbose output
+pytest -v
+```
+
+## Performance Tips
+
+1. **Choose appropriate timeouts**: Balance between freshness and performance
+2. **Use geohash caching for location data**: Much more efficient than exact coordinate matching
+3. **Leverage Pydantic models**: Type validation catches errors early
+4. **Configure Redis properly**: Use connection pooling in production
+5. **Monitor cache hit rates**: Adjust timeouts based on your hit rate metrics
+
+## Common Patterns
+
+### Pattern 1: Fallback Chain
+
+```python
+@capture_exception_decorator(fallback_value=None)
+@cached(timeout=300)
+def get_data_with_fallback(key: str):
+    """Try cache, then database, then API."""
+    # Try primary source
+    data = primary_db.get(key)
+    if data:
+        return data
+    
+    # Fallback to secondary
+    return api.fetch(key)
+```
+
+### Pattern 2: Cache Warming
+
+```python
+from redis_cache_toolkit import cached
+
+@cached(timeout=3600)
+def get_popular_items():
+    return db.query(Item).filter(Item.is_popular == True).all()
+
+# Warm cache on application startup
+def warm_cache():
+    get_popular_items()
+```
+
+### Pattern 3: Conditional Caching
+
+```python
+from redis_cache_toolkit import cached
+
+@cached(timeout=300)
+def get_user_data(user_id: int, use_cache: bool = True):
+    if not use_cache:
+        # Force bypass cache for admin refresh
+        return fetch_fresh_data(user_id)
+    return fetch_data(user_id)
+```
+
+## Troubleshooting
+
+### Redis Connection Issues
+
+```python
+# Test your Redis connection
+from redis_cache_toolkit import get_redis_connection, RedisConfig
+
+config = RedisConfig(host="localhost", port=6379)
+try:
+    conn = get_redis_connection(config)
+    conn.ping()
+    print("✓ Redis connection successful")
+except Exception as e:
+    print(f"✗ Redis connection failed: {e}")
+```
+
+### Cache Not Working
+
+1. Check Redis is running: `redis-cli ping`
+2. Verify connection parameters
+3. Check cache keys: `redis-cli KEYS "cache:*"`
+4. Enable debug logging:
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+### Serialization Errors
+
+Ensure your cached objects are picklable:
+
+```python
+# Good - picklable types
+@cached(timeout=60)
+def good_function():
+    return {"key": "value", "number": 123, "list": [1, 2, 3]}
+
+# Bad - lambda functions aren't picklable
+@cached(timeout=60)
+def bad_function():
+    return lambda x: x * 2  # Will raise pickle error
+```
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/redis-cache-toolkit.git
+cd redis-cache-toolkit
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+black redis_cache_toolkit tests
+
+# Lint code
+ruff redis_cache_toolkit tests
+```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Inspired by production caching patterns from high-traffic applications
+- Built on top of the excellent [redis-py](https://github.com/redis/redis-py) library
+- Geohash implementation using [pygeohash](https://github.com/wdm0006/pygeohash)
+
+## Support
+
+- 📚 [Documentation](https://github.com/yourusername/redis-cache-toolkit#readme)
+- 🐛 [Issue Tracker](https://github.com/yourusername/redis-cache-toolkit/issues)
+- 💬 [Discussions](https://github.com/yourusername/redis-cache-toolkit/discussions)
+
+## Star History
+
+If you find this project useful, please consider giving it a ⭐!
+
+---
+
+**Made with ❤️ for the Python community**
+
