@@ -1,0 +1,197 @@
+Metadata-Version: 2.4
+Name: stltspref
+Version: 1.0.0
+Summary: An MILP-based tool for generating diverse traces of execution of a model that satisfy a specification, as well as corner-cases.
+Author-email: Martin Jouve-Genty <martin.jouve-genty@ens-lyon.fr>, Sota Sato <sotasato@nii.ac.jp>
+Project-URL: Code, https://gitlab.aliens-lyon.fr/mjouvege/stltspref
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=2.3.3
+Requires-Dist: gurobipy>=11.0.0
+Requires-Dist: scipy>=1.16.2
+Requires-Dist: matplotlib>=3.10.6
+Requires-Dist: pandas>=2.3.3
+Requires-Dist: plotly>=5.20.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Dynamic: license-file
+
+# stltspref
+
+### stlts
+`stlts` is a Python package written by S. Sato for synthesizing traces of execution of a model that satisfy a given Signal Temporal Logic (STL) formula. The package implements the MILP-based synthesis algorithm proposed in the paper:
+
+> Sota Sato, Jie An, Zhenya Zhang, Ichiro Hasuo. Optimization-Based Model Checking and Trace Synthesis for Complex STL Specifications. 36th International Conference on Computer-Aided Verification, 2024 [[doi](https://doi.org/10.1007/978-3-031-65633-0_13)] [[arXiv](https://arxiv.org/abs/2408.06983)]
+
+### Preferential Synthesis
+This package also offers various methods for preferential synthesis, written by M. Jouve-Genty.
+Preferential synthesis consists of generating multiple diverse or corner-case traces (that still satisfy a given specifcation). 
+It is an implementation of the methods proposed in a soon to come paper.
+
+### Requirements
+
+- Python with version 3.8 or higher
+- License for [Gurobi optimizer](https://www.gurobi.com/) (free for academic purposes)
+
+### Install
+
+You can install `stltspref` as a Python package with pip (version 22.0 or higher). You can run the following command in your Python environment of choice.
+
+```
+pip install stltspref
+```
+
+Alternatively, you can download the source code, then install the package locally:
+```
+git clone https://gitlab.aliens-lyon.fr/mjouvege/stltspref.git
+cd stltspref
+pip install -e .
+```
+
+# Usage
+
+## Using benchmarks
+
+`stltspref` comes with built-in benchmarks, the behaviors of which are detailed in [this paper](https://doi.org/10.1007/978-3-031-65633-0_13).
+
+#### Regular trace synthesis
+
+The following example shows how to perform regular trace synthesis on the given benchmarks.
+
+```py
+import gurobipy as gp
+import matplotlib.pyplot as plt
+from stltspref import benchmarks
+
+# Problem parameters
+benchmark_name = 'rnc1'
+bound = 5
+
+# Initialize the solver and problem objects
+milp = gp.Model()
+prob = benchmarks.get_benchmark(milp, benchmark_name, N=bound, delta=0.1)
+
+# Generate solutions
+prob.search_satisfaction()
+
+# Display solutions
+if prob.has_solution:
+    prob.get_trace_result(interpolation=True)[0].df.plot(x='t')
+    plt.show()
+else:
+    print(f'No trace found with bound {bound}')
+```
+#### Preferential synthesis
+Regarding preferential synthesis, the following example shows its usage for benchmarks as well.
+Extensive docstring is provided for preferential synthesis functions.
+```py
+from stltspref.preferential_synthesis import benchmark_pref_synth
+
+# Problem parameters
+benchmark_name = "rnc1"
+diversity_mode = "random"
+bound = 10
+numsols = 5
+
+# Perform preferential synthesis
+benchmark_pref_synth(benchmark_name, diversity_mode, bound, numsols)
+```
+## Making your own system model
+
+This package supports custom benchmarks, which can be made and used like in the following example.
+```py
+import gurobipy as gp
+from stltspref.preferential_synthesis import diversity_finder
+from stltspref.problem import create_stl_milp_problem
+
+# Problem parameter
+bound = 10
+
+# Initialize the solver and problem objects
+milp = gp.Model()
+prob = create_stl_milp_problem(
+        milp,
+        N=bound,
+        delta=0.1,
+        gamma_N=20.0,
+        gamma_unit_length=0.005,
+        use_binary_expansion=True,
+    )
+
+# Create a system model (e.g. here: an elevator)
+elevator = prob.create_system_model()
+
+# Add continuous system variables (e.g. here: position, velocity, acceleration)
+# Specify their minimum and maximum values 
+elevator.add_state('z', 0, 40)
+elevator.add_state('v', -5, 5)
+elevator.add_state('a', -3, 3)
+
+# Set initial states (minimum and maximum allowed values)
+elevator.set_initial_state(z=(0,0), v=(0,0), a=(0,0))
+# Add dynamics between variables
+elevator.add_dynamics('a', -3, 3, constant=True)
+elevator.add_double_integrator_dynamics('z', 'v', 'a')
+```
+
+## Making your own STL specification
+Suppose you have already defined a problem object `prob`, using either a predefined benchmark or your custom system model. 
+You can then define your own STL specification in a DSL style, like in the following example.
+
+```py
+# Atomic propositions are expressed as linear inequalities
+from stltspref.linear_expression import LinearExpression as L
+# STL connectors to use
+from stltspref.stl import And, Atomic, Ev, make_unique
+
+# Define atomic propositions
+high_position = Atomic(L.unit('z') >= 20)
+low_position = Atomic(L.unit('z') <= 1)
+moving_up = Atomic(L.unit('v') >= 0)
+
+# Define the STL formula
+spec = make_unique(
+    Ev(And(
+        high_position, 
+        Ev(And(
+            low_position,
+            moving_up
+        ))
+    ))
+)
+
+# Add constraints for the satisfaction of the specification
+prob.initialize_milp_formulation(spec)
+```
+Here’s a list of the supported STL operators:
+
+- `Atomic(p)`: Atomic proposition. Its content `p` is given in linear inequality form.
+- `And(psi1, psi2, ...)`: This operator specifies that all formulas `psi1, psi2, ...` hold.
+- `Or(psi1, psi2, ...)`: This operator specifies that at least one formula out of `psi1, psi2, ...` holds.
+- `BoundedAlw((a,b), psi)`: This operator specifies that a property must hold at all times within a given interval `[a,b]`.
+- `Alw(psi)`: This operator specifies that a property must hold at all times. Semantically it is equivalent to `BoundedAlw((0, infty), psi)`.
+- `BoundedEv((a,b), psi)`, `Ev(psi)`: This operator specifies that a property must hold become true at some point within a given interval.
+- `BoundedUntil((a,b), psi1, psi2)`, `Until(psi1, psi2)`: This operator specifies that `psi1` must be true until `psi2`becomes true within an interval `[a, b]`.
+- `BoundedRelease((a,b), psi1, psi2)`, `Release(psi1, psi2)`: This operator is dual to the Until operator and specifies that `psi2` must hold true until and including when `psi1` becomes true, within an interval `[a,b]`.
+
+Note that we do not provide `Not` operator, since our formula must be in NNF (negation-normal form). Instead, we provide a method `phi.negation()` to get an equivalent formula in NNF to the negation of `phi`.
+
+## Generating traces on your own problem
+Putting the two previous points together, once you have defined your problem object `prob` and you have added your desired specification, 
+you can perform trace synthesis with
+```py
+prob.search_satisfaction()
+```
+Alternatively, you can generate diverse traces with
+```py 
+# Diversity parameters
+diversity_mode = "random"
+numsols = 5
+
+diversity_finder(prob, diversity_mode, bound, numsols)
+```
